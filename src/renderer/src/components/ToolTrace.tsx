@@ -10,7 +10,9 @@ const ICONS: Record<string, typeof Search> = {
   skill_use: Sparkles,
   read_file: FileText,
   list_dir: Folder,
-  grep: Regex
+  grep: Regex,
+  web_search: Globe,
+  web_fetch: Globe
 }
 
 function summarize(t: Trace): string {
@@ -19,6 +21,8 @@ function summarize(t: Trace): string {
   if (t.name === 'skill_use') return `${a.name ?? ''}${a.file ? ` / ${a.file}` : ''}`
   if (t.name === 'read_file' || t.name === 'list_dir') return String(a.path ?? '.')
   if (t.name === 'grep') return `/${a.pattern ?? ''}/ ${a.path ?? ''}`
+  if (t.name === 'web_search') return `“${a.query ?? ''}”`
+  if (t.name === 'web_fetch') return String(a.url ?? '')
   const s = JSON.stringify(a)
   return s === '{}' ? '' : s.slice(0, 80)
 }
@@ -40,7 +44,7 @@ export function ToolTraceCard({ trace }: { trace: Trace }) {
         {trace.status === 'error' && <AlertTriangle size={13} className="shrink-0 text-crimson-hi" />}
       </button>
       {!open && trace.references.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2">
+        <div className="flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2 [scrollbar-width:none]">
           {trace.references.slice(0, 8).map((r, i) => (
             <span key={r.chunkId} className="flex shrink-0 items-center gap-1 rounded border border-line bg-elev px-1.5 py-0.5 text-[10.5px] text-muted" title={r.source}>
               <span className="font-semibold text-crimson-hi">{i + 1}</span>
@@ -106,9 +110,15 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
       <div className={clsx('selectable mt-1.5 whitespace-pre-wrap text-[11.5px] leading-relaxed text-muted', !expanded && 'line-clamp-3')} onClick={() => setExpanded(!expanded)}>
         {hit.text}
       </div>
-      <div className="mt-1 truncate font-mono text-[10px] text-dim" title={hit.source}>
-        {hit.source}
-      </div>
+      {/^https?:\/\//.test(hit.source) ? (
+        <button className="mt-1 block max-w-full truncate text-left font-mono text-[10px] text-dim hover:text-crimson-hi" title={hit.source} onClick={() => void window.cloth.invoke('app.openExternal', [hit.source])}>
+          {hit.source}
+        </button>
+      ) : (
+        <div className="mt-1 truncate font-mono text-[10px] text-dim" title={hit.source}>
+          {hit.source}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,13 @@
 import type {
   AppInfo,
+  BuiltinToolInfo,
+  CustomTool,
+  CustomToolInput,
+  ToolRunResult,
+  WebSearchResult,
+  WebStatus,
+  WebEngine,
+  WorkflowGraph,
   ChatSession,
   Collection,
   IngestUrlInput,
@@ -71,6 +79,22 @@ export interface ClothApi {
     ingestText(collectionId: string, title: string, text: string): Promise<RagDocument>
     embedMissing(collectionId: string): Promise<number>
     search(input: RagSearchInput): Promise<RagSearchResult>
+    loadExamples(): Promise<Collection | null>
+  }
+  tools: {
+    builtins(): Promise<BuiltinToolInfo[]>
+    list(): Promise<CustomTool[]>
+    create(input: CustomToolInput): Promise<CustomTool>
+    update(id: string, input: CustomToolInput): Promise<CustomTool>
+    setEnabled(id: string, enabled: boolean): Promise<CustomTool>
+    remove(id: string): Promise<void>
+    test(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, args: Record<string, unknown>): Promise<ToolRunResult>
+  }
+  web: {
+    status(): Promise<WebStatus>
+    search(query: string, opts?: { k?: number; engine?: WebEngine }): Promise<WebSearchResult>
+    startSearxng(): Promise<WebStatus>
+    stopSearxng(): Promise<WebStatus>
   }
   skills: {
     list(): Promise<Skill[]>
@@ -112,6 +136,9 @@ export interface ClothApi {
     cancel(runId: string): Promise<void>
     runs(id: string): Promise<WorkflowRun[]>
     validateCron(expr: string): Promise<{ ok: boolean; next: number | null; error?: string }>
+    build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph>
+    cancelBuild(buildId: string): Promise<void>
+    createFromGraph(graph: WorkflowGraph): Promise<Workflow>
   }
   mcp: {
     status(): Promise<McpStatus>
@@ -126,4 +153,5 @@ export type EventMap = {
   ingest: import('./types').IngestProgress
   mcp: McpStatus
   skills: { type: 'run'; run: SkillRun }
+  web: { type: 'status' }
 }

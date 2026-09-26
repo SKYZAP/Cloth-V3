@@ -82,8 +82,12 @@ else {
 
   void app.whenReady().then(async () => {
     app.setAppUserModelId('dev.cloth.app')
+    // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
+    const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({
       dataDir: app.getPath('userData'),
+      sidecarsDir: resources ?? join(app.getAppPath(), 'sidecars'),
+      examplesDir: resources ? join(resources, 'examples') : join(app.getAppPath(), 'resources', 'examples'),
       secrets,
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
@@ -93,6 +97,8 @@ else {
     createWindow()
     services.workflows.startScheduler()
     await services.mcp.restart()
+    services.web.warm()
+    if (!process.env.CLOTH_SMOKE) void services.examples.seedIfNeeded()
     console.log(`[cloth] data dir ${app.getPath('userData')}; MCP ${services.mcp.status().url} running=${services.mcp.status().running}`)
     if (process.env.CLOTH_SMOKE && mainWindow) {
       const win = mainWindow
@@ -109,8 +115,13 @@ else {
     if (process.platform !== 'darwin') app.quit()
   })
 
-  app.on('before-quit', () => {
-    services?.workflows.stopScheduler()
-    void services?.mcp.stop()
+  let quitting = false
+  app.on('before-quit', (e) => {
+    if (quitting || !services) return
+    // Give sidecars (SearXNG's Python process tree) a chance to exit cleanly.
+    e.preventDefault()
+    quitting = true
+    services.workflows.stopScheduler()
+    void Promise.allSettled([services.mcp.stop(), services.web.stop()]).finally(() => app.quit())
   })
 }

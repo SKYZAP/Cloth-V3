@@ -40,7 +40,38 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     const wr = await s.workflows.run(wf.id, { question: 'guards' })
     note(`workflow: ${wr.status} ${wr.error ?? JSON.stringify(wr.output).slice(0, 120)}`)
 
+    // Bundled example knowledge.
+    const examples = await s.examples.load()
+    for (let i = 0; i < 100 && (s.rag.getCollection(examples!.id).docCount < s.examples.files().length || s.rag.listDocuments(examples!.id).some((d) => d.status !== 'ready')); i++) await wait(100)
+    const exHit = await s.rag.search({ query: 'undo the last commit', collectionIds: [examples!.id] })
+    note(`examples: ${s.rag.getCollection(examples!.id).docCount} docs; "undo the last commit" → ${exHit.hits[0]?.title} › ${exHit.hits[0]?.headingPath}`)
+
+    // Custom tool.
+    const tool = s.custom.create({
+      name: 'date_math',
+      description: 'Add or subtract days from a date.',
+      kind: 'javascript',
+      params: [{ name: 'days', type: 'number', description: 'Days to add', required: true }],
+      config: { code: "const d = new Date('2026-09-27'); d.setDate(d.getDate() + args.days); return d.toISOString().slice(0, 10)" }
+    })
+    note(`custom tool: ${JSON.stringify(await s.custom.test(tool, { days: 10 }))}`)
+
+    // Web search through the bundled engines.
+    for (const engine of ['obscura', 'searxng'] as const) {
+      s.settings.update({ webEngine: engine })
+      const res = await s.web.search('sqlite fts5 bm25', { k: 3 }).catch((err: Error) => ({ results: [], tookMs: 0, error: err.message }))
+      note(`web ${engine}: ${res.results.length} results in ${res.tookMs}ms ${'error' in res ? res.error : res.results[0]?.url ?? ''}`)
+    }
+    s.settings.update({ webEngine: 'obscura' })
+
+    // Agent-assembled workflow.
+    const graph = await s.workflows.build({ description: 'Search my docs for a topic, fall back to the web, summarize', buildId: 'smoke' })
+    const built = s.workflows.createFromGraph(graph)
+    const builtRun = await s.workflows.run(built.id, { topic: 'full-text search' })
+    note(`builder: "${graph.name}" ${graph.nodes.length} nodes/${graph.edges.length} edges → run ${builtRun.status} ${builtRun.error ?? ''}`)
+
     const session = s.chat.create({ model: chat })
+    const webSession = s.chat.create({ model: chat, webEnabled: true, collectionIds: [col.id] })
     win.webContents.reload()
     await wait(2500)
     await clickNav(win, 'Chat')
@@ -49,13 +80,17 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     for (let i = 0; i < 50 && s.chat.isRunning(session.id); i++) await wait(200)
     const turn = s.chat.messages(session.id).at(-1)
     note(`chat: ${turn?.blocks.map((b) => b.type).join(',')} error=${turn?.error ?? 'none'}`)
+    await s.chat.send(webSession.id, 'Search the web for the latest SQLite release notes')
+    for (let i = 0; i < 150 && s.chat.isRunning(webSession.id); i++) await wait(200)
+    const webTurn = s.chat.messages(webSession.id).at(-1)
+    note(`web chat: ${webTurn?.blocks.map((b) => (b.type === 'tool' ? `tool:${b.trace.name}(${b.trace.status},${b.trace.references.length} refs)` : b.type)).join(',')} error=${webTurn?.error ?? 'none'}`)
     await wait(800)
     writeFileSync(join(outDir, 'chat-answer.png'), await screenshot(win))
     // Expand the first tool trace for the screenshot.
     await win.webContents.executeJavaScript(`document.querySelector('.font-mono.text-\\\\[11\\\\.5px\\\\].font-medium')?.closest('button')?.click()`).catch(() => undefined)
     await wait(400)
 
-    for (const page of ['Chat', 'Knowledge', 'Skills', 'Flows', 'Models', 'MCP', 'Settings']) {
+    for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Flows', 'Models', 'MCP', 'Settings']) {
       await clickNav(win, page)
       await wait(page === 'Flows' ? 1500 : 900)
       if (page === 'Flows')

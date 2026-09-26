@@ -1,6 +1,7 @@
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown } from '@codemirror/lang-markdown'
 import { json } from '@codemirror/lang-json'
+import { javascript } from '@codemirror/lang-javascript'
 import { EditorView } from '@codemirror/view'
 
 const theme = EditorView.theme(
@@ -27,12 +28,12 @@ export function Editor({
 }: {
   value: string
   onChange?(v: string): void
-  lang?: 'markdown' | 'json' | 'text'
+  lang?: 'markdown' | 'json' | 'javascript' | 'text'
   height?: string
   readOnly?: boolean
   placeholder?: string
 }) {
-  const extensions = [EditorView.lineWrapping, theme, ...(lang === 'markdown' ? [markdown()] : lang === 'json' ? [json()] : [])]
+  const extensions = [EditorView.lineWrapping, theme, ...(lang === 'markdown' ? [markdown()] : lang === 'json' ? [json()] : lang === 'javascript' ? [javascript()] : [])]
   return (
     <CodeMirror
       value={value}

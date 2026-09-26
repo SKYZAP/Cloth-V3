@@ -4,6 +4,12 @@ import type { Ctx } from './context'
 export const DEFAULT_SETTINGS: Settings = {
   defaultModel: null,
   embeddingModel: null,
+  webEngine: 'obscura',
+  searxngUrl: '',
+  obscuraPath: '',
+  webResults: 6,
+  webAllowPrivate: false,
+  examplesLoaded: false,
   mcpEnabled: true,
   mcpPort: 7811,
   mcpRequireToken: false,

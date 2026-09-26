@@ -8,12 +8,14 @@ import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
+import type { WebService } from '../web/web'
 
 const TOOLS = [
   { name: 'skill_list', description: 'List skills in the Cloth skill hub (name, description, health).' },
   { name: 'skill_use', description: 'Fetch the full instructions of a skill (SKILL.md) or one of its bundled files.' },
   { name: 'rag_search', description: 'Hybrid (BM25 + vector) or agentic search over Cloth knowledge collections.' },
-  { name: 'rag_collections', description: 'List the knowledge collections available to rag_search.' }
+  { name: 'rag_collections', description: 'List the knowledge collections available to rag_search.' },
+  { name: 'web_search', description: 'Search the web through Cloth’s bundled engine (SearXNG or Obscura, set in Cloth’s settings).' }
 ]
 
 type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
@@ -26,7 +28,7 @@ export class McpHost {
   constructor(
     private ctx: Ctx,
     private settings: SettingsService,
-    private deps: { rag: RagService; skills: SkillService }
+    private deps: { rag: RagService; skills: SkillService; web: WebService }
   ) {}
 
   token(): string {
@@ -202,6 +204,22 @@ export class McpHost {
         const cols = rag.listCollections().map((c) => ({ id: c.id, name: c.name, description: c.description, documents: c.docCount, chunks: c.chunkCount, vectors: !!c.embeddingDim }))
         return { content: [{ type: 'text', text: cols.map((c) => `- ${c.name} (${c.documents} docs): ${c.description}`).join('\n') || 'No collections.' }], structuredContent: { collections: cols } }
       })
+    )
+    server.registerTool(
+      'web_search',
+      {
+        title: 'Web search',
+        description: TOOLS[4].description,
+        inputSchema: { query: z.string(), k: z.number().int().min(1).max(20).optional() }
+      },
+      (args) =>
+        this.logged('web_search', args, async () => {
+          const res = await this.deps.web.search(args.query, { k: args.k })
+          return {
+            content: [{ type: 'text', text: res.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n') || 'No results.' }],
+            structuredContent: { engine: res.engine, results: res.results }
+          }
+        })
     )
     return server
   }

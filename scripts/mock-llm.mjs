@@ -29,8 +29,37 @@ function plan(body) {
   const afterUser = msgs.slice(msgs.lastIndexOf(lastUser) + 1)
   const toolMsg = [...afterUser].reverse().find((m) => m.role === 'tool')
   const tools = (body.tools ?? []).map((t) => t.function?.name)
+  // Workflow builder agent: assemble a small graph, then finish.
+  if (tools.includes('add_node')) {
+    if (!toolMsg) {
+      return {
+        tools: [
+          { name: 'add_node', args: { type: 'trigger', key: 'start', data: { defaultInput: '{"topic": "sqlite full-text search"}' } } },
+          { name: 'add_node', args: { type: 'rag', key: 'docs', label: 'Search docs', data: { query: '{{input.topic}}', k: 4 } } },
+          { name: 'add_node', args: { type: 'condition', key: 'found', label: 'Found anything?', data: { expression: 'prev.hits.length > 0' } } },
+          { name: 'add_node', args: { type: 'llm', key: 'summary', label: 'Summarize', data: { prompt: 'Summarize for {{input.topic}}:\n\n{{docs.text}}' } } },
+          { name: 'add_node', args: { type: 'web', key: 'web', label: 'Web fallback', data: { query: '{{input.topic}}', k: 3 } } },
+          { name: 'add_node', args: { type: 'output', key: 'result', label: 'Output', data: { value: '{{prev}}' } } },
+          { name: 'connect', args: { from: 'start', to: 'docs' } },
+          { name: 'connect', args: { from: 'docs', to: 'found' } },
+          { name: 'connect', args: { from: 'found', to: 'summary', branch: 'true' } },
+          { name: 'connect', args: { from: 'found', to: 'web', branch: 'false' } },
+          { name: 'connect', args: { from: 'summary', to: 'result' } },
+          { name: 'connect', args: { from: 'web', to: 'result' } }
+        ]
+      }
+    }
+    if (/valid and complete/.test(textOf(toolMsg.content))) return { text: 'The workflow is assembled.' }
+    return { tools: [{ name: 'finish', args: { name: 'Docs digest with web fallback', description: 'Searches local docs, falls back to the web, summarizes' } }] }
+  }
+  if (!toolMsg && tools.includes('web_search') && /\bweb\b|latest|online/i.test(question)) {
+    return { tool: { name: 'web_search', args: { query: question.replace(/search the web (for)?/i, '').slice(0, 100) } } }
+  }
   if (!toolMsg && tools.includes('rag_search') && !/^reply with/i.test(question)) {
     return { tool: { name: 'rag_search', args: { query: question.slice(0, 120) } } }
+  }
+  if (toolMsg && textOf(toolMsg.content).includes('(engine: ')) {
+    return { text: `Top web result [1]: ${textOf(toolMsg.content).split('\n')[0].replace(/^\[1\]\s*/, '')}. See also [2]. _(mock-chat response)_` }
   }
   if (toolMsg) {
     const first = textOf(toolMsg.content).split('\n---\n')[0].split('\n').slice(2).join(' ').slice(0, 220)
@@ -71,20 +100,23 @@ createServer(async (req, res) => {
   }
   if (req.method === 'POST' && url === '/chat/completions') {
     const p = plan(body)
+    const calls = p.tools ?? (p.tool ? [p.tool] : [])
     const id = `chatcmpl-${Date.now()}`
     const base = { id, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: body.model }
     if (!body.stream) {
       res.writeHead(200, { 'content-type': 'application/json' })
-      const message = p.tool
-        ? { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: p.tool.name, arguments: JSON.stringify(p.tool.args) } }] }
+      const message = calls.length
+        ? { role: 'assistant', content: null, tool_calls: calls.map((c, i) => ({ id: `call_${i}`, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } })) }
         : { role: 'assistant', content: p.text }
-      return res.end(JSON.stringify({ id, object: 'chat.completion', model: body.model, choices: [{ index: 0, message, finish_reason: p.tool ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 42, completion_tokens: 17, total_tokens: 59 } }))
+      return res.end(JSON.stringify({ id, object: 'chat.completion', model: body.model, choices: [{ index: 0, message, finish_reason: calls.length ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 42, completion_tokens: 17, total_tokens: 59 } }))
     }
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
     sse(res, { ...base, choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] })
-    if (p.tool) {
-      sse(res, { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: `call_${Date.now()}`, type: 'function', function: { name: p.tool.name, arguments: '' } }] }, finish_reason: null }] })
-      sse(res, { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(p.tool.args) } }] }, finish_reason: null }] })
+    if (calls.length) {
+      calls.forEach((c, index) => {
+        sse(res, { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index, id: `call_${Date.now()}_${index}`, type: 'function', function: { name: c.name, arguments: '' } }] }, finish_reason: null }] })
+        sse(res, { ...base, choices: [{ index: 0, delta: { tool_calls: [{ index, function: { arguments: JSON.stringify(c.args) } }] }, finish_reason: null }] })
+      })
       sse(res, { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })
     } else {
       for (const piece of p.text.match(/.{1,12}/gs)) {

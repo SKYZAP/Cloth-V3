@@ -2,6 +2,7 @@ import { app, dialog, shell, BrowserWindow } from 'electron'
 import type { ClothApi } from '@shared/api'
 import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
+import { describeBuiltins } from './agent/tools'
 
 export function createApi(s: Services): ClothApi {
   return {
@@ -63,7 +64,29 @@ export function createApi(s: Services): ClothApi {
       ingestUrl: (input) => s.rag.ingestUrl(input),
       ingestText: (id, title, text) => s.rag.ingestText(id, title, text),
       embedMissing: (id) => s.rag.embedMissing(id),
-      search: (input) => s.rag.search(input)
+      search: (input) => s.rag.search(input),
+      loadExamples: () => s.examples.load()
+    },
+    tools: {
+      builtins: async () => describeBuiltins(),
+      list: async () => s.custom.list(),
+      create: async (input) => s.custom.create(input),
+      update: async (id, input) => s.custom.update(id, input),
+      setEnabled: async (id, enabled) => s.custom.setEnabled(id, enabled),
+      remove: async (id) => s.custom.remove(id),
+      test: (tool, args) => s.custom.test(tool, args)
+    },
+    web: {
+      status: async () => s.web.status(),
+      search: (query, opts) => s.web.search(query, opts),
+      startSearxng: async () => {
+        await s.web.searxng.ensure()
+        return s.web.status()
+      },
+      stopSearxng: async () => {
+        await s.web.searxng.stop()
+        return s.web.status()
+      }
     },
     skills: {
       list: () => s.skills.list(),
@@ -104,7 +127,10 @@ export function createApi(s: Services): ClothApi {
       run: async (id, input) => s.workflows.startRun(id, input, 'manual'),
       cancel: async (runId) => s.workflows.cancel(runId),
       runs: async (id) => s.workflows.runs(id),
-      validateCron: async (expr) => validateCron(expr)
+      validateCron: async (expr) => validateCron(expr),
+      build: (input) => s.workflows.build(input),
+      cancelBuild: async (buildId) => s.workflows.cancelBuild(buildId),
+      createFromGraph: async (graph) => s.workflows.createFromGraph(graph)
     },
     mcp: {
       status: async () => s.mcp.status(),

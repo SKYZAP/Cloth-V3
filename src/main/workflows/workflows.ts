@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm'
 import { Cron } from 'croner'
-import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowNode, WorkflowRun } from '@shared/types'
+import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -8,8 +8,11 @@ import type { SettingsService } from '../core/settings'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import { skillSystemPrompt, type SkillService } from '../skills/skills'
 import type { AgentRuntime } from '../agent/chat'
+import type { WebService } from '../web/web'
+import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
 import { executeGraph, renderTemplate, type Executor } from './engine'
+import { buildWorkflow } from './builder'
 
 interface WorkflowRow {
   id: string
@@ -39,7 +42,7 @@ export class WorkflowService {
 
   constructor(
     private ctx: Ctx,
-    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService }
+    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService; web: WebService; custom: CustomToolService }
   ) {}
 
   list(): Workflow[] {
@@ -81,6 +84,36 @@ export class WorkflowService {
   remove(id: string): void {
     this.unschedule(id)
     this.ctx.db.prepare('DELETE FROM workflows WHERE id = ?').run(id)
+  }
+
+  createFromGraph(graph: WorkflowGraph): Workflow {
+    const wf = this.create({ name: graph.name || 'Assembled workflow', description: graph.description })
+    return this.save(wf.id, { nodes: graph.nodes, edges: graph.edges })
+  }
+
+  private builds = new Map<string, AbortController>()
+
+  /** Have an agent assemble (or modify) a workflow graph from a description. Not saved — the editor reviews it first. */
+  async build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph> {
+    const model = this.modelFor(input.model)
+    const existing = input.workflowId ? this.get(input.workflowId) : undefined
+    const controller = new AbortController()
+    this.builds.set(input.buildId, controller)
+    try {
+      return await buildWorkflow(this.ctx, this.deps, {
+        description: input.description,
+        model,
+        buildId: input.buildId,
+        signal: controller.signal,
+        existing: existing && { name: existing.name, description: existing.description, nodes: existing.nodes, edges: existing.edges }
+      })
+    } finally {
+      this.builds.delete(input.buildId)
+    }
+  }
+
+  cancelBuild(buildId: string): void {
+    this.builds.get(buildId)?.abort()
   }
 
   duplicate(id: string): Workflow {
@@ -213,7 +246,7 @@ export class WorkflowService {
   }
 
   private executor(): Executor {
-    const { providers, rag, skills, runtime } = this.deps
+    const { providers, rag, skills, runtime, web, custom } = this.deps
     return async (node, { scope, prev, signal }) => {
       const d = node.data
       const t = (s: unknown) => renderTemplate(String(s ?? ''), scope)
@@ -242,7 +275,7 @@ export class WorkflowService {
             model: this.modelFor(d.model),
             prompt: t(d.prompt) || String(prev ?? ''),
             systemPrompt: t(d.system),
-            scope: { collectionIds: d.collectionIds ?? [], skillsEnabled: d.skillsEnabled ?? true, workspace: d.workspace || null },
+            scope: { collectionIds: d.collectionIds ?? [], skillsEnabled: d.skillsEnabled ?? true, webEnabled: !!d.webEnabled, customTools: d.customTools ?? true, workspace: d.workspace || null },
             maxTurns: d.maxTurns ? Number(d.maxTurns) : 12,
             signal
           })
@@ -259,6 +292,26 @@ export class WorkflowService {
             model: d.model?.providerId ? d.model : undefined
           })
           return { output: { text: formatHitsForModel(res.hits), hits: res.hits.map((h) => ({ title: h.title, source: h.source, heading: h.headingPath, text: h.text, score: h.score })), queries: res.queries } }
+        }
+
+        case 'web': {
+          const res = await web.search(t(d.query) || String(prev ?? ''), { k: d.k ? Number(d.k) : undefined, signal })
+          const fetchTop = Math.min(Number(d.fetchTop) || 0, res.results.length)
+          const pages: string[] = []
+          for (const r of res.results.slice(0, fetchTop)) {
+            const page = await web.fetchPage(r.url, signal).catch((err) => ({ title: r.title, markdown: `(fetch failed: ${err instanceof Error ? err.message : err})` }))
+            pages.push(`## ${page.title}\nsource: ${r.url}\n\n${page.markdown}`)
+          }
+          const list = res.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n')
+          const text = pages.length ? `${list}\n\n---\n\n${pages.join('\n\n---\n\n')}` : list
+          return { output: { text, results: res.results, engine: res.engine } }
+        }
+
+        case 'tool': {
+          const tool = custom.list().find((x) => x.name === d.tool)
+          if (!tool) throw new Error(`Custom tool "${d.tool}" not found`)
+          const args = json<Record<string, unknown>>(t(d.args || '{}'), {})
+          return { output: await custom.execute(tool, args, signal) }
         }
 
         case 'skill': {

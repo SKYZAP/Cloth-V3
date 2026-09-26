@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { BookOpen, FilePlus2, FileText, FolderPlus, Globe, Layers, Plus, RefreshCw, Search, Trash2, Type as TypeIcon, Zap } from 'lucide-react'
+import { BookOpen, FilePlus2, FileText, FolderPlus, Globe, GraduationCap, Layers, Plus, RefreshCw, Search, Trash2, Type as TypeIcon, Zap } from 'lucide-react'
 import type { Collection, IngestProgress, ModelRef, RagDocument, RagMode, RagSearchResult } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -25,6 +25,15 @@ export function KnowledgePage() {
   }, [collections, activeId])
 
   const active = collections.find((c) => c.id === activeId)
+  const [loadingExamples, setLoadingExamples] = useState(false)
+  const loadExamples = async () => {
+    setLoadingExamples(true)
+    const col = await attempt(() => api.rag.loadExamples())
+    setLoadingExamples(false)
+    await loadCollections()
+    if (col) setActiveId(col.id)
+    else if (col === null) useApp.getState().toast('No example documents are bundled with this build', 'info')
+  }
   return (
     <div className="flex h-full">
       <ListPane
@@ -34,9 +43,14 @@ export function KnowledgePage() {
               <div className="text-[13px] font-semibold">Knowledge</div>
               <div className="text-[11px] text-dim">{collections.length} collections</div>
             </div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
-              New
-            </Button>
+            <div className="flex gap-1">
+              <IconButton title="Load example knowledge (bundled docs)" onClick={() => void loadExamples()} disabled={loadingExamples}>
+                <GraduationCap size={14} />
+              </IconButton>
+              <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+                New
+              </Button>
+            </div>
           </div>
         }
       >
@@ -57,7 +71,20 @@ export function KnowledgePage() {
         {active ? (
           <CollectionView key={active.id} collection={active} />
         ) : (
-          <Empty icon={<BookOpen size={20} />} title="No knowledge yet" action={<Button variant="primary" onClick={() => setCreating(true)}>Create a collection</Button>}>
+          <Empty
+            icon={<BookOpen size={20} />}
+            title="No knowledge yet"
+            action={
+              <div className="flex gap-2">
+                <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
+                  Load example knowledge
+                </Button>
+                <Button variant="primary" onClick={() => setCreating(true)}>
+                  Create a collection
+                </Button>
+              </div>
+            }
+          >
             Collections hold documents, folders and web pages. Search is hybrid: SQLite FTS5 (BM25) fused with embeddings via reciprocal-rank fusion.
           </Empty>
         )}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import type { ModelRef, Skill, WorkflowNodeType } from '@shared/types'
+import type { CustomTool, ModelRef, Skill, WorkflowNodeType } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { Button, Field, Input, Select, Switch, Textarea } from '@/components/ui'
@@ -23,8 +23,10 @@ export function Inspector({
   const meta = META[type]
   const collections = useApp((s) => s.collections)
   const [skills, setSkills] = useState<Skill[]>([])
+  const [tools, setTools] = useState<CustomTool[]>([])
   useEffect(() => {
     if (type === 'skill') void api.skills.list().then(setSkills)
+    if (type === 'tool') void api.tools.list().then(setTools)
   }, [type])
 
   const str = (k: string) => String(data[k] ?? '')
@@ -111,6 +113,8 @@ export function Inspector({
           {template('system', 'Extra instructions', 3)}
           {collectionPicker}
           <Switch checked={data.skillsEnabled !== false} onChange={(v) => onChange({ skillsEnabled: v })} label="Skills available" />
+          <Switch checked={!!data.webEnabled} onChange={(v) => onChange({ webEnabled: v })} label="Web search & fetch" />
+          <Switch checked={data.customTools !== false} onChange={(v) => onChange({ customTools: v })} label="Custom tools" />
           <Field label="Workspace folder (read-only tools)">
             <div className="flex gap-1.5">
               <Input value={str('workspace')} onChange={set('workspace')} placeholder="none" />
@@ -153,6 +157,44 @@ export function Inspector({
             </Field>
           </div>
           {data.mode === 'agentic' && model('Planner model')}
+        </>
+      )}
+      {type === 'web' && (
+        <>
+          {template('query', 'Query', 3)}
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Results">
+              <Input type="number" value={str('k')} onChange={set('k')} />
+            </Field>
+            <Field label="Fetch top pages" hint="0 = snippets only">
+              <Input type="number" min={0} max={5} value={str('fetchTop')} onChange={set('fetchTop')} />
+            </Field>
+          </div>
+          <div className="text-[11px] text-dim">Uses the engine selected in Settings → Web search. Output: {'{text, results}'}.</div>
+        </>
+      )}
+      {type === 'tool' && (
+        <>
+          <Field label="Custom tool">
+            <Select value={str('tool')} onChange={set('tool')}>
+              <option value="">Select…</option>
+              {tools.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                  {t.enabled ? '' : ' (disabled)'}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {(() => {
+            const t = tools.find((x) => x.name === data.tool)
+            return t?.params.length ? (
+              <div className="text-[11px] text-dim">
+                Parameters: {t.params.map((p) => `${p.name}${p.required ? '' : '?'}: ${p.type}`).join(', ')}
+              </div>
+            ) : null
+          })()}
+          {template('args', 'Arguments (JSON template)', 5, 'e.g. {"query": "{{input.q}}"}')}
         </>
       )}
       {type === 'skill' && (

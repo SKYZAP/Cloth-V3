@@ -7,6 +7,8 @@ import type { ProviderService } from '../providers/providers'
 import type { SettingsService } from '../core/settings'
 import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
+import type { WebService } from '../web/web'
+import type { CustomToolService } from '../tools/custom'
 import { buildTools, type ToolDetails, type ToolScope } from './tools'
 
 type SessionConfig = Omit<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt'>
@@ -25,6 +27,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   systemPrompt: '',
   collectionIds: [],
   skillsEnabled: true,
+  webEnabled: false,
+  customTools: true,
   workspace: null,
   thinking: 'off'
 }
@@ -45,7 +49,9 @@ export class AgentRuntime {
   constructor(
     private providers: ProviderService,
     private rag: RagService,
-    private skills: SkillService
+    private skills: SkillService,
+    private web: WebService,
+    private custom: CustomToolService
   ) {}
 
   async systemPrompt(scope: ToolScope, extra: string): Promise<string> {
@@ -69,6 +75,9 @@ export class AgentRuntime {
         lines.push('', '## Skills', 'Load a skill with `skill_use` before doing a task it covers.', ...skills.map((s) => `- ${s.name}: ${s.description}`))
       }
     }
+    if (scope.webEnabled) {
+      lines.push('', '## Web', 'You can search the public web with `web_search` and read pages with `web_fetch`. Prefer the local knowledge base for project-specific questions; use the web for current or external information, and cite web results as [n].')
+    }
     if (scope.workspace) lines.push('', '## Workspace', `You can read files under ${scope.workspace} with list_dir, read_file and grep.`)
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
     return lines.join('\n')
@@ -81,7 +90,7 @@ export class AgentRuntime {
         systemPrompt: opts.systemPrompt,
         model,
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
-        tools: buildTools({ rag: this.rag, skills: this.skills }, opts.scope),
+        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom }, opts.scope),
         messages: opts.history ?? []
       },
       getApiKey: async (providerId) => this.providers.apiKey(providerId) || 'cloth-local',
@@ -148,6 +157,8 @@ export class ChatService {
       systemPrompt: cur.systemPrompt,
       collectionIds: cur.collectionIds,
       skillsEnabled: cur.skillsEnabled,
+      webEnabled: cur.webEnabled,
+      customTools: cur.customTools,
       workspace: cur.workspace,
       thinking: cur.thinking,
       ...config
@@ -185,7 +196,13 @@ export class ChatService {
     if (this.active.has(id)) throw new Error('This chat is already running')
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
-    const scope: ToolScope = { collectionIds: session.collectionIds, skillsEnabled: session.skillsEnabled, workspace: session.workspace }
+    const scope: ToolScope = {
+      collectionIds: session.collectionIds,
+      skillsEnabled: session.skillsEnabled,
+      webEnabled: session.webEnabled,
+      customTools: session.customTools,
+      workspace: session.workspace
+    }
     const history = this.rawMessages(id)
     const systemPrompt = await this.runtime.systemPrompt(scope, session.systemPrompt)
     const agent = this.runtime.createAgent({ model: session.model, scope, thinking: session.thinking, history, systemPrompt })

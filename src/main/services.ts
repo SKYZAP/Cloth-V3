@@ -4,8 +4,12 @@ import type { Ctx, EventChannel, Secrets } from './core/context'
 import { SettingsService } from './core/settings'
 import { ProviderService } from './providers/providers'
 import { RagService } from './rag/rag'
+import { ExamplesService } from './rag/examples'
 import { SkillService } from './skills/skills'
 import { AgentRuntime, ChatService } from './agent/chat'
+import { BUILTIN_NAMES } from './agent/tools'
+import { CustomToolService } from './tools/custom'
+import { WebService } from './web/web'
 import { WorkflowService } from './workflows/workflows'
 import { McpHost } from './mcp/server'
 
@@ -14,7 +18,10 @@ export interface Services {
   settings: SettingsService
   providers: ProviderService
   rag: RagService
+  examples: ExamplesService
   skills: SkillService
+  web: WebService
+  custom: CustomToolService
   runtime: AgentRuntime
   chat: ChatService
   workflows: WorkflowService
@@ -26,6 +33,9 @@ export function createServices(opts: {
   secrets: Secrets
   emit?: (channel: EventChannel, payload: unknown) => void
   dbFile?: string
+  /** Where bundled sidecars live (resources/ in a packaged build, ./sidecars in dev). */
+  sidecarsDir?: string
+  examplesDir?: string
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -33,6 +43,8 @@ export function createServices(opts: {
     kv: new Kv(db),
     dataDir: opts.dataDir,
     skillsDir: join(opts.dataDir, 'skills'),
+    sidecarsDir: opts.sidecarsDir ?? join(opts.dataDir, 'sidecars'),
+    examplesDir: opts.examplesDir ?? join(opts.dataDir, 'examples'),
     secrets: opts.secrets,
     emit: opts.emit ?? (() => {}),
     log: (scope, ...args) => console.log(`[${scope}]`, ...args)
@@ -40,15 +52,22 @@ export function createServices(opts: {
   const settings = new SettingsService(ctx)
   const providers = new ProviderService(ctx)
   const rag = new RagService(ctx, providers, settings)
+  const examples = new ExamplesService(ctx, rag, settings)
   const skills = new SkillService(ctx, providers)
-  const runtime = new AgentRuntime(providers, rag, skills)
+  const web = new WebService(ctx, settings)
+  const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom)
   const chat = new ChatService(ctx, runtime, settings)
-  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings })
-  const mcp = new McpHost(ctx, settings, { rag, skills })
+  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
+  const mcp = new McpHost(ctx, settings, { rag, skills, web })
 
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
+    if (next.webEngine !== prev.webEngine || next.searxngUrl !== prev.searxngUrl || next.obscuraPath !== prev.obscuraPath) {
+      web.warm()
+      ctx.emit('web', { type: 'status' })
+    }
   })
 
-  return { ctx, settings, providers, rag, skills, runtime, chat, workflows, mcp }
+  return { ctx, settings, providers, rag, examples, skills, web, custom, runtime, chat, workflows, mcp }
 }

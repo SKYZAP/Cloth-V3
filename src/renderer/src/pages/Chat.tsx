@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { ArrowUp, Brain, ChevronRight, Copy, FolderOpen, Library, MessageSquarePlus, RotateCcw, Search, SlidersHorizontal, Sparkles, Square, Trash2 } from 'lucide-react'
+import { ArrowUp, Brain, ChevronRight, Copy, FolderOpen, Globe, Library, MessageSquarePlus, RotateCcw, Search, SlidersHorizontal, Sparkles, Square, Trash2, Wrench } from 'lucide-react'
 import type { ChatSession, RagHit, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -257,6 +257,12 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               <ScopeChip icon={<Sparkles size={12} />} active={session.skillsEnabled} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })}>
                 skills {session.skillsEnabled ? 'on' : 'off'}
               </ScopeChip>
+              <ScopeChip icon={<Globe size={12} />} active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })}>
+                web {session.webEnabled ? 'on' : 'off'}
+              </ScopeChip>
+              <ScopeChip icon={<Wrench size={12} />} active={session.customTools} onClick={() => void update({ customTools: !session.customTools })}>
+                custom tools {session.customTools ? 'on' : 'off'}
+              </ScopeChip>
               <ScopeChip icon={<FolderOpen size={12} />} active={!!session.workspace} onClick={() => setConfigOpen(true)}>
                 {session.workspace ? session.workspace.split(/[\\/]/).pop() : 'no workspace'}
               </ScopeChip>
@@ -418,12 +424,16 @@ function ChatConfig({ open, onClose, session, onSave }: { open: boolean; onClose
   const [ids, setIds] = useState<string[]>(session.collectionIds)
   const [workspace, setWorkspace] = useState(session.workspace)
   const [skills, setSkills] = useState(session.skillsEnabled)
+  const [web, setWeb] = useState(session.webEnabled)
+  const [custom, setCustom] = useState(session.customTools)
   useEffect(() => {
     if (open) {
       setSystem(session.systemPrompt)
       setIds(session.collectionIds)
       setWorkspace(session.workspace)
       setSkills(session.skillsEnabled)
+      setWeb(session.webEnabled)
+      setCustom(session.customTools)
     }
   }, [open, session])
 
@@ -441,7 +451,7 @@ function ChatConfig({ open, onClose, session, onSave }: { open: boolean; onClose
           <Button
             variant="primary"
             onClick={async () => {
-              await onSave({ systemPrompt: system, collectionIds: ids, workspace, skillsEnabled: skills })
+              await onSave({ systemPrompt: system, collectionIds: ids, workspace, skillsEnabled: skills, webEnabled: web, customTools: custom })
               onClose()
             }}
           >
@@ -469,6 +479,8 @@ function ChatConfig({ open, onClose, session, onSave }: { open: boolean; onClose
           </div>
         </Field>
         <Switch checked={skills} onChange={setSkills} label="Let the agent list and load skills from the hub" />
+        <Switch checked={web} onChange={setWeb} label="Web access — web_search and web_fetch (engine set in Settings)" />
+        <Switch checked={custom} onChange={setCustom} label="Custom tools from the Tools page" />
         <Field label="Workspace folder" hint="Grants read-only list_dir / read_file / grep tools inside this folder.">
           <div className="flex gap-2">
             <Input readOnly value={workspace ?? ''} placeholder="None" />

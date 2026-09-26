@@ -1,7 +1,8 @@
 import { memo } from 'react'
 import clsx from 'clsx'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Bot, BrainCircuit, Code2, Flag, GitBranch, Globe, Play, Search, Sparkles, type LucideIcon } from 'lucide-react'
+import { Bot, BrainCircuit, Code2, Flag, GitBranch, Globe, Link2, Play, Search, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
+import { NODE_SPECS } from '@shared/workflow-nodes'
 import type { NodeRunStatus, WorkflowNodeType } from '@shared/types'
 import { Loader2 } from 'lucide-react'
 
@@ -14,17 +15,21 @@ export interface NodeMeta {
   defaults: Record<string, unknown>
 }
 
-export const NODE_TYPES: NodeMeta[] = [
-  { type: 'trigger', label: 'Trigger', icon: Play, color: '#dc2645', description: 'Start of the flow — manual, cron or MCP input', defaults: { defaultInput: '{}' } },
-  { type: 'llm', label: 'LLM', icon: BrainCircuit, color: '#e07a5f', description: 'One model call with a templated prompt', defaults: { system: '', prompt: '{{prev}}', model: null, json: false } },
-  { type: 'agent', label: 'Agent', icon: Bot, color: '#c084fc', description: 'pi agent loop with RAG, skills & workspace tools', defaults: { prompt: '{{prev}}', system: '', model: null, collectionIds: [], skillsEnabled: true, workspace: '', maxTurns: 12 } },
-  { type: 'rag', label: 'Knowledge search', icon: Search, color: '#6b9cf0', description: 'Hybrid or agentic retrieval → {text, hits}', defaults: { query: '{{prev}}', k: 6, mode: 'hybrid', collectionIds: [] } },
-  { type: 'skill', label: 'Skill', icon: Sparkles, color: '#e0a43a', description: 'Load a skill, or run a prompt with it', defaults: { skill: '', mode: 'content', prompt: '{{prev}}', model: null } },
-  { type: 'http', label: 'HTTP request', icon: Globe, color: '#3fb97a', description: 'Call an API → {status, body}', defaults: { method: 'GET', url: 'http://localhost:3000/health', headers: '{}', body: '' } },
-  { type: 'transform', label: 'Transform', icon: Code2, color: '#8b8b95', description: 'JavaScript: return a new value from input / prev / nodes', defaults: { code: 'return prev' } },
-  { type: 'condition', label: 'Condition', icon: GitBranch, color: '#f472b6', description: 'Branch on a JS expression → true / false', defaults: { expression: 'Boolean(prev)' } },
-  { type: 'output', label: 'Output', icon: Flag, color: '#ececef', description: 'Final result of the run', defaults: { value: '{{prev}}' } }
-]
+const VISUALS: Record<WorkflowNodeType, { icon: LucideIcon; color: string }> = {
+  trigger: { icon: Play, color: '#dc2645' },
+  llm: { icon: BrainCircuit, color: '#e07a5f' },
+  agent: { icon: Bot, color: '#c084fc' },
+  rag: { icon: Search, color: '#6b9cf0' },
+  web: { icon: Globe, color: '#38bdf8' },
+  skill: { icon: Sparkles, color: '#e0a43a' },
+  tool: { icon: Wrench, color: '#a3e635' },
+  http: { icon: Link2, color: '#3fb97a' },
+  transform: { icon: Code2, color: '#8b8b95' },
+  condition: { icon: GitBranch, color: '#f472b6' },
+  output: { icon: Flag, color: '#ececef' }
+}
+
+export const NODE_TYPES: NodeMeta[] = NODE_SPECS.map((s) => ({ type: s.type, label: s.label, description: s.description, defaults: s.defaults, ...VISUALS[s.type] }))
 
 export const META: Record<WorkflowNodeType, NodeMeta> = Object.fromEntries(NODE_TYPES.map((m) => [m.type, m])) as Record<WorkflowNodeType, NodeMeta>
 
@@ -39,6 +44,10 @@ function summary(type: WorkflowNodeType, d: FlowNodeData): string {
       return `${d.mode ?? 'hybrid'} · k=${d.k ?? 6} · ${String(d.query ?? '')}`
     case 'skill':
       return d.skill ? `${d.skill} (${d.mode})` : 'no skill selected'
+    case 'web':
+      return `k=${d.k ?? 6}${Number(d.fetchTop) ? ` · fetch ${d.fetchTop}` : ''} · ${String(d.query ?? '')}`
+    case 'tool':
+      return d.tool ? `${d.tool}(${String(d.args ?? '{}').replace(/\s+/g, ' ')})` : 'no tool selected'
     case 'http':
       return `${d.method} ${d.url}`
     case 'transform':

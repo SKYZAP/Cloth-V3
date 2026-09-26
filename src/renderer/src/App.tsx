@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import clsx from 'clsx'
-import { BookOpen, Bot, Cable, Cpu, Settings as SettingsIcon, Sparkles, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { BookOpen, Bot, Cable, Cpu, Settings as SettingsIcon, Sparkles, Workflow as WorkflowIcon, Wrench, X } from 'lucide-react'
 import { useApp, type Page } from './lib/store'
 import { useEvent } from './lib/api'
 import { ChatPage } from './pages/Chat'
 import { KnowledgePage } from './pages/Knowledge'
 import { SkillsPage } from './pages/Skills'
+import { ToolsPage } from './pages/Tools'
 import { WorkflowsPage } from './pages/Workflows'
 import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
@@ -19,6 +20,7 @@ const NAV: { page: Page; label: string; icon: typeof Bot }[] = [
   { page: 'chat', label: 'Chat', icon: Bot },
   { page: 'knowledge', label: 'Knowledge', icon: BookOpen },
   { page: 'skills', label: 'Skills', icon: Sparkles },
+  { page: 'tools', label: 'Tools', icon: Wrench },
   { page: 'workflows', label: 'Flows', icon: WorkflowIcon },
   { page: 'providers', label: 'Models', icon: Cpu },
   { page: 'mcp', label: 'MCP', icon: Cable }
@@ -76,6 +78,7 @@ export function App() {
           {page === 'chat' && <ChatPage />}
           {page === 'knowledge' && <KnowledgePage />}
           {page === 'skills' && <SkillsPage />}
+          {page === 'tools' && <ToolsPage />}
           {page === 'workflows' && <WorkflowsPage />}
           {page === 'providers' && <ProvidersPage />}
           {page === 'mcp' && <McpPage />}
