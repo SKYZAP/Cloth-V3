@@ -202,6 +202,20 @@ textarea,
   --xy-selection-background-color: rgb(220 38 69 / 0.08);
   --xy-selection-border: 1px dashed var(--color-crimson-line);
 }
+/* Our "output" node type collides with React Flow's built-in one; drop its default box styles. */
+.react-flow__node-output,
+.react-flow__node-output.selected,
+.react-flow__node-output:hover {
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  font-size: inherit;
+  color: inherit;
+}
 .react-flow__handle {
   width: 10px;
   height: 10px;

@@ -1,0 +1,107 @@
+// Dev-only smoke run (CLOTH_SMOKE=<dir>): seeds data against scripts/mock-llm.mjs,
+// sends a chat message, runs a workflow and screenshots every page, then quits.
+import { app, type BrowserWindow } from 'electron'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Services } from './services'
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+export async function runSmoke(win: BrowserWindow, s: Services, outDir: string): Promise<void> {
+  mkdirSync(outDir, { recursive: true })
+  const log: string[] = []
+  const note = (m: string) => {
+    log.push(m)
+    console.log(`[smoke] ${m}`)
+  }
+  try {
+    const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
+    const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
+    const p = await s.providers.refreshModels(provider.id)
+    note(`provider models: ${p.models.map((m) => `${m.id}${m.embedding ? '[embed]' : ''}`).join(', ')}`)
+    const chat = { providerId: provider.id, modelId: 'mock-chat' }
+    const emb = { providerId: provider.id, modelId: 'mock-embed' }
+    s.settings.update({ defaultModel: chat, embeddingModel: emb })
+
+    const col = s.rag.createCollection({ name: 'nestjs-docs', description: 'NestJS framework notes', embedding: emb })
+    await s.rag.ingestText(col.id, 'Guards', '# Guards\n\nA guard is a class annotated with @Injectable() which implements CanActivate. Guards determine whether a request will be handled by the route handler, typically for authorization.\n\n## Role-based auth\n\nUse a Roles decorator with Reflector to read metadata and compare against the user roles.')
+    await s.rag.ingestText(col.id, 'Pipes', '# Pipes\n\nPipes transform or validate input data before it reaches the handler. ValidationPipe works with class-validator.')
+    await s.rag.ingestText(col.id, 'Interceptors', '# Interceptors\n\nInterceptors bind extra logic before and after method execution, e.g. logging, caching, response mapping.')
+    const search = await s.rag.search({ query: 'how do guards authorize requests', collectionIds: [col.id], mode: 'hybrid' })
+    note(`hybrid top hit: ${search.hits[0]?.title} (bm25 ${search.hits[0]?.bm25Rank}, vec ${search.hits[0]?.vectorRank})`)
+
+    await s.skills.create({ name: 'nestjs-guards', description: 'Write NestJS guards and role-based authorization. Use when protecting routes.', body: '# NestJS guards\n\n## Instructions\n\n1. Implement `CanActivate`.\n2. Register with `@UseGuards()` or `APP_GUARD`.\n3. Read role metadata with `Reflector`.' })
+    await s.skills.saveEvals('nestjs-guards', [{ id: 'c1', prompt: 'Protect an admin route in NestJS', expectations: ['uses CanActivate', 'uses Reflector for roles'] }])
+    const run = await s.skills.test({ name: 'nestjs-guards', model: chat, baseline: true, audit: true })
+    note(`skill test: ${run.status} verdict=${run.verdict} ${run.error ?? run.summary}`)
+
+    const wf = s.workflows.create({ name: 'Docs digest', template: 'rag-digest' })
+    s.workflows.save(wf.id, { cron: '0 9 * * 1-5', cronEnabled: true })
+    const wr = await s.workflows.run(wf.id, { question: 'guards' })
+    note(`workflow: ${wr.status} ${wr.error ?? JSON.stringify(wr.output).slice(0, 120)}`)
+
+    const session = s.chat.create({ model: chat })
+    win.webContents.reload()
+    await wait(2500)
+    await clickNav(win, 'Chat')
+    await wait(500)
+    await s.chat.send(session.id, 'How do guards authorize requests in NestJS?')
+    for (let i = 0; i < 50 && s.chat.isRunning(session.id); i++) await wait(200)
+    const turn = s.chat.messages(session.id).at(-1)
+    note(`chat: ${turn?.blocks.map((b) => b.type).join(',')} error=${turn?.error ?? 'none'}`)
+    await wait(800)
+    writeFileSync(join(outDir, 'chat-answer.png'), await screenshot(win))
+    // Expand the first tool trace for the screenshot.
+    await win.webContents.executeJavaScript(`document.querySelector('.font-mono.text-\\\\[11\\\\.5px\\\\].font-medium')?.closest('button')?.click()`).catch(() => undefined)
+    await wait(400)
+
+    for (const page of ['Chat', 'Knowledge', 'Skills', 'Flows', 'Models', 'MCP', 'Settings']) {
+      await clickNav(win, page)
+      await wait(page === 'Flows' ? 1500 : 900)
+      if (page === 'Flows')
+        note(
+          'flow geometry: ' +
+            (await win.webContents.executeJavaScript(`JSON.stringify({ rf: document.querySelector('.react-flow')?.getBoundingClientRect(), vp: document.querySelector('.react-flow__viewport')?.style.transform, nodes: [...document.querySelectorAll('.react-flow__node')].map(n => { const r = n.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)] }) })`))
+        )
+      if (page === 'Skills') await clickText(win, 'Tests (1)')
+      if (page === 'Knowledge') await clickText(win, 'Search playground').then(() => typeSearch(win))
+      await wait(700)
+      writeFileSync(join(outDir, `${page.toLowerCase()}.png`), await screenshot(win))
+      note(`captured ${page}`)
+    }
+  } catch (err) {
+    note(`FAILED: ${err instanceof Error ? err.stack : String(err)}`)
+  } finally {
+    writeFileSync(join(outDir, 'smoke.log'), log.join('\n'))
+    app.quit()
+  }
+}
+
+// capturePage can fail with UnknownVizError on some GPUs; CDP screenshots are reliable.
+async function screenshot(win: BrowserWindow): Promise<Buffer> {
+  const dbg = win.webContents.debugger
+  if (!dbg.isAttached()) dbg.attach('1.3')
+  const { data } = (await dbg.sendCommand('Page.captureScreenshot', { format: 'png' })) as { data: string }
+  return Buffer.from(data, 'base64')
+}
+
+function clickNav(win: BrowserWindow, label: string) {
+  return win.webContents.executeJavaScript(`[...document.querySelectorAll('nav button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})?.click()`)
+}
+
+function clickText(win: BrowserWindow, text: string) {
+  return win.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(text)}))?.click()`)
+}
+
+async function typeSearch(win: BrowserWindow) {
+  await wait(300)
+  await win.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('input[placeholder="Ask the collection…"]')
+    if (!input) return
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, 'guards role based authorization')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    setTimeout(() => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Search')?.click(), 100)
+  })()`)
+  await wait(800)
+}
