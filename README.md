@@ -1,33 +1,64 @@
 # Cloth
 
-An offline developer hub, built as an Electron desktop app. The theme is black and grey with crimson highlights.
+An **offline developer hub** desktop app: register model providers, chat with a traced agent grounded in your
+own knowledge base, curate and test a central skill library, automate with scheduled workflows, and expose it
+all to other tools over MCP. Black/grey UI with crimson highlights.
+
+## Features
+
+- **Providers** — OpenAI (Responses API), Anthropic (Messages API) and any OpenAI-compatible server: LM Studio,
+  Ollama, llama.cpp, vLLM, OpenRouter. Model discovery (LM Studio metadata aware), per-model flags
+  (embedding / reasoning / vision), ping, default chat + embedding model. Keys encrypted via OS keychain.
+- **Agent chat** — powered by `pi-agent-core` ([ADR](docs/adr-0001-agent-runtime.md)). Streaming, thinking
+  blocks, collapsible tool-call traces (args, result, duration, status), RAG references with `[n]` citation
+  hover cards, per-chat knowledge scope, skills toggle, read-only workspace tools, regenerate, stop.
+- **Hybrid & agentic RAG** — index files, folders (code-aware), PDF, DOCX, HTML, URLs (with crawl) and pasted text.
+  Markdown-aware chunking with heading paths. SQLite FTS5 BM25 + embeddings fused with reciprocal-rank fusion
+  and per-document diversity. *Agentic* mode: LLM query planning → multi-query retrieval → reflection with
+  follow-up queries → LLM rerank. Search playground shows keyword/vector ranks.
+- **Skill hub** — Agent-Skills compatible folders (`SKILL.md` + files). Create/edit with live preview, import
+  from `~/.claude/skills`, `~/.agents/skills`, … or any folder, install into other tools. **Staleness testing**:
+  eval cases (write or AI-draft), LLM judge, optional no-skill baseline and a freshness audit →
+  verdict `fresh | stale | failing | redundant`, with regression detection against earlier runs.
+- **Workflows** — node editor (React Flow): Trigger, LLM, Agent, Knowledge search, Skill, HTTP, JS Transform,
+  Condition (true/false branches), Output. `{{key.path}}` templating, cron scheduling (croner), live node status
+  on the canvas, run history with per-node input/output traces.
+- **MCP server** — Streamable HTTP on `http://127.0.0.1:7811/mcp` with `skill_list`, `skill_use`, `rag_search`,
+  `rag_collections`. Optional bearer token, localhost-only, call log, copy-paste client configs.
 
 ## Architecture
 
-- **Electron main (Node 24)** runs every service in-process. Storage is `node:sqlite` with FTS5, so there are no native modules and no sidecars.
-- **Agent runtime:** `@mariozechner/pi-agent-core` and `pi-ai` run in-process. oh-my-pi (`@oh-my-pi/pi-coding-agent`) needs **Bun ≥1.3.14**, so it can't run inside Electron's Node. It could be added later as an external RPC runtime.
-- **Renderer:** React 19, Tailwind v4, @xyflow/react and CodeMirror. It talks to main through one typed IPC proxy (`src/shared/api.ts`).
+```
+Electron main (Node 24)                                  Renderer (React 19 + Tailwind v4)
+├─ core/        node:sqlite (FTS5, WAL), kv settings     ├─ pages/  Chat · Knowledge · Skills · Flows
+├─ providers/   registry → pi-ai Model, embeddings       │          Models · MCP · Settings
+├─ agent/       pi-agent-core runtime, tools, sessions   ├─ components/  ui kit, ModelPicker, Markdown,
+├─ rag/         extract → chunk → BM25 + vectors → RRF   │               ToolTrace, CodeMirror editor
+├─ skills/      SKILL.md hub, evals, judge, audit        └─ lib/  typed IPC proxy (ClothApi), zustand
+├─ workflows/   DAG engine + croner scheduler
+└─ mcp/         MCP SDK, stateless Streamable HTTP        src/shared/  api.ts contract + domain types
+```
 
-| Area | Location | Status |
-|---|---|---|
-| Providers (OpenAI, Anthropic, OpenAI-compatible: LM Studio, Ollama, llama.cpp, vLLM, OpenRouter) | `src/main/providers` | backend done |
-| Agent chat (pi agent, tool traces, RAG references, workspace read tools) | `src/main/agent` | backend done |
-| Hybrid RAG (BM25 + vectors with RRF, per-document cap) and agentic mode (plan, reflect, rerank). Indexes files, folders, PDF, DOCX, URLs with crawl, and text | `src/main/rag` | backend done |
-| Skill hub (SKILL.md folders, import and export, evals, LLM judge, baseline check, freshness audit giving a verdict: fresh, stale, failing or redundant) | `src/main/skills` | backend done |
-| Workflows (DAG engine with condition branches, templates, LLM, agent, RAG, skill, HTTP and JS nodes; cron via croner) | `src/main/workflows` | backend done |
-| MCP server (Streamable HTTP at `http://127.0.0.1:7811/mcp`): `skill_list`, `skill_use`, `rag_search`, `rag_collections` | `src/main/mcp` | backend done |
-| UI pages | `src/renderer` | **in progress:** theme and lib are done, pages not yet written |
+No native modules, no sidecars: storage is Node's built-in SQLite, vectors are Float32 blobs searched in memory.
+Data lives in the app's userData folder (`%APPDATA%/Cloth`, or `Cloth-dev` when unpackaged).
 
-## Dev
+## Development
 
 ```bash
 npm install
-npm test        # vitest: core logic
-npm run dev     # needs the renderer pages (src/renderer/src/main.tsx) to be written first
+npm run dev        # electron-vite with HMR
+npm test           # vitest: chunker, engine, skills, RAG, pi agent traces, MCP protocol + auth
+npm run typecheck
+npm run smoke      # builds, starts scripts/mock-llm.mjs, drives the real app, screenshots → .cloth-dev/smoke
+npm run package    # unpacked build in release/   (npm run dist for installers)
 ```
 
-## Next steps
+No model server handy? `npm run mock-llm` starts an OpenAI-compatible mock on `http://127.0.0.1:5055/v1`
+(`mock-chat` streams + calls `rag_search`, `mock-embed` returns hashed vectors) — add it as a Custom provider.
 
-1. Renderer: `main.tsx`, `App.tsx` (title bar and nav rail), UI primitives and a ModelPicker, then the pages: Chat, Knowledge, Skills, Workflows, Providers, MCP, Settings.
-2. Run `npm run typecheck` and `npm run dev` for an end-to-end smoke test against LM Studio.
-3. Packaging with electron-builder, and an app icon in `resources/`.
+## Known limits / next steps
+
+- Brute-force vector search is fine to ~100k chunks per collection; beyond that add `sqlite-vec`.
+- Workspace tools are read-only; an oh-my-pi RPC runtime could provide full coding tools (see ADR).
+- Workflow graphs are acyclic (no loops yet); Transform/Condition use `node:vm`, which is not a security sandbox.
+- MCP transport is HTTP only; stdio clients bridge with `mcp-remote` (snippet on the MCP page).

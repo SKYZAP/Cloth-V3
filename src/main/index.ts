@@ -94,6 +94,11 @@ else {
     services.workflows.startScheduler()
     await services.mcp.restart()
     console.log(`[cloth] data dir ${app.getPath('userData')}; MCP ${services.mcp.status().url} running=${services.mcp.status().running}`)
+    if (process.env.CLOTH_SMOKE && mainWindow) {
+      const win = mainWindow
+      const { runSmoke } = await import('./smoke')
+      win.once('ready-to-show', () => void runSmoke(win, services!, process.env.CLOTH_SMOKE!))
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
