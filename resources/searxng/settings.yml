@@ -1,0 +1,52 @@
+# SearXNG settings for Cloth's bundled, loopback-only sidecar.
+# `__PORT__` and `__SECRET__` are substituted at launch by src/main/web/searxng.ts
+# (secret persisted per install under <userData>/searxng/secret).
+use_default_settings: true
+
+general:
+  instance_name: "cloth-searxng"
+  enable_metrics: false
+
+server:
+  bind_address: "127.0.0.1"
+  port: __PORT__
+  secret_key: "__SECRET__"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  base_url: "http://127.0.0.1:__PORT__/"
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "en"
+
+ui:
+  static_use_hash: false
+  default_locale: "en"
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+  pool_connections: 20
+  pool_maxsize: 50
+
+# Some default engines (Brave, DuckDuckGo, Startpage) CAPTCHA or rate-limit desktop IPs quickly,
+# so enable a broader mix. Cloth queries the `general` and `it` categories.
+engines:
+  # Bing's HTML endpoint serves unrelated results to scrapers; keep it off.
+  - name: bing
+    disabled: true
+  - name: google
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: github
+    disabled: false
+  - name: mdn
+    disabled: false

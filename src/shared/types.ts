@@ -234,6 +234,8 @@ export interface ChatSession {
   systemPrompt: string
   collectionIds: string[]
   skillsEnabled: boolean
+  webEnabled: boolean
+  customTools: boolean
   workspace: string | null
   thinking: ThinkingLevel
   createdAt: number
@@ -284,7 +286,9 @@ export type WorkflowNodeType =
   | 'llm'
   | 'agent'
   | 'rag'
+  | 'web'
   | 'skill'
+  | 'tool'
   | 'http'
   | 'transform'
   | 'condition'
@@ -348,12 +352,22 @@ export interface WorkflowRun {
 export type WorkflowEvent =
   | { type: 'run'; run: WorkflowRun }
   | { type: 'schedule'; workflowId: string; nextRunAt: number | null }
+  | WorkflowBuildEvent
 
 // ─── Settings & MCP ───────────────────────────────────────────────────────────
 
 export interface Settings {
   defaultModel: ModelRef | null
   embeddingModel: ModelRef | null
+  webEngine: WebEngine
+  /** External SearXNG base URL; empty = use the bundled sidecar. */
+  searxngUrl: string
+  /** Custom Obscura binary; empty = use the bundled one. */
+  obscuraPath: string
+  webResults: number
+  /** Let web_fetch reach localhost / private network addresses. */
+  webAllowPrivate: boolean
+  examplesLoaded: boolean
   mcpEnabled: boolean
   mcpPort: number
   mcpRequireToken: boolean
@@ -388,3 +402,90 @@ export interface AppInfo {
   electron: string
   node: string
 }
+
+// ─── Tools ────────────────────────────────────────────────────────────────────
+
+export type ToolParamType = 'string' | 'number' | 'boolean' | 'json'
+
+export interface ToolParam {
+  name: string
+  type: ToolParamType
+  description: string
+  required: boolean
+}
+
+export type CustomToolKind = 'http' | 'javascript' | 'command' | 'prompt'
+
+export interface CustomTool {
+  id: string
+  name: string
+  description: string
+  kind: CustomToolKind
+  params: ToolParam[]
+  config: Record<string, any>
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type CustomToolInput = Pick<CustomTool, 'name' | 'description' | 'kind' | 'params' | 'config'> & { enabled?: boolean }
+
+export interface BuiltinToolInfo {
+  name: string
+  label: string
+  description: string
+  group: 'knowledge' | 'skills' | 'web' | 'workspace'
+  availability: string
+  schema: unknown
+}
+
+export interface ToolRunResult {
+  ok: boolean
+  output: string
+  durationMs: number
+  error?: string
+}
+
+// ─── Web search ───────────────────────────────────────────────────────────────
+
+export type WebEngine = 'searxng' | 'obscura'
+
+export interface WebResult {
+  title: string
+  url: string
+  snippet: string
+  engine?: string
+}
+
+export interface WebSearchResult {
+  engine: WebEngine
+  query: string
+  results: WebResult[]
+  tookMs: number
+}
+
+export interface WebStatus {
+  engine: WebEngine
+  searxng: { bundled: boolean; external: string | null; running: boolean; starting: boolean; url: string | null; error: string | null; version: string | null }
+  obscura: { available: boolean; path: string | null; version: string | null; error: string | null }
+}
+
+// ─── Workflow builder ─────────────────────────────────────────────────────────
+
+export interface WorkflowGraph {
+  name: string
+  description: string
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+}
+
+export interface WorkflowBuildStep {
+  tool: string
+  args: unknown
+  result: string
+  ok: boolean
+}
+
+export type WorkflowBuildEvent =
+  | { type: 'build-step'; buildId: string; step: WorkflowBuildStep }
+  | { type: 'build-text'; buildId: string; text: string }

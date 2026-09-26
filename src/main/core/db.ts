@@ -99,6 +99,19 @@ const MIGRATIONS: string[] = [
     started_at INTEGER NOT NULL
   );
   CREATE INDEX workflow_runs_wf ON workflow_runs(workflow_id, started_at);
+  `,
+  /* 2 — user-defined tools */ `
+  CREATE TABLE tools (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    params TEXT NOT NULL DEFAULT '[]',
+    config TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
   `
 ]
 

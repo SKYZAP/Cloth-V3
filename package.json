@@ -16,11 +16,12 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "package": "electron-vite build && electron-builder --dir",
-    "dist": "electron-vite build && electron-builder",
+    "package": "npm run sidecars && electron-vite build && electron-builder --dir",
+    "dist": "npm run sidecars && electron-vite build && electron-builder",
     "mock-llm": "node scripts/mock-llm.mjs",
     "icon": "electron scripts/make-icon.mjs",
-    "smoke": "electron-vite build && node scripts/smoke.mjs"
+    "smoke": "electron-vite build && node scripts/smoke.mjs",
+    "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.73.1",
@@ -37,6 +38,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/view": "^6.43.13",
@@ -61,6 +63,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3",
+    "tar": "^7.5.22",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^5.0.2",
@@ -102,6 +105,29 @@
         "AppImage"
       ],
       "category": "Development"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "sidecars/obscura",
+        "to": "obscura",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "sidecars/searxng",
+        "to": "searxng",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/examples",
+        "to": "examples",
+        "filter": [
+          "**/*.md"
+        ]
+      }
+    ]
   }
 }

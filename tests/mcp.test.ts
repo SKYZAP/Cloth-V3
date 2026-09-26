@@ -28,7 +28,7 @@ describe('MCP server', () => {
   it('lists the expected tools', async () => {
     const client = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['rag_collections', 'rag_search', 'skill_list', 'skill_use'])
+    expect(tools.map((t) => t.name).sort()).toEqual(['rag_collections', 'rag_search', 'skill_list', 'skill_use', 'web_search'])
     await client.close()
   })
 
@@ -50,7 +50,7 @@ describe('MCP server', () => {
     services.settings.update({ mcpRequireToken: true })
     await expect(connect()).rejects.toThrow()
     const client = await connect(services.mcp.token())
-    expect((await client.listTools()).tools.length).toBe(4)
+    expect((await client.listTools()).tools.length).toBe(5)
     await client.close()
     services.settings.update({ mcpRequireToken: false })
   })

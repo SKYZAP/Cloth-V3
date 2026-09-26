@@ -1,0 +1,167 @@
+import { describe, expect, it } from 'vitest'
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from '@mariozechner/pi-ai'
+import { DraftGraph, buildWorkflow } from '../src/main/workflows/builder'
+import { executeGraph } from '../src/main/workflows/engine'
+import { parseDuckDuckGo } from '../src/main/web/obscura'
+import { isPrivateHost } from '../src/main/web/web'
+import { rerankByOverlap } from '../src/main/web/searxng'
+import { buildTools, describeBuiltins } from '../src/main/agent/tools'
+import { makeServices } from './helpers'
+
+describe('custom tools', () => {
+  it('validates names and reserved built-ins', () => {
+    const { services } = makeServices()
+    const base = { description: 'd', kind: 'javascript' as const, params: [], config: { code: 'return 1' } }
+    expect(() => services.custom.create({ ...base, name: 'Bad Name' })).toThrow(/snake_case/)
+    expect(() => services.custom.create({ ...base, name: 'web_search' })).toThrow(/built-in/)
+    services.custom.create({ ...base, name: 'one' })
+    expect(() => services.custom.create({ ...base, name: 'one' })).toThrow(/already exists/)
+  })
+
+  it('runs javascript tools with typed args and captured console', async () => {
+    const { services } = makeServices()
+    const tool = services.custom.create({
+      name: 'add',
+      description: 'Add numbers',
+      kind: 'javascript',
+      params: [
+        { name: 'a', type: 'number', description: '', required: true },
+        { name: 'b', type: 'number', description: '', required: true }
+      ],
+      config: { code: 'console.log("adding"); return { sum: args.a + args.b }' }
+    })
+    const out = await services.custom.execute(tool, { a: '2', b: 3 })
+    expect(out).toContain('adding')
+    expect(out).toContain('"sum": 5')
+    await expect(services.custom.execute(tool, { a: 1 })).rejects.toThrow(/Missing required argument "b"/)
+  })
+
+  it('runs command tools without a shell (one templated arg per line)', async () => {
+    const { services } = makeServices()
+    const res = await services.custom.test(
+      { kind: 'command', params: [{ name: 'msg', type: 'string', description: '', required: true }], config: { command: process.execPath, args: '-e\nconsole.log(process.argv[1])\n{{msg}}' } },
+      { msg: 'hello; echo injected' }
+    )
+    expect(res.ok).toBe(true)
+    expect(res.output.trim()).toBe('hello; echo injected')
+  })
+
+  it('offers enabled custom tools to the agent alongside scoped built-ins', () => {
+    const { services } = makeServices()
+    services.custom.create({ name: 'ping_tool', description: 'x', kind: 'javascript', params: [], config: { code: 'return "pong"' } })
+    const deps = { rag: services.rag, skills: services.skills, web: services.web, custom: services.custom }
+    const names = (scope: Parameters<typeof buildTools>[1]) => buildTools(deps, scope).map((t) => t.name)
+    expect(names({ collectionIds: [], skillsEnabled: false, workspace: null })).toEqual(['ping_tool'])
+    expect(names({ collectionIds: [], skillsEnabled: true, webEnabled: true, customTools: false, workspace: null })).toEqual(['web_search', 'web_fetch', 'skill_list', 'skill_use'])
+    expect(describeBuiltins().map((b) => b.name)).toContain('grep')
+  })
+})
+
+describe('workflow builder', () => {
+  it('draft graph enforces structure and validates references', () => {
+    const g = new DraftGraph()
+    g.add('trigger', 'start', 'Start', { defaultInput: '{"q":"x"}' })
+    g.add('condition', 'check', undefined, { expression: 'true' })
+    g.add('output', 'out', undefined, { value: '{{missing}}' })
+    expect(() => g.add('trigger', 't2', undefined)).toThrow(/already a trigger/)
+    expect(() => g.add('nope', 'n', undefined)).toThrow(/Unknown node type/)
+    g.connect('start', 'check')
+    expect(() => g.connect('check', 'out')).toThrow(/branch/)
+    g.connect('check', 'out', 'true')
+    expect(() => g.connect('out', 'check')).toThrow(/Output nodes/)
+    expect(() => g.connect('check', 'start', 'false')).toThrow(/into the trigger/)
+    expect(g.validate({ collections: [], skills: [], tools: [] })).toEqual(['"out".value references unknown {{missing}}'])
+  })
+
+  it('an agent assembles a runnable workflow through tool calls', async () => {
+    const { services } = makeServices()
+    const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-builder' })
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    faux.setResponses([
+      fauxAssistantMessage(
+        [
+          fauxToolCall('add_node', { type: 'trigger', key: 'start', data: { defaultInput: '{"name":"Ada"}' } }),
+          fauxToolCall('add_node', { type: 'transform', key: 'greet', data: { code: 'return "Hello " + input.name' } }),
+          fauxToolCall('add_node', { type: 'output', key: 'result', data: { value: '{{greet}}!' } }),
+          fauxToolCall('connect', { from: 'start', to: 'greet' }),
+          fauxToolCall('connect', { from: 'greet', to: 'result' })
+        ],
+        { stopReason: 'toolUse' }
+      ),
+      fauxAssistantMessage([fauxToolCall('finish', { name: 'Greeter', description: 'Greets someone' })], { stopReason: 'toolUse' })
+    ])
+    try {
+      const graph = await buildWorkflow(services.ctx, services, { description: 'greet a person', model: { providerId: provider.id, modelId: 'faux-1' }, buildId: 'b1' })
+      expect(graph.name).toBe('Greeter')
+      expect(graph.nodes.map((n) => n.data.key)).toEqual(['start', 'greet', 'result'])
+      expect(graph.nodes[2].position.x).toBe(640)
+      const wf = services.workflows.createFromGraph(graph)
+      const run = await services.workflows.run(wf.id, { name: 'Grace' })
+      expect(run.status).toBe('ok')
+      expect(run.output).toBe('Hello Grace!')
+    } finally {
+      faux.unregister()
+    }
+  })
+
+  it('executes web and tool node types via the engine executor contract', async () => {
+    const res = await executeGraph(
+      {
+        nodes: [
+          { id: 't', type: 'trigger', position: { x: 0, y: 0 }, data: { key: 't' } },
+          { id: 'o', type: 'output', position: { x: 1, y: 0 }, data: { key: 'o' } }
+        ],
+        edges: [{ id: 'e', source: 't', target: 'o' }]
+      },
+      { q: 1 },
+      async (n, { prev }) => ({ output: n.type === 'output' ? prev : prev }),
+      new AbortController().signal
+    )
+    expect(res.output).toEqual({ q: 1 })
+  })
+})
+
+describe('web search plumbing', () => {
+  it('parses DuckDuckGo HTML results and unwraps redirect links', () => {
+    const html = `<div class="result results_links"><h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fdocs.nestjs.com%2Fguards&rut=x">Guards | NestJS</a></h2><a class="result__snippet">Guards have a single responsibility.</a></div>
+      <div class="result result--ad"><a class="result__a" href="https://ads.example">Ad</a></div>
+      <div class="result"><a class="result__a" href="https://example.com/b">B</a><div class="result__snippet">  two   </div></div>`
+    expect(parseDuckDuckGo(html)).toEqual([
+      { title: 'Guards | NestJS', url: 'https://docs.nestjs.com/guards', snippet: 'Guards have a single responsibility.', engine: 'duckduckgo' },
+      { title: 'B', url: 'https://example.com/b', snippet: 'two', engine: 'duckduckgo' }
+    ])
+  })
+
+  it('drops metasearch junk that shares no query terms and ranks by overlap', () => {
+    const r = (title: string, url: string) => ({ title, url, snippet: '' })
+    const out = rerankByOverlap('nestjs guards', [r('Summer Place', 'https://summerplace.example'), r('Guards', 'https://x/guards'), r('NestJS Guards', 'https://docs.nestjs.com/guards')])
+    expect(out.map((x) => x.title)).toEqual(['NestJS Guards', 'Guards'])
+  })
+
+  it('classifies private hosts for web_fetch', () => {
+    for (const h of ['localhost', '127.0.0.1', '10.1.2.3', '192.168.0.4', '172.20.0.1', '169.254.1.1', '[::1]']) expect(isPrivateHost(h)).toBe(true)
+    for (const h of ['example.com', '8.8.8.8', '172.32.0.1']) expect(isPrivateHost(h)).toBe(false)
+  })
+
+  it('refuses private web_fetch targets by default', async () => {
+    const { services } = makeServices()
+    await expect(services.web.fetchPage('http://127.0.0.1:9/x')).rejects.toThrow(/private network/)
+  })
+})
+
+describe('example knowledge', () => {
+  it('seeds the bundled docs once and makes them searchable', async () => {
+    const { services } = makeServices()
+    await services.examples.seedIfNeeded()
+    // Ingestion is queued; wait for the queue to drain.
+    for (let i = 0; i < 100 && services.rag.listCollections()[0]?.docCount !== services.examples.files().length; i++) await new Promise((r) => setTimeout(r, 50))
+    const col = services.rag.listCollections()[0]
+    expect(col.name).toBe('Cloth examples')
+    expect(col.docCount).toBe(services.examples.files().length)
+    const res = await services.rag.search({ query: 'undo the last commit but keep changes', collectionIds: [col.id] })
+    expect(res.hits[0].title).toBe('git-cheatsheet.md')
+    services.rag.deleteCollection(col.id)
+    await services.examples.seedIfNeeded()
+    expect(services.rag.listCollections()).toHaveLength(0)
+  })
+})

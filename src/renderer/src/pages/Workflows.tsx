@@ -17,20 +17,22 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Clock, Copy, Play, Plus, Save, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Workflow, WorkflowNodeType, WorkflowRun } from '@shared/types'
+import { Clock, Copy, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
-import { attempt } from '@/lib/store'
+import { attempt, useApp } from '@/lib/store'
 import { duration, preview, pretty, timeAgo } from '@/lib/format'
 import { Badge, Button, Dot, Empty, IconButton, Input, ListItem, ListPane, Modal, Switch, Textarea, confirmAction } from '@/components/ui'
 import { Editor } from '@/components/Editor'
 import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes'
 import { Inspector } from './workflow/Inspector'
+import { AssembleModal } from './workflow/AssembleModal'
 
 export function WorkflowsPage() {
   const [flows, setFlows] = useState<Workflow[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [assembling, setAssembling] = useState(false)
 
   const load = async (select?: string) => {
     const list = await api.workflows.list()
@@ -57,9 +59,14 @@ export function WorkflowsPage() {
               <div className="text-[13px] font-semibold">Workflows</div>
               <div className="text-[11px] text-dim">{flows.filter((f) => f.cronEnabled).length} scheduled</div>
             </div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
-              New
-            </Button>
+            <div className="flex gap-1">
+              <Button size="sm" icon={<Sparkles size={12} />} onClick={() => setAssembling(true)} title="Describe a workflow and let an agent assemble it">
+                AI
+              </Button>
+              <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+                New
+              </Button>
+            </div>
           </div>
         }
       >
@@ -87,12 +94,34 @@ export function WorkflowsPage() {
             <Editor2 workflow={active} onSaved={(w) => setFlows((fs) => fs.map((f) => (f.id === w.id ? w : f)))} onDeleted={() => void load()} onDuplicated={(id) => void load(id)} />
           </ReactFlowProvider>
         ) : (
-          <Empty icon={<WorkflowIcon size={20} />} title="Automate with workflows" action={<Button variant="primary" onClick={() => setCreating(true)}>New workflow</Button>}>
+          <Empty
+            icon={<WorkflowIcon size={20} />}
+            title="Automate with workflows"
+            action={
+              <div className="flex gap-2">
+                <Button icon={<Sparkles size={13} />} onClick={() => setAssembling(true)}>
+                  Assemble with AI
+                </Button>
+                <Button variant="primary" onClick={() => setCreating(true)}>
+                  New workflow
+                </Button>
+              </div>
+            }
+          >
             Wire LLM calls, agents, knowledge search, skills, HTTP and JS into a graph. Branch with conditions, run on demand or on a cron schedule.
           </Empty>
         )}
       </div>
       <NewWorkflow open={creating} onClose={() => setCreating(false)} onCreated={(id) => void load(id)} />
+      <AssembleModal
+        open={assembling}
+        mode="new"
+        onClose={() => setAssembling(false)}
+        onGraph={async (graph) => {
+          const wf = await attempt(() => api.workflows.createFromGraph(graph), `Assembled “${graph.name}”`)
+          if (wf) await load(wf.id)
+        }}
+      />
     </div>
   )
 }
@@ -158,6 +187,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [runId, setRunId] = useState<string | null>(null)
   const [runOpen, setRunOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState(() => snapshot(workflow.nodes, workflow.edges, workflow.name, workflow.cron ?? '', workflow.cronEnabled))
   const flow = useReactFlow()
@@ -284,6 +314,9 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           <Switch checked={cronEnabled} onChange={setCronEnabled} disabled={!cron.trim()} label="Scheduled" />
           {workflow.cronEnabled && workflow.nextRunAt && !dirty && <Badge tone="crimson">next {timeAgo(workflow.nextRunAt)}</Badge>}
         </div>
+        <Button icon={<Sparkles size={13} />} onClick={() => setAiOpen(true)} title="Describe a change and let an agent apply it">
+          AI edit
+        </Button>
         <IconButton title="Duplicate" onClick={async () => {
           const w = await attempt(() => api.workflows.duplicate(workflow.id))
           if (w) onDuplicated(w.id)
@@ -397,6 +430,22 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         </div>
       </div>
 
+      <AssembleModal
+        open={aiOpen}
+        mode="modify"
+        workflowId={workflow.id}
+        workflowName={workflow.name}
+        onClose={() => setAiOpen(false)}
+        onGraph={(graph: WorkflowGraph) => {
+          // Load into the editor unsaved so the change can be reviewed (and discarded by switching away).
+          setNodes(graph.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData })))
+          setEdges(graph.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
+          if (graph.name) setName(graph.name)
+          setSelected(null)
+          setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2 }), 80)
+          useApp.getState().toast('AI changes loaded — review them, then Save', 'info')
+        }}
+      />
       <RunModal
         open={runOpen}
         onClose={() => setRunOpen(false)}

@@ -5,3 +5,4 @@ release/
 *.log
 .cloth-dev/
 .DS_Store
+sidecars/

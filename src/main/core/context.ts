@@ -8,13 +8,17 @@ export interface Secrets {
   decrypt(data: Uint8Array): string
 }
 
-export type EventChannel = 'chat' | 'workflow' | 'ingest' | 'mcp' | 'skills'
+export type EventChannel = 'chat' | 'workflow' | 'ingest' | 'mcp' | 'skills' | 'web'
 
 export interface Ctx {
   db: Db
   kv: Kv
   dataDir: string
   skillsDir: string
+  /** Folder holding bundled sidecars (obscura/, searxng/) — resources in a packaged build. */
+  sidecarsDir: string
+  /** Bundled example knowledge documents. */
+  examplesDir: string
   secrets: Secrets
   emit(channel: EventChannel, payload: unknown): void
   log(scope: string, ...args: unknown[]): void

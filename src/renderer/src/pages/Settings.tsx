@@ -6,6 +6,7 @@ import { useApp } from '@/lib/store'
 import { Button, Card, Field, Input, PageHeader } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
+import { WebSearchSettings } from './WebSearchSettings'
 
 export function SettingsPage() {
   const settings = useApp((s) => s.settings)
@@ -32,6 +33,8 @@ export function SettingsPage() {
             <ModelPicker kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
           </Field>
         </Section>
+
+        <WebSearchSettings />
 
         <Section title="Chunking" hint="Applies to newly indexed documents. Re-index a document to re-chunk it.">
           <div className="grid grid-cols-2 gap-3">
