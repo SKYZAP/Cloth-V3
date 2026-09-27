@@ -54,7 +54,7 @@ function splitSections(text: string): Section[] {
       flush()
       const level = m[1].length
       while (stack.length && stack[stack.length - 1].level >= level) stack.pop()
-      stack.push({ level, title: m[2].trim() })
+      stack.push({ level, title: cleanHeading(m[2]) })
       continue
     }
     current.push(line)
@@ -128,4 +128,14 @@ function hardSplit(block: string, size: number): string[] {
   }
   if (cur) out.push(cur)
   return out
+}
+
+/** Strip Markdown links/anchors and emphasis from a heading: `Binding guards[#](/guards#binding)` → `Binding guards`. */
+export function cleanHeading(raw: string): string {
+  return raw
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .replace(/\s*#+\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

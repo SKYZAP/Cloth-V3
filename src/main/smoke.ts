@@ -100,6 +100,42 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     await wait(700)
     writeFileSync(join(outDir, 'chat-trace.png'), await screenshot(win))
 
+    // Slash command: type "/nes" in the real composer, pick with Enter, send.
+    await win.webContents.executeJavaScript(`(() => {
+      const ta = document.querySelector('textarea')
+      ta.focus()
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      set.call(ta, '/nes')
+      ta.setSelectionRange(4, 4)
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })()`)
+    await wait(600)
+    writeFileSync(join(outDir, 'chat-slash.png'), await screenshot(win))
+    await win.webContents.executeJavaScript(`document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`)
+    await wait(400)
+    await win.webContents.executeJavaScript(`(() => {
+      const ta = document.querySelector('textarea')
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+      set.call(ta, 'Protect the admin routes')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })()`)
+    await wait(300)
+    writeFileSync(join(outDir, 'chat-slash-chip.png'), await screenshot(win))
+    await win.webContents.executeJavaScript(`document.querySelector('textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`)
+    for (let i = 0; i < 60 && s.chat.isRunning(webSession.id); i++) await wait(200)
+    await wait(600)
+    const slashUser = s.chat.messages(webSession.id).filter((m) => m.role === 'user').at(-1)
+    note(`slash: skills=${JSON.stringify(slashUser?.skills)} text="${slashUser?.blocks[0]?.type === 'text' ? slashUser.blocks[0].text : ''}"`)
+    writeFileSync(join(outDir, 'chat-slash-sent.png'), await screenshot(win))
+
+    // JS-rendered docs site (real network, rendered by the bundled Obscura).
+    const nest = s.rag.createCollection({ name: 'nestjs-live', embedding: null })
+    const t0 = Date.now()
+    await s.rag.ingestUrl({ collectionId: nest.id, url: 'https://docs.nestjs.com', crawl: true, maxPages: 12 })
+    for (let i = 0; i < 300 && s.rag.listDocuments(nest.id).filter((d) => d.status !== 'indexing').length < 12; i++) await wait(250)
+    const nestDocs = s.rag.listDocuments(nest.id)
+    note(`nestjs crawl: ${nestDocs.filter((d) => d.status === 'ready').length}/${nestDocs.length} ready, ${nestDocs.reduce((a, d) => a + d.chunkCount, 0)} chunks in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+
     for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Flows', 'Models', 'MCP', 'Settings']) {
       await clickNav(win, page)
       await wait(page === 'Flows' ? 1500 : 900)

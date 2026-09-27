@@ -112,7 +112,7 @@ export function createApi(s: Services): ClothApi {
       update: async (id, patch) => s.chat.update(id, patch),
       remove: async (id) => s.chat.remove(id),
       messages: async (id) => s.chat.messages(id),
-      send: (id, text) => s.chat.send(id, text),
+      send: (id, text, skills) => s.chat.send(id, text, skills ?? []),
       abort: async (id) => s.chat.abort(id),
       rewind: async (id, messageId) => s.chat.rewind(id, messageId),
       running: async () => s.chat.list().filter((c) => s.chat.isRunning(c.id)).map((c) => c.id)

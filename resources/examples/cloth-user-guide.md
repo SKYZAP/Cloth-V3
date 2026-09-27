@@ -16,7 +16,8 @@ Open **Models** to register a provider.
 
 Each chat has its own model, knowledge scope and tool switches.
 
-- The chips under the composer toggle **knowledge**, **skills**, **web** and **custom tools**, and show the workspace folder.
+- The icons under the composer toggle **skills**, **web** and **custom tools**; the **books**, **folder** and **brain** icons open the chat-context sheet for knowledge collections, the workspace folder and the thinking level.
+- Type **/** in the composer to invoke a skill directly: pick it from the menu (arrow keys and Enter), and its instructions are sent with that message. Invoked skills appear as chips; Backspace at the start of the box removes the last one.
 - Every tool call appears as a trace card with its arguments, result, duration and status. Click a card to expand it.
 - When the agent searches the knowledge base or the web, results appear as numbered references. Citations such as `[2]` in the answer show the source on hover.
 - **Regenerate** reruns the last question; **Stop** aborts a running turn.
@@ -25,6 +26,9 @@ Each chat has its own model, knowledge scope and tool switches.
 ## Knowledge (RAG)
 
 Collections hold documents. Add files, whole folders (code-aware), PDFs, Word documents, web pages (with optional crawling) or pasted text.
+
+- Documentation sites built with React, Angular or Vue send an empty page until JavaScript runs. Cloth detects that and renders those pages with its bundled Obscura browser (**JS rendering: Auto**); **Always** renders every page, **Off** uses plain HTTP only.
+- A page or file with no readable text is marked as an error rather than indexed empty.
 
 - Documents are split into chunks along Markdown headings. Each chunk keeps its heading path, for example `Guide › Install`.
 - **Keyword** search uses SQLite FTS5 with BM25 ranking.

@@ -16,6 +16,16 @@ describe.skipIf(!live || !services.web.status().obscura.available)('Obscura (liv
     expect(res.results[0].url).toMatch(/^https?:\/\//)
   }, 60_000)
 
+  it('indexes a client-rendered docs site by rendering it (docs.nestjs.com)', async () => {
+    const { services: s, events } = makeServices()
+    const col = s.rag.createCollection({ name: 'nest', embedding: null })
+    await s.rag.ingestUrl({ collectionId: col.id, url: 'https://docs.nestjs.com', crawl: true, maxPages: 8 })
+    for (let i = 0; i < 400 && !events.some((e) => e.channel === 'ingest' && (e.payload as { done: boolean }).done); i++) await new Promise((r) => setTimeout(r, 250))
+    const docs = s.rag.listDocuments(col.id)
+    expect(docs.filter((d) => d.status === 'ready').length).toBeGreaterThanOrEqual(6)
+    expect(docs.reduce((a, d) => a + d.chunkCount, 0)).toBeGreaterThan(40)
+  }, 120_000)
+
   it('fetches a page as markdown', async () => {
     const page = await services.web.fetchPage('https://example.com')
     expect(page.via).toBe('obscura')

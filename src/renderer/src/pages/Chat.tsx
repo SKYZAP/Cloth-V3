@@ -24,9 +24,10 @@ import {
   ToggleRight,
   Trash,
   Wrench,
+  X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ChatSession, Collection, RagHit, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ChatSession, Collection, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -179,6 +180,10 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
+  const [invoked, setInvoked] = useState<string[]>([])
+  const [skills, setSkills] = useState<Skill[]>([])
+  const [slash, setSlash] = useState<{ query: string; start: number; end: number } | null>(null)
+  const [slashIndex, setSlashIndex] = useState(0)
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
   const scroller = useRef<HTMLDivElement>(null)
@@ -186,6 +191,10 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const stick = useRef(true)
   // Messages present when the chat opened render still; anything after animates in.
   const initialIds = useRef<Set<string> | null>(null)
+
+  useEffect(() => {
+    void api.skills.list().then(setSkills).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     void api.chat.messages(session.id).then((ms) => {
@@ -228,12 +237,46 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     if (s) onChange(s)
   }
 
-  const send = async (text = draft) => {
+  const send = async (text = draft, withSkills = invoked) => {
     const t = text.trim()
-    if (!t || running) return
+    if ((!t && !withSkills.length) || running) return
     stick.current = true
     setDraft('')
-    await attempt(() => api.chat.send(session.id, t))
+    setInvoked([])
+    setSlash(null)
+    await attempt(() => api.chat.send(session.id, t, withSkills))
+  }
+
+  // Slash commands: "/name" at the start of a word opens the skill picker.
+  const matches = useMemo(() => {
+    if (!slash) return []
+    const q = slash.query.toLowerCase()
+    return skills
+      .filter((sk) => !invoked.includes(sk.name) && (!q || sk.name.includes(q) || sk.description.toLowerCase().includes(q)))
+      .sort((a, b) => Number(b.name.startsWith(q)) - Number(a.name.startsWith(q)) || a.name.localeCompare(b.name))
+      .slice(0, 8)
+  }, [slash, skills, invoked])
+
+  const detectSlash = (value: string, caret: number) => {
+    const m = /(^|\s)\/([a-z0-9-]*)$/.exec(value.slice(0, caret))
+    if (!m) return setSlash(null)
+    if (!slash) void api.skills.list().then(setSkills).catch(() => undefined)
+    setSlash({ query: m[2], start: caret - m[2].length - 1, end: caret })
+    setSlashIndex(0)
+  }
+
+  const pickSkill = (sk: Skill) => {
+    if (!slash) return
+    const at = slash.start
+    setDraft(draft.slice(0, slash.start) + draft.slice(slash.end))
+    setInvoked((cur) => (cur.includes(sk.name) ? cur : [...cur, sk.name]))
+    setSlash(null)
+    requestAnimationFrame(() => {
+      const el = textarea.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(at, at)
+    })
   }
 
   const regenerate = async (assistantId: string) => {
@@ -241,7 +284,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     const user = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')
     if (!user) return
     setMessages(await api.chat.rewind(session.id, user.id))
-    await attempt(() => api.chat.send(session.id, user.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')))
+    await attempt(() => api.chat.send(session.id, user.blocks.map((b) => (b.type === 'text' ? b.text : '')).join(''), user.skills ?? []))
   }
 
   const provider = providers.find((p) => p.id === session.model?.providerId)
@@ -310,22 +353,80 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12">
         <div
           className={clsx(
-            'group/composer pointer-events-auto mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
+            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
             'focus-within:-translate-y-px focus-within:border-crimson-line focus-within:shadow-[0_16px_44px_-14px_rgb(0_0_0/0.8),0_0_0_4px_rgb(220_38_69/0.10)]'
           )}
         >
+          <AnimatePresence>
+            {slash && <SlashMenu key="slash" skills={matches} total={skills.length} index={slashIndex} query={slash.query} onPick={pickSkill} onHover={setSlashIndex} />}
+          </AnimatePresence>
+          <AnimatePresence initial={false}>
+            {invoked.length > 0 && (
+              <motion.div key="chips" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 32 }} className="overflow-hidden">
+                <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+                  <AnimatePresence initial={false}>
+                    {invoked.map((name) => (
+                      <motion.span
+                        key={name}
+                        layout
+                        initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
+                        animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+                        className="flex items-center gap-1.5 rounded-full border border-crimson-line bg-crimson-soft py-0.5 pl-2 pr-1 font-mono text-[11.5px] text-crimson-hi"
+                      >
+                        <Sparkle size={12} weight="fill" />/{name}
+                        <button onClick={() => setInvoked((cur) => cur.filter((n) => n !== name))} className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-crimson-line" aria-label={`Remove ${name}`}>
+                          <X size={10} weight="bold" />
+                        </button>
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <textarea
             ref={textarea}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              detectSlash(e.target.value, e.target.selectionStart)
+            }}
+            onSelect={(e) => {
+              const el = e.currentTarget
+              if (slash && (el.selectionStart < slash.start || el.selectionStart !== el.selectionEnd)) setSlash(null)
+            }}
+            onBlur={() => setTimeout(() => setSlash(null), 120)}
             onKeyDown={(e) => {
+              if (slash && matches.length) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSlashIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  pickSkill(matches[Math.min(slashIndex, matches.length - 1)])
+                  return
+                }
+              }
+              if (slash && e.key === 'Escape') {
+                e.preventDefault()
+                setSlash(null)
+                return
+              }
+              if (e.key === 'Backspace' && invoked.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+                setInvoked((cur) => cur.slice(0, -1))
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void send()
               }
             }}
             rows={1}
-            placeholder={session.model ? 'Ask anything…' : 'Pick a model above to start'}
+            placeholder={!session.model ? 'Pick a model above to start' : invoked.length ? 'Add details for the skill, or just send…' : 'Ask anything — type / to invoke a skill'}
             className="block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus-visible:outline-none"
           />
           <div className="flex items-center gap-0.5 pb-2 pl-2.5 pr-2 pt-1.5">
@@ -337,7 +438,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               count={selected.length || undefined}
               onClick={() => openSheet('knowledge')}
             />
-            <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
+            <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} state={session.skillsEnabled ? 'On · type / to invoke' : 'Off · / still invokes'} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
             <ComposerToggle icon={GlobeHemisphereWest} label="Web search" active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })} />
             <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />
             <ComposerToggle icon={FolderSimple} label="Workspace" active={!!session.workspace} state={session.workspace ? session.workspace.split(/[\\/]/).pop()! : 'None'} onClick={() => openSheet('workspace')} />
@@ -353,7 +454,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100">
               <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
             </span>
-            <SendButton running={running} disabled={!running && (!draft.trim() || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
+            <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
         </div>
       </div>
@@ -368,6 +469,55 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
         <ContextSheet session={session} collections={collections} selected={selected} reasoning={reasoning} update={update} />
       </BottomSheet>
     </div>
+  )
+}
+
+const VERDICT_DOT: Record<string, string> = { fresh: 'bg-ok', stale: 'bg-warn', failing: 'bg-crimson', redundant: 'bg-info', untested: 'bg-line-strong' }
+
+function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: Skill[]; total: number; index: number; query: string; onPick(s: Skill): void; onHover(i: number): void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.98, transition: { duration: 0.12 } }}
+      transition={{ type: 'spring', stiffness: 520, damping: 34 }}
+      style={{ transformOrigin: 'bottom left' }}
+      className="sheet-glass absolute inset-x-0 bottom-full z-30 mb-2 overflow-hidden rounded-[18px] border border-line-strong"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <div className="flex items-center justify-between border-b border-line px-3.5 py-2 text-[11px] text-dim">
+        <span className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.06em]">
+          <Sparkle size={12} /> Skills
+          {query ? <span className="font-mono normal-case tracking-normal text-muted">/{query}</span> : null}
+        </span>
+        <span>
+          <Key>↑</Key> <Key>↓</Key> navigate · <Key>Enter</Key> invoke · <Key>Esc</Key> close
+        </span>
+      </div>
+      {skills.length ? (
+        <LayoutGroup id="slash">
+          <div className="max-h-72 overflow-y-auto p-1.5">
+            {skills.map((sk, i) => (
+              <button key={sk.name} onMouseEnter={() => onHover(i)} onClick={() => onPick(sk)} className="relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left">
+                {i === index && <motion.span layoutId="slash-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-xl bg-elev-2" />}
+                <span className={clsx('relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition-colors', i === index ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev text-dim')}>
+                  <Sparkle size={16} weight={i === index ? 'fill' : 'regular'} />
+                </span>
+                <span className="relative min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-[12.5px] text-fg">/{sk.name}</span>
+                    <span className={clsx('h-1.5 w-1.5 rounded-full', VERDICT_DOT[sk.health?.verdict ?? 'untested'])} title={sk.health?.verdict ?? 'untested'} />
+                  </span>
+                  <span className="block truncate text-[11.5px] text-dim">{sk.description || 'No description'}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </LayoutGroup>
+      ) : (
+        <div className="px-4 py-4 text-[12px] text-dim">{total ? `No skill matches “/${query}”.` : 'No skills yet — create or import one on the Skills page.'}</div>
+      )}
+    </motion.div>
   )
 }
 
@@ -641,8 +791,17 @@ const enterProps = (fresh: boolean) =>
 function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) {
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
   return (
-    <motion.div {...enterProps(fresh)} className="mb-9 flex justify-end">
-      <div className="selectable max-w-[78%] whitespace-pre-wrap rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>
+    <motion.div {...enterProps(fresh)} className="mb-9 flex flex-col items-end gap-1.5">
+      {message.skills?.length ? (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {message.skills.map((name) => (
+            <span key={name} className="flex items-center gap-1.5 rounded-full border border-crimson-line bg-crimson-soft px-2 py-0.5 font-mono text-[11px] text-crimson-hi">
+              <Sparkle size={11} weight="fill" />/{name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {text.trim() && <div className="selectable max-w-[78%] whitespace-pre-wrap rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>}
     </motion.div>
   )
 }

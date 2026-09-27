@@ -51,13 +51,13 @@ export function createServices(opts: {
   }
   const settings = new SettingsService(ctx)
   const providers = new ProviderService(ctx)
-  const rag = new RagService(ctx, providers, settings)
+  const web = new WebService(ctx, settings)
+  const rag = new RagService(ctx, providers, settings, () => (web.obscura.path() ? (url, signal) => web.obscura.renderHtml(url, signal) : null))
   const examples = new ExamplesService(ctx, rag, settings)
   const skills = new SkillService(ctx, providers)
-  const web = new WebService(ctx, settings)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom)
-  const chat = new ChatService(ctx, runtime, settings)
+  const chat = new ChatService(ctx, runtime, settings, skills)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web })
 
