@@ -19,6 +19,7 @@ import type {
   ProviderPreset,
   ProviderTestResult,
   RagDocument,
+  RagAskResult,
   RagSearchInput,
   RagSearchResult,
   Settings,
@@ -79,6 +80,7 @@ export interface ClothApi {
     ingestText(collectionId: string, title: string, text: string): Promise<RagDocument>
     embedMissing(collectionId: string): Promise<number>
     search(input: RagSearchInput): Promise<RagSearchResult>
+    ask(input: RagSearchInput): Promise<RagAskResult>
     loadExamples(): Promise<Collection | null>
   }
   tools: {

@@ -149,6 +149,40 @@ describe('web search plumbing', () => {
   })
 })
 
+describe('ask the collection', () => {
+  it('answers from retrieved passages, and skips the model when nothing matches', async () => {
+    const { services } = makeServices()
+    const col = services.rag.createCollection({ name: 'docs', embedding: null })
+    await services.rag.ingestText(col.id, 'Guards', '# Guards\n\nA guard implements CanActivate and decides whether a request is handled.')
+    const prompts: string[] = []
+    const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-ask' })
+    faux.setResponses([
+      (ctx) => {
+        prompts.push(JSON.stringify(ctx.messages))
+        return fauxAssistantMessage('Guards implement CanActivate [1].')
+      }
+    ])
+    try {
+      const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      services.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
+      const res = await services.rag.ask({ query: 'what does a guard implement', collectionIds: [col.id] })
+      expect(res.answer).toBe('Guards implement CanActivate [1].')
+      expect(res.search.hits[0].title).toBe('Guards')
+      expect(prompts[0]).toContain('[1] Guards')
+      const none = await services.rag.ask({ query: 'kubernetes helm charts', collectionIds: [col.id] })
+      expect(none.search.hits).toHaveLength(0)
+      expect(none.answer).toBeNull()
+      expect(prompts).toHaveLength(1)
+      services.settings.update({ defaultModel: null })
+      const noModel = await services.rag.ask({ query: 'guard', collectionIds: [col.id] })
+      expect(noModel.answer).toBeNull()
+      expect(noModel.error).toMatch(/default chat model/)
+    } finally {
+      faux.unregister()
+    }
+  })
+})
+
 describe('example knowledge', () => {
   it('seeds the bundled docs once and makes them searchable', async () => {
     const { services } = makeServices()

@@ -6,6 +6,7 @@ import type {
   ModelRef,
   RagDocument,
   RagHit,
+  RagAskResult,
   RagMode,
   RagSearchInput,
   RagSearchResult,
@@ -406,6 +407,29 @@ export class RagService {
     const ranked = await this.rankedLists(input.query, collections, mode, notes)
     const hits = this.fuse(ranked, k)
     return { hits, mode, queries: [input.query], notes, tookMs: Date.now() - started }
+  }
+
+  /** Retrieve, then answer strictly from the retrieved passages with [n] citations. */
+  async ask(input: RagSearchInput): Promise<RagAskResult> {
+    const started = Date.now()
+    const search = await this.search(input)
+    const model = input.model ?? this.settings.get().defaultModel
+    const done = (answer: string | null, error: string | null, modelName: string | null = null): RagAskResult => ({ answer, model: modelName, search, error, tookMs: Date.now() - started })
+    if (!search.hits.length) return done(null, null)
+    if (!model) return done(null, 'Set a default chat model (Models page) to get written answers — showing the matching passages only.')
+    const context = search.hits.map((h, i) => `[${i + 1}] ${h.title}${h.headingPath ? ` › ${h.headingPath}` : ''}\n${h.text}`).join('\n\n---\n\n')
+    try {
+      const { text } = await this.providers.complete(model, {
+        system:
+          'Answer the question using ONLY the numbered passages. Cite every claim inline as [n]. Be concise and use Markdown; include short code snippets when the passages contain them. If the passages do not answer the question, say so plainly.',
+        prompt: `Question: ${input.query}\n\nPassages:\n\n${context}`,
+        temperature: 0.2,
+        maxTokens: 1500
+      })
+      return done(text.trim(), null, model.modelId)
+    } catch (err) {
+      return done(null, `Answer failed: ${errorMessage(err)}`, model.modelId)
+    }
   }
 
   private resolveCollections(ids?: string[]): Collection[] {

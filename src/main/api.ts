@@ -65,6 +65,7 @@ export function createApi(s: Services): ClothApi {
       ingestText: (id, title, text) => s.rag.ingestText(id, title, text),
       embedMissing: (id) => s.rag.embedMissing(id),
       search: (input) => s.rag.search(input),
+      ask: (input) => s.rag.ask(input),
       loadExamples: () => s.examples.load()
     },
     tools: {
