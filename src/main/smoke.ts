@@ -86,9 +86,19 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     note(`web chat: ${webTurn?.blocks.map((b) => (b.type === 'tool' ? `tool:${b.trace.name}(${b.trace.status},${b.trace.references.length} refs)` : b.type)).join(',')} error=${webTurn?.error ?? 'none'}`)
     await wait(800)
     writeFileSync(join(outDir, 'chat-answer.png'), await screenshot(win))
-    // Expand the first tool trace for the screenshot.
-    await win.webContents.executeJavaScript(`document.querySelector('.font-mono.text-\\\\[11\\\\.5px\\\\].font-medium')?.closest('button')?.click()`).catch(() => undefined)
-    await wait(400)
+    // Composer focus ring, context sheet, expanded trace.
+    await win.webContents.executeJavaScript(`document.querySelector('textarea').focus()`)
+    await wait(500)
+    writeFileSync(join(outDir, 'chat-focus.png'), await screenshot(win))
+    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Knowledge"]').click()`)
+    await wait(900)
+    writeFileSync(join(outDir, 'chat-sheet.png'), await screenshot(win))
+    note('sheet: ' + (await win.webContents.executeJavaScript(`document.querySelector('[role=dialog]')?.getBoundingClientRect().top`)))
+    await win.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+    await wait(800)
+    await win.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('web_search'))?.click()`)
+    await wait(700)
+    writeFileSync(join(outDir, 'chat-trace.png'), await screenshot(win))
 
     for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Flows', 'Models', 'MCP', 'Settings']) {
       await clickNav(win, page)

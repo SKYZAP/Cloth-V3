@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   model: null,
   systemPrompt: '',
   collectionIds: [],
+  knowledgeEnabled: true,
   skillsEnabled: true,
   webEnabled: false,
   customTools: true,
@@ -60,7 +61,7 @@ export class AgentRuntime {
       `Today is ${new Date().toISOString().slice(0, 10)}.`,
       'Be precise and concise. Use Markdown. Prefer showing code over describing it.'
     ]
-    const collections = this.rag.listCollections().filter((c) => !scope.collectionIds.length || scope.collectionIds.includes(c.id))
+    const collections = scope.knowledgeEnabled === false ? [] : this.rag.listCollections().filter((c) => !scope.collectionIds.length || scope.collectionIds.includes(c.id))
     if (collections.length) {
       lines.push(
         '',
@@ -156,6 +157,7 @@ export class ChatService {
       model: cur.model,
       systemPrompt: cur.systemPrompt,
       collectionIds: cur.collectionIds,
+      knowledgeEnabled: cur.knowledgeEnabled,
       skillsEnabled: cur.skillsEnabled,
       webEnabled: cur.webEnabled,
       customTools: cur.customTools,
@@ -198,6 +200,7 @@ export class ChatService {
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
     const scope: ToolScope = {
       collectionIds: session.collectionIds,
+      knowledgeEnabled: session.knowledgeEnabled,
       skillsEnabled: session.skillsEnabled,
       webEnabled: session.webEnabled,
       customTools: session.customTools,

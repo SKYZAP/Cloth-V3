@@ -1,0 +1,37 @@
+import { useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { AnimatePresence, motion } from 'motion/react'
+
+/** Hover/focus tooltip that scales and fades in above its trigger. */
+export function Tooltip({ content, children }: { content: ReactNode; children: ReactElement }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setPos({ x: r.left + r.width / 2, y: r.top })
+  }
+  const hide = () => setPos(null)
+  return (
+    <span ref={ref} className="inline-flex" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onPointerDown={hide}>
+      {children}
+      {createPortal(
+        <AnimatePresence>
+          {pos && (
+            <motion.div
+              key="tip"
+              initial={{ opacity: 0, scale: 0.92, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.1 } }}
+              transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
+              className="pointer-events-none fixed z-[80] -translate-x-1/2 whitespace-nowrap rounded-[9px] border border-line-strong bg-[#1f1f24] px-2.5 py-1.5 text-[11.5px] shadow-xl shadow-black/50"
+              style={{ left: pos.x, top: pos.y - 10, translateY: '-100%', transformOrigin: 'bottom center' }}
+            >
+              {content}
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </span>
+  )
+}

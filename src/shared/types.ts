@@ -232,7 +232,9 @@ export interface ChatSession {
   title: string
   model: ModelRef | null
   systemPrompt: string
+  /** Empty = every collection (when knowledgeEnabled). */
   collectionIds: string[]
+  knowledgeEnabled: boolean
   skillsEnabled: boolean
   webEnabled: boolean
   customTools: boolean

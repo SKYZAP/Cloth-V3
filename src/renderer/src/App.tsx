@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import clsx from 'clsx'
-import { BookOpen, Bot, Cable, Cpu, Settings as SettingsIcon, Sparkles, Workflow as WorkflowIcon, Wrench, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { Books, ChatCircleDots, Cpu, FlowArrow, GearSix, PlugsConnected, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
+import { MotionConfig } from 'motion/react'
 import { useApp, type Page } from './lib/store'
 import { useEvent } from './lib/api'
 import { ChatPage } from './pages/Chat'
@@ -16,14 +18,14 @@ import { useState } from 'react'
 import { api } from './lib/api'
 import { Logo } from './components/Logo'
 
-const NAV: { page: Page; label: string; icon: typeof Bot }[] = [
-  { page: 'chat', label: 'Chat', icon: Bot },
-  { page: 'knowledge', label: 'Knowledge', icon: BookOpen },
-  { page: 'skills', label: 'Skills', icon: Sparkles },
+const NAV: { page: Page; label: string; icon: Icon }[] = [
+  { page: 'chat', label: 'Chat', icon: ChatCircleDots },
+  { page: 'knowledge', label: 'Knowledge', icon: Books },
+  { page: 'skills', label: 'Skills', icon: Sparkle },
   { page: 'tools', label: 'Tools', icon: Wrench },
-  { page: 'workflows', label: 'Flows', icon: WorkflowIcon },
+  { page: 'workflows', label: 'Flows', icon: FlowArrow },
   { page: 'providers', label: 'Models', icon: Cpu },
-  { page: 'mcp', label: 'MCP', icon: Cable }
+  { page: 'mcp', label: 'MCP', icon: PlugsConnected }
 ]
 
 export function App() {
@@ -43,6 +45,7 @@ export function App() {
   const isMac = window.cloth.platform === 'darwin'
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="flex h-full flex-col">
       {/* Title bar */}
       <div className={clsx('drag flex h-9 shrink-0 items-center gap-2 border-b border-line bg-bg', isMac ? 'pl-20' : 'pl-3', 'pr-[150px]')}>
@@ -65,12 +68,12 @@ export function App() {
         <nav className="flex w-[68px] shrink-0 flex-col items-center gap-1 border-r border-line bg-bg py-2">
           {NAV.map(({ page: p, label, icon: Icon }) => (
             <NavButton key={p} active={page === p} onClick={() => setPage(p)} label={label}>
-              <Icon size={18} strokeWidth={1.8} />
+              <Icon size={19} weight={page === p ? 'fill' : 'regular'} />
             </NavButton>
           ))}
           <div className="flex-1" />
           <NavButton active={page === 'settings'} onClick={() => setPage('settings')} label="Settings">
-            <SettingsIcon size={18} strokeWidth={1.8} />
+            <GearSix size={19} weight={page === 'settings' ? 'fill' : 'regular'} />
           </NavButton>
         </nav>
 
@@ -87,6 +90,7 @@ export function App() {
       </div>
       <Toasts />
     </div>
+    </MotionConfig>
   )
 }
 
