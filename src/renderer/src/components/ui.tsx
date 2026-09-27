@@ -65,9 +65,20 @@ export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLText
   return <textarea {...rest} className={clsx(fieldBase, 'py-2 leading-relaxed resize-y', !hasWidth(className) && 'w-full', className)} />
 }
 
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({ className, children, pill, ...rest }: SelectHTMLAttributes<HTMLSelectElement> & { pill?: boolean }) {
   return (
-    <select {...rest} className={clsx(fieldBase, !hasWidth(className) && 'w-full', 'h-8 pr-7 appearance-none bg-[length:12px] bg-[right_8px_center] bg-no-repeat', className)} style={{ backgroundImage: CHEVRON }}>
+    <select
+      {...rest}
+      className={clsx(
+        pill
+          ? 'h-[30px] rounded-full border border-line bg-panel pl-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg focus:border-crimson-line focus:outline-none'
+          : clsx(fieldBase, 'h-8'),
+        !hasWidth(className) && 'w-full',
+        'pr-7 appearance-none bg-[length:12px] bg-[right_8px_center] bg-no-repeat',
+        className
+      )}
+      style={{ backgroundImage: CHEVRON }}
+    >
       {children}
     </select>
   )
@@ -240,12 +251,11 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
     <div
       onClick={onClick}
       className={clsx(
-        'group relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 transition-colors',
-        active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg',
+        'group relative mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-2.5 pl-3 pr-2 transition-colors duration-200',
+        active ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg',
         className
       )}
     >
-      {active && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-full bg-crimson" />}
       {children}
     </div>
   )

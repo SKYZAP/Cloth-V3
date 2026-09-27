@@ -1,15 +1,46 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { ArrowUp, Brain, ChevronRight, Copy, FolderOpen, Globe, Library, MessageSquarePlus, RotateCcw, Search, SlidersHorizontal, Sparkles, Square, Trash2, Wrench } from 'lucide-react'
-import type { ChatSession, RagHit, ThinkingLevel, UiMessage } from '@shared/types'
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
+import {
+  ArrowClockwise,
+  ArrowUp,
+  Books,
+  Brain,
+  CaretRight,
+  Check,
+  ChatCircleDots,
+  Copy,
+  FolderDashed,
+  FolderSimple,
+  GlobeHemisphereWest,
+  GraduationCap,
+  MagnifyingGlass,
+  NotePencil,
+  Plus,
+  SlidersHorizontal,
+  Sparkle,
+  Stack,
+  Stop,
+  ToggleRight,
+  Trash,
+  Wrench,
+  type Icon
+} from '@phosphor-icons/react'
+import type { ChatSession, Collection, RagHit, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
-import { Badge, Button, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, Select, Switch, Textarea } from '@/components/ui'
+import { Button, Empty, Input, ListPane } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
+import { BottomSheet } from '@/components/BottomSheet'
+import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
+
+const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
+const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
+const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
 
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -31,7 +62,7 @@ export function ChatPage() {
     try {
       if (activeId) localStorage.setItem('cloth.chat', activeId)
     } catch {
-      /* ignore */
+      /* storage unavailable */
     }
   }, [activeId])
 
@@ -70,34 +101,57 @@ export function ChatPage() {
         header={
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search size={13} className="absolute left-2.5 top-2.5 text-dim" />
+              <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" />
               <Input className="pl-7" placeholder="Search chats" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            <Button variant="primary" onClick={create} icon={<MessageSquarePlus size={14} />} title="New chat" />
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              transition={SPRING_PRESS}
+              onClick={create}
+              title="New chat"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-crimson text-white hover:bg-crimson-hi"
+            >
+              <Plus size={16} weight="bold" />
+            </motion.button>
           </div>
         }
       >
-        {shown.map((s) => (
-          <ListItem key={s.id} active={s.id === activeId} onClick={() => setActiveId(s.id)}>
-            {running.has(s.id) && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-crimson pulse-crimson" />}
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12.5px]">{s.title}</div>
-              <div className="truncate text-[11px] text-dim">
-                {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
-              </div>
-            </div>
-            <IconButton
-              className="hidden group-hover:inline-flex"
-              onClick={(e) => {
-                e.stopPropagation()
-                void remove(s.id)
-              }}
-              title="Delete chat"
+        {shown.map((s) => {
+          const on = s.id === activeId
+          return (
+            <div
+              key={s.id}
+              onClick={() => setActiveId(s.id)}
+              className={clsx(
+                'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pl-3.5 pr-2 transition-colors duration-200',
+                on ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
+              )}
             >
-              <Trash2 size={13} />
-            </IconButton>
-          </ListItem>
-        ))}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
+                  <span className={clsx('truncate text-[12.5px] font-semibold', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
+                </div>
+                <div className="mt-px truncate text-[11px] text-dim">
+                  {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void remove(s.id)
+                }}
+                title="Delete chat"
+                className={clsx(
+                  'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-all hover:bg-hover hover:text-crimson-hi',
+                  on ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                )}
+              >
+                <Trash size={15} />
+              </button>
+            </div>
+          )
+        })}
         {!sessions.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
 
@@ -111,7 +165,7 @@ export function ChatPage() {
           />
         ) : (
           <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={create}>New chat</Button>}>
-            Chat with any registered model. The agent can search your knowledge base, load skills and read a workspace folder — every tool call is traced.
+            Chat with any registered model. The agent can search your knowledge base and the web, load skills, call your tools and read a workspace folder — every tool call is traced.
           </Empty>
         )}
       </div>
@@ -119,17 +173,25 @@ export function ChatPage() {
   )
 }
 
+type SheetSection = 'knowledge' | 'workspace' | 'thinking' | null
+
 function ChatView({ session, running, onChange }: { session: ChatSession; running: boolean; onChange(s: ChatSession): void }) {
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [configOpen, setConfigOpen] = useState(false)
+  const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
   const scroller = useRef<HTMLDivElement>(null)
+  const textarea = useRef<HTMLTextAreaElement>(null)
   const stick = useRef(true)
+  // Messages present when the chat opened render still; anything after animates in.
+  const initialIds = useRef<Set<string> | null>(null)
 
   useEffect(() => {
-    void api.chat.messages(session.id).then(setMessages)
+    void api.chat.messages(session.id).then((ms) => {
+      initialIds.current = new Set(ms.map((m) => m.id))
+      setMessages(ms)
+    })
   }, [session.id])
 
   useEvent('chat', (e) => {
@@ -145,14 +207,21 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     }
     if (e.type === 'end') {
       void api.chat.messages(session.id).then(setMessages)
-      if (e.error && e.error !== 'Request was aborted' && !/abort/i.test(e.error)) useApp.getState().toast(e.error, 'error')
+      if (e.error && !/abort/i.test(e.error)) useApp.getState().toast(e.error, 'error')
     }
   })
 
   useEffect(() => {
     const el = scroller.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
+    if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: initialIds.current && initialIds.current.size !== messages.length ? 'smooth' : 'auto' })
   }, [messages])
+
+  useLayoutEffect(() => {
+    const el = textarea.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(220, el.scrollHeight)}px`
+  }, [draft])
 
   const update = async (patch: Partial<ChatSession>) => {
     const s = await attempt(() => api.chat.update(session.id, patch))
@@ -171,138 +240,367 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     const idx = messages.findIndex((m) => m.id === assistantId)
     const user = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')
     if (!user) return
-    const rest = await api.chat.rewind(session.id, user.id)
-    setMessages(rest)
-    const text = user.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
-    await attempt(() => api.chat.send(session.id, text))
+    setMessages(await api.chat.rewind(session.id, user.id))
+    await attempt(() => api.chat.send(session.id, user.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')))
   }
 
   const provider = providers.find((p) => p.id === session.model?.providerId)
-  const modelInfo = provider?.models.find((m) => m.id === session.model?.modelId)
-  const scopeCols = session.collectionIds.length ? collections.filter((c) => session.collectionIds.includes(c.id)) : collections
+  const reasoning = !!provider?.models.find((m) => m.id === session.model?.modelId)?.reasoning
+  const selected = session.knowledgeEnabled ? (session.collectionIds.length ? session.collectionIds.filter((id) => collections.some((c) => c.id === id)) : collections.map((c) => c.id)) : []
+  const openSheet = (section: SheetSection) => setSheet({ open: true, section })
+  const waiting = running && messages.at(-1)?.role === 'user'
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+    <div className="relative flex h-full flex-col overflow-hidden">
+      {/* Header floats over the conversation and fades into it */}
+      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5">
         <input
           key={session.title}
-          className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold tracking-tight outline-none"
+          className="min-w-0 flex-1 truncate bg-transparent text-[14px] font-semibold tracking-tight outline-none focus-visible:outline-none"
           defaultValue={session.title}
           onBlur={(e) => e.target.value.trim() && e.target.value !== session.title && void update({ title: e.target.value.trim() })}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
-        <ModelPicker className="w-72" value={session.model} onChange={(model) => void update({ model })} />
-        {modelInfo?.reasoning && (
-          <Select className="w-28" value={session.thinking} onChange={(e) => void update({ thinking: e.target.value as ThinkingLevel })} title="Thinking level">
-            {['off', 'minimal', 'low', 'medium', 'high'].map((l) => (
-              <option key={l} value={l}>
-                think: {l}
-              </option>
-            ))}
-          </Select>
-        )}
-        <IconButton onClick={() => setConfigOpen(true)} title="Chat settings">
-          <SlidersHorizontal size={15} />
-        </IconButton>
-      </div>
+        <ModelPicker pill className="w-64" value={session.model} onChange={(model) => void update({ model })} />
+        <Tooltip content="Chat context">
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            transition={SPRING_PRESS}
+            onClick={() => openSheet(null)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+          >
+            <SlidersHorizontal size={17} />
+          </motion.button>
+        </Tooltip>
+      </header>
 
-      {/* Messages */}
       <div
         ref={scroller}
         className="min-h-0 flex-1 overflow-y-auto"
         onScroll={(e) => {
           const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
         }}
       >
-        <div className="mx-auto max-w-3xl px-6 py-6">
+        <div className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px]">
           {!messages.length && <Welcome onPick={(t) => void send(t)} hasKnowledge={collections.length > 0} />}
-          {messages.map((m, i) =>
-            m.role === 'user' ? (
-              <UserBubble key={m.id} message={m} />
+          {messages.map((m, i) => {
+            const fresh = !!initialIds.current && !initialIds.current.has(m.id)
+            return m.role === 'user' ? (
+              <UserBubble key={m.id} message={m} fresh={fresh} />
             ) : (
-              <AssistantTurn key={m.id} message={m} streaming={running && i === messages.length - 1} onRegenerate={() => void regenerate(m.id)} />
+              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === messages.length - 1} onRegenerate={() => void regenerate(m.id)} />
             )
-          )}
-          {running && messages.at(-1)?.role === 'user' && (
-            <div className="flex items-center gap-2 py-3 text-[12px] text-dim">
-              <Logo size={18} />
-              <span className="animate-pulse">Thinking…</span>
-            </div>
-          )}
+          })}
+          <AnimatePresence>
+            {waiting && (
+              <motion.div key="thinking" initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} exit={{ opacity: 0 }} transition={ENTER} className="mb-9 grid grid-cols-[28px_1fr] gap-4">
+                <Logo size={28} />
+                <div className="flex items-center gap-2 pt-1 text-[12.5px] text-dim">
+                  <Brain size={14} />
+                  <span className="shimmer-text">Thinking</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* Composer */}
-      <div className="border-t border-line bg-bg px-6 pb-4 pt-3">
-        <div className="mx-auto max-w-3xl">
-          <div className="rounded-xl border border-line-strong bg-panel focus-within:border-crimson-line focus-within:ring-2 focus-within:ring-crimson-soft">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault()
-                  void send()
-                }
-              }}
-              rows={Math.min(10, Math.max(2, draft.split('\n').length))}
-              placeholder={session.model ? 'Ask anything — Enter to send, Shift+Enter for a newline' : 'Pick a model above to start'}
-              className="block w-full resize-none bg-transparent px-3.5 pt-3 text-[13.5px] leading-relaxed outline-none placeholder:text-dim"
+      {/* Composer: floats over a gradient fade — no divider line */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12">
+        <div
+          className={clsx(
+            'group/composer pointer-events-auto mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
+            'focus-within:-translate-y-px focus-within:border-crimson-line focus-within:shadow-[0_16px_44px_-14px_rgb(0_0_0/0.8),0_0_0_4px_rgb(220_38_69/0.10)]'
+          )}
+        >
+          <textarea
+            ref={textarea}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void send()
+              }
+            }}
+            rows={1}
+            placeholder={session.model ? 'Ask anything…' : 'Pick a model above to start'}
+            className="block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus-visible:outline-none"
+          />
+          <div className="flex items-center gap-0.5 pb-2 pl-2.5 pr-2 pt-1.5">
+            <ComposerToggle
+              icon={Books}
+              label="Knowledge"
+              active={selected.length > 0}
+              state={!collections.length ? 'No collections' : !selected.length ? 'Off' : selected.length === collections.length ? 'All collections' : `${selected.length} collection${selected.length > 1 ? 's' : ''}`}
+              count={selected.length || undefined}
+              onClick={() => openSheet('knowledge')}
             />
-            <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
-              <ScopeChip icon={<Library size={12} />} active={scopeCols.length > 0} onClick={() => setConfigOpen(true)}>
-                {!scopeCols.length ? 'no knowledge' : session.collectionIds.length ? `${scopeCols.length} collection${scopeCols.length === 1 ? '' : 's'}` : 'all collections'}
-              </ScopeChip>
-              <ScopeChip icon={<Sparkles size={12} />} active={session.skillsEnabled} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })}>
-                skills {session.skillsEnabled ? 'on' : 'off'}
-              </ScopeChip>
-              <ScopeChip icon={<Globe size={12} />} active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })}>
-                web {session.webEnabled ? 'on' : 'off'}
-              </ScopeChip>
-              <ScopeChip icon={<Wrench size={12} />} active={session.customTools} onClick={() => void update({ customTools: !session.customTools })}>
-                custom tools {session.customTools ? 'on' : 'off'}
-              </ScopeChip>
-              <ScopeChip icon={<FolderOpen size={12} />} active={!!session.workspace} onClick={() => setConfigOpen(true)}>
-                {session.workspace ? session.workspace.split(/[\\/]/).pop() : 'no workspace'}
-              </ScopeChip>
-              <div className="flex-1" />
-              {running ? (
-                <Button size="sm" variant="danger" onClick={() => void api.chat.abort(session.id)} icon={<Square size={11} fill="currentColor" />}>
-                  Stop
-                </Button>
-              ) : (
-                <button
-                  onClick={() => void send()}
-                  disabled={!draft.trim() || !session.model}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
-                  title="Send"
-                >
-                  <ArrowUp size={15} />
-                </button>
-              )}
-            </div>
+            <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
+            <ComposerToggle icon={GlobeHemisphereWest} label="Web search" active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })} />
+            <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />
+            <ComposerToggle icon={FolderSimple} label="Workspace" active={!!session.workspace} state={session.workspace ? session.workspace.split(/[\\/]/).pop()! : 'None'} onClick={() => openSheet('workspace')} />
+            <div className="mx-1.5 h-[18px] w-px bg-line-strong" />
+            <ComposerToggle
+              icon={Brain}
+              label="Thinking"
+              active={reasoning && session.thinking !== 'off'}
+              state={reasoning ? session.thinking : 'Not supported by this model'}
+              onClick={() => openSheet('thinking')}
+            />
+            <div className="flex-1" />
+            <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100">
+              <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
+            </span>
+            <SendButton running={running} disabled={!running && (!draft.trim() || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
         </div>
       </div>
 
-      <ChatConfig open={configOpen} onClose={() => setConfigOpen(false)} session={session} onSave={update} />
+      <BottomSheet
+        open={sheet.open}
+        onClose={() => setSheet((s) => ({ ...s, open: false }))}
+        title="Chat context"
+        description="What this chat's agent can see and do. Drag down to close."
+        scrollTo={sheet.section ? `sheet-${sheet.section}` : null}
+      >
+        <ContextSheet session={session} collections={collections} selected={selected} reasoning={reasoning} update={update} />
+      </BottomSheet>
     </div>
   )
 }
 
-function ScopeChip({ icon, active, children, onClick }: { icon: React.ReactNode; active: boolean; children: React.ReactNode; onClick(): void }) {
+function Key({ children }: { children: React.ReactNode }) {
+  return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
+}
+
+function ComposerToggle({ icon: I, label, active, state, count, onClick }: { icon: Icon; label: string; active: boolean; state?: string; count?: number; onClick(): void }) {
   return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        'flex h-6 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors',
-        active ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line text-dim hover:text-muted'
-      )}
+    <Tooltip
+      content={
+        <>
+          <b className="font-semibold">{label}</b>
+          <span className={clsx('ml-1.5 capitalize', active ? 'text-crimson-hi' : 'text-dim')}>{state ?? (active ? 'On' : 'Off')}</span>
+        </>
+      }
     >
-      {icon}
+      <motion.button
+        whileTap={{ scale: 0.86 }}
+        transition={SPRING_PRESS}
+        onClick={onClick}
+        aria-pressed={active}
+        aria-label={label}
+        className={clsx(
+          'relative flex h-[34px] w-[34px] items-center justify-center rounded-[11px] transition-colors duration-200',
+          active ? 'text-crimson-hi' : 'text-dim hover:bg-elev-2 hover:text-muted'
+        )}
+      >
+        <I size={18} weight={active ? 'fill' : 'regular'} className={active ? 'glow-crimson' : ''} />
+        <motion.span
+          initial={false}
+          animate={{ scale: active && count === undefined ? 1 : 0 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+          className="absolute bottom-[3px] left-1/2 -ml-0.5 h-1 w-1 rounded-full bg-crimson-hi"
+        />
+        <AnimatePresence>
+          {count !== undefined && (
+            <motion.span
+              key={count}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+              className="absolute right-0.5 top-[3px] h-3.5 min-w-3.5 rounded-full bg-crimson px-[3px] text-center text-[9px] font-bold leading-[14px] text-white"
+            >
+              {count}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
+    </Tooltip>
+  )
+}
+
+function SendButton({ running, disabled, onSend, onStop }: { running: boolean; disabled: boolean; onSend(): void; onStop(): void }) {
+  return (
+    <motion.button
+      whileTap={{ scale: 0.92 }}
+      onClick={running ? onStop : onSend}
+      disabled={disabled}
+      title={running ? 'Stop' : 'Send'}
+      className="relative h-9 w-9 overflow-hidden rounded-xl bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+    >
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={running ? 'stop' : 'send'}
+          initial={{ opacity: 0, scale: 0.6, y: running ? 8 : -8, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, scale: 0.6, y: running ? -8 : 8, filter: 'blur(6px)' }}
+          transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          {running ? <Stop size={16} weight="fill" /> : <ArrowUp size={17} weight="bold" />}
+        </motion.span>
+      </AnimatePresence>
+    </motion.button>
+  )
+}
+
+function ContextSheet({
+  session,
+  collections,
+  selected,
+  reasoning,
+  update
+}: {
+  session: ChatSession
+  collections: Collection[]
+  selected: string[]
+  reasoning: boolean
+  update(p: Partial<ChatSession>): Promise<void>
+}) {
+  const [instructions, setInstructions] = useState(session.systemPrompt)
+  useEffect(() => setInstructions(session.systemPrompt), [session.systemPrompt])
+
+  const toggleCollection = (id: string) => {
+    const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+    if (!next.length) return void update({ knowledgeEnabled: false, collectionIds: [] })
+    void update({ knowledgeEnabled: true, collectionIds: next.length === collections.length ? [] : next })
+  }
+
+  return (
+    <div className="space-y-[22px]">
+      <SheetSection id="sheet-knowledge" icon={Books} title="Knowledge">
+        {collections.length ? (
+          <div className="grid grid-cols-3 gap-2">
+            {collections.map((c) => {
+              const on = selected.includes(c.id)
+              const I = c.name === 'Cloth examples' ? GraduationCap : c.embeddingDim ? Stack : Books
+              return (
+                <motion.button
+                  key={c.id}
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => toggleCollection(c.id)}
+                  className={clsx(
+                    'relative rounded-[14px] border p-3 text-left transition-colors',
+                    on ? 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev' : 'border-line bg-elev hover:border-line-strong'
+                  )}
+                >
+                  <div className={clsx('mb-2.5 flex h-7 w-7 items-center justify-center rounded-[9px] transition-colors', on ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
+                    <I size={15} weight="fill" />
+                  </div>
+                  <div className="truncate pr-6 text-[12.5px] font-semibold">{c.name}</div>
+                  <div className="text-[11px] text-dim">
+                    {c.docCount} docs · {c.embeddingDim ? 'hybrid' : 'BM25'}
+                  </div>
+                  <motion.div
+                    initial={false}
+                    animate={{ scale: on ? 1 : 0.85, backgroundColor: on ? '#dc2645' : 'rgba(0,0,0,0)', borderColor: on ? '#dc2645' : '#303036' }}
+                    transition={{ type: 'spring', stiffness: 600, damping: 18 }}
+                    className="absolute right-2.5 top-2.5 flex h-[18px] w-[18px] items-center justify-center rounded-md border-[1.5px] text-white"
+                  >
+                    {on && <Check size={11} weight="bold" />}
+                  </motion.div>
+                </motion.button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[14px] border border-dashed border-line-strong p-3 text-[12px] text-dim">No collections yet — add knowledge on the Knowledge page.</div>
+        )}
+      </SheetSection>
+
+      <SheetSection icon={ToggleRight} title="Capabilities">
+        <div className="grid grid-cols-3 gap-2">
+          <Capability icon={Sparkle} title="Skills" sub="skill_list · skill_use" on={session.skillsEnabled} onToggle={() => void update({ skillsEnabled: !session.skillsEnabled })} />
+          <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
+          <Capability icon={Wrench} title="Custom tools" sub="From the Tools page" on={session.customTools} onToggle={() => void update({ customTools: !session.customTools })} />
+        </div>
+      </SheetSection>
+
+      <SheetSection id="sheet-thinking" icon={Brain} title="Thinking">
+        {reasoning ? (
+          <LayoutGroup id={`thinking-${session.id}`}>
+            <div className="inline-flex rounded-xl border border-line bg-bg p-[3px]">
+              {THINKING_LEVELS.map((l) => (
+                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[9px] px-3.5 text-[12px] capitalize transition-colors', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
+                  {session.thinking === l && (
+                    <motion.span layoutId="thinking-pill" transition={{ type: 'spring', stiffness: 420, damping: 30 }} className="absolute inset-0 rounded-[9px] bg-elev-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_8px_rgb(0_0_0/0.4)]" />
+                  )}
+                  <span className="relative">{l}</span>
+                </button>
+              ))}
+            </div>
+          </LayoutGroup>
+        ) : (
+          <div className="text-[12px] text-dim">This model isn't marked as a reasoning model. Tick “Reason” for it on the Models page to enable thinking levels.</div>
+        )}
+      </SheetSection>
+
+      <SheetSection id="sheet-workspace" icon={FolderSimple} title="Workspace">
+        <div className={clsx('flex items-center gap-2.5 rounded-[14px] border px-3 py-2.5', session.workspace ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
+          {session.workspace ? <FolderSimple size={18} weight="fill" className="text-crimson-hi" /> : <FolderDashed size={18} className="text-dim" />}
+          <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', session.workspace ? 'text-fg' : 'text-dim')}>{session.workspace ?? "No folder — the agent can't read files"}</span>
+          {session.workspace && (
+            <Button size="sm" variant="ghost" onClick={() => void update({ workspace: null })}>
+              Clear
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={async () => {
+              const [dir] = await api.app.pickPaths({ directory: true, title: 'Choose workspace' })
+              if (dir) void update({ workspace: dir })
+            }}
+          >
+            Choose…
+          </Button>
+        </div>
+        <div className="mt-1.5 text-[11px] text-dim">Read-only: list_dir, read_file and grep inside this folder.</div>
+      </SheetSection>
+
+      <SheetSection icon={NotePencil} title="Instructions">
+        <textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          onBlur={() => instructions !== session.systemPrompt && void update({ systemPrompt: instructions })}
+          placeholder="e.g. Prefer idiomatic TypeScript; cite the knowledge base."
+          className="min-h-[84px] w-full resize-y rounded-[14px] border border-line bg-bg px-3.5 py-3 text-[13px] leading-relaxed text-fg outline-none transition-[border-color,box-shadow] placeholder:text-dim focus:border-crimson-line focus:shadow-[0_0_0_4px_rgb(220_38_69/0.1)] focus-visible:outline-none"
+        />
+        <div className="mt-1 text-[11px] text-dim">Appended to Cloth's system prompt for this chat. Saved when you click away.</div>
+      </SheetSection>
+    </div>
+  )
+}
+
+function SheetSection({ id, icon: I, title, children }: { id?: string; icon: Icon; title: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="-mx-2 rounded-xl px-2 py-1">
+      <div className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-dim">
+        <I size={14} />
+        {title}
+      </div>
       {children}
-    </button>
+    </section>
+  )
+}
+
+function Capability({ icon: I, title, sub, on, onToggle }: { icon: Icon; title: string; sub: string; on: boolean; onToggle(): void }) {
+  return (
+    <motion.button whileTap={{ scale: 0.98 }} onClick={onToggle} aria-pressed={on} className="flex items-center gap-3 rounded-[14px] border border-line bg-elev p-3 text-left">
+      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] transition-all duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
+        <I size={18} weight={on ? 'fill' : 'regular'} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-semibold">{title}</div>
+        <div className="truncate text-[11px] text-dim">{sub}</div>
+      </div>
+      <div className={clsx('relative h-5 w-[34px] shrink-0 rounded-full transition-colors duration-300', on ? 'bg-crimson' : 'bg-line-strong')}>
+        <motion.span initial={false} animate={{ x: on ? 14 : 0 }} transition={{ type: 'spring', stiffness: 500, damping: 24 }} className="absolute left-[3px] top-[3px] h-3.5 w-3.5 rounded-full bg-white" />
+      </div>
+    </motion.button>
   )
 }
 
@@ -313,34 +611,46 @@ function Welcome({ onPick, hasKnowledge }: { onPick(t: string): void; hasKnowled
     'Draft a TypeScript function that debounces async calls, with tests'
   ]
   return (
-    <div className="flex flex-col items-center py-14 text-center">
-      <Logo size={36} />
-      <div className="mt-4 text-[18px] font-semibold tracking-tight">What are we building?</div>
-      <div className="mt-1 text-[12.5px] text-dim">Local agent with traced tools, grounded in your knowledge and skills.</div>
-      <div className="mt-6 grid w-full max-w-xl gap-2">
-        {prompts.map((p) => (
-          <button key={p} onClick={() => onPick(p)} className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted hover:border-crimson-line hover:text-fg">
-            <ChevronRight size={13} className="text-crimson" />
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={ENTER} className="flex flex-col items-center pt-16 text-center">
+      <Logo size={40} />
+      <div className="mt-5 text-[20px] font-semibold tracking-tight">What are we building?</div>
+      <div className="mt-1 text-[13px] text-dim">A local agent with traced tools, grounded in your knowledge, skills and the web.</div>
+      <div className="mt-8 grid w-full max-w-xl gap-2">
+        {prompts.map((p, i) => (
+          <motion.button
+            key={p}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...ENTER, delay: 0.08 + i * 0.06 }}
+            whileHover={{ x: 3 }}
+            onClick={() => onPick(p)}
+            className="flex items-center gap-2.5 rounded-[14px] border border-line bg-panel px-4 py-3 text-left text-[13px] text-muted transition-colors hover:border-crimson-line hover:text-fg"
+          >
+            <ChatCircleDots size={16} className="shrink-0 text-crimson-hi" />
             {p}
-          </button>
+          </motion.button>
         ))}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
-function UserBubble({ message }: { message: UiMessage }) {
+const enterProps = (fresh: boolean) =>
+  fresh ? { initial: { opacity: 0, y: 14, filter: 'blur(6px)' }, animate: { opacity: 1, y: 0, filter: 'blur(0px)' }, transition: ENTER } : { initial: false as const }
+
+function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) {
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
   return (
-    <div className="mb-5 flex justify-end">
-      <div className="selectable max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-line bg-elev-2 px-3.5 py-2.5 text-[13.5px] leading-relaxed">{text}</div>
-    </div>
+    <motion.div {...enterProps(fresh)} className="mb-9 flex justify-end">
+      <div className="selectable max-w-[78%] whitespace-pre-wrap rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>
+    </motion.div>
   )
 }
 
-function AssistantTurn({ message, streaming, onRegenerate }: { message: UiMessage; streaming: boolean; onRegenerate(): void }) {
+function AssistantTurn({ message, streaming, fresh, onRegenerate }: { message: UiMessage; streaming: boolean; fresh: boolean; onRegenerate(): void }) {
   const [showSources, setShowSources] = useState(false)
-  // Citations [n] refer to the most recent rag_search before each text block.
+  const [copied, setCopied] = useState(false)
+  // Citations [n] refer to the most recent search before each text block.
   const blocks = useMemo(() => {
     let refs: RagHit[] = []
     return message.blocks.map((b) => {
@@ -357,19 +667,19 @@ function AssistantTurn({ message, streaming, onRegenerate }: { message: UiMessag
   const lastTextIdx = message.blocks.map((b) => b.type).lastIndexOf('text')
 
   return (
-    <div className="group mb-6 flex gap-3">
-      <div className="mt-0.5 shrink-0">
-        <Logo size={22} />
+    <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4">
+      <div className="mt-0.5">
+        <Logo size={28} />
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0">
         {blocks.map(({ block, refs }, i) => {
-          if (block.type === 'thinking') return <Thinking key={i} text={block.text} />
-          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} />
-          return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="my-1" />
+          if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === message.blocks.length - 1} />
+          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} />
+          return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
         })}
-        {message.error && <div className="mt-2 rounded-md border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
+        {message.error && <div className="mt-2 rounded-xl border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
         {!streaming && (
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-dim">
+          <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
             {message.model && <span className="font-mono">{message.model}</span>}
             {message.usage && message.usage.input + message.usage.output > 0 && (
               <span title="input / output tokens">
@@ -377,136 +687,68 @@ function AssistantTurn({ message, streaming, onRegenerate }: { message: UiMessag
               </span>
             )}
             {allRefs.length > 0 && (
-              <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted hover:text-fg">
-                <Library size={11} /> {allRefs.length} sources
+              <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted transition-colors hover:text-fg">
+                <Books size={13} /> {allRefs.length} sources
+                <motion.span animate={{ rotate: showSources ? 90 : 0 }} className="flex">
+                  <CaretRight size={11} />
+                </motion.span>
               </button>
             )}
-            <div className="flex-1" />
-            <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              <IconButton title="Copy" onClick={() => void navigator.clipboard.writeText(text)}>
-                <Copy size={12} />
-              </IconButton>
-              <IconButton title="Regenerate" onClick={onRegenerate}>
-                <RotateCcw size={12} />
-              </IconButton>
+            <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <Tooltip content={copied ? 'Copied' : 'Copy'}>
+                <button
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(text)
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 1200)
+                  }}
+                >
+                  {copied ? <Check size={15} className="text-ok" /> : <Copy size={15} />}
+                </button>
+              </Tooltip>
+              <Tooltip content="Regenerate">
+                <button className="flex h-7 w-7 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg" onClick={onRegenerate}>
+                  <ArrowClockwise size={15} />
+                </button>
+              </Tooltip>
             </div>
-          </div>
+          </motion.div>
         )}
-        {showSources && (
-          <div className="mt-2 grid gap-1.5">
-            {allRefs.map((r, i) => (
-              <ReferenceCard key={r.chunkId} hit={r} n={i + 1} />
-            ))}
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {showSources && (
+            <motion.div key="sources" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="overflow-hidden">
+              <div className="grid gap-1.5 pt-2">
+                {allRefs.map((r, i) => (
+                  <ReferenceCard key={r.chunkId} hit={r} n={i + 1} />
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
-function Thinking({ text }: { text: string }) {
+function Thinking({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="my-1.5">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[11.5px] text-dim hover:text-muted">
-        <Brain size={12} />
-        Thinking
-        <ChevronRight size={12} className={clsx('transition-transform', open && 'rotate-90')} />
+    <div className="mb-2.5">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[12.5px] text-dim transition-colors hover:text-muted">
+        <Brain size={14} />
+        <span className={live ? 'shimmer-text' : ''}>{live ? 'Thinking' : 'Thought process'}</span>
+        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} className="flex">
+          <CaretRight size={11} />
+        </motion.span>
       </button>
-      {open && <div className="selectable mt-1.5 whitespace-pre-wrap border-l-2 border-line pl-3 text-[12px] leading-relaxed text-dim">{text}</div>}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div key="t" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="overflow-hidden">
+            <div className="selectable mt-2 whitespace-pre-wrap border-l-2 border-line pl-3 text-[12.5px] leading-relaxed text-dim">{text}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  )
-}
-
-function ChatConfig({ open, onClose, session, onSave }: { open: boolean; onClose(): void; session: ChatSession; onSave(p: Partial<ChatSession>): Promise<void> }) {
-  const collections = useApp((s) => s.collections)
-  const [system, setSystem] = useState(session.systemPrompt)
-  const [ids, setIds] = useState<string[]>(session.collectionIds)
-  const [workspace, setWorkspace] = useState(session.workspace)
-  const [skills, setSkills] = useState(session.skillsEnabled)
-  const [web, setWeb] = useState(session.webEnabled)
-  const [custom, setCustom] = useState(session.customTools)
-  useEffect(() => {
-    if (open) {
-      setSystem(session.systemPrompt)
-      setIds(session.collectionIds)
-      setWorkspace(session.workspace)
-      setSkills(session.skillsEnabled)
-      setWeb(session.webEnabled)
-      setCustom(session.customTools)
-    }
-  }, [open, session])
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Chat settings"
-      width={560}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={async () => {
-              await onSave({ systemPrompt: system, collectionIds: ids, workspace, skillsEnabled: skills, webEnabled: web, customTools: custom })
-              onClose()
-            }}
-          >
-            Save
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <Field label="Knowledge collections" hint="None selected = the agent can search all collections.">
-          <div className="flex flex-wrap gap-1.5">
-            {collections.map((c) => {
-              const on = ids.includes(c.id)
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setIds(on ? ids.filter((x) => x !== c.id) : [...ids, c.id])}
-                  className={clsx('rounded-md border px-2 py-1 text-[12px]', on ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line text-muted hover:text-fg')}
-                >
-                  {c.name} <span className="text-dim">({c.docCount})</span>
-                </button>
-              )
-            })}
-            {!collections.length && <span className="text-[12px] text-dim">No collections yet — add some under Knowledge.</span>}
-          </div>
-        </Field>
-        <Switch checked={skills} onChange={setSkills} label="Let the agent list and load skills from the hub" />
-        <Switch checked={web} onChange={setWeb} label="Web access — web_search and web_fetch (engine set in Settings)" />
-        <Switch checked={custom} onChange={setCustom} label="Custom tools from the Tools page" />
-        <Field label="Workspace folder" hint="Grants read-only list_dir / read_file / grep tools inside this folder.">
-          <div className="flex gap-2">
-            <Input readOnly value={workspace ?? ''} placeholder="None" />
-            <Button
-              onClick={async () => {
-                const [dir] = await api.app.pickPaths({ directory: true, title: 'Choose workspace' })
-                if (dir) setWorkspace(dir)
-              }}
-            >
-              Browse
-            </Button>
-            {workspace && (
-              <Button variant="ghost" onClick={() => setWorkspace(null)}>
-                Clear
-              </Button>
-            )}
-          </div>
-        </Field>
-        <Field label="Custom instructions" hint="Appended to Cloth's system prompt for this chat.">
-          <Textarea rows={5} value={system} onChange={(e) => setSystem(e.target.value)} placeholder="e.g. You are reviewing a Rust codebase. Prefer idiomatic, allocation-free solutions." />
-        </Field>
-        <div className="flex gap-2">
-          <Badge tone="dim">pi-agent-core runtime</Badge>
-          <Badge tone="dim">parallel tool execution</Badge>
-        </div>
-      </div>
-    </Modal>
   )
 }

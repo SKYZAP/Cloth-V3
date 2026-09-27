@@ -23,6 +23,7 @@ export interface ToolDeps {
 
 export interface ToolScope {
   collectionIds: string[]
+  knowledgeEnabled?: boolean
   skillsEnabled: boolean
   webEnabled?: boolean
   customTools?: boolean
@@ -49,6 +50,7 @@ interface BuiltinSpec<P extends TSchema = TSchema> {
 const spec = <P extends TSchema>(s: BuiltinSpec<P>): BuiltinSpec => s as unknown as BuiltinSpec
 
 function scopedCollections(ctx: Ctx) {
+  if (ctx.scope.knowledgeEnabled === false) return []
   const all = ctx.deps.rag.listCollections()
   return ctx.scope.collectionIds.length ? all.filter((c) => ctx.scope.collectionIds.includes(c.id)) : all
 }

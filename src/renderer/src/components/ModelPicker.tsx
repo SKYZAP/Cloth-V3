@@ -11,7 +11,8 @@ export function ModelPicker({
   kind = 'chat',
   allowNone,
   noneLabel = 'Default model',
-  className
+  className,
+  pill
 }: {
   value: ModelRef | null | undefined
   onChange(ref: ModelRef | null): void
@@ -19,6 +20,7 @@ export function ModelPicker({
   allowNone?: boolean
   noneLabel?: string
   className?: string
+  pill?: boolean
 }) {
   const providers = useApp((s) => s.providers)
   const loadProviders = useApp((s) => s.loadProviders)
@@ -33,6 +35,7 @@ export function ModelPicker({
 
   return (
     <Select
+      pill={pill}
       className={className}
       value={current}
       onChange={(e) => {
