@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage } from '@mariozechner/pi-agent-core'
-import type { AssistantMessage, ToolResultMessage } from '@mariozechner/pi-ai'
+import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@mariozechner/pi-ai'
 import type { ChatEvent, ChatSession, ModelRef, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -10,6 +10,9 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { buildTools, type ToolDetails, type ToolScope } from './tools'
+
+const SKILL_OPEN = '<skill-invocation name="'
+const SKILL_CLOSE = '</skill-invocation>'
 
 type SessionConfig = Omit<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt'>
 
@@ -130,7 +133,8 @@ export class ChatService {
   constructor(
     private ctx: Ctx,
     private runtime: AgentRuntime,
-    private settings: SettingsService
+    private settings: SettingsService,
+    private skills: SkillService
   ) {}
 
   list(): ChatSession[] {
@@ -194,7 +198,31 @@ export class ChatService {
     return this.messages(id)
   }
 
-  async send(id: string, text: string): Promise<void> {
+  /** Build the user message; skills invoked with /name ride along as tagged text blocks. */
+  private async userMessage(text: string, skillNames: string[]): Promise<UserMessage> {
+    if (!skillNames.length) return { role: 'user', content: text, timestamp: Date.now() }
+    const blocks: TextContent[] = []
+    for (const name of [...new Set(skillNames)]) {
+      const skill = await this.skills.get(name)
+      const extra = skill.files.filter((f) => f !== 'SKILL.md' && f !== 'evals.json')
+      const lines = [
+        `${SKILL_OPEN}${skill.name}">`,
+        `The user invoked the "${skill.name}" skill (/${skill.name}) for this message — follow its instructions.`,
+        '',
+        `# ${skill.name}`,
+        skill.description,
+        '',
+        skill.body,
+        ...(extra.length ? ['', `Bundled files (load with skill_use + file): ${extra.join(', ')}`] : []),
+        SKILL_CLOSE
+      ]
+      blocks.push({ type: 'text', text: lines.join('\n') })
+    }
+    const prompt = text.trim() || `Apply the ${skillNames.map((n) => `/${n}`).join(', ')} skill${skillNames.length > 1 ? 's' : ''}.`
+    return { role: 'user', content: [...blocks, { type: 'text', text: prompt }], timestamp: Date.now() }
+  }
+
+  async send(id: string, text: string, skillNames: string[] = []): Promise<void> {
     if (this.active.has(id)) throw new Error('This chat is already running')
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
@@ -242,19 +270,20 @@ export class ChatService {
       }
     })
 
+    const message = await this.userMessage(text, skillNames)
     if (session.title === 'New chat') {
-      const title = text.replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat'
+      const title = (text.trim() ? text : skillNames.map((n) => `/${n}`).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat'
       this.update(id, { title })
       emit({ sessionId: id, type: 'title', title })
     }
     emit({ sessionId: id, type: 'start' })
-    const userMsg = toUiMessages([{ role: 'user', content: text, timestamp: Date.now() }])[0]
+    const userMsg = toUiMessages([message])[0]
     emit({ sessionId: id, type: 'message', message: userMsg })
 
     void (async () => {
       let error: string | undefined
       try {
-        await agent.prompt(text)
+        await agent.prompt(message)
         error = agent.state.errorMessage
       } catch (err) {
         error = errorMessage(err)
@@ -303,8 +332,15 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
   for (const m of messages) {
     if (m.role === 'user') {
       turn = null
-      const text = typeof m.content === 'string' ? m.content : m.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n')
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text }], createdAt: m.timestamp })
+      // Skill blocks from /name invocations become chips; only the user's own text is shown.
+      const skills: string[] = []
+      const parts: string[] = []
+      for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
+        if (c.type !== 'text') parts.push('[image]')
+        else if (c.text.startsWith(SKILL_OPEN)) skills.push(c.text.slice(SKILL_OPEN.length, c.text.indexOf('"', SKILL_OPEN.length)))
+        else parts.push(c.text)
+      }
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue

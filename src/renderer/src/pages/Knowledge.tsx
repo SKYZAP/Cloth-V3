@@ -353,6 +353,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
   const [crawl, setCrawl] = useState(false)
   const [maxPages, setMaxPages] = useState(25)
   const [sameOrigin, setSameOrigin] = useState(true)
+  const [render, setRender] = useState<'auto' | 'always' | 'never'>('auto')
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
 
@@ -383,14 +384,16 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
           <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
             <Globe size={14} className="text-crimson-hi" /> Web page / docs site
           </div>
-          <div className="mb-3 text-[12px] text-dim">Readability extraction to Markdown. Crawl follows links under the same path prefix.</div>
+          <div className="mb-3 text-[12px] text-dim">
+            Readability extraction to Markdown. JavaScript-rendered sites (React/Angular docs) are rendered with the bundled Obscura browser automatically. Crawl follows links under the same path prefix.
+          </div>
           <div className="flex gap-2">
             <Input placeholder="https://docs.example.com/guide/" value={url} onChange={(e) => setUrl(e.target.value)} />
             <Button
               variant="primary"
               disabled={!/^https?:\/\//.test(url)}
               onClick={async () => {
-                const r = await attempt(() => api.rag.ingestUrl({ collectionId: collection.id, url, crawl, maxPages, sameOrigin }))
+                const r = await attempt(() => api.rag.ingestUrl({ collectionId: collection.id, url, crawl, maxPages, sameOrigin, render }))
                 if (r) setUrl('')
               }}
             >
@@ -398,12 +401,24 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
             </Button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-[12px] text-muted">
+              JS rendering
+              <Segmented
+                value={render}
+                onChange={setRender}
+                items={[
+                  { value: 'auto', label: 'Auto', title: 'Plain fetch; render with Obscura only when the page is an empty JavaScript shell' },
+                  { value: 'always', label: 'Always', title: 'Render every page with Obscura' },
+                  { value: 'never', label: 'Off', title: 'Plain HTTP only' }
+                ]}
+              />
+            </label>
             <Switch checked={crawl} onChange={setCrawl} label="Crawl linked pages" />
             {crawl && (
               <>
                 <label className="flex items-center gap-2 text-[12px] text-muted">
                   max pages
-                  <Input type="number" className="w-20" min={1} max={500} value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} />
+                  <Input type="number" className="w-20" min={1} max={1000} value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} />
                 </label>
                 <Switch checked={sameOrigin} onChange={setSameOrigin} label="Stay under this path" />
               </>

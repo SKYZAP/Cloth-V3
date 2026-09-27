@@ -53,7 +53,16 @@ export class Obscura {
     const html = await this.fetch(url.toString(), 'html', { signal })
     const results = parseDuckDuckGo(html).slice(0, k)
     if (!results.length && /anomaly|captcha|unusual traffic/i.test(html)) throw new Error('DuckDuckGo served a bot challenge — try again shortly or switch to SearXNG')
+    // A genuine empty result page says so; anything else is a block or an unexpected page.
+    if (!results.length && !/no-results|No results\./i.test(html)) {
+      throw new Error('DuckDuckGo returned no result list (likely rate-limiting after many searches) — try again shortly or switch to SearXNG')
+    }
     return results
+  }
+
+  /** Rendered DOM as HTML (JavaScript executed) — used to index client-rendered docs sites. */
+  renderHtml(url: string, signal?: AbortSignal): Promise<string> {
+    return this.fetch(url, 'html', { signal, allowPrivate: true, timeoutS: 30 })
   }
 
   fetchPage(url: string, opts: { signal?: AbortSignal; allowPrivate?: boolean } = {}): Promise<string> {

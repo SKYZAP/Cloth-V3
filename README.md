@@ -11,8 +11,10 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   (embedding / reasoning / vision), ping, default chat + embedding model. Keys encrypted via OS keychain.
 - **Agent chat** — powered by `pi-agent-core` ([ADR](docs/adr-0001-agent-runtime.md)). Streaming, thinking
   blocks, collapsible tool-call traces (args, result, duration, status), RAG references with `[n]` citation
-  hover cards, per-chat knowledge scope, skills toggle, read-only workspace tools, regenerate, stop.
-- **Hybrid & agentic RAG** — index files, folders (code-aware), PDF, DOCX, HTML, URLs (with crawl) and pasted text.
+  hover cards, per-chat knowledge scope, skills toggle, read-only workspace tools, regenerate, stop. Type `/` to
+  invoke a skill for a message.
+- **Hybrid & agentic RAG** — index files, folders (code-aware), PDF, DOCX, HTML, URLs (parallel crawl; client-rendered
+  docs sites are rendered with the bundled Obscura browser automatically) and pasted text.
   Markdown-aware chunking with heading paths. SQLite FTS5 BM25 + embeddings fused with reciprocal-rank fusion
   and per-document diversity. *Agentic* mode: LLM query planning → multi-query retrieval → reflection with
   follow-up queries → LLM rerank. Search playground shows keyword/vector ranks.

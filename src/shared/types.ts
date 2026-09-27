@@ -128,6 +128,8 @@ export interface IngestUrlInput {
   crawl?: boolean
   maxPages?: number
   sameOrigin?: boolean
+  /** auto = render with the bundled browser only when the page is a JavaScript shell. */
+  render?: 'auto' | 'always' | 'never'
 }
 
 export interface IngestProgress {
@@ -273,6 +275,8 @@ export interface UiMessage {
   model?: string
   usage?: UiUsage
   error?: string
+  /** Skills the user invoked with /name for this message. */
+  skills?: string[]
 }
 
 export type ChatEvent =

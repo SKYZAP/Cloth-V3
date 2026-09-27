@@ -17,7 +17,7 @@ import { parseJsonLoose } from '../core/llm-json'
 import type { ProviderService } from '../providers/providers'
 import type { SettingsService } from '../core/settings'
 import { chunkText } from './chunker'
-import { expandPaths, extractFile, fetchUrl, type Extracted } from './extract'
+import { expandPaths, extractFile, loadUrl, type Extracted, type PageRenderer } from './extract'
 
 interface CollectionRow {
   id: string
@@ -61,7 +61,9 @@ export class RagService {
   constructor(
     private ctx: Ctx,
     private providers: ProviderService,
-    private settings: SettingsService
+    private settings: SettingsService,
+    /** Browser renderer for JavaScript-heavy pages (bundled Obscura), if available. */
+    private renderer: () => PageRenderer | null = () => null
   ) {}
 
   // ─── Collections ──────────────────────────────────────────────────────────
@@ -185,39 +187,71 @@ export class RagService {
 
   async ingestUrl(input: IngestUrlInput): Promise<{ queued: number }> {
     const { collectionId } = input
-    const maxPages = input.crawl ? Math.max(1, Math.min(input.maxPages ?? 25, 500)) : 1
+    const maxPages = input.crawl ? Math.max(1, Math.min(input.maxPages ?? 25, 1000)) : 1
     const start = new URL(input.url)
+    start.hash = ''
     const prefix = start.origin + start.pathname.replace(/[^/]*$/, '')
+    const renderer = this.renderer()
+    const mode = input.render ?? 'auto'
     void this.enqueue(async () => {
       const seen = new Set<string>([start.toString()])
       const frontier = [start.toString()]
-      let done = 0
+      const sticky = { render: false }
+      let started = 0
+      let indexed = 0
       let failed = 0
-      while (frontier.length && done < maxPages) {
-        const url = frontier.shift()!
-        done++
-        this.progress({ collectionId, message: `[${done}/${maxPages}] ${url}`, done: false })
+      let empty = 0
+      let rendered = 0
+
+      const crawlOne = async (url: string) => {
+        const n = ++started
+        this.progress({ collectionId, message: `[${n}/${maxPages}] ${url}`, done: false })
         try {
           let links: string[] = []
-          await this.index(collectionId, 'url', url, async () => {
-            const page = await fetchUrl(url)
+          const doc = await this.index(collectionId, 'url', url, async () => {
+            const page = await loadUrl(url, { mode, renderer, sticky })
+            if (page.rendered) rendered++
             links = page.links ?? []
             return page
           })
+          if (doc.chunkCount) indexed++
+          else empty++
           if (input.crawl) {
-            for (const link of links) {
-              if (seen.has(link)) continue
+            for (const raw of links) {
+              const link = raw.split('#')[0]
+              if (seen.has(link) || seen.size >= maxPages * 4) continue
               if ((input.sameOrigin ?? true) && !link.startsWith(prefix)) continue
-              if (/\.(png|jpe?g|gif|svg|zip|tar|gz|mp4|webp|ico|css|js)(\?|$)/i.test(link)) continue
+              if (/\.(png|jpe?g|gif|svg|zip|tar|gz|mp4|webp|ico|css|js|woff2?)(\?|$)/i.test(link)) continue
               seen.add(link)
               frontier.push(link)
             }
           }
-        } catch {
-          failed++
+        } catch (err) {
+          if (/No readable text/.test(errorMessage(err))) empty++
+          else failed++
         }
       }
-      this.progress({ collectionId, message: `Crawl finished — ${done - failed} indexed, ${failed} failed`, done: true })
+
+      // A few pages in flight at once — rendering a page takes a couple of seconds.
+      const concurrency = input.crawl ? 4 : 1
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (started < maxPages) {
+          const url = frontier.shift()
+          if (!url) {
+            // Let in-flight pages discover more links before giving up.
+            if (started - indexed - failed - empty > 0) {
+              await new Promise((r) => setTimeout(r, 150))
+              continue
+            }
+            return
+          }
+          await crawlOne(url)
+        }
+      })
+      await Promise.all(workers)
+      const parts = [`${indexed} indexed`, failed ? `${failed} failed` : '', empty ? `${empty} empty` : '', rendered ? `${rendered} rendered with Obscura` : '']
+      const hint = !renderer && empty ? ' — pages look JavaScript-rendered; Obscura (bundled with the app) is needed to index them' : ''
+      this.progress({ collectionId, message: `${input.crawl ? 'Crawl' : 'Fetch'} finished — ${parts.filter(Boolean).join(', ')}${hint}`, done: true, error: indexed ? undefined : 'No pages produced any text' })
     })
     return { queued: maxPages }
   }
@@ -230,7 +264,7 @@ export class RagService {
       doc.source_type === 'file'
         ? () => extractFile(doc.source)
         : doc.source_type === 'url'
-          ? () => fetchUrl(doc.source)
+          ? () => loadUrl(doc.source, { renderer: this.renderer() })
           : async () => ({ title: doc.title, text: this.getChunks(docId).map((c) => c.text).join('\n\n'), code: false })
     return this.enqueue(() => this.index(doc.collection_id, doc.source_type, doc.source, loader))
   }
@@ -296,6 +330,13 @@ export class RagService {
       }
       const { chunkSize, chunkOverlap } = this.settings.get()
       const chunks = chunkText(extracted.text, { size: chunkSize, overlap: chunkOverlap, code: extracted.code })
+      if (!chunks.length) {
+        throw new Error(
+          extracted.html
+            ? 'No readable text on this page — it is probably rendered by JavaScript. Obscura renders such pages automatically when it is bundled (Settings → Web search).'
+            : 'The document contains no extractable text'
+        )
+      }
       const title = extracted.title.slice(0, 300)
 
       let vectors: Float32Array[] | null = null

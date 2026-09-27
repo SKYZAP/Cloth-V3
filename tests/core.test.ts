@@ -3,12 +3,12 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Agent } from '@mariozechner/pi-agent-core'
 import { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider, Type } from '@mariozechner/pi-ai'
-import { chunkText } from '../src/main/rag/chunker'
+import { chunkText, cleanHeading } from '../src/main/rag/chunker'
 import { executeGraph, renderTemplate, topoSort } from '../src/main/workflows/engine'
 import { computeVerdict, parseSkillMd, serializeSkillMd } from '../src/main/skills/skills'
 import { toUiMessages } from '../src/main/agent/chat'
 import { parseJsonLoose } from '../src/main/core/llm-json'
-import { extractHtml } from '../src/main/rag/extract'
+import { extractHtml, loadUrl, needsRendering } from '../src/main/rag/extract'
 import type { WorkflowNode } from '../src/shared/types'
 import { makeServices } from './helpers'
 
@@ -27,6 +27,46 @@ describe('chunker', () => {
     const chunks = chunkText('# Real\n\n```sh\n# comment\necho hi\n```', { size: 1000, overlap: 0 })
     expect(chunks).toHaveLength(1)
     expect(chunks[0].headingPath).toBe('Real')
+  })
+})
+
+describe('js-rendered pages', () => {
+  it('cleans anchor links out of heading paths', () => {
+    expect(cleanHeading('Binding guards[#](/guards#binding-guards)')).toBe('Binding guards')
+    expect(cleanHeading('The **`CanActivate`** interface ##')).toBe('The CanActivate interface')
+  })
+
+  it('detects an unrendered SPA shell and re-renders it', async () => {
+    const shell = extractHtml('<html><head><title>Docs</title></head><body><app-root></app-root><script src="main.js"></script></body></html>', 'https://docs.example.com/')
+    expect(needsRendering(shell)).toBe(true)
+    const full = extractHtml(`<html><body><main><h1>Guide</h1><p>${'Real content. '.repeat(60)}</p><a href="/a">a</a><a href="/b">b</a><a href="/c">c</a></main></body></html>`, 'https://docs.example.com/')
+    expect(needsRendering(full)).toBe(false)
+
+    const calls: string[] = []
+    const server = await import('node:http').then(({ createServer }) =>
+      createServer((_req, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<html><body><div id="root"></div></body></html>'))
+    )
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`
+    const renderer = async (u: string) => {
+      calls.push(u)
+      return `<html><body><main><h1>Rendered</h1><p>${'Rendered by the browser. '.repeat(40)}</p><a href="/x">x</a><a href="/y">y</a><a href="/z">z</a></main></body></html>`
+    }
+    const sticky = { render: false }
+    const page = await loadUrl(url, { renderer, sticky })
+    expect(page.rendered).toBe(true)
+    expect(page.text).toContain('Rendered by the browser')
+    expect(sticky.render).toBe(true)
+    expect((await loadUrl(url, { renderer, mode: 'never' })).rendered).toBe(false)
+    server.close()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('flags documents with no text as errors instead of silently indexing 0 chunks', async () => {
+    const { services } = makeServices()
+    const col = services.rag.createCollection({ name: 'x', embedding: null })
+    await expect(services.rag.ingestText(col.id, 'Empty', '   ')).rejects.toThrow(/no extractable text/)
+    expect(services.rag.listDocuments(col.id)[0].status).toBe('error')
   })
 })
 

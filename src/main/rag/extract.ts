@@ -10,6 +10,44 @@ export interface Extracted {
   /** Chunk as code (no heading detection). */
   code: boolean
   links?: string[]
+  /** Came from an HTML page (so it may need JavaScript rendering). */
+  html?: boolean
+}
+
+/** Renders a URL with a real browser engine and returns the resulting DOM as HTML. */
+export type PageRenderer = (url: string, signal?: AbortSignal) => Promise<string>
+export type RenderMode = 'auto' | 'always' | 'never'
+
+/**
+ * Heuristic for client-rendered apps (React/Angular/Vue docs sites): the static HTML is a shell
+ * with almost no text and no in-page links until JavaScript runs.
+ */
+export function needsRendering(page: Extracted): boolean {
+  if (!page.html) return false
+  const text = page.text.replace(/\s+/g, ' ').trim()
+  return text.length < 250 || ((page.links?.length ?? 0) < 3 && text.length < 1500)
+}
+
+/**
+ * Fetch a URL for indexing. Plain HTTP first; if the result looks like an unrendered JS shell,
+ * re-render with the browser engine. `sticky.render` lets a crawl skip the wasted plain fetch
+ * once a site is known to need rendering.
+ */
+export async function loadUrl(
+  url: string,
+  opts: { mode?: RenderMode; renderer?: PageRenderer | null; sticky?: { render: boolean }; signal?: AbortSignal } = {}
+): Promise<Extracted & { rendered: boolean }> {
+  const mode = opts.mode ?? 'auto'
+  const renderer = mode === 'never' ? null : opts.renderer ?? null
+  if (renderer && (mode === 'always' || opts.sticky?.render)) {
+    return { ...extractHtml(await renderer(url, opts.signal), url), rendered: true }
+  }
+  const page = await fetchUrl(url, opts.signal)
+  if (!needsRendering(page)) return { ...page, rendered: false }
+  if (!renderer) return { ...page, rendered: false }
+  const rendered = { ...extractHtml(await renderer(url, opts.signal), url), rendered: true }
+  if (opts.sticky && !needsRendering(rendered)) opts.sticky.render = true
+  return rendered
 }
 
 const CODE_EXT = new Set([
@@ -93,6 +131,8 @@ export async function fetchUrl(url: string, signal?: AbortSignal): Promise<Extra
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
 turndown.remove(['script', 'style', 'noscript', 'iframe', 'svg', 'form', 'button'])
+// Images carry no searchable text (and relative URLs break out of context) — keep only alt text.
+turndown.addRule('imageAlt', { filter: 'img', replacement: (_c, node) => ((node as { getAttribute(n: string): string | null }).getAttribute('alt') ?? '').trim() })
 
 export function htmlToMarkdown(html: string): string {
   return turndown.turndown(html).replace(/\n{3,}/g, '\n\n').trim()
@@ -124,7 +164,7 @@ export function extractHtml(html: string, baseUrl: string): Extracted {
     const root = document.querySelector('main, article, [role=main], .content, #content') ?? document.body
     markdown = htmlToMarkdown(root?.innerHTML ?? html)
   }
-  return { title: article?.title?.trim() || pageTitle || baseUrl, text: markdown, code: false, links }
+  return { title: article?.title?.trim() || pageTitle || baseUrl, text: markdown, code: false, links, html: true }
 }
 
 function collectLinks(document: Dom, baseUrl: string): string[] {
