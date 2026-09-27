@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { BookOpen, FilePlus2, FileText, FolderPlus, Globe, GraduationCap, Layers, Plus, RefreshCw, Search, Trash2, Type as TypeIcon, Zap } from 'lucide-react'
-import type { Collection, IngestProgress, ModelRef, RagDocument, RagMode, RagSearchResult } from '@shared/types'
+import type { Collection, IngestProgress, ModelRef, RagAskResult, RagDocument, RagMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Segmented, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { ReferenceCard } from '@/components/ToolTrace'
+import { Markdown } from '@/components/Markdown'
 
 type Tab = 'documents' | 'add' | 'search'
 
@@ -471,24 +472,59 @@ function SearchPlayground({ collection }: { collection: Collection }) {
   const [mode, setMode] = useState<RagMode>('hybrid')
   const [k, setK] = useState(8)
   const [model, setModel] = useState<ModelRef | null>(null)
-  const [result, setResult] = useState<RagSearchResult | null>(null)
+  const [answerOn, setAnswerOn] = useState(true)
+  const [result, setResult] = useState<RagAskResult | null>(null)
+  const [asked, setAsked] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const hasModel = !!(model ?? settings?.defaultModel)
+  const answering = answerOn && hasModel
 
-  const run = async () => {
-    if (!query.trim()) return
+  const run = async (q = query) => {
+    const text = q.trim()
+    if (!text || loading) return
+    setQuery(text)
     setLoading(true)
-    const r = await attempt(() => api.rag.search({ query, collectionIds: [collection.id], mode, k, model: model ?? undefined }))
-    setLoading(false)
-    if (r) setResult(r)
+    setError(null)
+    setAsked(text)
+    const input = { query: text, collectionIds: [collection.id], mode, k, model: model ?? undefined }
+    try {
+      if (answering) setResult(await api.rag.ask(input))
+      else {
+        const search = await api.rag.search(input)
+        setResult({ answer: null, model: null, search, error: null, tookMs: search.tookMs })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setResult(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
+  const suggestions =
+    collection.name === 'Cloth examples'
+      ? ['How do I undo the last commit but keep my changes?', 'When should an API return 409 vs 422?', 'How does hybrid search work in Cloth?']
+      : [`What does ${collection.name} cover?`, `Give me an overview of the main concepts in ${collection.name}`]
+
   return (
-    <div className="p-5">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="mx-auto max-w-4xl p-5">
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run()
+        }}
+      >
         <div className="relative min-w-72 flex-1">
-          <Search size={13} className="absolute left-2.5 top-2.5 text-dim" />
-          <Input className="pl-7" placeholder="Ask the collection…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void run()} />
+          <Search size={14} className="absolute left-3 top-[11px] text-dim" />
+          <Input className="h-9 pl-8 text-[13px]" placeholder={answering ? 'Ask the collection a question…' : 'Search the collection…'} value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
+        <Button type="submit" variant="primary" className="h-9" loading={loading} disabled={!query.trim()}>
+          {answering ? 'Ask' : 'Search'}
+        </Button>
+      </form>
+      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[12px] text-dim">
         <Segmented
           value={mode}
           onChange={setMode}
@@ -499,45 +535,89 @@ function SearchPlayground({ collection }: { collection: Collection }) {
             { value: 'agentic', label: 'Agentic', title: 'LLM query planning, reflection and rerank' }
           ]}
         />
-        <Input type="number" className="w-16" min={1} max={50} value={k} onChange={(e) => setK(Number(e.target.value))} title="k" />
-        <Button variant="primary" loading={loading} onClick={() => void run()}>
-          Search
-        </Button>
-      </div>
-      {mode === 'agentic' && (
-        <div className="mt-2 flex items-center gap-2 text-[12px] text-dim">
-          Planner model
-          <div className="w-72">
+        <label className="flex items-center gap-1.5">
+          top
+          <Input type="number" className="h-7 w-14" min={1} max={50} value={k} onChange={(e) => setK(Number(e.target.value))} />
+        </label>
+        <Switch checked={answerOn} onChange={setAnswerOn} label="Write an answer" disabled={!hasModel} />
+        {(answerOn || mode === 'agentic') && (
+          <div className="w-60">
             <ModelPicker value={model} onChange={setModel} allowNone noneLabel={settings?.defaultModel ? `Default (${settings.defaultModel.modelId})` : 'Default model (none set)'} />
+          </div>
+        )}
+        {!hasModel && <span className="text-warn">No default model — results will be passages only.</span>}
+      </div>
+
+      {error && <div className="mt-4 rounded-xl border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">{error}</div>}
+
+      {loading && (
+        <div className="mt-5 flex items-center gap-2 text-[12.5px] text-dim">
+          <Spinner size={13} className="text-crimson" />
+          <span className="shimmer-text">{answering ? 'Searching and writing an answer…' : 'Searching…'}</span>
+        </div>
+      )}
+
+      {!loading && !result && !error && (
+        <div className="mt-6">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-dim">Try</div>
+          <div className="grid gap-1.5">
+            {suggestions.map((s) => (
+              <button key={s} onClick={() => void run(s)} className="rounded-xl border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted transition-colors hover:border-crimson-line hover:text-fg">
+                {s}
+              </button>
+            ))}
           </div>
         </div>
       )}
-      {result && (
-        <div className="mt-4">
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-dim">
-            <Badge tone="crimson">{result.mode}</Badge>
-            <span>
-              {result.hits.length} hits in {result.tookMs}ms
-            </span>
-            {result.queries.length > 1 && (
-              <span className="flex flex-wrap gap-1">
-                queries:
-                {result.queries.map((q) => (
-                  <Badge key={q}>{q}</Badge>
-                ))}
-              </span>
-            )}
-            {result.notes.map((n) => (
-              <Badge key={n} tone="warn">
-                {n}
-              </Badge>
-            ))}
-          </div>
-          <div className="grid gap-2">
-            {result.hits.map((h, i) => (
-              <ReferenceCard key={h.chunkId} hit={h} n={i + 1} />
-            ))}
-          </div>
+
+      {!loading && result && (
+        <div className="mt-5 space-y-4">
+          {result.search.hits.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
+              Nothing in <b className="text-muted">{collection.name}</b> matched “{asked}”.
+              <div className="mt-1">{collection.docCount === 0 ? 'The collection has no documents yet — add some under Add sources.' : 'Try different wording, or another retrieval mode.'}</div>
+            </div>
+          ) : (
+            <>
+              {result.answer && (
+                <div className="rounded-2xl border border-line bg-panel p-4">
+                  <div className="mb-2 flex items-center gap-2 text-[11px] text-dim">
+                    <Badge tone="crimson">answer</Badge>
+                    {result.model && <span className="font-mono">{result.model}</span>}
+                    <span>· {(result.tookMs / 1000).toFixed(1)}s</span>
+                  </div>
+                  <Markdown text={result.answer} references={result.search.hits} />
+                </div>
+              )}
+              {result.error && <div className="rounded-xl border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-dim">
+                  <Badge tone="crimson">{result.search.mode}</Badge>
+                  <span>
+                    {result.search.hits.length} passages in {result.search.tookMs}ms
+                  </span>
+                  {result.search.queries.length > 1 && (
+                    <span className="flex flex-wrap gap-1">
+                      queries:
+                      {result.search.queries.map((q) => (
+                        <Badge key={q}>{q}</Badge>
+                      ))}
+                    </span>
+                  )}
+                  {result.search.notes.map((n) => (
+                    <Badge key={n} tone="warn">
+                      {n}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="grid gap-2">
+                  {result.search.hits.map((h, i) => (
+                    <ReferenceCard key={h.chunkId} hit={h} n={i + 1} />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

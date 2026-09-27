@@ -122,6 +122,15 @@ export interface RagSearchResult {
   tookMs: number
 }
 
+export interface RagAskResult {
+  /** Null when no model is configured or nothing relevant was retrieved. */
+  answer: string | null
+  model: string | null
+  search: RagSearchResult
+  error: string | null
+  tookMs: number
+}
+
 export interface IngestUrlInput {
   collectionId: string
   url: string

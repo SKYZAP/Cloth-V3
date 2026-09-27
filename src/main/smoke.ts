@@ -15,6 +15,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     console.log(`[smoke] ${m}`)
   }
   try {
+    if (process.env.CLOTH_PROBE === 'kb-search') return await probeKnowledgeSearch(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -185,4 +186,50 @@ async function typeSearch(win: BrowserWindow) {
     setTimeout(() => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Search')?.click(), 100)
   })()`)
   await wait(800)
+}
+
+/** Real mouse/keyboard input on the Knowledge search playground, plus layout diagnostics. */
+async function probeKnowledgeSearch(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1' })
+  await s.providers.refreshModels(provider.id).catch(() => undefined)
+  s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'mock-chat' } })
+  const col = await s.examples.load()
+  for (let i = 0; i < 80 && s.rag.listDocuments(col!.id).some((d) => d.status !== 'ready'); i++) await wait(100)
+  win.webContents.reload()
+  await wait(2500)
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  await clickNav(win, 'Knowledge')
+  await wait(800)
+  await clickText(win, 'Search playground')
+  await wait(600)
+  const state = await js(`JSON.stringify({ tabs: [...document.querySelectorAll('button')].map(b => b.textContent.trim()).filter(t => /Search|Documents|Add/.test(t)), inputs: [...document.querySelectorAll('input')].map(i => i.placeholder) })`)
+  note('state ' + state)
+  const box = await js(`JSON.stringify(document.querySelector('input[placeholder^="Ask the collection"], input[placeholder^="Search the collection"]')?.getBoundingClientRect() ?? null)`)
+  const r = JSON.parse(box) as { x: number; y: number; width: number; height: number }
+  const x = Math.round(r.x + r.width / 2)
+  const y = Math.round(r.y + r.height / 2)
+  win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+  win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+  await wait(300)
+  for (const ch of 'undo last commit') {
+    win.webContents.sendInputEvent({ type: 'char', keyCode: ch })
+    await wait(15)
+  }
+  await wait(300)
+  const typed = await js(`document.querySelector('input[placeholder^="Ask the collection"]')?.value`)
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' })
+  win.webContents.sendInputEvent({ type: 'char', keyCode: String.fromCharCode(13) })
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' })
+  await wait(2500)
+  const diag = await js(`JSON.stringify({
+    active: document.activeElement?.getAttribute('placeholder'),
+    hits: document.querySelectorAll('[class*="rounded-[10px]"][class*="bg-bg"]').length,
+    summary: [...document.querySelectorAll('span')].map(e => e.textContent).find(t => /passages in/.test(t || '')),
+    answer: [...document.querySelectorAll('.prose-cloth')].map(e => e.textContent).join(' | ').slice(0, 160),
+    scrolled: [...document.querySelectorAll('*')].filter(e => e.scrollLeft > 0 || e.scrollTop > 0).map(e => (e.tagName + '.' + String(e.className).slice(0, 60) + ' L' + e.scrollLeft + ' T' + e.scrollTop)).slice(0, 8),
+    docScroll: [document.documentElement.scrollLeft, document.body.scrollLeft],
+    wide: [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 2).map(e => e.tagName + '.' + String(e.className).slice(0, 70)).slice(0, 8)
+  })`)
+  note(`typed="${typed}" diag=${diag}`)
+  writeFileSync(join(outDir, 'kb-search.png'), await screenshot(win))
 }
