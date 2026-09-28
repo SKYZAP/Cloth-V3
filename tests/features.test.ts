@@ -218,6 +218,28 @@ describe('reasoning models in one-shot calls', () => {
     }
   })
 
+  it('drops temperature for models that only accept the default, and remembers it', async () => {
+    const { services } = makeServices()
+    const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-temp' })
+    const seen: (number | undefined)[] = []
+    const reply = (_ctx: unknown, options: { temperature?: number } | undefined) => {
+      seen.push(options?.temperature)
+      return options?.temperature !== undefined
+        ? fauxAssistantMessage('', { stopReason: 'error', errorMessage: "400 Unsupported parameter: 'temperature' is not supported with this model." })
+        : fauxAssistantMessage('PASS')
+    }
+    faux.setResponses([reply, reply, reply])
+    try {
+      const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      const ref = { providerId: provider.id, modelId: 'gpt-6-luna' }
+      expect((await services.providers.complete(ref, { prompt: 'grade', temperature: 0 })).text).toBe('PASS')
+      expect((await services.providers.complete(ref, { prompt: 'grade', temperature: 0 })).text).toBe('PASS')
+      expect(seen).toEqual([0, undefined, undefined])
+    } finally {
+      faux.unregister()
+    }
+  })
+
   it('recognises reasoning-by-default model families', async () => {
     const { isReasoningModelId, stripThinkTags } = await import('../src/main/providers/providers')
     for (const id of ['qwen/qwen3.5-9b', 'qwen35', 'deepseek-r1-distill-qwen-7b', 'openai/gpt-oss-20b', 'qwq-32b']) expect(isReasoningModelId(id)).toBe(true)
