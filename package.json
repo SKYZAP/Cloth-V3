@@ -24,6 +24,11 @@
     "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs"
   },
   "dependencies": {
+    "@ast-grep/lang-go": "^0.0.6",
+    "@ast-grep/lang-java": "^0.0.7",
+    "@ast-grep/lang-python": "^0.0.6",
+    "@ast-grep/lang-rust": "^0.0.7",
+    "@ast-grep/napi": "^0.45.3",
     "@earendil-works/pi-agent-core": "^0.87.1",
     "@earendil-works/pi-ai": "^0.87.1",
     "@earendil-works/pi-coding-agent": "^0.87.1",
@@ -132,6 +137,9 @@
           "**/*.md"
         ]
       }
+    ],
+    "asarUnpack": [
+      "node_modules/@ast-grep/**"
     ]
   }
 }

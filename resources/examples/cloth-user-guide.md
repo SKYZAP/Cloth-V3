@@ -23,6 +23,7 @@ Each chat has its own model, knowledge scope and tool switches.
 - **Regenerate** reruns the last question; **Stop** aborts a running turn.
 - A **workspace folder** lets the agent work with files there. Choose it from the folder icon, then pick what it may do:
   - **Files: Read only** gives `read`, `ls`, `find` and `grep`. **Read & write** adds `write` (new files, rewrites) and `edit` (targeted replacements).
+  - **AST tools**: `ast_grep` searches code by structure with ast-grep patterns — code with `$NAME` (one node) and `$$ARGS` (a list) placeholders, e.g. `console.log($$ARGS)` — and, in read & write chats, `ast_edit` rewrites every match reusing the captures (e.g. `logger.debug($$ARGS)`), with all changed files in one approval and one Undo. Languages: TypeScript, TSX, JavaScript, HTML, CSS, Python, Go, Rust and Java.
   - **Shell** adds a command tool (PowerShell on Windows, bash elsewhere) that runs in the workspace folder.
   - **Approvals**: *Ask every time* shows each change as a diff (or the command) with **Apply** / **Decline**; *Auto-approve edits* stops asking for file changes but still asks before commands; *Auto-approve all* asks for nothing. On an approval card, "Allow all edits in this chat" switches to auto-approving edits.
   - Paths can never leave the workspace folder, including through links.
