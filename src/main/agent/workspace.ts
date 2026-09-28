@@ -183,6 +183,9 @@ interface CallState {
   toolName: string
   signal?: AbortSignal
   changes: FileChange[]
+  /** Checkpoint key: the outermost tool call (a subagent's edits belong to its `task` call). */
+  checkpointId: string
+  parent?: CallState
 }
 
 const call = new AsyncLocalStorage<CallState>()
@@ -247,10 +250,11 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     const { diff, added, removed } = makeDiff(rel, before, content)
     const state = call.getStore()
     await ask({ kind: state?.toolName === 'edit' ? 'edit' : 'write', path: rel, diff, added, removed })
-    if (o.checkpoints && o.sessionId && state) await o.checkpoints.record(o.sessionId, state.toolCallId, { abs, before, after: content })
+    if (o.checkpoints && o.sessionId && state) await o.checkpoints.record(o.sessionId, state.checkpointId, { abs, before, after: content })
     await mkdir(dirname(abs), { recursive: true })
     await writeFile(abs, content)
-    state?.changes.push({ path: rel, kind: before === null ? 'create' : 'modify', diff, added, removed })
+    const change: FileChange = { path: rel, kind: before === null ? 'create' : 'modify', diff, added, removed }
+    for (let s: CallState | undefined = state; s; s = s.parent) s.changes.push(change)
   }
 
   const readOps = {
@@ -316,14 +320,25 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   return tools.map(withCallState)
 }
 
+/**
+ * Run `fn` as a tool call: file changes made inside it (including by nested calls, e.g. a
+ * subagent's edits) are collected and checkpointed under this call's id.
+ */
+export async function runAsCall<T>(toolCallId: string, toolName: string, signal: AbortSignal | undefined, fn: () => Promise<T>): Promise<{ result: T; changes: FileChange[] }> {
+  const parent = call.getStore()
+  const state: CallState = { toolCallId, toolName, signal, changes: [], checkpointId: parent?.checkpointId ?? toolCallId, parent }
+  const result = await call.run(state, fn)
+  return { result, changes: state.changes }
+}
+
 /** Run each call with its id in async context, and attach the files it changed to the result. */
 function withCallState<T extends AgentTool<any>>(tool: T): T {
   return {
     ...tool,
     async execute(id, params, signal, onUpdate) {
-      const state: CallState = { toolCallId: id, toolName: tool.name, signal, changes: [] }
       const started = performance.now()
-      const res = await call.run(state, () => tool.execute(id, params, signal, onUpdate))
+      const { result: res, changes } = await runAsCall(id, tool.name, signal, () => tool.execute(id, params, signal, onUpdate))
+      const state = { changes }
       const details = (res.details && typeof res.details === 'object' ? res.details : {}) as Record<string, unknown>
       return {
         ...res,

@@ -16,6 +16,7 @@ export interface ToolDetails {
   durationMs?: number
   references?: RagHit[]
   changes?: FileChange[]
+  subagent?: JsonValue
   [key: string]: JsonValue | RagHit[] | FileChange[] | undefined
 }
 
@@ -42,6 +43,10 @@ export interface ToolScope {
   sessionId?: string
   autoApprove?: () => AutoApprove
   onAlways?: (scope: 'edits' | 'all') => void
+  /** Offer the `task` tool (top-level chat agents only). */
+  subagents?: boolean
+  /** 0 for the chat agent, 1 inside a subagent. */
+  depth?: number
 }
 
 interface Ctx {
@@ -102,7 +107,7 @@ export const BUILTINS: BuiltinSpec[] = [
     }),
     description: () =>
       'Plan and track multi-step work with a todo list the user can see. Write the full list each time (it replaces the previous one). Mark exactly one item in_progress while working on it and mark items completed as soon as they are done. Use for tasks with 3 or more steps; skip for simple questions.',
-    when: (ctx) => !!ctx.scope.sessionId,
+    when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth,
     async run(p) {
       const todos = (p.todos ?? []).filter((t) => t && typeof t.content === 'string' && t.content.trim())
       const done = todos.filter((t) => t.status === 'completed').length
@@ -239,7 +244,7 @@ export const BUILTINS: BuiltinSpec[] = [
   })
 ]
 
-export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES]
+export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task']
 
 export function describeBuiltins(): BuiltinToolInfo[] {
   return BUILTINS.map((b) => ({
@@ -249,7 +254,16 @@ export function describeBuiltins(): BuiltinToolInfo[] {
     group: b.group,
     availability: b.availability,
     schema: JSON.parse(JSON.stringify(b.parameters))
-  })).concat(describeWorkspaceTools())
+  }))
+    .concat(describeWorkspaceTools())
+    .concat({
+      name: 'task',
+      label: 'Subagent',
+      description: 'Delegate a self-contained job to a subagent with its own fresh context: a read-only scout for exploring and researching, or a worker that can also edit files (edits still need approval). Several can run in parallel; each returns a concise report.',
+      group: 'planning',
+      availability: 'Chats with subagents on',
+      schema: { type: 'object', required: ['description', 'prompt'], properties: { description: { type: 'string' }, prompt: { type: 'string' }, role: { type: 'string', enum: ['scout', 'worker'] } } }
+    })
 }
 
 function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> {

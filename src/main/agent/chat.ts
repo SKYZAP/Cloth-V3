@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ApprovalDecision, ChatEvent, ChatSession, ContextUsage, FileChange, ModelRef, PendingApproval, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatEvent, ChatSession, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -13,8 +13,20 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { buildTools, type ToolDetails, type ToolScope } from './tools'
+import { runAsCall } from './workspace'
+import { Type } from 'typebox'
+import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { budget, estimateHistory, findCut, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
+
+const SUBAGENT_INSTRUCTIONS = (role: 'scout' | 'worker') =>
+  [
+    'You are a subagent: another agent delegated this job to you. Work autonomously — you cannot ask the user or the other agent questions.',
+    role === 'scout'
+      ? 'You are a read-only scout: investigate with the tools you have and do not attempt to change anything.'
+      : 'You are a worker: make the changes the job asks for, keeping them minimal. Each edit may be reviewed by the user.',
+    'When done, reply with a concise report — it is all the other agent will see. Include concrete findings: file paths with line numbers, names, facts, and what you changed. No preamble.'
+  ].join('\n')
 
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
@@ -43,6 +55,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   fileAccess: 'read',
   shell: false,
   autoApprove: 'none',
+  subagents: true,
   thinking: 'off'
 }
 
@@ -92,7 +105,14 @@ export class AgentRuntime {
     if (scope.webEnabled) {
       lines.push('', '## Web', 'You can search the public web with `web_search` and read pages with `web_fetch`. Prefer the local knowledge base for project-specific questions; use the web for current or external information, and cite web results as [n].')
     }
-    if (scope.sessionId) lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
+    if (scope.subagents && !scope.depth) {
+      lines.push(
+        '',
+        '## Subagents',
+        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
+      )
+    }
+    if (scope.sessionId && !scope.depth) lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
     if (scope.workspace) {
       const writable = scope.fileAccess === 'write' && !!scope.sessionId
       const shell = scope.shell && scope.sessionId ? (process.platform === 'win32' ? 'powershell' : 'bash') : null
@@ -118,7 +138,10 @@ export class AgentRuntime {
         systemPrompt: opts.systemPrompt,
         model,
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
-        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
+        tools: [
+          ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
+          ...(opts.scope.subagents && !opts.scope.depth ? [this.taskTool(opts)] : [])
+        ],
         messages: opts.history ?? []
       },
       streamFn: streamSimple,
@@ -127,6 +150,49 @@ export class AgentRuntime {
     })
     this.providers.usage.track(agent)
     return agent
+  }
+
+  /** The `task` tool: run a subagent with a fresh context and a scoped toolset. */
+  private taskTool(parent: Omit<AgentRunOptions, 'prompt'>): AgentTool<any, ToolDetails> {
+    return {
+      name: 'task',
+      label: 'Subagent',
+      description:
+        'Run a subagent on a self-contained job with its own fresh context and return its report. role "scout" (default) can read and search but not change anything; role "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.',
+      parameters: Type.Object({
+        description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
+        prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
+        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')]))
+      }),
+      execute: async (id, params, signal, onUpdate) => {
+        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker' }
+        const role: SubagentRun['role'] = p.role === 'worker' && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
+        const scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
+        const base = { role, description: p.description || 'Subagent', model: parent.model.modelId }
+        const started = Date.now()
+        const { result, changes } = await runAsCall(id, 'task', signal, () =>
+          this.run({
+            model: parent.model,
+            prompt: p.prompt,
+            systemPrompt: SUBAGENT_INSTRUCTIONS(role),
+            scope,
+            thinking: parent.thinking,
+            signal,
+            maxTurns: 30,
+            onEvent: (turn) =>
+              onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: { ...base, blocks: turn.blocks, running: true } } as unknown as ToolDetails })
+          })
+        ).catch((err) => {
+          this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
+          throw err
+        })
+        this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
+        return {
+          content: [{ type: 'text', text: result.text || '(the subagent finished without a report)' }],
+          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
+        }
+      }
+    }
   }
 
   /** Headless agent run (workflows, MCP). Returns the final assistant text and the turn trace. */
@@ -138,8 +204,9 @@ export class AgentRuntime {
     const maxTurns = opts.maxTurns ?? 12
     agent.subscribe((e) => {
       if (e.type === 'turn_end' && ++turns >= maxTurns) agent.abort()
-      if (opts.onEvent && (e.type === 'message_end' || e.type === 'tool_execution_end')) {
-        opts.onEvent(toUiMessages(agent.state.messages.slice(startIndex)).at(-1)!)
+      if (opts.onEvent && (e.type === 'message_end' || e.type === 'tool_execution_start' || e.type === 'tool_execution_end')) {
+        const turn = toUiMessages(agent.state.messages.slice(startIndex), agent.state.pendingToolCalls).at(-1)
+        if (turn?.role === 'assistant') opts.onEvent(turn)
       }
     })
     opts.signal?.addEventListener('abort', () => agent.abort(), { once: true })
@@ -201,6 +268,7 @@ export class ChatService {
       fileAccess: cur.fileAccess,
       shell: cur.shell,
       autoApprove: cur.autoApprove,
+      subagents: cur.subagents,
       thinking: cur.thinking,
       ...config
     }
@@ -368,6 +436,8 @@ export class ChatService {
       fileAccess: session.fileAccess,
       shell: session.shell,
       sessionId: id,
+      subagents: session.subagents,
+      depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {
         const cur = this.get(id).autoApprove
@@ -396,13 +466,14 @@ export class ChatService {
 
     const emit = (e: ChatEvent) => this.ctx.emit('chat', e)
     const startIndex = history.length
+    const partials = new Map<string, ToolDetails>()
     let timer: NodeJS.Timeout | null = null
     const pushTurn = () => {
       timer = null
       const msgs: AgentMessage[] = [...agent.state.messages.slice(startIndex)]
       const streaming = agent.state.streamingMessage
       if (streaming && !msgs.includes(streaming)) msgs.push(streaming)
-      const ui = toUiMessages(msgs, agent.state.pendingToolCalls)
+      const ui = toUiMessages(msgs, agent.state.pendingToolCalls, partials)
       const turn = ui.filter((m) => m.role === 'assistant').at(-1)
       if (turn) emit({ sessionId: id, type: 'message', message: turn })
     }
@@ -412,9 +483,12 @@ export class ChatService {
 
     agent.subscribe((e) => {
       switch (e.type) {
+        case 'tool_execution_update':
+          if (e.partialResult?.details) partials.set(e.toolCallId, e.partialResult.details as ToolDetails)
+          schedule()
+          break
         case 'message_update':
         case 'tool_execution_start':
-        case 'tool_execution_update':
           schedule()
           break
         case 'message_end':
@@ -483,7 +557,7 @@ function toSession(row: SessionRow): ChatSession {
  * assistant/toolResult message until the next user message is folded into a single assistant
  * turn with interleaved thinking, text and tool traces.
  */
-export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<string>): UiMessage[] {
+export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<string>, partials?: ReadonlyMap<string, ToolDetails>): UiMessage[] {
   const out: UiMessage[] = []
   const results = new Map<string, ToolResultMessage<ToolDetails>>()
   for (const m of messages) if (m.role === 'toolResult') results.set(m.toolCallId, m as ToolResultMessage<ToolDetails>)
@@ -526,7 +600,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           result: r ? r.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n') : '',
           durationMs: r?.details?.durationMs ?? null,
           references: r?.details?.references ?? [],
-          ...(r?.details?.changes?.length ? { changes: r.details.changes } : {})
+          ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
+          ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })

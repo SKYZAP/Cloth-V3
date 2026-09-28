@@ -291,6 +291,8 @@ export interface ChatSession {
   shell: boolean
   /** Which actions run without asking first. */
   autoApprove: AutoApprove
+  /** Let the agent delegate work to subagents with the `task` tool. */
+  subagents: boolean
   thinking: ThinkingLevel
   createdAt: number
   updatedAt: number
@@ -336,6 +338,17 @@ export interface ToolTrace {
   references: RagHit[]
   /** Files written or edited by this call. */
   changes?: FileChange[]
+  /** For `task` calls: the subagent's own run. */
+  subagent?: SubagentRun
+}
+
+export interface SubagentRun {
+  role: 'scout' | 'worker'
+  description: string
+  blocks: UiBlock[]
+  running: boolean
+  model?: string
+  usage?: UiUsage
 }
 
 export type UiBlock =
