@@ -8,6 +8,7 @@ import { ExamplesService } from './rag/examples'
 import { SkillService } from './skills/skills'
 import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
+import { ApprovalService, CheckpointStore } from './agent/workspace'
 import { BUILTIN_NAMES } from './agent/tools'
 import { CustomToolService } from './tools/custom'
 import { WebService } from './web/web'
@@ -61,8 +62,10 @@ export function createServices(opts: {
   const skills = new SkillService(ctx, providers)
   const registry = new SkillRegistry(ctx, skills)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom)
-  const chat = new ChatService(ctx, runtime, settings, skills, providers.usage)
+  const approvals = new ApprovalService((e) => ctx.emit('chat', e))
+  const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints })
+  const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, usage: providers.usage })
 

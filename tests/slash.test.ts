@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { fauxAssistantMessage, registerFauxProvider, type Context } from '@mariozechner/pi-ai'
+import { fauxAssistantMessage, type Context } from '@earendil-works/pi-ai'
+import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
 
 describe('slash-invoked skills', () => {

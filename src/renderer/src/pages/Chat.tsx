@@ -14,6 +14,11 @@ import {
   FolderSimple,
   GlobeHemisphereWest,
   GraduationCap,
+  LockSimple,
+  PencilSimpleLine,
+  ShieldCheck,
+  ShieldWarning,
+  TerminalWindow,
   MagnifyingGlass,
   NotePencil,
   Plus,
@@ -27,7 +32,7 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ChatSession, Collection, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, Collection, PendingApproval, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -38,6 +43,7 @@ import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
+import { ApprovalCard } from '@/components/ApprovalCard'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -166,7 +172,7 @@ export function ChatPage() {
           />
         ) : (
           <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={create}>New chat</Button>}>
-            Chat with any registered model. The agent can search your knowledge base and the web, load skills, call your tools and read a workspace folder — every tool call is traced.
+            Chat with any registered model. The agent can search your knowledge base and the web, load skills, call your tools, and read or edit files in a workspace folder — every tool call is traced.
           </Empty>
         )}
       </div>
@@ -181,6 +187,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const [draft, setDraft] = useState('')
   const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
   const [invoked, setInvoked] = useState<string[]>([])
+  const [approvals, setApprovals] = useState<PendingApproval[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
   const [slash, setSlash] = useState<{ query: string; start: number; end: number } | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
@@ -201,6 +208,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       initialIds.current = new Set(ms.map((m) => m.id))
       setMessages(ms)
     })
+    void api.chat.pendingApprovals(session.id).then(setApprovals)
   }, [session.id])
 
   useEvent('chat', (e) => {
@@ -214,7 +222,10 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
         return next
       })
     }
+    if (e.type === 'approval') setApprovals((as) => (as.some((a) => a.id === e.approval.id) ? as : [...as, e.approval]))
+    if (e.type === 'approval-done') setApprovals((as) => as.filter((a) => a.id !== e.id))
     if (e.type === 'end') {
+      setApprovals([])
       void api.chat.messages(session.id).then(setMessages)
       if (e.error && !/abort/i.test(e.error)) useApp.getState().toast(e.error, 'error')
     }
@@ -279,6 +290,29 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     })
   }
 
+  const decide = async (a: PendingApproval, decision: ApprovalDecision) => {
+    await attempt(() => api.chat.resolveApproval(a.id, decision))
+    // "always" changes this chat's approval policy.
+    if (decision === 'always') {
+      const s = (await api.chat.list()).find((x) => x.id === session.id)
+      if (s) onChange(s)
+    }
+  }
+
+  const undo = async (toolCallId: string) => {
+    try {
+      setMessages(await api.chat.undoChange(session.id, toolCallId))
+      useApp.getState().toast('Changes undone', 'ok')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/changed since/.test(msg)) return void useApp.getState().toast(msg, 'error')
+      if (!window.confirm(msg + '.\n\nUndo anyway and overwrite the newer changes?')) return
+      const ms = await attempt(() => api.chat.undoChange(session.id, toolCallId, true))
+      if (ms) setMessages(ms)
+    }
+  }
+  const awaiting = useMemo(() => new Set(approvals.map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals])
+
   const regenerate = async (assistantId: string) => {
     const idx = messages.findIndex((m) => m.id === assistantId)
     const user = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')
@@ -332,9 +366,14 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             return m.role === 'user' ? (
               <UserBubble key={m.id} message={m} fresh={fresh} />
             ) : (
-              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === messages.length - 1} onRegenerate={() => void regenerate(m.id)} />
+              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === messages.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
             )
           })}
+          <AnimatePresence>
+            {approvals.map((a) => (
+              <ApprovalCard key={a.id} approval={a} onDecide={(d) => decide(a, d)} />
+            ))}
+          </AnimatePresence>
           <AnimatePresence>
             {waiting && (
               <motion.div key="thinking" initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} exit={{ opacity: 0 }} transition={ENTER} className="mb-9 grid grid-cols-[28px_1fr] gap-4">
@@ -441,7 +480,13 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} state={session.skillsEnabled ? 'On · type / to invoke' : 'Off · / still invokes'} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
             <ComposerToggle icon={GlobeHemisphereWest} label="Web search" active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })} />
             <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />
-            <ComposerToggle icon={FolderSimple} label="Workspace" active={!!session.workspace} state={session.workspace ? session.workspace.split(/[\\/]/).pop()! : 'None'} onClick={() => openSheet('workspace')} />
+            <ComposerToggle
+              icon={FolderSimple}
+              label="Workspace"
+              active={!!session.workspace}
+              state={session.workspace ? `${session.workspace.split(/[\\/]/).pop()} · ${session.fileAccess === 'write' ? 'read & write' : 'read-only'}${session.shell ? ' · shell' : ''}` : 'None'}
+              onClick={() => openSheet('workspace')}
+            />
             <div className="mx-1.5 h-[18px] w-px bg-line-strong" />
             <ComposerToggle
               icon={Brain}
@@ -708,7 +753,40 @@ function ContextSheet({
             Choose…
           </Button>
         </div>
-        <div className="mt-1.5 text-[11px] text-dim">Read-only: list_dir, read_file and grep inside this folder.</div>
+        {session.workspace ? (
+          <div className="mt-3 space-y-3">
+            <OptionRow
+              label="Files"
+              value={session.fileAccess}
+              onChange={(fileAccess) => void update({ fileAccess })}
+              options={[
+                { value: 'read', icon: LockSimple, title: 'Read only', sub: 'read · ls · find · grep' },
+                { value: 'write', icon: PencilSimpleLine, title: 'Read & write', sub: '+ write · edit, each change undoable' }
+              ]}
+            />
+            <OptionRow
+              label="Shell"
+              value={session.shell ? 'on' : 'off'}
+              onChange={(v) => void update({ shell: v === 'on' })}
+              options={[
+                { value: 'off', icon: X, title: 'No commands', sub: 'The agent cannot run programs' },
+                { value: 'on', icon: TerminalWindow, title: window.cloth.platform === 'win32' ? 'PowerShell' : 'bash', sub: 'Runs in the workspace folder' }
+              ]}
+            />
+            <OptionRow<AutoApprove>
+              label="Approvals"
+              value={session.autoApprove}
+              onChange={(autoApprove) => void update({ autoApprove })}
+              options={[
+                { value: 'none', icon: ShieldCheck, title: 'Ask every time', sub: 'Review each change and command' },
+                { value: 'edits', icon: PencilSimpleLine, title: 'Auto-approve edits', sub: 'Still ask before commands' },
+                { value: 'all', icon: ShieldWarning, title: 'Auto-approve all', sub: 'Edits and commands run unasked', danger: true }
+              ]}
+            />
+          </div>
+        ) : (
+          <div className="mt-1.5 text-[11px] text-dim">Pick a folder to let the agent read it — and, if you allow it, edit files and run commands there.</div>
+        )}
       </SheetSection>
 
       <SheetSection icon={NotePencil} title="Instructions">
@@ -721,6 +799,47 @@ function ContextSheet({
         />
         <div className="mt-1 text-[11px] text-dim">Appended to Cloth's system prompt for this chat. Saved when you click away.</div>
       </SheetSection>
+    </div>
+  )
+}
+
+function OptionRow<T extends string>({
+  label,
+  value,
+  onChange,
+  options
+}: {
+  label: string
+  value: T
+  onChange(v: T): void
+  options: { value: T; icon: Icon; title: string; sub: string; danger?: boolean }[]
+}) {
+  return (
+    <div className="grid grid-cols-[76px_1fr] items-start gap-3">
+      <div className="pt-2.5 text-[12px] text-muted">{label}</div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+        {options.map((o) => {
+          const on = o.value === value
+          return (
+            <motion.button
+              key={o.value}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onChange(o.value)}
+              aria-pressed={on}
+              className={clsx(
+                'flex items-center gap-2.5 rounded-[12px] border px-2.5 py-2 text-left transition-colors',
+                on ? (o.danger ? 'border-warn/50 bg-warn/[0.07]' : 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev') : 'border-line bg-elev hover:border-line-strong'
+              )}
+            >
+              <o.icon size={16} weight={on ? 'fill' : 'regular'} className={clsx('shrink-0', on ? (o.danger ? 'text-warn' : 'text-crimson-hi') : 'text-dim')} />
+              <span className="min-w-0">
+                <span className="block truncate text-[12.5px] font-medium">{o.title}</span>
+                <span className="block truncate text-[10.5px] text-dim">{o.sub}</span>
+              </span>
+            </motion.button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -806,7 +925,21 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
   )
 }
 
-function AssistantTurn({ message, streaming, fresh, onRegenerate }: { message: UiMessage; streaming: boolean; fresh: boolean; onRegenerate(): void }) {
+function AssistantTurn({
+  message,
+  streaming,
+  fresh,
+  onRegenerate,
+  awaiting,
+  onUndo
+}: {
+  message: UiMessage
+  streaming: boolean
+  fresh: boolean
+  onRegenerate(): void
+  awaiting: Set<string>
+  onUndo?(toolCallId: string): Promise<void>
+}) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
   // Citations [n] refer to the most recent search before each text block.
@@ -833,7 +966,7 @@ function AssistantTurn({ message, streaming, fresh, onRegenerate }: { message: U
       <div className="min-w-0">
         {blocks.map(({ block, refs }, i) => {
           if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === message.blocks.length - 1} />
-          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} />
+          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
         })}
         {message.error && <div className="mt-2 rounded-xl border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}

@@ -1,4 +1,6 @@
-import { completeSimple, getModels, type Api, type AssistantMessage, type Context, type Model } from '@mariozechner/pi-ai'
+import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
+// The compat entry keeps pi-ai's global dispatch (provider registry by api id), which Cloth builds on.
+import { completeSimple, getModels } from '@earendil-works/pi-ai/compat'
 import type {
   ModelInfo,
   ModelRef,

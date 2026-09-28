@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm'
 import { Type, type TSchema } from 'typebox'
-import type { AgentTool } from '@mariozechner/pi-agent-core'
+import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { CustomTool, CustomToolInput, ModelRef, ToolParam, ToolRunResult } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'

@@ -1,6 +1,7 @@
-import { Agent } from '@mariozechner/pi-agent-core'
+import { streamSimple } from '@earendil-works/pi-ai/compat'
+import { Agent } from '@earendil-works/pi-agent-core'
 import { Type } from 'typebox'
-import type { AgentTool } from '@mariozechner/pi-agent-core'
+import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ModelRef, WorkflowBuildStep, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowNodeType } from '@shared/types'
 import { NODE_SPEC, NODE_SPECS } from '@shared/workflow-nodes'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -297,6 +298,7 @@ export async function buildWorkflow(
   const { model } = deps.providers.resolve(input.model)
   const agent = new Agent({
     initialState: { systemPrompt, model, tools: agentTools, thinkingLevel: 'off' },
+    streamFn: streamSimple,
     getApiKey: async (id) => deps.providers.apiKey(id) || 'cloth-local',
     toolExecution: 'sequential'
   })

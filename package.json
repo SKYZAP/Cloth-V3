@@ -24,11 +24,13 @@
     "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs"
   },
   "dependencies": {
-    "@mariozechner/pi-agent-core": "^0.73.1",
-    "@mariozechner/pi-ai": "^0.73.1",
+    "@earendil-works/pi-agent-core": "^0.87.1",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "@modelcontextprotocol/sdk": "^1.30.1",
     "@mozilla/readability": "^0.6.0",
     "croner": "^10.0.1",
+    "diff": "^8.0.4",
     "linkedom": "^0.18.13",
     "mammoth": "^1.12.3",
     "turndown": "^7.2.4",
