@@ -7,6 +7,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, compact, duration, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
@@ -24,6 +25,7 @@ type Tab = 'instructions' | 'files' | 'tests'
 export function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [activeName, setActiveName] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
   const [adding, setAdding] = useState<{ open: boolean; tab: AddTab }>({ open: false, tab: 'registry' })
@@ -31,7 +33,10 @@ export function SkillsPage() {
   const load = async (select?: string) => {
     const list = await api.skills.list()
     setSkills(list)
-    if (select) setActiveName(select)
+    if (select) {
+      setActiveName(select)
+      setOpen(true)
+    }
     else if (!activeName || !list.some((s) => s.name === activeName)) setActiveName(list[0]?.name ?? null)
   }
   useEffect(() => {
@@ -51,7 +56,7 @@ export function SkillsPage() {
   }, [skills])
 
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         width={288}
         header={
@@ -85,7 +90,7 @@ export function SkillsPage() {
         {shown.map((s) => {
           const v = VERDICT[s.health?.verdict ?? 'untested']
           return (
-            <ListItem key={s.name} active={s.name === activeName} onClick={() => setActiveName(s.name)}>
+            <ListItem key={s.name} active={s.name === activeName} onClick={() => (setActiveName(s.name), setOpen(true))}>
               <span title={v.label}>
                 <Dot tone={v.tone === 'dim' ? 'dim' : v.tone} />
               </span>
@@ -96,8 +101,9 @@ export function SkillsPage() {
             </ListItem>
           )
         })}
+        {!skills.length && <div className="p-4 text-center text-[12px] text-dim">No skills yet.</div>}
       </ListPane>
-      <div className="min-w-0 flex-1">
+      <SplitDetail>
         {active ? (
           <SkillView key={active.name} skill={active} onChanged={(name) => void load(name)} />
         ) : (
@@ -119,7 +125,7 @@ export function SkillsPage() {
             Skills are folders with a SKILL.md (Claude/Agent-Skills compatible). Cloth serves them to its own agent and over MCP, and tests them against models to catch staleness.
           </Empty>
         )}
-      </div>
+      </SplitDetail>
       <NewSkill open={creating} onClose={() => setCreating(false)} onCreated={(n) => void load(n)} />
       <AddSkills
         open={adding.open}
@@ -128,7 +134,7 @@ export function SkillsPage() {
         onClose={() => setAdding((a) => ({ ...a, open: false }))}
         onImported={(name) => void load(name)}
       />
-    </div>
+    </SplitRoot>
   )
 }
 

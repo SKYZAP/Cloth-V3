@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#DC2645</color>
+    <color name="colorPrimaryDark">#09090A</color>
+    <color name="colorAccent">#EF3D5C</color>
+    <color name="cloth_bg">#09090A</color>
+</resources>

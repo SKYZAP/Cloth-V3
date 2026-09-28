@@ -5,8 +5,7 @@ import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { ImageGeneration, useRevealStatus } from './ImageGeneration'
 import { Tooltip } from './Tooltip'
-
-export const imageUrl = (id: string) => `cloth-image://image/${id}`
+import { useImageSrc } from '@/lib/platform'
 
 function ratio(img: GeneratedImage): string {
   if (img.width && img.height) return `${img.width} / ${img.height}`
@@ -28,6 +27,7 @@ function useElapsed(since: number | undefined, active: boolean): number {
 /** A generated image (or one in progress) in the beui ImageGeneration surface, with Open / Save. */
 export function GeneratedImageCard({ image, onRetry, className }: { image: GeneratedImage; onRetry?: () => void; className?: string }) {
   const status = useRevealStatus(image.status)
+  const src = useImageSrc(image.id)
   const active = status === 'queued' || status === 'generating' || status === 'refining'
   const secs = useElapsed(image.startedAt, active)
   const resolution = image.width && image.height ? `${image.width} × ${image.height}` : image.size === 'auto' ? 'auto' : image.size.replace('x', ' × ')
@@ -67,7 +67,7 @@ export function GeneratedImageCard({ image, onRetry, className }: { image: Gener
           ) : null
         }
       >
-        {image.id ? <img src={imageUrl(image.id)} alt={image.revisedPrompt ?? image.prompt} draggable={false} /> : null}
+        {image.id && src ? <img src={src} alt={image.revisedPrompt ?? image.prompt} draggable={false} /> : null}
       </ImageGeneration>
       {status === 'error' && image.error && <div className="mt-2 rounded-lg border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{image.error.replace(/^Error:\s*/, '')}</div>}
       {status === 'complete' && image.revisedPrompt && image.revisedPrompt !== image.prompt && (

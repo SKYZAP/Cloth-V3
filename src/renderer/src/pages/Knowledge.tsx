@@ -6,6 +6,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Segmented, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { ReferenceCard } from '@/components/ToolTrace'
 import { Markdown } from '@/components/Markdown'
@@ -16,6 +17,7 @@ export function KnowledgePage() {
   const collections = useApp((s) => s.collections)
   const loadCollections = useApp((s) => s.loadCollections)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function KnowledgePage() {
     else if (col === null) useApp.getState().toast('No example documents are bundled with this build', 'info')
   }
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         header={
           <div className="flex items-center justify-between">
@@ -56,7 +58,7 @@ export function KnowledgePage() {
         }
       >
         {collections.map((c) => (
-          <ListItem key={c.id} active={c.id === activeId} onClick={() => setActiveId(c.id)}>
+          <ListItem key={c.id} active={c.id === activeId} onClick={() => (setActiveId(c.id), setOpen(true))}>
             <Layers size={14} className="shrink-0 text-dim" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px]">{c.name}</div>
@@ -67,8 +69,9 @@ export function KnowledgePage() {
             {c.embeddingDim ? <Badge tone="crimson">vec</Badge> : <Badge tone="dim">bm25</Badge>}
           </ListItem>
         ))}
+        {!collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or the cap icon for example docs.</div>}
       </ListPane>
-      <div className="min-w-0 flex-1">
+      <SplitDetail>
         {active ? (
           <CollectionView key={active.id} collection={active} />
         ) : (
@@ -89,9 +92,9 @@ export function KnowledgePage() {
             Collections hold documents, folders and web pages. Search is hybrid: SQLite FTS5 (BM25) fused with embeddings via reciprocal-rank fusion.
           </Empty>
         )}
-      </div>
-      <NewCollection open={creating} onClose={() => setCreating(false)} onCreated={(c) => setActiveId(c.id)} />
-    </div>
+      </SplitDetail>
+      <NewCollection open={creating} onClose={() => setCreating(false)} onCreated={(c) => (setActiveId(c.id), setOpen(true))} />
+    </SplitRoot>
   )
 }
 

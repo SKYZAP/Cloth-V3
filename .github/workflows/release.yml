@@ -1,4 +1,4 @@
-# Build Cloth for Windows (x64) and macOS (Apple silicon only) and attach the installers to a GitHub release.
+# Build Cloth for Windows (x64), macOS (Apple silicon only) and Android, and attach the installers to a GitHub release.
 #
 # Runs when a release is published, or manually (Actions → Release → Run workflow) with a
 # version number: the manual run creates the release (tag v<version>) if it doesn't exist yet,
@@ -9,6 +9,12 @@
 #   macOS:   CSC_LINK (base64 .p12), CSC_KEY_PASSWORD, and for notarization
 #            APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #   Windows: WIN_CSC_LINK (base64 .pfx), WIN_CSC_KEY_PASSWORD
+#   Android: ANDROID_KEYSTORE (base64 .jks), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS (default "cloth"),
+#            ANDROID_KEY_PASSWORD (defaults to the keystore password). Without these the APK is signed
+#            with a throwaway debug key, so it installs but can't update over an APK from another run.
+#            Make a keystore once with:
+#              keytool -genkeypair -v -keystore cloth.jks -alias cloth -keyalg RSA -keysize 4096 -validity 36500
+#            then store `base64 -w0 cloth.jks` as ANDROID_KEYSTORE.
 name: Release
 
 on:
@@ -169,5 +175,70 @@ jobs:
           path: |
             release/*.exe
             release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Build (Android)
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && needs.prepare.outputs.tag || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set app version
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Signing key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/cloth.jks"
+            echo "CLOTH_KEYSTORE=$RUNNER_TEMP/cloth.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ANDROID_KEYSTORE is not set — the APK is signed with a throwaway debug key."
+          fi
+
+      - name: Build APK
+        env:
+          CLOTH_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CLOTH_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CLOTH_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          node scripts/mobile-apk.mjs release "$VERSION"
+          mkdir -p release
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "release/Cloth-$VERSION-android.apk"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "release/Cloth-$VERSION-android.apk" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Keep the APK as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloth-${{ env.VERSION }}-android
+          path: release/*.apk
           if-no-files-found: error
           retention-days: 14

@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { attempt, sameRef, useApp } from '@/lib/store'
 import { compact } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Switch, Textarea, confirmAction } from '@/components/ui'
+import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { GeneratedImageCard } from '@/components/GeneratedImageCard'
 
@@ -15,6 +16,7 @@ export function ProvidersPage() {
   const providers = useApp((s) => s.providers)
   const loadProviders = useApp((s) => s.loadProviders)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function ProvidersPage() {
 
   const active = providers.find((p) => p.id === activeId)
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         header={
           <div className="flex items-center justify-between">
@@ -38,7 +40,7 @@ export function ProvidersPage() {
         }
       >
         {providers.map((p) => (
-          <ListItem key={p.id} active={p.id === activeId} onClick={() => setActiveId(p.id)}>
+          <ListItem key={p.id} active={p.id === activeId} onClick={() => (setActiveId(p.id), setOpen(true))}>
             {isLocal(p.baseUrl) ? <HardDrive size={14} className="shrink-0 text-dim" /> : <Cloud size={14} className="shrink-0 text-dim" />}
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px]">{p.name}</div>
@@ -49,8 +51,10 @@ export function ProvidersPage() {
             <Dot tone={p.enabled ? 'ok' : 'dim'} />
           </ListItem>
         ))}
+        {!providers.length && <div className="p-4 text-center text-[12px] text-dim">No providers yet — tap Add to connect OpenAI, Anthropic or a local server.</div>}
       </ListPane>
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <SplitDetail>
+        <div className="h-full overflow-y-auto">
         <Defaults />
         {active ? (
           <ProviderView key={active.id} provider={active} />
@@ -61,16 +65,18 @@ export function ProvidersPage() {
             </Empty>
           </div>
         )}
-      </div>
+        </div>
+      </SplitDetail>
       <AddProvider
         open={adding}
         onClose={() => setAdding(false)}
         onAdded={async (p) => {
           await loadProviders()
           setActiveId(p.id)
+          setOpen(true)
         }}
       />
-    </div>
+    </SplitRoot>
   )
 }
 

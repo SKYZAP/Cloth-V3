@@ -3,6 +3,9 @@
 @import '@fontsource-variable/jetbrains-mono';
 @import '@xyflow/react/dist/style.css';
 
+/* Phone app: `mobile:` utilities apply only inside the Android client (html.mobile). */
+@custom-variant mobile (&:where(.mobile, .mobile *));
+
 @theme {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', monospace;
@@ -330,4 +333,32 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ─── Phone app ─────────────────────────────────────────────────────────────── */
+html.mobile body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+html.mobile {
+  /* Capacitor injects --safe-area-inset-* on Android; env() covers browsers and newer WebViews. */
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+/* Grid children may shrink below their content (long code lines scroll inside instead of widening the page). */
+html.mobile .grid > * {
+  min-width: 0;
+}
+
+/* Narrow screens: tables scroll sideways instead of breaking words into letters. */
+html.mobile .prose-cloth th,
+html.mobile .prose-cloth td {
+  min-width: 8.5rem;
+  overflow-wrap: normal;
+  word-break: normal;
+  padding: 8px 12px;
+}
+html.mobile .prose-cloth pre {
+  font-size: 11.5px;
 }

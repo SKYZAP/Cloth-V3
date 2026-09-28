@@ -46,7 +46,7 @@ export function McpPage() {
           </>
         }
       />
-      <div className="grid gap-4 p-5 xl:grid-cols-[1fr_1fr]">
+      <div className="grid gap-4 p-5 xl:grid-cols-[1fr_1fr] mobile:gap-3 mobile:p-3">
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className={clsx('flex h-10 w-10 items-center justify-center rounded-xl border', status.running ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
@@ -94,7 +94,7 @@ export function McpPage() {
         </Card>
 
         <Card className="p-4 xl:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between mobile:flex-wrap mobile:gap-2">
             <div className="text-[13px] font-semibold">Connect a client</div>
             <Segmented
               value={client}

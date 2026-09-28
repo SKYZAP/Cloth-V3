@@ -18,7 +18,7 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Check, Clock, Copy, FileText, LayoutDashboard, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Check, Clock, Copy, FileText, History, LayoutDashboard, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -30,17 +30,24 @@ import { Editor } from '@/components/Editor'
 import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes'
 import { Inspector } from './workflow/Inspector'
 import { AssembleModal } from './workflow/AssembleModal'
+import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
+import { BottomSheet } from '@/components/BottomSheet'
+import { isMobile } from '@/lib/platform'
 
 export function WorkflowsPage() {
   const [flows, setFlows] = useState<Workflow[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [assembling, setAssembling] = useState(false)
 
   const load = async (select?: string) => {
     const list = await api.workflows.list()
     setFlows(list)
-    if (select) setActiveId(select)
+    if (select) {
+      setActiveId(select)
+      setOpen(true)
+    }
     else if (!activeId || !list.some((f) => f.id === activeId)) setActiveId(list[0]?.id ?? null)
   }
   useEffect(() => {
@@ -53,7 +60,7 @@ export function WorkflowsPage() {
 
   const active = flows.find((f) => f.id === activeId)
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         width={248}
         header={
@@ -74,7 +81,7 @@ export function WorkflowsPage() {
         }
       >
         {flows.map((f) => (
-          <ListItem key={f.id} active={f.id === activeId} onClick={() => setActiveId(f.id)}>
+          <ListItem key={f.id} active={f.id === activeId} onClick={() => (setActiveId(f.id), setOpen(true))}>
             <WorkflowIcon size={14} className="shrink-0 text-dim" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px]">{f.name}</div>
@@ -90,11 +97,12 @@ export function WorkflowsPage() {
             </div>
           </ListItem>
         ))}
+        {!flows.length && <div className="p-4 text-center text-[12px] text-dim">No workflows yet — tap New, or AI to describe one.</div>}
       </ListPane>
-      <div className="min-w-0 flex-1">
+      <SplitDetail>
         {active ? (
           <ReactFlowProvider key={active.id}>
-            <Editor2 workflow={active} onSaved={(w) => setFlows((fs) => fs.map((f) => (f.id === w.id ? w : f)))} onDeleted={() => void load()} onDuplicated={(id) => void load(id)} />
+            <Editor2 workflow={active} onSaved={(w) => setFlows((fs) => fs.map((f) => (f.id === w.id ? w : f)))} onDeleted={() => (setOpen(false), void load())} onDuplicated={(id) => void load(id)} />
           </ReactFlowProvider>
         ) : (
           <Empty
@@ -114,7 +122,7 @@ export function WorkflowsPage() {
             Wire LLM calls, agents, knowledge search, skills, HTTP and JS into a graph. Branch with conditions, run on demand or on a cron schedule.
           </Empty>
         )}
-      </div>
+      </SplitDetail>
       <NewWorkflow open={creating} onClose={() => setCreating(false)} onCreated={(id) => void load(id)} />
       <AssembleModal
         open={assembling}
@@ -125,7 +133,7 @@ export function WorkflowsPage() {
           if (wf) await load(wf.id)
         }}
       />
-    </div>
+    </SplitRoot>
   )
 }
 
@@ -191,6 +199,9 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const [runId, setRunId] = useState<string | null>(null)
   const [runOpen, setRunOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  // Phone: the palette and run history open as sheets over the canvas.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [runsOpen, setRunsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState(() => snapshot(workflow.nodes, workflow.edges, workflow.name, workflow.cron ?? '', workflow.cronEnabled))
   const flow = useReactFlow()
@@ -339,11 +350,12 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const running = activeRun?.status === 'running'
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {/* Top bar */}
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <input className="w-56 min-w-0 bg-transparent text-[14px] font-semibold tracking-tight outline-none" value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="flex flex-1 items-center gap-2">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 mobile:flex-wrap mobile:gap-1.5 mobile:px-2">
+        <SplitBack className="ml-0" />
+        <input className="w-56 min-w-0 bg-transparent text-[14px] font-semibold tracking-tight outline-none mobile:w-auto mobile:flex-1" value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="flex flex-1 items-center gap-2 mobile:order-last mobile:basis-full mobile:flex-wrap mobile:px-1 mobile:pb-0.5">
           <div className="flex items-center gap-1.5 rounded-md border border-line bg-panel pl-2">
             <Clock size={13} className={cronEnabled && cron ? 'text-crimson-hi' : 'text-dim'} />
             <input className="h-7 w-32 bg-transparent font-mono text-[12px] outline-none placeholder:text-dim" placeholder="*/30 * * * *" value={cron} onChange={(e) => setCron(e.target.value)} />
@@ -353,7 +365,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           {workflow.cronEnabled && workflow.nextRunAt && !dirty && <Badge tone="crimson">next {timeAgo(workflow.nextRunAt)}</Badge>}
         </div>
         <Button icon={<Sparkles size={13} />} onClick={() => setAiOpen(true)} title="Describe a change and let an agent apply it">
-          AI edit
+          <span className="mobile:hidden">AI edit</span>
         </Button>
         <IconButton title="Duplicate" onClick={async () => {
           const w = await attempt(() => api.workflows.duplicate(workflow.id))
@@ -372,7 +384,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           <Trash2 size={14} />
         </IconButton>
         <Button icon={<Save size={13} />} disabled={!dirty} loading={saving} onClick={() => void save()}>
-          Save
+          <span className="mobile:hidden">Save</span>
         </Button>
         {running ? (
           <Button variant="danger" icon={<Square size={11} fill="currentColor" />} onClick={() => activeRun && void api.workflows.cancel(activeRun.id)}>
@@ -387,6 +399,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
 
       <div className="flex min-h-0 flex-1">
         {/* Palette */}
+        {!isMobile && (
         <div className="w-44 shrink-0 space-y-1 overflow-y-auto border-r border-line bg-panel p-2">
           <div className="px-1 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Nodes</div>
           {NODE_TYPES.map((m) => (
@@ -408,6 +421,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             Drag or click to add. Reference outputs with <span className="font-mono text-muted">{'{{key}}'}</span>, <span className="font-mono text-muted">{'{{prev}}'}</span>, <span className="font-mono text-muted">{'{{input.x}}'}</span>.
           </div>
         </div>
+        )}
 
         {/* Canvas */}
         <div
@@ -448,11 +462,22 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
                 Arrange
               </Button>
             </Panel>
-            <MiniMap pannable zoomable nodeColor={(n) => META[n.type as WorkflowNodeType]?.color ?? '#555'} maskColor="rgb(9 9 10 / 0.7)" />
+            {isMobile && (
+              <Panel position="bottom-right" className="!m-3 flex flex-col gap-2">
+                <button onClick={() => setRunsOpen(true)} aria-label="Runs" className="flex h-12 w-12 items-center justify-center rounded-2xl border border-line-strong bg-elev text-muted shadow-lg shadow-black/50">
+                  <History size={20} />
+                </button>
+                <button onClick={() => setPaletteOpen(true)} aria-label="Add node" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-crimson text-white shadow-[0_8px_24px_-6px_rgb(220_38_69/0.7)]">
+                  <Plus size={22} />
+                </button>
+              </Panel>
+            )}
+            {!isMobile && <MiniMap pannable zoomable nodeColor={(n) => META[n.type as WorkflowNodeType]?.color ?? '#555'} maskColor="rgb(9 9 10 / 0.7)" />}
           </ReactFlow>
         </div>
 
         {/* Inspector */}
+        {!isMobile && (
         <div className="w-80 shrink-0 overflow-y-auto border-l border-line bg-panel">
           {sel ? (
             <Inspector
@@ -471,7 +496,58 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} />
           )}
         </div>
+        )}
       </div>
+
+      {isMobile && (
+        <>
+          <BottomSheet open={paletteOpen} onClose={() => setPaletteOpen(false)} title="Add a node" description="Tap to drop it in the middle of the canvas." snapPoints={[0.7]}>
+            <div className="grid grid-cols-2 gap-2 pb-4">
+              {NODE_TYPES.map((m) => (
+                <button
+                  key={m.type}
+                  onClick={() => {
+                    addNode(m.type)
+                    setPaletteOpen(false)
+                  }}
+                  className="flex items-center gap-2.5 rounded-2xl border border-line bg-elev px-3 py-3 text-left active:border-line-strong"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `${m.color}22`, color: m.color }}>
+                    <m.icon size={16} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium">{m.label}</span>
+                    <span className="block truncate text-[11px] text-dim">{m.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </BottomSheet>
+          <BottomSheet open={!!sel} onClose={() => setSelected(null)} title={sel ? (META[sel.type as WorkflowNodeType]?.label ?? 'Node') : 'Node'} snapPoints={[0.55, 0.92]}>
+            {sel && (
+              <div className="-mx-4 -mt-2">
+                <Inspector
+                  key={sel.id}
+                  type={sel.type as WorkflowNodeType}
+                  data={sel.data}
+                  keys={keys}
+                  onChange={(patch) => setNodes((ns) => ns.map((n) => (n.id === sel.id ? { ...n, data: { ...n.data, ...patch } } : n)))}
+                  onDelete={() => {
+                    setNodes((ns) => ns.filter((n) => n.id !== sel.id))
+                    setEdges((es) => es.filter((e) => e.source !== sel.id && e.target !== sel.id))
+                    setSelected(null)
+                  }}
+                />
+              </div>
+            )}
+          </BottomSheet>
+          <BottomSheet open={runsOpen && !sel} onClose={() => setRunsOpen(false)} title="Runs" snapPoints={[0.6, 0.92]}>
+            <div className="-mx-4 -mt-2 h-[70vh]">
+              <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} />
+            </div>
+          </BottomSheet>
+        </>
+      )}
 
       <AssembleModal
         open={aiOpen}
@@ -499,6 +575,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           if (r) {
             setRunId(r.id)
             setSelected(null)
+            if (isMobile) setRunsOpen(true)
           }
           setRunOpen(false)
         }}

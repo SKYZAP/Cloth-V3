@@ -175,6 +175,16 @@ export function createApi(s: Services): ClothApi {
       status: async () => s.mcp.status(),
       restart: () => s.mcp.restart(),
       rotateToken: async () => s.mcp.rotateToken()
+    },
+    remote: {
+      status: async () => s.remote.status(),
+      pair: () => s.remote.pair(),
+      cancelPairing: async (id) => s.remote.cancelPairing(id),
+      revoke: async (id) => s.remote.revoke(id),
+      rename: async (id, name) => s.remote.rename(id, name),
+      roots: () => s.remote.roots(),
+      listDir: (path) => s.remote.listDir(path),
+      imageData: async (id) => s.remote.imageData(await s.images.file(id))
     }
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, motion, useMotionValue, useTransform, type AnimationPlaybackControls } from 'motion/react'
 import { X } from '@phosphor-icons/react'
+import { useBackHandler } from '@/lib/back'
 
 /** Vaul-style glide: a long, fully damped tween (same curve as beui's bottom sheet). */
 export const EASE_DRAWER = [0.32, 0.72, 0, 1] as const
@@ -39,6 +40,7 @@ export function BottomSheet({
   const y = useMotionValue(10_000)
   const anim = useRef<AnimationPlaybackControls | null>(null)
   const drag = useRef<{ startY: number; startSheetY: number; samples: { t: number; y: number }[] } | null>(null)
+  useBackHandler(open, onClose)
 
   const yFor = useCallback((snap: number) => height * (SHEET_HEIGHT - snap), [height])
   const closedY = height * SHEET_HEIGHT + 40
@@ -137,7 +139,7 @@ export function BottomSheet({
           <motion.section
             role="dialog"
             aria-modal="true"
-            className="sheet-glass absolute bottom-0 left-1/2 flex w-[min(780px,calc(100%-32px))] -translate-x-1/2 touch-none flex-col rounded-t-[26px] border border-b-0 border-line-strong"
+            className="sheet-glass absolute bottom-0 left-1/2 flex w-[min(780px,calc(100%-32px))] -translate-x-1/2 mobile:w-[calc(100%-12px)] touch-none flex-col rounded-t-[26px] border border-b-0 border-line-strong"
             style={{ height: `${SHEET_HEIGHT * 100}%`, y }}
           >
             <div className="group flex cursor-grab justify-center pb-1 pt-2.5 active:cursor-grabbing" {...dragProps}>
@@ -152,7 +154,7 @@ export function BottomSheet({
                 <X size={15} />
               </button>
             </div>
-            <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-[22px] pb-7">
+            <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-[22px] pb-7 mobile:px-4">
               {children}
             </div>
           </motion.section>

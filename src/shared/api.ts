@@ -39,7 +39,10 @@ import type {
   SkillTestInput,
   UiMessage,
   Workflow,
-  WorkflowRun
+  WorkflowRun,
+  RemoteStatus,
+  RemotePairing,
+  RemoteDirEntry
 } from './types'
 
 export interface ExternalSkillInfo {
@@ -175,6 +178,18 @@ export interface ClothApi {
     restart(): Promise<McpStatus>
     rotateToken(): Promise<McpStatus>
   }
+  /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
+  remote: {
+    status(): Promise<RemoteStatus>
+    pair(): Promise<RemotePairing>
+    cancelPairing(deviceId: string): Promise<RemoteStatus>
+    revoke(deviceId: string): Promise<RemoteStatus>
+    rename(deviceId: string, name: string): Promise<RemoteStatus>
+    /** Drives / home folders to start browsing from. */
+    roots(): Promise<RemoteDirEntry[]>
+    listDir(path: string): Promise<{ path: string; parent: string | null; entries: RemoteDirEntry[] }>
+    imageData(id: string): Promise<{ mime: string; data: string } | null>
+  }
 }
 
 export type EventMap = {
@@ -184,4 +199,5 @@ export type EventMap = {
   mcp: McpStatus
   skills: { type: 'run'; run: SkillRun }
   web: { type: 'status' }
+  remote: RemoteStatus
 }

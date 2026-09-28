@@ -48,6 +48,8 @@ import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
 import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
+import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
+import { isMobile } from '@/lib/platform'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -58,6 +60,7 @@ export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.chat') || null)
   const [running, setRunning] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
+  const [open, setOpen] = useState(false)
 
   const load = async () => {
     const list = await api.chat.list()
@@ -93,6 +96,7 @@ export function ChatPage() {
     if (s) {
       setSessions((ss) => [s, ...ss])
       setActiveId(s.id)
+      setOpen(true)
     }
   }
 
@@ -107,7 +111,7 @@ export function ChatPage() {
   const shown = sessions.filter((s) => !filter || s.title.toLowerCase().includes(filter.toLowerCase()))
 
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         header={
           <div className="flex gap-2">
@@ -132,18 +136,18 @@ export function ChatPage() {
           return (
             <div
               key={s.id}
-              onClick={() => setActiveId(s.id)}
+              onClick={() => (setActiveId(s.id), setOpen(true))}
               className={clsx(
-                'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pl-3.5 pr-2 transition-colors duration-200',
-                on ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
+                'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pl-3.5 pr-2 transition-colors duration-200 mobile:py-3.5',
+                on && !isMobile ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
               )}
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
-                  <span className={clsx('truncate text-[12.5px] font-semibold', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
+                  <span className={clsx('truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
                 </div>
-                <div className="mt-px truncate text-[11px] text-dim">
+                <div className="mt-px truncate text-[11px] text-dim mobile:text-[12px]">
                   {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
                 </div>
               </div>
@@ -155,7 +159,7 @@ export function ChatPage() {
                 title="Delete chat"
                 className={clsx(
                   'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-all hover:bg-hover hover:text-crimson-hi',
-                  on ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  on || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                 )}
               >
                 <Trash size={15} />
@@ -166,7 +170,7 @@ export function ChatPage() {
         {!sessions.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
 
-      <div className="min-w-0 flex-1">
+      <SplitDetail>
         {active ? (
           <ChatView
             key={active.id}
@@ -179,8 +183,8 @@ export function ChatPage() {
             Chat with any registered model. The agent can search your knowledge base and the web, load skills, call your tools, and read or edit files in a workspace folder — every tool call is traced.
           </Empty>
         )}
-      </div>
-    </div>
+      </SplitDetail>
+    </SplitRoot>
   )
 }
 
@@ -357,7 +361,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* Header floats over the conversation and fades into it */}
-      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5">
+      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
+        <SplitBack />
         <input
           key={session.title}
           className="min-w-0 flex-1 truncate bg-transparent text-[14px] font-semibold tracking-tight outline-none focus-visible:outline-none"
@@ -365,7 +370,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
           onBlur={(e) => e.target.value.trim() && e.target.value !== session.title && void update({ title: e.target.value.trim() })}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
-        <ModelPicker pill className="w-64" value={session.model} onChange={(model) => void update({ model })} />
+        <ModelPicker pill className="w-64 mobile:w-[46%] mobile:shrink-0" value={session.model} onChange={(model) => void update({ model })} />
         <Tooltip content="Chat context">
           <motion.button
             whileTap={{ scale: 0.88 }}
@@ -386,7 +391,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
         }}
       >
-        <div className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px]">
+        <div className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
           {!messages.length && <Welcome onPick={(t) => void send(t)} hasKnowledge={collections.length > 0} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -442,11 +447,11 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       </div>
 
       {/* Composer: floats over a gradient fade — no divider line */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
         <AnimatePresence>{showPlan && todos && <PlanPanel key="plan" todos={todos} />}</AnimatePresence>
         <div
           className={clsx(
-            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
+            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
             'focus-within:-translate-y-px focus-within:border-crimson-line focus-within:shadow-[0_16px_44px_-14px_rgb(0_0_0/0.8),0_0_0_4px_rgb(220_38_69/0.10)]'
           )}
         >
@@ -513,7 +518,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
                 setInvoked((cur) => cur.slice(0, -1))
                 return
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              // Phones: Enter is a newline; the send button sends.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isMobile) {
                 e.preventDefault()
                 void send()
               }
@@ -533,7 +539,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             />
             <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} state={session.skillsEnabled ? 'On · type / to invoke' : 'Off · / still invokes'} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
             <ComposerToggle icon={GlobeHemisphereWest} label="Web search" active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })} />
-            <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />
+            {!isMobile && <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />}
             <ComposerToggle
               icon={FolderSimple}
               label="Workspace"
@@ -541,7 +547,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               state={session.workspace ? `${session.workspace.split(/[\\/]/).pop()} · ${session.fileAccess === 'write' ? 'read & write' : 'read-only'}${session.shell ? ' · shell' : ''}` : 'None'}
               onClick={() => openSheet('workspace')}
             />
-            <div className="mx-1.5 h-[18px] w-px bg-line-strong" />
+            <div className="mx-1.5 h-[18px] w-px bg-line-strong mobile:mx-0.5" />
             <ComposerToggle
               icon={Brain}
               label="Thinking"
@@ -550,7 +556,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               onClick={() => openSheet('thinking')}
             />
             <div className="flex-1" />
-            <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100">
+            <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100 mobile:hidden">
               <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
             </span>
             <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
@@ -723,7 +729,7 @@ function ContextSheet({
     <div className="space-y-[22px]">
       <SheetSection id="sheet-knowledge" icon={Books} title="Knowledge">
         {collections.length ? (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2 mobile:grid-cols-2">
             {collections.map((c) => {
               const on = selected.includes(c.id)
               const I = c.name === 'Cloth examples' ? GraduationCap : c.embeddingDim ? Stack : Books
@@ -763,7 +769,7 @@ function ContextSheet({
       </SheetSection>
 
       <SheetSection icon={ToggleRight} title="Capabilities">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
           <Capability icon={Sparkle} title="Skills" sub="skill_list · skill_use" on={session.skillsEnabled} onToggle={() => void update({ skillsEnabled: !session.skillsEnabled })} />
           <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
           <Capability icon={Wrench} title="Custom tools" sub="From the Tools page" on={session.customTools} onToggle={() => void update({ customTools: !session.customTools })} />
@@ -775,9 +781,9 @@ function ContextSheet({
       <SheetSection id="sheet-thinking" icon={Brain} title="Thinking">
         {reasoning ? (
           <LayoutGroup id={`thinking-${session.id}`}>
-            <div className="inline-flex rounded-xl border border-line bg-bg p-[3px]">
+            <div className="inline-flex rounded-xl border border-line bg-bg p-[3px] mobile:flex mobile:w-full">
               {THINKING_LEVELS.map((l) => (
-                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[9px] px-3.5 text-[12px] capitalize transition-colors', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
+                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[9px] px-3.5 text-[12px] capitalize transition-colors mobile:h-9 mobile:flex-1 mobile:px-0', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
                   {session.thinking === l && (
                     <motion.span layoutId="thinking-pill" transition={{ type: 'spring', stiffness: 420, damping: 30 }} className="absolute inset-0 rounded-[9px] bg-elev-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_8px_rgb(0_0_0/0.4)]" />
                   )}
@@ -881,9 +887,9 @@ function OptionRow<T extends string>({
   options: { value: T; icon: Icon; title: string; sub: string; danger?: boolean }[]
 }) {
   return (
-    <div className="grid grid-cols-[76px_1fr] items-start gap-3">
-      <div className="pt-2.5 text-[12px] text-muted">{label}</div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div className="grid grid-cols-[76px_1fr] items-start gap-3 mobile:grid-cols-1 mobile:gap-1.5">
+      <div className="pt-2.5 text-[12px] text-muted mobile:pt-0">{label}</div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: isMobile ? '1fr' : `repeat(${options.length}, minmax(0, 1fr))` }}>
         {options.map((o) => {
           const on = o.value === value
           return (
@@ -986,7 +992,7 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
           ))}
         </div>
       ) : null}
-      {text.trim() && <div className="selectable max-w-[78%] whitespace-pre-wrap rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>}
+      {text.trim() && <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>}
     </motion.div>
   )
 }
@@ -1026,8 +1032,8 @@ function AssistantTurn({
   const lastTodoIdx = message.blocks.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
 
   return (
-    <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4">
-      <div className="mt-0.5">
+    <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4 mobile:mb-7 mobile:grid-cols-1">
+      <div className="mt-0.5 mobile:hidden">
         <Logo size={28} />
       </div>
       <div className="min-w-0">
@@ -1053,7 +1059,7 @@ function AssistantTurn({
                 </motion.span>
               </button>
             )}
-            <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 mobile:opacity-100">
               <Tooltip content={copied ? 'Copied' : 'Copy'}>
                 <button
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
