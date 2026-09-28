@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -65,18 +65,34 @@ function createWindow(): void {
 /** Default attribution for work started from each part of the UI. */
 const IPC_SOURCE: Record<string, UsageSource> = { chat: 'chat', rag: 'knowledge', skills: 'skills', workflows: 'workflow', tools: 'tools', web: 'tools', mcp: 'mcp' }
 
-function registerIpc(api: ClothApi, usage: UsageService): void {
-  ipcMain.handle('cloth:invoke', async (_e, path: string, args: unknown[]) => {
+/** Runs an API call by path — shared by the window's IPC and paired phones. */
+function makeDispatch(api: ClothApi, usage: UsageService) {
+  return async (path: string, args: unknown[]): Promise<unknown> => {
     const [ns, method] = path.split('.') as [keyof ClothApi, string]
-    const fn = (api[ns] as Record<string, (...a: unknown[]) => Promise<unknown>> | undefined)?.[method]
-    if (typeof fn !== 'function') throw new Error(`Unknown API ${path}`)
+    const fn = Object.hasOwn(api, ns) ? (api[ns] as Record<string, (...a: unknown[]) => Promise<unknown>>)[method] : undefined
+    if (typeof fn !== 'function' || !Object.hasOwn(api[ns], method)) throw new Error(`Unknown API ${path}`)
+    return usage.run({ source: IPC_SOURCE[ns] ?? 'other' }, () => fn(...(args ?? [])))
+  }
+}
+
+function registerIpc(dispatch: (path: string, args: unknown[]) => Promise<unknown>): void {
+  ipcMain.handle('cloth:invoke', async (_e, path: string, args: unknown[]) => {
     try {
-      return { ok: true, value: await usage.run({ source: IPC_SOURCE[ns] ?? 'other' }, () => fn(...(args ?? []))) }
+      return { ok: true, value: await dispatch(path, args) }
     } catch (err) {
       console.error(`[ipc] ${path} failed`, err)
       return { ok: false, error: errorMessage(err) }
     }
   })
+}
+
+let awakeBlocker: number | null = null
+function keepAwake(on: boolean): void {
+  if (on && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-app-suspension')
+  if (!on && awakeBlocker !== null) {
+    powerSaveBlocker.stop(awakeBlocker)
+    awakeBlocker = null
+  }
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -100,6 +116,7 @@ else {
       secrets,
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
+        services?.remote.broadcast(channel, payload)
       }
     })
     const images = services.images
@@ -109,10 +126,18 @@ else {
       if (!found) return new Response('Not found', { status: 404 })
       return new Response(new Uint8Array(await readFile(found.file)), { headers: { 'content-type': found.mime, 'cache-control': 'max-age=31536000, immutable' } })
     })
-    registerIpc(createApi(services), services.providers.usage)
+    const dispatch = makeDispatch(createApi(services), services.providers.usage)
+    registerIpc(dispatch)
+    services.remote.attach({ dispatch, keepAwake, version: app.getVersion() })
     createWindow()
     services.workflows.startScheduler()
     await services.mcp.restart()
+    await services.remote.restart()
+    // Dev: pair a phone (or the mobile web build) without clicking through Settings.
+    if (!app.isPackaged && process.env.CLOTH_PAIR_FILE) {
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(process.env.CLOTH_PAIR_FILE, (await services.remote.pair()).link)
+    }
     services.web.warm()
     if (!process.env.CLOTH_SMOKE) void services.examples.seedIfNeeded()
     console.log(`[cloth] data dir ${app.getPath('userData')}; MCP ${services.mcp.status().url} running=${services.mcp.status().running}`)
@@ -139,6 +164,6 @@ else {
     quitting = true
     services.workflows.stopScheduler()
     services.lsp.disposeAll()
-    void Promise.allSettled([services.mcp.stop(), services.web.stop()]).finally(() => app.quit())
+    void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop()]).finally(() => app.quit())
   })
 }

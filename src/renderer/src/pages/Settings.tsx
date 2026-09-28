@@ -7,6 +7,8 @@ import { Button, Card, Field, Input, PageHeader, Switch } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
 import { WebSearchSettings } from './WebSearchSettings'
+import { PhoneSettings } from './PhoneSettings'
+import { isMobile } from '@/lib/platform'
 
 export function SettingsPage() {
   const settings = useApp((s) => s.settings)
@@ -24,7 +26,7 @@ export function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader title="Settings" />
-      <div className="mx-auto max-w-3xl space-y-4 p-5">
+      <div className="mx-auto max-w-3xl space-y-4 p-5 mobile:space-y-3 mobile:p-3">
         <Section title="Models">
           <Field label="Default chat model">
             <ModelPicker value={settings.defaultModel} onChange={(m) => void update({ defaultModel: m })} allowNone noneLabel="None" />
@@ -40,6 +42,8 @@ export function SettingsPage() {
         <Section title="Chat" hint="When a conversation nears the model's context window, older turns are summarised into a checkpoint before the next message. The originals stay visible in the chat. You can also summarise any time from the context ring next to the send button.">
           <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} label="Summarise long conversations automatically" />
         </Section>
+
+        {!isMobile && <PhoneSettings />}
 
         <WebSearchSettings />
 

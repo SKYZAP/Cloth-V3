@@ -8,6 +8,7 @@ import { duration, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
+import { SplitDetail, SplitRoot } from '@/components/SplitView'
 
 const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: string }> = {
   http: { label: 'HTTP request', icon: Link2, blurb: 'Call a REST API. URL, headers and body are templates over the parameters.' },
@@ -67,6 +68,7 @@ export function ToolsPage() {
   const [builtins, setBuiltins] = useState<BuiltinToolInfo[]>([])
   const [custom, setCustom] = useState<CustomTool[]>([])
   const [sel, setSel] = useState<Selection>(null)
+  const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('')
 
@@ -74,7 +76,10 @@ export function ToolsPage() {
     const [b, c] = await Promise.all([api.tools.builtins(), api.tools.list()])
     setBuiltins(b)
     setCustom(c)
-    if (select) setSel(select)
+    if (select) {
+      setSel(select)
+      setOpen(true)
+    }
     else setSel((cur) => cur ?? (c[0] ? { kind: 'custom', id: c[0].id } : b[0] ? { kind: 'builtin', name: b[0].name } : null))
   }
   useEffect(() => {
@@ -87,7 +92,7 @@ export function ToolsPage() {
   const selectedCustom = sel?.kind === 'custom' ? custom.find((c) => c.id === sel.id) : undefined
 
   return (
-    <div className="flex h-full">
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
       <ListPane
         header={
           <div className="space-y-2">
@@ -112,7 +117,7 @@ export function ToolsPage() {
           .map((t) => {
             const Icon = KINDS[t.kind].icon
             return (
-              <ListItem key={t.id} active={sel?.kind === 'custom' && sel.id === t.id} onClick={() => setSel({ kind: 'custom', id: t.id })}>
+              <ListItem key={t.id} active={sel?.kind === 'custom' && sel.id === t.id} onClick={() => (setSel({ kind: 'custom', id: t.id }), setOpen(true))}>
                 <Icon size={14} className="shrink-0 text-dim" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-mono text-[12px]">{t.name}</div>
@@ -129,7 +134,7 @@ export function ToolsPage() {
           .map((b) => {
             const Icon = GROUP_ICON[b.group]
             return (
-              <ListItem key={b.name} active={sel?.kind === 'builtin' && sel.name === b.name} onClick={() => setSel({ kind: 'builtin', name: b.name })}>
+              <ListItem key={b.name} active={sel?.kind === 'builtin' && sel.name === b.name} onClick={() => (setSel({ kind: 'builtin', name: b.name }), setOpen(true))}>
                 <Icon size={14} className="shrink-0 text-dim" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-mono text-[12px]">{b.name}</div>
@@ -140,19 +145,19 @@ export function ToolsPage() {
             )
           })}
       </ListPane>
-      <div className="min-w-0 flex-1">
+      <SplitDetail>
         {selectedBuiltin ? (
           <BuiltinView tool={selectedBuiltin} />
         ) : selectedCustom ? (
-          <CustomToolEditor key={selectedCustom.id + selectedCustom.updatedAt} tool={selectedCustom} onSaved={(t) => void load({ kind: 'custom', id: t.id })} onDeleted={() => void load(null)} />
+          <CustomToolEditor key={selectedCustom.id + selectedCustom.updatedAt} tool={selectedCustom} onSaved={(t) => void load({ kind: 'custom', id: t.id })} onDeleted={() => (setOpen(false), void load(null))} />
         ) : (
           <Empty icon={<Wrench size={20} />} title="Extend the agent with tools" action={<Button variant="primary" onClick={() => setCreating(true)}>Create a tool</Button>}>
             Custom tools become callable by the chat agent and by workflow agent nodes. Built-in tools are listed for reference.
           </Empty>
         )}
-      </div>
+      </SplitDetail>
       <NewToolModal existing={custom.map((c) => c.name)} open={creating} onClose={() => setCreating(false)} onCreated={(t) => void load({ kind: 'custom', id: t.id })} />
-    </div>
+    </SplitRoot>
   )
 }
 

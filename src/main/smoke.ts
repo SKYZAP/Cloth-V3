@@ -78,6 +78,38 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       return
     }
     if (process.env.CLOTH_PROBE === 'images') return await probeImages(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'phone') {
+      // Settings → Phone: QR pairing dialog, a phone connecting (simulated with the real client), device list.
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const { RemoteClient } = await import('@shared/remote-client')
+      const { decodePairing, encodePairing } = await import('@shared/remote')
+      s.settings.update({ remotePort: 7899 })
+      await clickNav(win, 'Settings')
+      await wait(900)
+      await js(`[...document.querySelectorAll('div')].find((d) => d.textContent === 'Phone')?.scrollIntoView({ block: 'start' })`)
+      await wait(400)
+      writeFileSync(join(outDir, 'phone-settings.png'), await screenshot(win))
+      await clickText(win, 'Pair a phone')
+      await wait(1500)
+      writeFileSync(join(outDir, 'phone-pair.png'), await screenshot(win))
+      const link = (await js(`new Promise((resolve) => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Copy code'); navigator.clipboard.readText = async () => ''; resolve(b ? 'found' : 'missing') })`)) as string
+      const pending = s.remote.status().devices.find((d) => d.pending)
+      note(`copy button ${link}; pending device ${pending ? 'yes' : 'no'}; running=${s.remote.status().running} hosts=${s.remote.status().hosts.map((h) => h.address).join(',')}`)
+      // The phone's side of the pairing the dialog is showing: its device and key, as the QR carries them.
+      const stored = s.ctx.kv.get<{ id: string; key: string; pending: boolean }[]>('remoteDevices', []).find((d) => d.pending)!
+      const p = decodePairing(encodePairing({ v: 1, id: stored.id, k: s.ctx.secrets.decrypt(Buffer.from(stored.key, 'base64')), port: 7899, h: [], n: 'test' }))
+      const client = new RemoteClient({ ...p, h: ['127.0.0.1'] }, { name: 'Pixel 9', platform: 'android', onEvent: () => undefined, onState: (st) => note(`phone state: ${st}`) })
+      client.connect()
+      await wait(2500)
+      writeFileSync(join(outDir, 'phone-paired.png'), await screenshot(win))
+      await clickText(win, 'Done')
+      await wait(700)
+      writeFileSync(join(outDir, 'phone-devices.png'), await screenshot(win))
+      const chats = (await client.call('chat.list', [])) as unknown[]
+      note(`phone listed ${chats.length} chats; devices: ${JSON.stringify(s.remote.status().devices.map((d) => [d.name, d.connected, d.pending]))}`)
+      client.close()
+      return
+    }
     if (process.env.CLOTH_PROBE === 'dialogs') {
       const js = (code: string) => win.webContents.executeJavaScript(code)
       await s.skills.create({ name: 'int-skill', description: 'Integration-test skill', body: '# Int skill' })

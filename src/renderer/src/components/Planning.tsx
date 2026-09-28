@@ -66,7 +66,7 @@ export function PlanPanel({ todos }: { todos: TodoItem[] }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-      className="pointer-events-auto mx-auto mb-2 w-[min(740px,calc(100%-64px))] overflow-hidden rounded-[16px] border border-line bg-panel/95 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.7)] backdrop-blur"
+      className="pointer-events-auto mx-auto mb-2 w-[min(740px,calc(100%-64px))] overflow-hidden mobile:w-[calc(100%-20px)] rounded-[16px] border border-line bg-panel/95 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.7)] backdrop-blur"
     >
       <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left">
         <ListChecks size={15} className="text-crimson-hi" />
@@ -161,7 +161,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
             exit={{ opacity: 0, y: 4, scale: 0.98, transition: { duration: 0.12 } }}
             transition={{ type: 'spring', stiffness: 420, damping: 30 }}
             style={{ transformOrigin: 'bottom right' }}
-            className="absolute bottom-full right-0 z-40 mb-2.5 w-[320px] rounded-[16px] border border-line-strong bg-panel p-3.5 shadow-[0_16px_44px_-12px_rgb(0_0_0/0.8)]"
+            className="absolute bottom-full right-0 z-40 mb-2.5 w-[320px] rounded-[16px] mobile:-right-12 mobile:w-[min(320px,calc(100vw-20px))] border border-line-strong bg-panel p-3.5 shadow-[0_16px_44px_-12px_rgb(0_0_0/0.8)]"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[12.5px] font-semibold">Context</span>
@@ -215,7 +215,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         aria-expanded={open}
         className={clsx('flex h-[30px] items-center gap-2 rounded-full border px-2.5 transition-colors', open ? 'border-line-strong bg-elev-2' : 'border-line hover:border-line-strong')}
       >
-        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1.5 w-24" />}
+        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1.5 w-24 mobile:w-10" />}
         <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>

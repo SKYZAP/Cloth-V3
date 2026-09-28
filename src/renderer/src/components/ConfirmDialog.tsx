@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { Question, Warning } from '@phosphor-icons/react'
+import { useBackHandler } from '@/lib/back'
 
 export interface ConfirmOptions {
   title?: string
@@ -58,6 +59,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
     done.current = true
     onClose(ok)
   }
+  useBackHandler(true, () => finish(false))
   useEffect(() => {
     // Destructive: default to the safe choice so Enter doesn't delete by accident.
     ;(req.danger ? cancelRef : confirmRef).current?.focus()

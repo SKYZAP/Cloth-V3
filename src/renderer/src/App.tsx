@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import { Books, ChartLineUp, ChatCircleDots, Cpu, FlowArrow, GearSix, PlugsConnected, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
+import { GearSix } from '@phosphor-icons/react'
+import { NAV } from './lib/nav'
 import { MotionConfig } from 'motion/react'
 import { useApp, type Page } from './lib/store'
 import { useEvent } from './lib/api'
@@ -19,19 +20,40 @@ import { useState } from 'react'
 import { api } from './lib/api'
 import { Logo } from './components/Logo'
 import { ConfirmHost } from './components/ConfirmDialog'
+import { isMobile } from './lib/platform'
+// Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
+const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
-const NAV: { page: Page; label: string; icon: Icon }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: ChartLineUp },
-  { page: 'chat', label: 'Chat', icon: ChatCircleDots },
-  { page: 'knowledge', label: 'Knowledge', icon: Books },
-  { page: 'skills', label: 'Skills', icon: Sparkle },
-  { page: 'tools', label: 'Tools', icon: Wrench },
-  { page: 'workflows', label: 'Flows', icon: FlowArrow },
-  { page: 'providers', label: 'Models', icon: Cpu },
-  { page: 'mcp', label: 'MCP', icon: PlugsConnected }
-]
+const RAIL = NAV.filter((n) => n.page !== 'settings')
 
 export function App() {
+  return isMobile ? (
+    <Suspense fallback={null}>
+      <MobileShell />
+    </Suspense>
+  ) : (
+    <DesktopApp />
+  )
+}
+
+/** Renders one page of the app — shared by the desktop window and the phone shell. */
+export function PageContent({ page }: { page: Page }) {
+  return (
+    <>
+      {page === 'dashboard' && <DashboardPage />}
+      {page === 'chat' && <ChatPage />}
+      {page === 'knowledge' && <KnowledgePage />}
+      {page === 'skills' && <SkillsPage />}
+      {page === 'tools' && <ToolsPage />}
+      {page === 'workflows' && <WorkflowsPage />}
+      {page === 'providers' && <ProvidersPage />}
+      {page === 'mcp' && <McpPage />}
+      {page === 'settings' && <SettingsPage />}
+    </>
+  )
+}
+
+function DesktopApp() {
   const page = useApp((s) => s.page)
   const setPage = useApp((s) => s.setPage)
   const { loadProviders, loadCollections, loadSettings } = useApp()
@@ -68,7 +90,7 @@ export function App() {
       <div className="flex min-h-0 flex-1">
         {/* Nav rail */}
         <nav className="flex w-[68px] shrink-0 flex-col items-center gap-1 border-r border-line bg-bg py-2">
-          {NAV.map(({ page: p, label, icon: Icon }) => (
+          {RAIL.map(({ page: p, label, icon: Icon }) => (
             <NavButton key={p} active={page === p} onClick={() => setPage(p)} label={label}>
               <Icon size={19} weight={page === p ? 'fill' : 'regular'} />
             </NavButton>
@@ -80,15 +102,7 @@ export function App() {
         </nav>
 
         <main className="min-w-0 flex-1 bg-bg">
-          {page === 'dashboard' && <DashboardPage />}
-          {page === 'chat' && <ChatPage />}
-          {page === 'knowledge' && <KnowledgePage />}
-          {page === 'skills' && <SkillsPage />}
-          {page === 'tools' && <ToolsPage />}
-          {page === 'workflows' && <WorkflowsPage />}
-          {page === 'providers' && <ProvidersPage />}
-          {page === 'mcp' && <McpPage />}
-          {page === 'settings' && <SettingsPage />}
+          <PageContent page={page} />
         </main>
       </div>
       <Toasts />
@@ -114,11 +128,11 @@ function NavButton({ active, onClick, label, children }: { active: boolean; onCl
   )
 }
 
-function Toasts() {
+export function Toasts() {
   const toasts = useApp((s) => s.toasts)
   const dismiss = useApp((s) => s.dismissToast)
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-96 flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-96 flex-col gap-2 mobile:inset-x-3 mobile:bottom-[calc(var(--safe-bottom)+76px)] mobile:w-auto">
       {toasts.map((t) => (
         <div
           key={t.id}

@@ -102,10 +102,10 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-4 border-b border-line px-5 py-3.5">
-        <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-2 mobile:px-4 mobile:py-3">
+        <div className="min-w-0 flex-1 mobile:basis-full">
           <div className="text-[15px] font-semibold tracking-tight">Dashboard</div>
-          <div className="truncate text-[12px] text-dim">
+          <div className="truncate text-[12px] text-dim mobile:hidden">
             Models, tokens, cost, tools and skills across chat, flows, skill tests and MCP
             {stats && <> · updated {timeAgo(stats.generatedAt)}</>}
           </div>
@@ -136,7 +136,7 @@ export function DashboardPage() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1480px] space-y-4 p-5">
+          <div className="mx-auto max-w-[1480px] space-y-4 p-5 mobile:space-y-3 mobile:p-3">
             {empty && (
               <Panel className="flex items-center gap-3 border-crimson-line bg-crimson-soft px-4 py-3" delay={0}>
                 <Lightning size={18} weight="fill" className="shrink-0 text-crimson-hi" />

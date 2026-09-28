@@ -1,6 +1,9 @@
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import clsx from 'clsx'
 import { Loader2, X } from 'lucide-react'
+import { isMobile } from '@/lib/platform'
+import { useBackHandler } from '@/lib/back'
+import { SplitBack } from './SplitView'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 
@@ -182,6 +185,7 @@ export function Segmented<T extends string>({ value, onChange, items }: { value:
 }
 
 export function Modal({ open, onClose, title, children, footer, width = 520 }: { open: boolean; onClose(): void; title: ReactNode; children: ReactNode; footer?: ReactNode; width?: number }) {
+  useBackHandler(open, onClose)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -190,10 +194,10 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] mobile:items-end" onMouseDown={onClose}>
       <div
-        className="flex max-h-[85vh] flex-col rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60"
-        style={{ width }}
+        className="flex max-h-[85vh] flex-col rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60 mobile:max-h-[92vh] mobile:w-full mobile:rounded-b-none mobile:rounded-t-[22px] mobile:border-x-0 mobile:border-b-0 mobile:pb-[var(--safe-bottom)]"
+        style={isMobile ? undefined : { width }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -226,12 +230,13 @@ export function Spinner({ size = 14, className }: { size?: number; className?: s
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3.5">
-      <div className="min-w-0">
+    <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-x-2 mobile:gap-y-2.5 mobile:px-4 mobile:py-3">
+      <SplitBack />
+      <div className="min-w-0 mobile:flex-1">
         <div className="truncate text-[15px] font-semibold tracking-tight">{title}</div>
         {subtitle && <div className="truncate text-[12px] text-dim">{subtitle}</div>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 items-center gap-2 mobile:w-full mobile:shrink mobile:flex-wrap">{actions}</div>}
     </div>
   )
 }
@@ -239,7 +244,7 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
 /** Left-hand list column used by several pages. */
 export function ListPane({ header, children, width = 272 }: { header: ReactNode; children: ReactNode; width?: number }) {
   return (
-    <div className="flex h-full shrink-0 flex-col border-r border-line bg-panel" style={{ width }}>
+    <div className="flex h-full shrink-0 flex-col border-r border-line bg-panel mobile:w-full mobile:border-r-0 mobile:bg-bg" style={isMobile ? undefined : { width }}>
       <div className="border-b border-line p-3">{header}</div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
     </div>
@@ -251,8 +256,8 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
     <div
       onClick={onClick}
       className={clsx(
-        'group relative mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-2.5 pl-3 pr-2 transition-colors duration-200',
-        active ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg',
+        'group relative mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-2.5 pl-3 pr-2 transition-colors duration-200 mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
+        active && !isMobile ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
         className
       )}
     >

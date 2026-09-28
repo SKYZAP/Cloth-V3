@@ -17,6 +17,7 @@ import { WorkflowService } from './workflows/workflows'
 import { McpHost } from './mcp/server'
 import { DashboardService } from './dashboard'
 import { ImageService } from './images'
+import { RemoteHost } from './remote/server'
 
 export interface Services {
   ctx: Ctx
@@ -35,6 +36,7 @@ export interface Services {
   dashboard: DashboardService
   lsp: LspManager
   images: ImageService
+  remote: RemoteHost
 }
 
 export function createServices(opts: {
@@ -74,9 +76,11 @@ export function createServices(opts: {
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, usage: providers.usage })
+  const remote = new RemoteHost(ctx, settings)
 
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
+    if (next.remoteEnabled !== prev.remoteEnabled || next.remotePort !== prev.remotePort) void remote.restart()
     if (next.webEngine !== prev.webEngine || next.searxngUrl !== prev.searxngUrl || next.obscuraPath !== prev.obscuraPath) {
       web.warm()
       ctx.emit('web', { type: 'status' })
@@ -85,5 +89,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp, dashboard, lsp, images }
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp, dashboard, lsp, images, remote }
 }

@@ -16,7 +16,10 @@ export const DEFAULT_SETTINGS: Settings = {
   chunkSize: 1600,
   chunkOverlap: 200,
   autoCompact: true,
-  imageModel: null
+  imageModel: null,
+  remoteEnabled: false,
+  remotePort: 7812,
+  remoteKeepAwake: true
 }
 
 export class SettingsService {

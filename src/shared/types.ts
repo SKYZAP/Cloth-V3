@@ -539,6 +539,11 @@ export interface Settings {
   autoCompact: boolean
   /** Model used by the generate_image tool and the image playground. */
   imageModel: ModelRef | null
+  /** Let paired phones connect over the network (home Wi-Fi / Tailscale). */
+  remoteEnabled: boolean
+  remotePort: number
+  /** Keep the PC from sleeping while a phone is connected. */
+  remoteKeepAwake: boolean
 }
 
 export interface McpStatus {
@@ -718,4 +723,49 @@ export interface DashboardStats {
   skillHealth: { total: number; tested: number; passing: number; failing: number; outdated: number; redundant: number }
   inventory: { providers: number; models: number; collections: number; documents: number; chunks: number; skills: number; customTools: number; workflows: number; chats: number }
   recent: { at: number; kind: 'llm' | 'embed' | 'tool' | 'skill'; source: UsageSource; label: string; detail: string; ok: boolean }[]
+}
+
+// ─── Remote (phone app) ───────────────────────────────────────────────────────
+
+export interface RemoteDevice {
+  id: string
+  name: string
+  platform: string
+  createdAt: number
+  lastSeenAt: number | null
+  /** Paired but has not connected yet (the QR code is still valid). */
+  pending: boolean
+  connected: boolean
+}
+
+export interface RemoteHostAddress {
+  address: string
+  /** 'Wi-Fi / LAN', 'Tailscale', or the adapter name. */
+  label: string
+  kind: 'lan' | 'tailscale' | 'other'
+}
+
+export interface RemoteStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  error: string | null
+  hosts: RemoteHostAddress[]
+  devices: RemoteDevice[]
+  keepAwake: boolean
+}
+
+export interface RemotePairing {
+  deviceId: string
+  /** cloth://pair?d=… — encoded in the QR code. */
+  link: string
+  expiresAt: number
+  hosts: RemoteHostAddress[]
+}
+
+export interface RemoteDirEntry {
+  name: string
+  path: string
+  dir: boolean
+  size?: number
 }
