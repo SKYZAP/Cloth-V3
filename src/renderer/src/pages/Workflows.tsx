@@ -17,12 +17,13 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Clock, Copy, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Check, Clock, Copy, FileText, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, pretty, timeAgo } from '@/lib/format'
-import { Badge, Button, Dot, Empty, IconButton, Input, ListItem, ListPane, Modal, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Badge, Button, Dot, Empty, IconButton, Input, ListItem, ListPane, Modal, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { Markdown } from '@/components/Markdown'
 import { Editor } from '@/components/Editor'
 import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes'
 import { Inspector } from './workflow/Inspector'
@@ -506,6 +507,7 @@ function RunModal({ open, onClose, defaultInput, onRun }: { open: boolean; onClo
 function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; runId: string | null; onSelect(id: string): void; workflow: Workflow }) {
   const run = runs.find((r) => r.id === runId)
   const [openNode, setOpenNode] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<{ title: string; value: unknown } | null>(null)
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-line px-4 py-2.5 text-[12.5px] font-semibold">Runs</div>
@@ -526,7 +528,17 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
           {run.status === 'ok' && (
             <div>
               <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Output</div>
-              <pre className="selectable max-h-48 overflow-auto whitespace-pre-wrap rounded border border-line bg-bg p-2 font-mono text-[11px] text-fg">{pretty(run.output)}</pre>
+              <button
+                onClick={() => setViewing({ title: `${workflow.name} · output`, value: run.output })}
+                className="group flex w-full items-center gap-2.5 rounded-md border border-line bg-bg px-2.5 py-2 text-left transition-colors hover:border-crimson-line hover:bg-crimson-soft"
+              >
+                <FileText size={15} className="shrink-0 text-crimson-hi" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] text-fg">View output</div>
+                  <div className="truncate font-mono text-[10.5px] text-dim">{outputSummary(run.output)}</div>
+                </div>
+                <Maximize2 size={13} className="shrink-0 text-dim group-hover:text-crimson-hi" />
+              </button>
             </div>
           )}
           <div className="text-[10.5px] font-semibold uppercase tracking-wider text-dim">Node trace</div>
@@ -546,6 +558,11 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
                     {t.error && <div className="text-[11px] text-crimson-hi">{t.error}</div>}
                     <Textarea readOnly rows={4} className="font-mono text-[10.5px]" value={`input:\n${pretty(t.input)}`} />
                     <Textarea readOnly rows={6} className="font-mono text-[10.5px]" value={`output:\n${pretty(t.output)}`} />
+                    {t.output !== undefined && (
+                      <Button size="sm" variant="ghost" icon={<Maximize2 size={12} />} onClick={() => setViewing({ title: `${label} · output`, value: t.output })}>
+                        Open output
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -553,7 +570,84 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
           })}
         </div>
       )}
+      <OutputModal view={viewing} onClose={() => setViewing(null)} />
     </div>
+  )
+}
+
+/** Text we can render as markdown: plain strings, or an object's single string field (e.g. { text }). */
+function outputText(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const strings = Object.values(value).filter((v): v is string => typeof v === 'string')
+    if (strings.length === 1 && Object.keys(value).length === 1) return strings[0]
+  }
+  return null
+}
+
+function outputSummary(value: unknown): string {
+  const text = outputText(value)
+  if (text !== null) {
+    const words = text.trim().split(/\s+/).filter(Boolean).length
+    const heading = text.match(/^#{1,6}\s+(.+)$/m)?.[1]
+    return `${heading ? heading + ' · ' : ''}${words.toLocaleString()} words`
+  }
+  return preview(value, 60)
+}
+
+function OutputModal({ view, onClose }: { view: { title: string; value: unknown } | null; onClose(): void }) {
+  const [mode, setMode] = useState<'rendered' | 'raw'>('rendered')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    setMode('rendered')
+    setCopied(false)
+  }, [view])
+  if (!view) return null
+  const text = outputText(view.value)
+  const raw = pretty(view.value)
+  const markdown = text ?? '```json\n' + raw + '\n```'
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      width={860}
+      title={
+        <span className="flex items-center gap-2">
+          <FileText size={15} className="text-crimson-hi" />
+          {view.title}
+        </span>
+      }
+      footer={
+        <Button
+          size="sm"
+          icon={copied ? <Check size={12} /> : <Copy size={12} />}
+          onClick={() => {
+            void navigator.clipboard.writeText(raw)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      }
+    >
+      <Tabs
+        className="-mx-4 -mt-4 mb-4 px-3"
+        value={mode}
+        onChange={setMode}
+        items={[
+          { value: 'rendered', label: 'Rendered' },
+          { value: 'raw', label: 'Raw' }
+        ]}
+      />
+      {mode === 'rendered' ? (
+        <div className="selectable min-h-[40vh] px-1">
+          <Markdown text={markdown} />
+        </div>
+      ) : (
+        <pre className="selectable min-h-[40vh] whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-fg">{raw}</pre>
+      )}
+    </Modal>
   )
 }
 
