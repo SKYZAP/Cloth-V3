@@ -52,6 +52,9 @@ export interface CompleteInput {
 }
 
 export class ProviderService {
+  /** "providerId/modelId" for models that rejected a custom temperature this session. */
+  private noTemperature = new Set<string>()
+
   constructor(private ctx: Ctx) {}
 
   presets(): ProviderPreset[] {
@@ -198,14 +201,26 @@ export class ProviderService {
       messages: [{ role: 'user', content: input.prompt ?? '', timestamp: Date.now() }]
     }
     const thinking = input.thinking && input.thinking !== 'off' && model.reasoning ? input.thinking : undefined
-    const call = (m: Model<Api>) =>
-      completeSimple(m, context, {
-        apiKey,
-        maxTokens: input.maxTokens ?? Math.min(model.maxTokens, 8192),
-        temperature: input.temperature,
-        signal: input.signal,
-        reasoning: thinking
-      })
+    const modelKey = `${ref.providerId}/${ref.modelId}`
+    const call = async (m: Model<Api>): Promise<AssistantMessage> => {
+      const temperature = this.noTemperature.has(modelKey) ? undefined : input.temperature
+      const send = (t: number | undefined) =>
+        completeSimple(m, context, {
+          apiKey,
+          maxTokens: input.maxTokens ?? Math.min(model.maxTokens, 8192),
+          temperature: t,
+          signal: input.signal,
+          reasoning: thinking
+        })
+      const first = await send(temperature)
+      // Reasoning-class models (OpenAI o-series, gpt-5+, …) only accept their default temperature.
+      if (temperature !== undefined && first.stopReason === 'error' && rejectsTemperature(first.errorMessage)) {
+        this.noTemperature.add(modelKey)
+        this.ctx.log('providers', `${modelKey} rejects temperature; retrying with the model default`)
+        return send(undefined)
+      }
+      return first
+    }
     let message = await call(model)
     if (message.stopReason === 'error' || message.stopReason === 'aborted') {
       throw new Error(message.errorMessage || `Model call ${message.stopReason}`)
@@ -387,6 +402,12 @@ async function enrichFromLmStudio(baseUrl: string, models: ModelInfo[]): Promise
 /** Model families that reason (think) by default. Matches ids and LM Studio `arch` values. */
 export function isReasoningModelId(id: string): boolean {
   return /(^o\d|gpt-5|reason|think|deepseek-r1|r1-distill|qwq|qwen-?3|qwen35|gpt-oss|magistral|nemotron|phi-4-(mini-)?reasoning|glm-4\.[5-9]|glm-z1|kimi-k2|smollm3|exaone-deep|seed-oss)/.test(id.toLowerCase())
+}
+
+/** Provider errors that mean "this model does not accept a custom temperature". */
+export function rejectsTemperature(error: string | undefined): boolean {
+  if (!error || !/temperature/i.test(error)) return false
+  return /unsupported|not supported|does not support|only the default|not allowed|invalid/i.test(error)
 }
 
 function textOf(message: AssistantMessage): string {
