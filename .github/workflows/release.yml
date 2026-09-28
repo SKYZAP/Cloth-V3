@@ -1,4 +1,4 @@
-# Build Cloth for Windows and macOS and attach the installers to a GitHub release.
+# Build Cloth for Windows (x64) and macOS (Apple silicon only) and attach the installers to a GitHub release.
 #
 # Runs when a release is published, or manually (Actions → Release → Run workflow) with a
 # version number: the manual run creates the release (tag v<version>) if it doesn't exist yet,
@@ -83,12 +83,10 @@ jobs:
           - name: Windows x64
             os: windows-latest
             platform: --win
+          # macOS: Apple silicon only (Intel Macs are not supported).
           - name: macOS Apple silicon
             os: macos-15
-            platform: --mac
-          - name: macOS Intel
-            os: macos-15-intel
-            platform: --mac
+            platform: --mac --arm64
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
