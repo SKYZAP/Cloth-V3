@@ -20,6 +20,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -319,6 +320,71 @@ async function probeCoding(win: BrowserWindow, s: Services, outDir: string, note
   await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
   await wait(1200)
   writeFileSync(join(outDir, 'coding-sheet.png'), await screenshot(win))
+}
+
+/** Multi-step task with a live plan, then a manual summarise from the context meter. */
+async function probePlanning(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const { mkdirSync: mk } = await import('node:fs')
+  const ws = join(outDir, 'workspace')
+  mk(ws, { recursive: true })
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  const model = { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' }
+  s.settings.update({ defaultModel: model })
+  const chat = s.chat.create({ model, workspace: ws, fileAccess: 'write', autoApprove: 'edits', knowledgeEnabled: false, skillsEnabled: false, customTools: false, webEnabled: false })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Chat')
+  await wait(1200)
+  const t0 = Date.now()
+  await s.chat.send(
+    chat.id,
+    'Set up a tiny JS utility package in the workspace. Plan it with todo_write first, then: 1) create src/add.js exporting add(a,b), 2) create src/sub.js exporting sub(a,b), 3) create src/index.js re-exporting both, 4) create package.json with name "tiny-math", 5) write a README.md. Update the todo list as you complete each step.'
+  )
+  let shot = false
+  for (let i = 0; i < 900 && s.chat.isRunning(chat.id); i++) {
+    const todos = s.chat
+      .messages(chat.id)
+      .flatMap((m) => m.blocks)
+      .filter((b) => b.type === 'tool' && b.trace.name === 'todo_write')
+    if (!shot && todos.length >= 2) {
+      await wait(600)
+      writeFileSync(join(outDir, 'plan-running.png'), await screenshot(win))
+      shot = true
+    }
+    await wait(400)
+  }
+  await wait(1500)
+  const traces = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool')
+  note(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s; tools: ${traces.map((b) => (b.type === 'tool' ? `${b.trace.name}:${b.trace.status}` : '')).join(', ')}`)
+  note(`files: ${(await import('node:fs')).readdirSync(ws, { recursive: true }).join(', ')}`)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+  await wait(500)
+  writeFileSync(join(outDir, 'plan-done.png'), await screenshot(win))
+  await s.chat.send(chat.id, 'Thanks. In one sentence: what does src/index.js export?')
+  for (let i = 0; i < 400 && s.chat.isRunning(chat.id); i++) await wait(400)
+  await wait(800)
+  const before = await s.chat.contextUsage(chat.id)
+  note(`context before: ${before.tokens} / ${before.window} (threshold ${before.threshold})`)
+  // Manual summarise through the context meter.
+  await js(`document.querySelector('button[aria-label="Summarise conversation"]')?.click()`)
+  for (let i = 0; i < 300 && !s.chat.messages(chat.id).some((m) => m.summary); i++) await wait(400)
+  await wait(1200)
+  const after = await s.chat.contextUsage(chat.id)
+  const carrier = s.chat.messages(chat.id).find((m) => m.summary)
+  note(`summarised: ${!!carrier}; context after: ${after.tokens}; summary: ${carrier?.summary?.slice(0, 300).replace(/\n/g, ' ⏎ ')}`)
+  await js(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Earlier conversation summarised'))?.click()`)
+  await wait(900)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 0)`)
+  await wait(500)
+  writeFileSync(join(outDir, 'summary.png'), await screenshot(win))
+  // Workspace settings in the context sheet.
+  await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
+  await wait(1200)
+  await js(`document.getElementById('sheet-workspace')?.scrollIntoView({ block: 'start' })`)
+  await wait(700)
+  writeFileSync(join(outDir, 'workspace-sheet.png'), await screenshot(win))
 }
 
 /** Seed a week of synthetic usage + a messy loop flow; screenshot the dashboard and Arrange. */

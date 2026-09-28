@@ -6,6 +6,7 @@ import {
   Books,
   FilePlus,
   Files,
+  ListChecks,
   NotePencil,
   TerminalWindow,
   CaretRight,
@@ -23,6 +24,7 @@ import {
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
 import { duration, pretty } from '@/lib/format'
 import { DiffStat, DiffView } from './DiffView'
+import { TodoList, todosOf } from './Planning'
 import { api } from '@/lib/api'
 
 const ICONS: Record<string, Icon> = {
@@ -40,7 +42,8 @@ const ICONS: Record<string, Icon> = {
   write: FilePlus,
   edit: NotePencil,
   bash: TerminalWindow,
-  powershell: TerminalWindow
+  powershell: TerminalWindow,
+  todo_write: ListChecks
 }
 
 function summarize(t: Trace): string {
@@ -52,6 +55,11 @@ function summarize(t: Trace): string {
   if (['read_file', 'list_dir', 'read', 'ls', 'write', 'edit'].includes(t.name)) return String(a.path ?? '.')
   if (t.name === 'find') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
   if (t.name === 'bash' || t.name === 'powershell') return `$ ${String(a.command ?? '').split('\n')[0]}`
+  if (t.name === 'todo_write') {
+    const todos = todosOf(t.args)
+    const current = todos.find((x) => x.status === 'in_progress')
+    return `${todos.filter((x) => x.status === 'completed').length}/${todos.length} done${current ? ` · ${current.content}` : ''}`
+  }
   if (t.name === 'grep') return `/${a.pattern ?? ''}/ ${a.path ?? ''}`
   const s = JSON.stringify(a)
   return s === '{}' ? '' : s.slice(0, 80)
@@ -69,7 +77,7 @@ const refLabel = (r: RagHit) => {
 }
 
 /** `fresh` animates the card in — only for traces that appear live, not when loading history. */
-export function ToolTraceCard({ trace, fresh, awaiting, onUndo }: { trace: Trace; fresh?: boolean; awaiting?: boolean; onUndo?(toolCallId: string): Promise<void> }) {
+export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { trace: Trace; fresh?: boolean; awaiting?: boolean; onUndo?(toolCallId: string): Promise<void>; superseded?: boolean }) {
   const [open, setOpen] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const changes = trace.changes ?? []
@@ -109,6 +117,12 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo }: { trace: Trace
           <CaretRight size={13} />
         </motion.span>
       </button>
+
+      {trace.name === 'todo_write' && !open && !superseded && trace.status !== 'error' && (
+        <div className="pb-2.5 pl-12 pr-3">
+          <TodoList todos={todosOf(trace.args)} dense />
+        </div>
+      )}
 
       {changes.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pb-2.5 pl-12 pr-3">

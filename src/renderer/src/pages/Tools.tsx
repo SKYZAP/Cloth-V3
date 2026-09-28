@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { BookOpen, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
+import { BookOpen, ListChecks, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
 import type { BuiltinToolInfo, CustomTool, CustomToolInput, CustomToolKind, ModelRef, ToolParam, ToolParamType, ToolRunResult } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt } from '@/lib/store'
@@ -16,7 +16,7 @@ const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: 
   prompt: { label: 'Prompt', icon: MessageSquareText, blurb: 'Call a model with a templated prompt — a reusable sub-task.' }
 }
 
-const GROUP_ICON: Record<BuiltinToolInfo['group'], typeof Globe> = { knowledge: BookOpen, web: Globe, skills: Sparkles, workspace: FolderSearch }
+const GROUP_ICON: Record<BuiltinToolInfo['group'], typeof Globe> = { knowledge: BookOpen, web: Globe, skills: Sparkles, workspace: FolderSearch, planning: ListChecks }
 
 const TEMPLATES: Record<CustomToolKind, CustomToolInput> = {
   http: {

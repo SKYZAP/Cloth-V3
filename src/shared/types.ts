@@ -359,6 +359,24 @@ export interface UiMessage {
   error?: string
   /** Skills the user invoked with /name for this message. */
   skills?: string[]
+  /** Set on the first message after a compaction: the summary of everything before it. */
+  summary?: string
+  /** Turns that were summarised away — shown for reference, no longer sent to the model. */
+  archived?: boolean
+}
+
+export interface TodoItem {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+export interface ContextUsage {
+  /** Estimated tokens the next request will carry (history + system prompt). */
+  tokens: number
+  /** The model's context window, when known. */
+  window: number | null
+  /** Tokens at which Cloth summarises automatically. */
+  threshold: number | null
 }
 
 export type ChatEvent =
@@ -368,6 +386,8 @@ export type ChatEvent =
   | { sessionId: string; type: 'title'; title: string }
   | { sessionId: string; type: 'approval'; approval: PendingApproval }
   | { sessionId: string; type: 'approval-done'; id: string }
+  | { sessionId: string; type: 'compacting' }
+  | { sessionId: string; type: 'compacted'; error?: string }
 
 // ─── Workflows ────────────────────────────────────────────────────────────────
 
@@ -466,6 +486,8 @@ export interface Settings {
   mcpRequireToken: boolean
   chunkSize: number
   chunkOverlap: number
+  /** Summarise older chat turns automatically when a conversation nears the model's context window. */
+  autoCompact: boolean
 }
 
 export interface McpStatus {
@@ -527,7 +549,7 @@ export interface BuiltinToolInfo {
   name: string
   label: string
   description: string
-  group: 'knowledge' | 'skills' | 'web' | 'workspace'
+  group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning'
   availability: string
   schema: unknown
 }

@@ -14,7 +14,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mcpPort: 7811,
   mcpRequireToken: false,
   chunkSize: 1600,
-  chunkOverlap: 200
+  chunkOverlap: 200,
+  autoCompact: true
 }
 
 export class SettingsService {

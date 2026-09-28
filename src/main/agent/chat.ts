@@ -1,7 +1,8 @@
+import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ApprovalDecision, ChatEvent, ChatSession, FileChange, ModelRef, PendingApproval, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatEvent, ChatSession, ContextUsage, FileChange, ModelRef, PendingApproval, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -12,6 +13,7 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { buildTools, type ToolDetails, type ToolScope } from './tools'
+import { budget, estimateHistory, findCut, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
 
 const SKILL_OPEN = '<skill-invocation name="'
@@ -24,6 +26,7 @@ interface SessionRow {
   title: string
   config: string
   messages: string
+  archive?: string
   created_at: number
   updated_at: number
 }
@@ -57,7 +60,7 @@ export interface AgentRunOptions {
 
 export class AgentRuntime {
   constructor(
-    private providers: ProviderService,
+    readonly providers: ProviderService,
     private rag: RagService,
     private skills: SkillService,
     private web: WebService,
@@ -89,13 +92,14 @@ export class AgentRuntime {
     if (scope.webEnabled) {
       lines.push('', '## Web', 'You can search the public web with `web_search` and read pages with `web_fetch`. Prefer the local knowledge base for project-specific questions; use the web for current or external information, and cite web results as [n].')
     }
+    if (scope.sessionId) lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
     if (scope.workspace) {
       const writable = scope.fileAccess === 'write' && !!scope.sessionId
       const shell = scope.shell && scope.sessionId ? (process.platform === 'win32' ? 'powershell' : 'bash') : null
       lines.push(
         '',
         '## Workspace',
-        `The workspace folder is ${scope.workspace}. Use paths relative to it; nothing outside it is accessible.`,
+        `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
         'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them.',
         writable
           ? 'You can change files: use edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
@@ -151,6 +155,9 @@ export class AgentRuntime {
 
 export class ChatService {
   private active = new Map<string, Agent>()
+  private compacting = new Set<string>()
+  /** Summary to reattach when the message carrying it was rewound away. */
+  private carry = new Map<string, string>()
 
   constructor(
     private ctx: Ctx,
@@ -232,7 +239,76 @@ export class ChatService {
   }
 
   messages(id: string): UiMessage[] {
-    return toUiMessages(this.rawMessages(id))
+    const archived = toUiMessages(this.archive(id)).map((m) => ({ ...m, archived: true }))
+    return [...archived, ...toUiMessages(this.rawMessages(id))]
+  }
+
+  /** How full the model's context is, and where auto-summarising kicks in. */
+  async contextUsage(id: string): Promise<ContextUsage> {
+    const session = this.get(id)
+    const window = session.model ? this.contextWindow(session.model) : null
+    const raw = this.rawMessages(id)
+    // pi keeps the system prompt in the history; before the first turn, estimate it separately.
+    const tokens = raw.length ? estimateHistory(raw, this.ctx.kv.get<number>('compactedAt:' + id, 0)) : Math.ceil((await this.runtime.systemPrompt(this.scope(id), session.systemPrompt)).length / 4)
+    return { tokens, window, threshold: window ? budget(window).threshold : null }
+  }
+
+  /**
+   * Summarise older turns into a checkpoint carried by the first kept user message. The
+   * summarised turns move to the archive (still shown in the UI, no longer sent to the model).
+   */
+  async compact(id: string, opts: { instructions?: string; signal?: AbortSignal } = {}): Promise<UiMessage[]> {
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('Wait for the agent to finish first')
+    const session = this.get(id)
+    if (!session.model) throw new Error('Pick a model for this chat first')
+    const raw = this.rawMessages(id)
+    const window = this.contextWindow(session.model)
+    const cut = findCut(raw, budget(window).keep)
+    if (cut === null) throw new Error('Not enough conversation to summarise yet')
+    this.compacting.add(id)
+    this.ctx.emit('chat', { sessionId: id, type: 'compacting' })
+    try {
+      // pi keeps the system prompt as a message at the head of the history: it stays, it isn't summarised.
+      const system = raw.slice(0, cut).filter((m) => m.role === 'system')
+      const older = raw.slice(0, cut).filter((m) => m.role !== 'system')
+      // Fold an earlier summary (on the first user message) into the new one rather than re-summarising it.
+      let previous: string | null = null
+      const firstUser = older.findIndex((m) => m.role === 'user')
+      if (firstUser >= 0) {
+        const split = splitSummary(older[firstUser] as UserMessage)
+        previous = split.summary
+        older[firstUser] = split.message
+      }
+      const run = () => summarize(this.runtime.providers, session.model!, older, { previous, instructions: opts.instructions, signal: opts.signal, contextWindow: window })
+      const summary = await (this.usage ? this.usage.run({ source: 'chat', ref: id }, run) : run())
+      const tail = raw.slice(cut)
+      tail[0] = withSummary(tail[0] as UserMessage, summary)
+      const kept = [...system, ...tail]
+      const archive = [...this.archive(id), ...older]
+      this.ctx.db.prepare('UPDATE sessions SET messages = ?, archive = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(kept), JSON.stringify(archive), Date.now(), id)
+      this.ctx.kv.set('compactedAt:' + id, Date.now())
+      this.ctx.emit('chat', { sessionId: id, type: 'compacted' })
+      return this.messages(id)
+    } catch (err) {
+      this.ctx.emit('chat', { sessionId: id, type: 'compacted', error: errorMessage(err) })
+      throw err
+    } finally {
+      this.compacting.delete(id)
+    }
+  }
+
+  private contextWindow(ref: ModelRef): number {
+    try {
+      const info = this.runtime.providers.get(ref.providerId).models.find((m) => m.id === ref.modelId)
+      return info?.contextWindow || 32_768
+    } catch {
+      return 32_768
+    }
+  }
+
+  private archive(id: string): AgentMessage[] {
+    const row = this.ctx.db.prepare('SELECT archive FROM sessions WHERE id = ?').get(id) as { archive: string } | undefined
+    return json<AgentMessage[]>(row?.archive, [])
   }
 
   isRunning(id: string): boolean {
@@ -248,6 +324,10 @@ export class ChatService {
   rewind(id: string, uiMessageId: string): UiMessage[] {
     const raw = this.rawMessages(id)
     const idx = raw.findIndex((m) => 'timestamp' in m && `m${m.timestamp}` === uiMessageId)
+    if (idx >= 0 && idx === raw.findIndex((m) => m.role === 'user')) {
+      const { summary } = splitSummary(raw[idx] as UserMessage)
+      if (summary) this.carry.set(id, summary)
+    }
     if (idx >= 0) this.saveMessages(id, raw.slice(0, idx))
     return this.messages(id)
   }
@@ -276,11 +356,9 @@ export class ChatService {
     return { role: 'user', content: [...blocks, { type: 'text', text: prompt }], timestamp: Date.now() }
   }
 
-  async send(id: string, text: string, skillNames: string[] = []): Promise<void> {
-    if (this.active.has(id)) throw new Error('This chat is already running')
+  private scope(id: string): ToolScope {
     const session = this.get(id)
-    if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
-    const scope: ToolScope = {
+    return {
       collectionIds: session.collectionIds,
       knowledgeEnabled: session.knowledgeEnabled,
       skillsEnabled: session.skillsEnabled,
@@ -294,6 +372,21 @@ export class ChatService {
       onAlways: (scope) => {
         const cur = this.get(id).autoApprove
         if (cur !== 'all') this.update(id, { autoApprove: scope === 'all' ? 'all' : 'edits' })
+      }
+    }
+  }
+
+  async send(id: string, text: string, skillNames: string[] = []): Promise<void> {
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const session = this.get(id)
+    if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
+    const scope = this.scope(id)
+    // Summarise older turns first if the conversation is about to outgrow the model's context.
+    if (this.settings.get().autoCompact) {
+      const usage = await this.contextUsage(id)
+      const incoming = Math.ceil(text.length / 4) + 2000
+      if (usage.threshold && usage.tokens + incoming > usage.threshold) {
+        await this.compact(id).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
       }
     }
     const history = this.rawMessages(id)
@@ -332,7 +425,10 @@ export class ChatService {
       }
     })
 
-    const message = await this.userMessage(text, skillNames)
+    let message = await this.userMessage(text, skillNames)
+    const carried = this.carry.get(id)
+    if (carried && !history.some((m) => m.role === 'user')) message = withSummary(message, carried)
+    this.carry.delete(id)
     if (session.title === 'New chat') {
       const title = (text.trim() ? text : skillNames.map((n) => `/${n}`).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat'
       this.update(id, { title })
@@ -399,12 +495,14 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
       // Skill blocks from /name invocations become chips; only the user's own text is shown.
       const skills: string[] = []
       const parts: string[] = []
+      let summary: string | undefined
       for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
         if (c.type !== 'text') parts.push('[image]')
+        else if (c.text.startsWith(SUMMARY_OPEN)) summary = splitSummary({ role: 'user', content: [c], timestamp: 0 }).summary ?? ''
         else if (c.text.startsWith(SKILL_OPEN)) skills.push(c.text.slice(SKILL_OPEN.length, c.text.indexOf('"', SKILL_OPEN.length)))
         else parts.push(c.text)
       }
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}) })
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(summary !== undefined ? { summary } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue

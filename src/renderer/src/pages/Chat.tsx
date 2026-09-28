@@ -32,7 +32,7 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ApprovalDecision, AutoApprove, ChatSession, Collection, PendingApproval, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContextUsage, PendingApproval, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -44,6 +44,7 @@ import { BottomSheet } from '@/components/BottomSheet'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
+import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -188,6 +189,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
   const [invoked, setInvoked] = useState<string[]>([])
   const [approvals, setApprovals] = useState<PendingApproval[]>([])
+  const [usage, setUsage] = useState<ContextUsage | null>(null)
+  const [compacting, setCompacting] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
   const [slash, setSlash] = useState<{ query: string; start: number; end: number } | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
@@ -209,7 +213,11 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       setMessages(ms)
     })
     void api.chat.pendingApprovals(session.id).then(setApprovals)
+    setShowArchived(false)
   }, [session.id])
+
+  const refreshUsage = () => void api.chat.contextUsage(session.id).then(setUsage).catch(() => setUsage(null))
+  useEffect(refreshUsage, [session.id, session.model?.modelId])
 
   useEvent('chat', (e) => {
     if (e.sessionId !== session.id) return
@@ -224,8 +232,16 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     }
     if (e.type === 'approval') setApprovals((as) => (as.some((a) => a.id === e.approval.id) ? as : [...as, e.approval]))
     if (e.type === 'approval-done') setApprovals((as) => as.filter((a) => a.id !== e.id))
+    if (e.type === 'compacting') setCompacting(true)
+    if (e.type === 'compacted') {
+      setCompacting(false)
+      void api.chat.messages(session.id).then(setMessages)
+      refreshUsage()
+      if (e.error) useApp.getState().toast(`Couldn't summarise: ${e.error}`, 'error')
+    }
     if (e.type === 'end') {
       setApprovals([])
+      refreshUsage()
       void api.chat.messages(session.id).then(setMessages)
       if (e.error && !/abort/i.test(e.error)) useApp.getState().toast(e.error, 'error')
     }
@@ -311,6 +327,14 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       if (ms) setMessages(ms)
     }
   }
+  const compactNow = async () => {
+    const ms = await attempt(() => api.chat.compact(session.id), 'Earlier messages summarised')
+    if (ms) setMessages(ms)
+  }
+  const archived = useMemo(() => messages.filter((m) => m.archived), [messages])
+  const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
+  const todos = useMemo(() => latestTodos(messages), [messages])
+  const showPlan = !!todos?.length && (running || todos.some((t) => t.status !== 'completed'))
   const awaiting = useMemo(() => new Set(approvals.map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals])
 
   const regenerate = async (assistantId: string) => {
@@ -361,18 +385,44 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       >
         <div className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px]">
           {!messages.length && <Welcome onPick={(t) => void send(t)} hasKnowledge={collections.length > 0} />}
-          {messages.map((m, i) => {
+          {archived.length > 0 && (
+            <div className="mb-6">
+              <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[11.5px] text-dim transition-colors hover:border-line-strong hover:text-muted">
+                <CaretRight size={11} className={clsx('transition-transform', showArchived && 'rotate-90')} />
+                {showArchived ? 'Hide' : 'Show'} {archived.length} earlier message{archived.length === 1 ? '' : 's'} (summarised)
+              </button>
+              {showArchived && (
+                <div className="mt-6 opacity-55">
+                  {archived.map((m) =>
+                    m.role === 'user' ? <UserBubble key={m.id} message={m} fresh={false} /> : <AssistantTurn key={m.id} message={m} fresh={false} streaming={false} onRegenerate={() => undefined} awaiting={awaiting} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {live.map((m, i) => {
             const fresh = !!initialIds.current && !initialIds.current.has(m.id)
             return m.role === 'user' ? (
-              <UserBubble key={m.id} message={m} fresh={fresh} />
+              <div key={m.id}>
+                {m.summary !== undefined && <SummaryDivider summary={m.summary} />}
+                <UserBubble message={m} fresh={fresh} />
+              </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === messages.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
+              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
             )
           })}
           <AnimatePresence>
             {approvals.map((a) => (
               <ApprovalCard key={a.id} approval={a} onDecide={(d) => decide(a, d)} />
             ))}
+          </AnimatePresence>
+          <AnimatePresence>
+            {compacting && (
+              <motion.div key="compacting" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-9 flex items-center justify-center gap-2 text-[12.5px] text-dim">
+                <NotePencil size={14} />
+                <span className="shimmer-text">Summarising earlier conversation</span>
+              </motion.div>
+            )}
           </AnimatePresence>
           <AnimatePresence>
             {waiting && (
@@ -390,6 +440,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
 
       {/* Composer: floats over a gradient fade — no divider line */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12">
+        <AnimatePresence>{showPlan && todos && <PlanPanel key="plan" todos={todos} />}</AnimatePresence>
         <div
           className={clsx(
             'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
@@ -496,6 +547,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               onClick={() => openSheet('thinking')}
             />
             <div className="flex-1" />
+            <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
             <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100">
               <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
             </span>
@@ -957,6 +1009,7 @@ function AssistantTurn({
   }, [message.blocks])
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n\n')
   const lastTextIdx = message.blocks.map((b) => b.type).lastIndexOf('text')
+  const lastTodoIdx = message.blocks.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
 
   return (
     <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4">
@@ -966,7 +1019,7 @@ function AssistantTurn({
       <div className="min-w-0">
         {blocks.map(({ block, refs }, i) => {
           if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === message.blocks.length - 1} />
-          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} />
+          if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
         })}
         {message.error && <div className="mt-2 rounded-xl border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
@@ -1020,6 +1073,32 @@ function AssistantTurn({
         </AnimatePresence>
       </div>
     </motion.div>
+  )
+}
+
+function SummaryDivider({ summary }: { summary: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mb-8">
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-line-strong" />
+        <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1 text-[11.5px] text-muted transition-colors hover:border-line-strong hover:text-fg">
+          <NotePencil size={12} className="text-crimson-hi" />
+          Earlier conversation summarised
+          <CaretRight size={11} className={clsx('text-dim transition-transform', open && 'rotate-90')} />
+        </button>
+        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-line-strong" />
+      </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="mt-3 rounded-[14px] border border-line bg-panel px-4 py-3 text-[13px]">
+              <Markdown text={summary} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 

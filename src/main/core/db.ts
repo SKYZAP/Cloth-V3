@@ -134,6 +134,9 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX usage_at ON usage_events(at);
   CREATE INDEX usage_kind_at ON usage_events(kind, at);
+  `,
+  /* 4 — chat turns summarised away by compaction */ `
+  ALTER TABLE sessions ADD COLUMN archive TEXT NOT NULL DEFAULT '[]';
   `
 ]
 
