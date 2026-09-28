@@ -101,9 +101,9 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
   if (!usage?.window) return null
   const frac = Math.min(1, usage.tokens / usage.window)
   const near = usage.threshold ? usage.tokens / usage.threshold : frac
-  const color = near >= 0.9 ? '#dc2645' : near >= 0.7 ? '#e0a43a' : '#6c6c76'
-  const r = 7
-  const c = 2 * Math.PI * r
+  const color = near >= 0.9 ? '#dc2645' : near >= 0.7 ? '#e0a43a' : '#a3a3ad'
+  const pct = Math.round(frac * 100)
+  const r = 6
   return (
     <Tooltip
       content={
@@ -114,15 +114,32 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         </span>
       }
     >
-      <button onClick={onCompact} disabled={busy} aria-label="Summarise conversation" className="mr-1.5 flex h-[34px] w-[34px] items-center justify-center rounded-[11px] transition-colors hover:bg-elev-2 disabled:opacity-50">
+      {/* A filled pie (not a thin arc) plus the percentage, so it reads as a gauge rather than a spinner. */}
+      <button
+        onClick={onCompact}
+        disabled={busy}
+        aria-label="Summarise conversation"
+        className="mr-2 flex h-[30px] items-center gap-1.5 rounded-full border border-line px-2.5 font-mono text-[11px] tabular-nums text-dim transition-colors hover:border-line-strong hover:text-muted disabled:opacity-60"
+      >
         {busy ? (
-          <CircleNotch size={16} className="animate-spin text-crimson-hi" />
+          <CircleNotch size={13} className="animate-spin text-crimson-hi" />
         ) : (
-          <svg width={18} height={18} className="-rotate-90">
-            <circle cx={9} cy={9} r={r} fill="none" stroke="var(--color-line-strong)" strokeWidth={2.2} />
-            <motion.circle cx={9} cy={9} r={r} fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeDasharray={c} animate={{ strokeDashoffset: c * (1 - frac) }} transition={{ type: 'spring', stiffness: 120, damping: 24 }} />
+          <svg width={14} height={14} viewBox="0 0 14 14" className="-rotate-90">
+            <circle cx={7} cy={7} r={r} fill="var(--color-elev-2)" stroke="var(--color-line-strong)" strokeWidth={1} />
+            <motion.circle
+              cx={7}
+              cy={7}
+              r={r / 2}
+              fill="none"
+              stroke={color}
+              strokeWidth={r}
+              strokeDasharray={Math.PI * r}
+              animate={{ strokeDashoffset: Math.PI * r * (1 - Math.max(frac, 0.02)) }}
+              transition={{ type: 'spring', stiffness: 120, damping: 24 }}
+            />
           </svg>
         )}
+        {busy ? 'summarising' : `${pct < 1 && usage.tokens > 0 ? '<1' : pct}%`}
       </button>
     </Tooltip>
   )
