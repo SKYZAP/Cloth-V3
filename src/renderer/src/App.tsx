@@ -53,7 +53,6 @@ export function App() {
       <div className={clsx('drag flex h-9 shrink-0 items-center gap-2 border-b border-line bg-bg', isMac ? 'pl-20' : 'pl-3', 'pr-[150px]')}>
         <Logo size={16} />
         <span className="text-[12.5px] font-semibold tracking-tight">Cloth</span>
-        <span className="text-[11px] text-dim">offline developer hub</span>
         <div className="flex-1" />
         <button
           onClick={() => setPage('mcp')}
