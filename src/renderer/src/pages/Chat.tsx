@@ -16,6 +16,7 @@ import {
   GraduationCap,
   LockSimple,
   PencilSimpleLine,
+  Robot,
   ShieldCheck,
   ShieldWarning,
   TerminalWindow,
@@ -764,6 +765,7 @@ function ContextSheet({
           <Capability icon={Sparkle} title="Skills" sub="skill_list · skill_use" on={session.skillsEnabled} onToggle={() => void update({ skillsEnabled: !session.skillsEnabled })} />
           <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
           <Capability icon={Wrench} title="Custom tools" sub="From the Tools page" on={session.customTools} onToggle={() => void update({ customTools: !session.customTools })} />
+          <Capability icon={Robot} title="Subagents" sub="task · delegate in parallel" on={session.subagents} onToggle={() => void update({ subagents: !session.subagents })} />
         </div>
       </SheetSection>
 

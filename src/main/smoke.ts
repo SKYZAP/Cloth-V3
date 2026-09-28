@@ -21,6 +21,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'subagents') return await probeSubagents(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -320,6 +321,48 @@ async function probeCoding(win: BrowserWindow, s: Services, outDir: string, note
   await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
   await wait(1200)
   writeFileSync(join(outDir, 'coding-sheet.png'), await screenshot(win))
+}
+
+/** Two scouts in parallel over Cloth's own source (read-only). */
+async function probeSubagents(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  const model = { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' }
+  s.settings.update({ defaultModel: model })
+  const ws = join(app.getAppPath(), 'src', 'main')
+  const chat = s.chat.create({ model, workspace: ws, fileAccess: 'read', knowledgeEnabled: false, skillsEnabled: false, customTools: false, webEnabled: false })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Chat')
+  await wait(1200)
+  const t0 = Date.now()
+  await s.chat.send(
+    chat.id,
+    'Run two scout subagents in parallel (call the task tool twice in the same turn): one to find how the MCP server registers its tools (look in mcp/), and one to find how workflows are scheduled with cron (look in workflows/). Then give me a short combined summary.'
+  )
+  let shot = false
+  for (let i = 0; i < 900 && s.chat.isRunning(chat.id); i++) {
+    const tasks = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool' && b.trace.name === 'task')
+    if (!shot && tasks.length && Date.now() - t0 > 25_000) {
+      await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+      await wait(500)
+      writeFileSync(join(outDir, 'subagents-running.png'), await screenshot(win))
+      shot = true
+    }
+    await wait(400)
+  }
+  await wait(1500)
+  const traces = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool')
+  for (const b of traces) {
+    if (b.type !== 'tool') continue
+    const sub = b.trace.subagent
+    note(`${b.trace.name}:${b.trace.status}${sub ? ` [${sub.role}] "${sub.description}" steps=${sub.blocks.filter((x) => x.type === 'tool').length} report=${b.trace.result.slice(0, 140).replace(/\n/g, ' ')}` : ''}`)
+  }
+  note(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+  await wait(600)
+  writeFileSync(join(outDir, 'subagents-done.png'), await screenshot(win))
 }
 
 /** Multi-step task with a live plan, then a manual summarise from the context meter. */

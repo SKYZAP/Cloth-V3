@@ -7,6 +7,7 @@ import {
   FilePlus,
   Files,
   ListChecks,
+  Robot,
   NotePencil,
   TerminalWindow,
   CaretRight,
@@ -25,6 +26,7 @@ import type { RagHit, ToolTrace as Trace } from '@shared/types'
 import { duration, pretty } from '@/lib/format'
 import { DiffStat, DiffView } from './DiffView'
 import { TodoList, todosOf } from './Planning'
+import { Markdown } from './Markdown'
 import { api } from '@/lib/api'
 
 const ICONS: Record<string, Icon> = {
@@ -43,7 +45,8 @@ const ICONS: Record<string, Icon> = {
   edit: NotePencil,
   bash: TerminalWindow,
   powershell: TerminalWindow,
-  todo_write: ListChecks
+  todo_write: ListChecks,
+  task: Robot
 }
 
 function summarize(t: Trace): string {
@@ -60,6 +63,7 @@ function summarize(t: Trace): string {
     const current = todos.find((x) => x.status === 'in_progress')
     return `${todos.filter((x) => x.status === 'completed').length}/${todos.length} done${current ? ` · ${current.content}` : ''}`
   }
+  if (t.name === 'task') return String(a.description ?? '')
   if (t.name === 'grep') return `/${a.pattern ?? ''}/ ${a.path ?? ''}`
   const s = JSON.stringify(a)
   return s === '{}' ? '' : s.slice(0, 80)
@@ -95,7 +99,10 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { 
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-crimson-soft text-crimson-hi">
           <Icon size={14} />
         </span>
-        <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.name}</span>
+        <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.subagent ? 'subagent' : trace.name}</span>
+        {trace.subagent && (
+          <span className={clsx('shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium', trace.subagent.role === 'worker' ? 'bg-warn/10 text-warn' : 'bg-info/10 text-info')}>{trace.subagent.role}</span>
+        )}
         <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
           {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">awaiting approval</span>}
@@ -117,6 +124,8 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { 
           <CaretRight size={13} />
         </motion.span>
       </button>
+
+      {trace.subagent && !open && <SubagentBody trace={trace} />}
 
       {trace.name === 'todo_write' && !open && !superseded && trace.status !== 'error' && (
         <div className="pb-2.5 pl-12 pr-3">
@@ -230,6 +239,64 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { 
         )}
       </AnimatePresence>
     </motion.div>
+  )
+}
+
+/** A subagent's run: its own tool calls as a compact timeline, then its report. */
+function SubagentBody({ trace }: { trace: Trace }) {
+  const [full, setFull] = useState(false)
+  const run = trace.subagent!
+  const steps = run.blocks.filter((b): b is { type: 'tool'; trace: Trace } => b.type === 'tool').map((b) => b.trace)
+  const shown = run.running ? steps.slice(-6) : steps.slice(-8)
+  const report = trace.status === 'ok' ? trace.result : ''
+  return (
+    <div className="pb-3 pl-12 pr-3">
+      <div className="relative space-y-1 border-l border-line pl-3">
+        {steps.length > shown.length && <div className="text-[11px] text-dim">… {steps.length - shown.length} earlier step{steps.length - shown.length === 1 ? '' : 's'}</div>}
+        <AnimatePresence initial={false}>
+          {shown.map((s) => {
+            const I = ICONS[s.name] ?? Wrench
+            return (
+              <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-[11.5px]">
+                <I size={12} className="shrink-0 text-dim" />
+                <span className="shrink-0 font-mono text-muted">{s.name}</span>
+                <span className="min-w-0 flex-1 truncate text-dim">{summarize(s)}</span>
+                {s.status === 'running' ? (
+                  <CircleNotch size={12} className="shrink-0 animate-spin text-crimson" />
+                ) : s.status === 'ok' ? (
+                  <CheckCircle size={12} weight="fill" className="shrink-0 text-ok/80" />
+                ) : (
+                  <WarningCircle size={12} weight="fill" className="shrink-0 text-crimson-hi" />
+                )}
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+        {run.running && (
+          <div className="flex items-center gap-2 pt-0.5 text-[11.5px] text-dim">
+            <span className="shimmer-text">{steps.length ? 'Working' : 'Starting'}</span>
+          </div>
+        )}
+      </div>
+      {!run.running && report && (
+        <div className="mt-2.5 rounded-[10px] border border-line bg-bg px-3 py-2">
+          <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-dim">
+            Report
+            <span className="font-normal normal-case tracking-normal">
+              {steps.length} step{steps.length === 1 ? '' : 's'}
+              {run.usage ? ` · ${Math.round((run.usage.input + run.usage.output) / 100) / 10}k tokens` : ''}
+            </span>
+            <div className="flex-1" />
+            <button onClick={() => setFull(!full)} className="font-normal normal-case tracking-normal text-dim hover:text-fg">
+              {full ? 'less' : 'more'}
+            </button>
+          </div>
+          <div className={clsx('text-[12.5px]', !full && 'line-clamp-4')}>
+            <Markdown text={report} />
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
