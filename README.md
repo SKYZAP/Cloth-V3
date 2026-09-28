@@ -95,8 +95,8 @@ No model server handy? `npm run mock-llm` starts an OpenAI-compatible mock on `h
 
 ## Releasing
 
-`.github/workflows/release.yml` builds the Windows installer (`Cloth-Setup-<version>.exe`) and macOS disk images for
-Apple silicon and Intel (`Cloth-<version>-mac-arm64.dmg`, `Cloth-<version>-mac-x64.dmg`) and attaches them to a GitHub release:
+`.github/workflows/release.yml` builds the Windows installer (`Cloth-Setup-<version>.exe`) and a macOS disk image for
+Apple silicon (`Cloth-<version>-mac-arm64.dmg`; Intel Macs are not supported) and attaches them to a GitHub release:
 
 - **Publish a release** with a tag like `v1.2.0`: the workflow builds that tag and uploads the installers.
 - **Run it manually** (Actions → Release → Run workflow) with a version such as `1.2.0`: it creates release `v1.2.0`
