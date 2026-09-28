@@ -18,6 +18,7 @@ export interface ToolDetails {
   references?: RagHit[]
   changes?: FileChange[]
   subagent?: JsonValue
+  image?: JsonValue
   [key: string]: JsonValue | RagHit[] | FileChange[] | undefined
 }
 
@@ -51,6 +52,8 @@ export interface ToolScope {
   depth?: number
   /** Language-server tools and post-edit type checks (default on). */
   codeIntel?: boolean
+  /** Offer generate_image (chat agents, when an image model is configured). */
+  images?: boolean
 }
 
 interface Ctx {
@@ -248,7 +251,7 @@ export const BUILTINS: BuiltinSpec[] = [
   })
 ]
 
-export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task']
+export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task', 'generate_image']
 
 export function describeBuiltins(): BuiltinToolInfo[] {
   return BUILTINS.map((b) => ({

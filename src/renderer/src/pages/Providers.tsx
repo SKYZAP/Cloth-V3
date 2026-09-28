@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { Cloud, Cpu, HardDrive, Plus, RefreshCw, Star, Trash2, Zap } from 'lucide-react'
-import type { ModelInfo, Provider, ProviderPreset, ProviderTestResult } from '@shared/types'
+import type { GeneratedImage, ImageSize, ModelInfo, ModelRef, Provider, ProviderPreset, ProviderTestResult } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt, sameRef, useApp } from '@/lib/store'
 import { compact } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
+import { GeneratedImageCard } from '@/components/GeneratedImageCard'
 
 const isLocal = (url: string) => /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(url)
 
@@ -208,7 +209,8 @@ function ProviderView({ provider }: { provider: Provider }) {
     await attempt(() => api.providers.setModels(provider.id, models))
     await loadProviders()
   }
-  const toggle = (id: string, key: 'embedding' | 'reasoning' | 'vision') => setModels(provider.models.map((m) => (m.id === id ? { ...m, [key]: !m[key] } : m)))
+  const toggle = (id: string, key: 'embedding' | 'reasoning' | 'vision' | 'image') => setModels(provider.models.map((m) => (m.id === id ? { ...m, [key]: !m[key] } : m)))
+  const [playground, setPlayground] = useState<string | null>(null)
 
   const shown = provider.models.filter((m) => !filter || m.id.toLowerCase().includes(filter.toLowerCase()))
 
@@ -337,6 +339,7 @@ function ProviderView({ provider }: { provider: Provider }) {
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Embedding model">Embed</th>
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Supports reasoning / thinking">Reason</th>
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Image input">Vision</th>
+                  <th className="w-16 px-2 py-2 text-center font-medium" title="Generates images (Images API / OpenRouter image output)">Image</th>
                   <th className="w-28 px-2 py-2 font-medium" title="USD per 1M tokens (input / output) — used for cost on the Dashboard. Leave empty to use the built-in price list.">$ / 1M in·out</th>
                   <th className="w-44" />
                 </tr>
@@ -344,7 +347,7 @@ function ProviderView({ provider }: { provider: Provider }) {
               <tbody>
                 {shown.map((m) => {
                   const ref = { providerId: provider.id, modelId: m.id }
-                  const isDefault = m.embedding ? sameRef(settings?.embeddingModel, ref) : sameRef(settings?.defaultModel, ref)
+                  const isDefault = m.image ? sameRef(settings?.imageModel, ref) : m.embedding ? sameRef(settings?.embeddingModel, ref) : sameRef(settings?.defaultModel, ref)
                   const ping = pings[m.id]
                   return (
                     <tr key={m.id} className="group border-t border-line hover:bg-elev">
@@ -362,9 +365,9 @@ function ProviderView({ provider }: { provider: Provider }) {
                         )}
                       </td>
                       <td className="px-2 py-1.5 font-mono text-[11px] text-muted">{compact(m.contextWindow)}</td>
-                      {(['embedding', 'reasoning', 'vision'] as const).map((k) => (
+                      {(['embedding', 'reasoning', 'vision', 'image'] as const).map((k) => (
                         <td key={k} className="px-2 py-1.5 text-center">
-                          <input type="checkbox" className="accent-[#dc2645]" checked={m[k]} onChange={() => void toggle(m.id, k)} />
+                          <input type="checkbox" className="accent-[#dc2645]" checked={!!m[k]} onChange={() => void toggle(m.id, k)} />
                         </td>
                       ))}
                       <td className="px-2 py-1.5">
@@ -375,7 +378,12 @@ function ProviderView({ provider }: { provider: Provider }) {
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
-                          {!m.embedding && (
+                          {m.image && (
+                            <Button size="sm" variant="ghost" onClick={() => setPlayground(m.id)}>
+                              Generate
+                            </Button>
+                          )}
+                          {!m.embedding && !m.image && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -389,7 +397,7 @@ function ProviderView({ provider }: { provider: Provider }) {
                               Ping
                             </Button>
                           )}
-                          <Button size="sm" variant="ghost" onClick={() => void updateSettings(m.embedding ? { embeddingModel: ref } : { defaultModel: ref })}>
+                          <Button size="sm" variant="ghost" onClick={() => void updateSettings(m.image ? { imageModel: ref } : m.embedding ? { embeddingModel: ref } : { defaultModel: ref })}>
                             Default
                           </Button>
                           <IconButton onClick={() => void setModels(provider.models.filter((x) => x.id !== m.id))}>
@@ -405,6 +413,7 @@ function ProviderView({ provider }: { provider: Provider }) {
           )}
         </Card>
       </div>
+      <ImagePlayground model={playground ? { providerId: provider.id, modelId: playground } : null} onClose={() => setPlayground(null)} />
     </div>
   )
 }
@@ -459,5 +468,54 @@ function PriceCell({ value, onChange }: { value: { input: number; output: number
       {field(input, setInput, 'in', true)}
       {field(output, setOutput, 'out')}
     </div>
+  )
+}
+
+
+const SIZES: { value: ImageSize; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: '1024x1024', label: 'Square' },
+  { value: '1536x1024', label: 'Landscape' },
+  { value: '1024x1536', label: 'Portrait' }
+]
+
+/** Try an image model: prompt in, image out, shown with the same card chat uses. */
+function ImagePlayground({ model, onClose }: { model: ModelRef | null; onClose(): void }) {
+  const [prompt, setPrompt] = useState('A lighthouse on a rocky coast at dusk, warm light in the window, long exposure sea, cinematic')
+  const [size, setSize] = useState<ImageSize>('1024x1024')
+  const [image, setImage] = useState<GeneratedImage | null>(null)
+  useEffect(() => setImage(null), [model?.modelId])
+  const busy = image?.status === 'generating'
+  const run = async () => {
+    if (!model || !prompt.trim()) return
+    const started: GeneratedImage = { status: 'generating', prompt, size, model: model.modelId, startedAt: Date.now() }
+    setImage(started)
+    try {
+      setImage({ ...(await api.images.generate({ prompt, size, model })), startedAt: started.startedAt })
+    } catch (err) {
+      setImage({ ...started, status: 'error', error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  return (
+    <Modal open={!!model} onClose={onClose} title={<span className="font-mono text-[13px]">{model?.modelId}</span>} width={560}>
+      <div className="space-y-3">
+        <Textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the image" onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void run()} />
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
+            {SIZES.map((s) => (
+              <button key={s.value} onClick={() => setSize(s.value)} className={clsx('h-6 rounded px-2.5 text-[11.5px] font-medium transition-colors', size === s.value ? 'bg-elev-2 text-fg' : 'text-dim hover:text-muted')}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <Button variant="primary" loading={busy} disabled={!prompt.trim()} onClick={() => void run()}>
+            Generate
+          </Button>
+        </div>
+        {image && <GeneratedImageCard image={image} onRetry={() => void run()} className="mx-auto max-w-[400px] pt-1" />}
+        {!image && <div className="rounded-xl border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Generated images are saved in Cloth's data folder. Ctrl+Enter to generate.</div>}
+      </div>
+    </Modal>
   )
 }

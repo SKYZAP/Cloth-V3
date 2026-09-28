@@ -77,6 +77,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       writeFileSync(join(outDir, 'sheet-open.png'), await screenshot(win))
       return
     }
+    if (process.env.CLOTH_PROBE === 'images') return await probeImages(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'dialogs') {
       const js = (code: string) => win.webContents.executeJavaScript(code)
       await s.skills.create({ name: 'int-skill', description: 'Integration-test skill', body: '# Int skill' })
@@ -451,6 +452,92 @@ async function probeCoding(win: BrowserWindow, s: Services, outDir: string, note
   await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
   await wait(1200)
   writeFileSync(join(outDir, 'coding-sheet.png'), await screenshot(win))
+}
+
+/** A fake Images API (slow on purpose) + LM Studio chat calling generate_image, then the Models playground. */
+async function probeImages(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const { createServer } = await import('node:http')
+  const { nativeImage } = await import('electron')
+  // A 768×512 "sunset over hills" drawn pixel by pixel, so the reveal has something to show.
+  const W = 768
+  const H = 512
+  const bmp = Buffer.alloc(W * H * 4)
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = y / H
+      let r = 40 + 200 * (1 - t) + 15
+      let g = 30 + 90 * (1 - t) * (1 - t)
+      let b = 90 + 60 * t
+      const sun = Math.hypot(x - W * 0.62, y - H * 0.52)
+      if (sun < 70) [r, g, b] = [255, 200 + (70 - sun) * 0.6, 120]
+      const hill = H * 0.68 + Math.sin(x / 90) * 28 + Math.sin(x / 37) * 9
+      if (y > hill) [r, g, b] = [22 + (y - hill) * 0.05, 18, 32]
+      const i = (y * W + x) * 4
+      bmp[i] = Math.min(255, b)
+      bmp[i + 1] = Math.min(255, g)
+      bmp[i + 2] = Math.min(255, r)
+      bmp[i + 3] = 255
+    }
+  }
+  const png = nativeImage.createFromBitmap(bmp, { width: W, height: H }).toPNG().toString('base64')
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/v1/models') return res.end(JSON.stringify({ data: [{ id: 'gpt-image-1' }] }))
+    if (req.url !== '/v1/images/generations') {
+      res.statusCode = 404
+      return res.end('{}')
+    }
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => setTimeout(() => res.end(JSON.stringify({ data: [{ b64_json: png, revised_prompt: `${JSON.parse(body).prompt}, golden hour, painterly` }] })), 5000))
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() as { port: number }).port
+  const images = s.providers.create({ name: 'Local images (fake)', kind: 'openai-compatible', baseUrl: `http://127.0.0.1:${port}/v1` })
+  await s.providers.refreshModels(images.id)
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  const model = { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' }
+  s.settings.update({ defaultModel: model, imageModel: { providerId: images.id, modelId: 'gpt-image-1' } })
+  const chat = s.chat.create({ model, knowledgeEnabled: false, skillsEnabled: false, customTools: false, webEnabled: false, subagents: false })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Chat')
+  await wait(1200)
+  await s.chat.send(chat.id, 'Generate an image of a sunset over rolling hills, landscape format.')
+  let shot = false
+  for (let i = 0; i < 600 && s.chat.isRunning(chat.id); i++) {
+    const t = s.chat.messages(chat.id).flatMap((m) => m.blocks).find((b) => b.type === 'tool' && b.trace.name === 'generate_image')
+    if (!shot && t && t.type === 'tool' && t.trace.status === 'running') {
+      await wait(2800)
+      writeFileSync(join(outDir, 'image-generating.png'), await screenshot(win))
+      shot = true
+    }
+    await wait(250)
+  }
+  await wait(1800)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+  await wait(500)
+  writeFileSync(join(outDir, 'image-done.png'), await screenshot(win))
+  const trace = s.chat.messages(chat.id).flatMap((m) => m.blocks).find((b) => b.type === 'tool' && b.trace.name === 'generate_image')
+  note(`chat: ${trace && trace.type === 'tool' ? `${trace.trace.status} ${JSON.stringify(trace.trace.args)} → ${trace.trace.image?.status} ${trace.trace.image?.width}×${trace.trace.image?.height}` : 'no generate_image call'}`)
+  const loaded = await js(`[...document.querySelectorAll('img')].filter((i) => i.src.startsWith('cloth-image://')).map((i) => i.naturalWidth + 'x' + i.naturalHeight)`)
+  note(`images rendered from cloth-image://: ${JSON.stringify(loaded)}`)
+
+  // Models page playground.
+  await clickNav(win, 'Models')
+  await wait(900)
+  await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Local images'))?.click()`)
+  await wait(900)
+  await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Generate')?.click()`)
+  await wait(700)
+  await js(`[...document.querySelectorAll('.fixed button')].find((b) => b.textContent.trim() === 'Generate')?.click()`)
+  await wait(3000)
+  writeFileSync(join(outDir, 'playground-generating.png'), await screenshot(win))
+  await wait(4000)
+  writeFileSync(join(outDir, 'playground-done.png'), await screenshot(win))
+  server.close()
 }
 
 /** A small TS project with a type error: the model should find it with lsp and fix it. */

@@ -8,6 +8,7 @@ import {
   Files,
   ListChecks,
   Robot,
+  ImageSquare,
   Code,
   TreeStructure,
   NotePencil,
@@ -29,6 +30,7 @@ import { duration, pretty } from '@/lib/format'
 import { DiffStat, DiffView } from './DiffView'
 import { TodoList, todosOf } from './Planning'
 import { Markdown } from './Markdown'
+import { GeneratedImageCard } from './GeneratedImageCard'
 import { api } from '@/lib/api'
 
 const ICONS: Record<string, Icon> = {
@@ -51,7 +53,8 @@ const ICONS: Record<string, Icon> = {
   task: Robot,
   lsp: Code,
   ast_grep: TreeStructure,
-  ast_edit: TreeStructure
+  ast_edit: TreeStructure,
+  generate_image: ImageSquare
 }
 
 function summarize(t: Trace): string {
@@ -69,6 +72,7 @@ function summarize(t: Trace): string {
     return `${todos.filter((x) => x.status === 'completed').length}/${todos.length} done${current ? ` · ${current.content}` : ''}`
   }
   if (t.name === 'task') return String(a.description ?? '')
+  if (t.name === 'generate_image') return String(a.prompt ?? '')
   if (t.name === 'lsp') return [a.action, a.symbol ?? a.query, a.newName ? `→ ${a.newName}` : '', a.path ? `· ${a.path}${a.line ? `:${a.line}` : ''}` : ''].filter(Boolean).join(' ')
   if (t.name === 'ast_grep') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
   if (t.name === 'ast_edit') return `${a.pattern ?? ''} → ${a.rewrite ?? ''}`
@@ -134,6 +138,12 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { 
       </button>
 
       {trace.subagent && !open && <SubagentBody trace={trace} />}
+
+      {trace.image && (
+        <div className="pb-3.5 pl-12 pr-3">
+          <GeneratedImageCard image={trace.image} className="max-w-[440px]" />
+        </div>
+      )}
 
       {trace.name === 'todo_write' && !open && !superseded && trace.status !== 'error' && (
         <div className="pb-2.5 pl-12 pr-3">

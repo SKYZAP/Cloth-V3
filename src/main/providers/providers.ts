@@ -327,16 +327,18 @@ export class ProviderService {
       headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), ...provider.headers }
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    const body = (await res.json()) as { data?: { id: string; context_length?: number }[] }
+    const body = (await res.json()) as { data?: { id: string; context_length?: number; architecture?: { output_modalities?: string[] } }[] }
     const models = (body.data ?? []).map((m) => {
       const info = guessModelInfo(provider.kind, m.id)
       if (m.context_length) info.contextWindow = m.context_length
+      // OpenRouter lists what each model outputs.
+      if (m.architecture?.output_modalities?.includes('image')) info.image = true
       return info
     })
     if (provider.kind === 'openai-compatible') await enrichFromLmStudio(provider.baseUrl, models)
     if (provider.kind === 'openai') {
       // The OpenAI list includes audio/image/moderation models that can't chat.
-      return models.filter((m) => /^(gpt|o\d|chatgpt|codex|text-embedding)/.test(m.id) && !/(audio|realtime|tts|transcribe|image|search)/.test(m.id))
+      return models.filter((m) => m.image || (/^(gpt|o\d|chatgpt|codex|text-embedding)/.test(m.id) && !/(audio|realtime|tts|transcribe|image|search)/.test(m.id)))
     }
     return models
   }
@@ -383,6 +385,11 @@ function knownCost(kind: ProviderKind, id: string): Model<Api>['cost'] {
   return knownModels.get(`${kind}:${id}`)?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 }
 
+/** Image generation models by id (OpenAI, and common open models served behind OpenAI-style APIs). */
+export function isImageModelId(id: string): boolean {
+  return /(^|\/)(gpt-image|dall-e|chatgpt-image|imagen|flux|stable-diffusion|sdxl|sd3|sd-|seedream|recraft|grok-imagine|playground-v|kolors|hidream|qwen-image|mai-image|riverflow)|-image(-|$)|image-(gen|preview)/.test(id.toLowerCase())
+}
+
 export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
   const known = knownModels.get(`${kind}:${id}`)
   if (known) {
@@ -397,6 +404,7 @@ export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
     }
   }
   const lower = id.toLowerCase()
+  if (isImageModelId(lower)) return { id, name: id, contextWindow: 4096, maxTokens: 0, reasoning: false, vision: false, embedding: false, image: true }
   const embedding = /embed|bge|e5-|gte-|nomic|minilm/.test(lower)
   const reasoning = kind === 'anthropic' || isReasoningModelId(lower)
   return {

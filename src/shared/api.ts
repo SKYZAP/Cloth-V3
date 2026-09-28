@@ -9,6 +9,8 @@ import type {
   WebEngine,
   WorkflowGraph,
   ChatSession,
+  GeneratedImage,
+  ImageSize,
   ContextUsage,
   ApprovalDecision,
   PendingApproval,
@@ -161,6 +163,12 @@ export interface ClothApi {
   dashboard: {
     stats(range: UsageRange): Promise<DashboardStats>
     clearUsage(): Promise<void>
+  }
+  images: {
+    defaultModel(): Promise<ModelRef | null>
+    generate(input: { prompt: string; size?: ImageSize; model?: ModelRef | null }): Promise<GeneratedImage>
+    open(id: string): Promise<void>
+    saveAs(id: string): Promise<string | null>
   }
   mcp: {
     status(): Promise<McpStatus>

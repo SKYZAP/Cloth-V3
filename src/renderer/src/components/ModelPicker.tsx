@@ -16,7 +16,7 @@ export function ModelPicker({
 }: {
   value: ModelRef | null | undefined
   onChange(ref: ModelRef | null): void
-  kind?: 'chat' | 'embedding'
+  kind?: 'chat' | 'embedding' | 'image'
   allowNone?: boolean
   noneLabel?: string
   className?: string
@@ -31,7 +31,8 @@ export function ModelPicker({
   const enabled = providers.filter((p) => p.enabled)
   const current = value ? `${value.providerId}${SEP}${value.modelId}` : ''
   const known = enabled.some((p) => p.id === value?.providerId && p.models.some((m) => m.id === value?.modelId))
-  const empty = !enabled.some((p) => p.models.some((m) => (kind === 'embedding' ? m.embedding : !m.embedding)))
+  const fits = (m: { embedding: boolean; image?: boolean }) => (kind === 'embedding' ? m.embedding : kind === 'image' ? !!m.image : !m.embedding && !m.image)
+  const empty = !enabled.some((p) => p.models.some(fits))
 
   return (
     <Select
@@ -48,7 +49,7 @@ export function ModelPicker({
       {(allowNone || !value) && <option value="">{allowNone ? noneLabel : empty ? 'No models — add a provider' : 'Select a model…'}</option>}
       {value && !known && <option value={current}>{value.modelId} (unavailable)</option>}
       {enabled.map((p) => {
-        const models = p.models.filter((m) => (kind === 'embedding' ? m.embedding : !m.embedding))
+        const models = p.models.filter(fits)
         if (!models.length) return null
         return (
           <optgroup key={p.id} label={p.name}>
