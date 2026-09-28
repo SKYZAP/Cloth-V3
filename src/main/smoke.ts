@@ -70,6 +70,40 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       writeFileSync(join(outDir, 'sheet-open.png'), await screenshot(win))
       return
     }
+    if (process.env.CLOTH_PROBE === 'cites') {
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const chat = s.chat.create({})
+      const t = Date.now()
+      const hit = (n: number) => ({ chunkId: `c${n}`, docId: 'd', collectionId: 'web', title: `Source number ${n}`, source: `https://example.com/${n}`, sourceType: 'url', headingPath: '', text: `Snippet for source ${n}.`, score: 1, bm25Rank: null, vectorRank: null })
+      s.ctx.db.prepare('UPDATE sessions SET messages = ? WHERE id = ?').run(
+        JSON.stringify([
+          { role: 'user', content: 'design a page', timestamp: t - 3000 },
+          { role: 'assistant', content: [{ type: 'toolCall', id: 'w1', name: 'web_search', arguments: { query: 'minimal sites' } }], stopReason: 'toolUse', api: 'openai-completions', provider: 'x', model: 'm', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, timestamp: t - 2000 },
+          { role: 'toolResult', toolCallId: 'w1', toolName: 'web_search', content: [{ type: 'text', text: 'results' }], details: { references: [hit(1), hit(2), hit(3)] }, isError: false, timestamp: t - 1500 },
+          { role: 'assistant', content: [{ type: 'text', text: '1. **Minimalist aesthetic** [1] [2] — a long sentence with plenty of plain text to hover over without touching any citation.\n2. **Typography** [3] — more text here.' }], stopReason: 'stop', api: 'openai-completions', provider: 'x', model: 'm', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, timestamp: t - 1000 }
+        ]),
+        chat.id
+      )
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Chat')
+      await wait(1500)
+      const pos = (await js(`(() => {
+        const chips = [...document.querySelectorAll('.group\\\\/cite > span:first-child')].map((c) => c.getBoundingClientRect())
+        const li = [...document.querySelectorAll('.prose-cloth li')][0].getBoundingClientRect()
+        return { chip: { x: Math.round(chips[1].x + chips[1].width / 2), y: Math.round(chips[1].y + chips[1].height / 2) }, text: { x: Math.round(li.x + li.width - 60), y: Math.round(li.y + 10) } }
+      })()`)) as { chip: { x: number; y: number }; text: { x: number; y: number } }
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: pos.text.x, y: pos.text.y })
+      await wait(400)
+      const onText = await js(`[...document.querySelectorAll('.group\\\\/cite > span:nth-child(2)')].filter((p) => getComputedStyle(p).display !== 'none').length`)
+      writeFileSync(join(outDir, 'cite-text-hover.png'), await screenshot(win))
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: pos.chip.x, y: pos.chip.y })
+      await wait(400)
+      const onChip = await js(`[...document.querySelectorAll('.group\\\\/cite > span:nth-child(2)')].filter((p) => getComputedStyle(p).display !== 'none').map((p) => p.textContent.slice(0, 16))`)
+      writeFileSync(join(outDir, 'cite-chip-hover.png'), await screenshot(win))
+      note(`popups visible — hovering text: ${onText}; hovering chip [2]: ${JSON.stringify(onChip)}`)
+      return
+    }
     if (process.env.CLOTH_PROBE === 'codeintel') return await probeCodeIntel(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'ast') {
       // Native ast-grep + bundled grammars must load in the packaged app (asar unpacked).
