@@ -364,7 +364,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         <IconButton
           title="Delete workflow"
           onClick={async () => {
-            if (!confirmAction(`Delete workflow “${workflow.name}” and its run history?`)) return
+            if (!(await confirmAction(`“${workflow.name}”, its schedule and its run history will be deleted.`, { title: 'Delete workflow?', confirmLabel: 'Delete', danger: true }))) return
             await attempt(() => api.workflows.remove(workflow.id))
             onDeleted()
           }}

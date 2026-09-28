@@ -194,7 +194,7 @@ function CollectionView({ collection }: { collection: Collection }) {
                 allowNone
                 noneLabel="No embeddings (BM25 only)"
                 onChange={async (embedding) => {
-                  if (collection.chunkCount && !confirmAction('Changing the embedding model drops existing vectors. Re-embed afterwards with “Embed missing”. Continue?')) return
+                  if (collection.chunkCount && !(await confirmAction('Existing vectors are dropped. Re-embed afterwards with “Embed missing”.', { title: 'Change the embedding model?', confirmLabel: 'Change model' }))) return
                   await attempt(() => api.rag.updateCollection(collection.id, { embedding }))
                   await useApp.getState().loadCollections()
                 }}
@@ -208,7 +208,7 @@ function CollectionView({ collection }: { collection: Collection }) {
             <IconButton
               title="Delete collection"
               onClick={async () => {
-                if (!confirmAction(`Delete “${collection.name}” and all of its indexed documents?`)) return
+                if (!(await confirmAction(`“${collection.name}” and all of its indexed documents will be deleted.`, { title: 'Delete collection?', confirmLabel: 'Delete', danger: true }))) return
                 await attempt(() => api.rag.deleteCollection(collection.id))
                 await useApp.getState().loadCollections()
               }}

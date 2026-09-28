@@ -264,7 +264,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
       onInstalled(name)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      if (/already exists/.test(msg) && confirmAction(`${msg}.\n\nReplace the existing skill?`)) {
+      if (/already exists/.test(msg) && (await confirmAction(`${msg}.`, { title: 'Replace the existing skill?', confirmLabel: 'Replace', danger: true }))) {
         setInstalling(false)
         return install(true)
       }
@@ -430,7 +430,7 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
                       <div className="truncate text-[11px] text-dim">{s.description}</div>
                     </div>
                     {s.imported ? (
-                      <Button size="sm" variant="ghost" onClick={() => confirmAction(`Overwrite hub copy of ${s.name}?`) && void importOne(s.dir, true)}>
+                      <Button size="sm" variant="ghost" onClick={async () => (await confirmAction(`The hub's copy of ${s.name} will be replaced with the version in ${s.source}.`, { title: 'Re-import skill?', confirmLabel: 'Re-import', danger: true })) && void importOne(s.dir, true)}>
                         Re-import
                       </Button>
                     ) : (
@@ -467,7 +467,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
     setChecking(false)
     if (!res) return
     if (!res.updateAvailable) return useApp.getState().toast(`${skill.name} is up to date with skills.sh`, 'ok')
-    if (!confirmAction(`skills.sh has a newer version of ${skill.name}. Update now? Your local edits to its files will be replaced (eval cases are kept).`)) return
+    if (!(await confirmAction(`skills.sh has a newer version of ${skill.name}. Your local edits to its files will be replaced; eval cases are kept.`, { title: 'Update from skills.sh?', confirmLabel: 'Update' }))) return
     setChecking(true)
     const updated = await attempt(() => api.skills.registryInstall(skill.source!.id, true), `Updated ${skill.name}`)
     setChecking(false)
@@ -531,7 +531,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
             <IconButton
               title="Delete (moves to skills-trash)"
               onClick={async () => {
-                if (!confirmAction(`Move “${skill.name}” to the skills trash?`)) return
+                if (!(await confirmAction(`“${skill.name}” will be moved to the skills-trash folder, where you can still recover it.`, { title: 'Delete skill?', confirmLabel: 'Move to trash', danger: true }))) return
                 await attempt(() => api.skills.remove(skill.name))
                 onChanged()
               }}

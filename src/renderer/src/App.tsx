@@ -18,6 +18,7 @@ import type { McpStatus } from '@shared/types'
 import { useState } from 'react'
 import { api } from './lib/api'
 import { Logo } from './components/Logo'
+import { ConfirmHost } from './components/ConfirmDialog'
 
 const NAV: { page: Page; label: string; icon: Icon }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: ChartLineUp },
@@ -91,6 +92,7 @@ export function App() {
         </main>
       </div>
       <Toasts />
+      <ConfirmHost />
     </div>
     </MotionConfig>
   )

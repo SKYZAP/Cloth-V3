@@ -120,7 +120,7 @@ export function DashboardPage() {
           <IconButton
             aria-label="Clear usage history"
             onClick={async () => {
-              if (!confirmAction('Clear all recorded usage (model calls, tokens, tool and skill uses)? Chats, flows and skills are not touched.')) return
+              if (!(await confirmAction('All recorded model calls, tokens, tool calls and skill uses will be deleted. Chats, flows and skills are not touched.', { title: 'Clear usage history?', confirmLabel: 'Clear history', danger: true }))) return
               await attempt(() => api.dashboard.clearUsage())
               void load(range)
             }}
