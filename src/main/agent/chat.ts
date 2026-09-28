@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ApprovalDecision, ChatEvent, ChatSession, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import { json } from '../core/db'
@@ -28,6 +28,16 @@ const SUBAGENT_INSTRUCTIONS = (role: 'scout' | 'worker') =>
       : 'You are a worker: make the changes the job asks for, keeping them minimal. Each edit may be reviewed by the user.',
     'When done, reply with a concise report — it is all the other agent will see. Include concrete findings: file paths with line numbers, names, facts, and what you changed. No preamble.'
   ].join('\n')
+
+const SLICE_LABELS: Record<ContextSliceKey, string> = {
+  system: 'System prompt',
+  tools: 'Tool definitions',
+  skills: 'Invoked skills',
+  summary: 'Summary',
+  user: 'Your messages',
+  assistant: 'Replies & thinking',
+  toolResults: 'Tool calls & results'
+}
 
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
@@ -132,6 +142,15 @@ export class AgentRuntime {
     }
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
     return lines.join('\n')
+  }
+
+  /** The tool declarations an agent with this scope is given, as the model sees them. */
+  toolDefinitions(scope: ToolScope): string {
+    const tools = [
+      ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...this.ws }, scope),
+      ...(scope.subagents && !scope.depth ? [this.taskTool({ model: { providerId: '', modelId: '' }, scope })] : [])
+    ]
+    return JSON.stringify(tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))
   }
 
   createAgent(opts: Omit<AgentRunOptions, 'prompt'> & { systemPrompt: string }): Agent {
@@ -320,9 +339,38 @@ export class ChatService {
     const session = this.get(id)
     const window = session.model ? this.contextWindow(session.model) : null
     const raw = this.rawMessages(id)
-    // pi keeps the system prompt in the history; before the first turn, estimate it separately.
-    const tokens = raw.length ? estimateHistory(raw, this.ctx.kv.get<number>('compactedAt:' + id, 0)) : Math.ceil((await this.runtime.systemPrompt(this.scope(id), session.systemPrompt)).length / 4)
-    return { tokens, window, threshold: window ? budget(window).threshold : null }
+    const scope = this.scope(id)
+    const est = (s: string) => Math.ceil(s.length / 4)
+    const parts: Record<ContextSliceKey, number> = { system: 0, tools: 0, skills: 0, summary: 0, user: 0, assistant: 0, toolResults: 0 }
+    parts.system = est(await this.runtime.systemPrompt(scope, session.systemPrompt))
+    parts.tools = est(this.runtime.toolDefinitions(scope))
+    for (const m of raw) {
+      if (m.role === 'user') {
+        for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
+          if (c.type !== 'text') parts.user += 1200 // images: rough per-image cost
+          else if (c.text.startsWith(SUMMARY_OPEN)) parts.summary += est(c.text)
+          else if (c.text.startsWith(SKILL_OPEN)) parts.skills += est(c.text)
+          else parts.user += est(c.text)
+        }
+      } else if (m.role === 'assistant') {
+        for (const c of m.content) {
+          if (c.type === 'text') parts.assistant += est(c.text)
+          else if (c.type === 'thinking') parts.assistant += est(c.thinking)
+          else if (c.type === 'toolCall') parts.toolResults += est(JSON.stringify(c.arguments ?? {})) + 8
+        }
+      } else if (m.role === 'toolResult') {
+        for (const c of m.content) parts.toolResults += c.type === 'text' ? est(c.text) : 1200
+      }
+    }
+    const estimated = Object.values(parts).reduce((a, b) => a + b, 0)
+    // Prefer the provider's reported count (pi keeps the system prompt in the history); scale the split to it.
+    const reported = raw.some((m) => m.role !== 'system') ? estimateHistory(raw, this.ctx.kv.get<number>('compactedAt:' + id, 0)) : 0
+    const tokens = Math.max(reported, 0) || estimated
+    const scale = estimated ? tokens / estimated : 1
+    const breakdown: ContextSlice[] = (Object.keys(SLICE_LABELS) as ContextSliceKey[])
+      .map((key) => ({ key, label: SLICE_LABELS[key], tokens: Math.round(parts[key] * scale) }))
+      .filter((s) => s.tokens > 0)
+    return { tokens, window, threshold: window ? budget(window).threshold : null, breakdown }
   }
 
   /**

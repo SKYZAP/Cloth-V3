@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretDown, CheckCircle, Circle, CircleNotch, ListChecks } from '@phosphor-icons/react'
-import type { ContextUsage, TodoItem, UiMessage } from '@shared/types'
+import type { ContextSliceKey, ContextUsage, TodoItem, UiMessage } from '@shared/types'
 import { compact } from '@/lib/format'
-import { Tooltip } from './Tooltip'
 
 /** The todos from the most recent todo_write call in the (non-archived) conversation. */
 export function latestTodos(messages: UiMessage[]): TodoItem[] | null {
@@ -96,51 +95,125 @@ export function PlanPanel({ todos }: { todos: TodoItem[] }) {
   )
 }
 
-/** Ring showing how full the model's context is; click to summarise now. */
+const SLICE_COLOR: Record<ContextSliceKey, string> = {
+  system: '#8b8b95',
+  tools: '#6b9cf0',
+  skills: '#e0a43a',
+  summary: '#c084fc',
+  user: '#3fb97a',
+  assistant: '#dc2645',
+  toolResults: '#fb923c'
+}
+
+const pctOf = (n: number, of: number) => {
+  const p = of ? (n / of) * 100 : 0
+  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`
+}
+
+/** Segmented bar of the context window (what the tokens are spent on); click for the breakdown. */
 export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage | null; busy: boolean; onCompact(): void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
   if (!usage?.window) return null
-  const frac = Math.min(1, usage.tokens / usage.window)
-  const near = usage.threshold ? usage.tokens / usage.threshold : frac
-  const color = near >= 0.9 ? '#dc2645' : near >= 0.7 ? '#e0a43a' : '#a3a3ad'
-  const pct = Math.round(frac * 100)
-  const r = 6
+  const window_ = usage.window
+  const used = Math.min(usage.tokens, window_)
+  const near = usage.threshold ? usage.tokens / usage.threshold : used / window_
+  const tone = near >= 0.9 ? 'text-crimson-hi' : near >= 0.7 ? 'text-warn' : 'text-dim'
+  const slices = usage.breakdown
+
+  /** `of`: what 100% width represents — the whole window (panel) or just what is used (compact pill). */
+  const Bar = ({ className, marker, of = window_ }: { className: string; marker?: boolean; of?: number }) => (
+    <div className={clsx('relative flex overflow-hidden rounded-full bg-elev-2', className)}>
+      {slices.map((s, i) => (
+        <motion.div
+          key={s.key}
+          className="h-full"
+          style={{ background: SLICE_COLOR[s.key] }}
+          initial={false}
+          animate={{ width: `${(Math.min(s.tokens, of) / of) * 100}%` }}
+          transition={{ type: 'spring', stiffness: 160, damping: 26, delay: i * 0.02 }}
+        />
+      ))}
+      {marker && usage.threshold && <div className="absolute inset-y-0 w-px bg-fg/60" style={{ left: `${(usage.threshold / window_) * 100}%` }} title="Summarises automatically here" />}
+    </div>
+  )
+
   return (
-    <Tooltip
-      content={
-        <span>
-          <b className="font-semibold">Context</b> {compact(usage.tokens)} / {compact(usage.window)} tokens
-          {usage.threshold ? <span className="text-dim"> · summarises at {compact(usage.threshold)}</span> : null}
-          <span className="block text-dim">Click to summarise earlier messages now</span>
-        </span>
-      }
-    >
-      {/* A filled pie (not a thin arc) plus the percentage, so it reads as a gauge rather than a spinner. */}
-      <button
-        onClick={onCompact}
-        disabled={busy}
-        aria-label="Summarise conversation"
-        className="mr-2 flex h-[30px] items-center gap-1.5 rounded-full border border-line px-2.5 font-mono text-[11px] tabular-nums text-dim transition-colors hover:border-line-strong hover:text-muted disabled:opacity-60"
-      >
-        {busy ? (
-          <CircleNotch size={13} className="animate-spin text-crimson-hi" />
-        ) : (
-          <svg width={14} height={14} viewBox="0 0 14 14" className="-rotate-90">
-            <circle cx={7} cy={7} r={r} fill="var(--color-elev-2)" stroke="var(--color-line-strong)" strokeWidth={1} />
-            <motion.circle
-              cx={7}
-              cy={7}
-              r={r / 2}
-              fill="none"
-              stroke={color}
-              strokeWidth={r}
-              strokeDasharray={Math.PI * r}
-              animate={{ strokeDashoffset: Math.PI * r * (1 - Math.max(frac, 0.02)) }}
-              transition={{ type: 'spring', stiffness: 120, damping: 24 }}
-            />
-          </svg>
+    <div ref={ref} className="relative mr-2">
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98, transition: { duration: 0.12 } }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+            style={{ transformOrigin: 'bottom right' }}
+            className="absolute bottom-full right-0 z-40 mb-2.5 w-[320px] rounded-[16px] border border-line-strong bg-panel p-3.5 shadow-[0_16px_44px_-12px_rgb(0_0_0/0.8)]"
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="text-[12.5px] font-semibold">Context</span>
+              <span className="font-mono text-[11px] tabular-nums text-muted">
+                {compact(usage.tokens)} / {compact(window_)}
+              </span>
+              <div className="flex-1" />
+              <span className={clsx('font-mono text-[11px] tabular-nums', tone)}>{pctOf(usage.tokens, window_)} used</span>
+            </div>
+            <Bar className="mt-2.5 h-2.5" marker />
+            <div className="mt-3 space-y-1">
+              {slices.map((s) => (
+                <div key={s.key} className="flex items-center gap-2 text-[12px]">
+                  <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: SLICE_COLOR[s.key] }} />
+                  <span className="flex-1 text-muted">{s.label}</span>
+                  <span className="font-mono text-[11px] tabular-nums text-dim">{compact(s.tokens)}</span>
+                  <span className="w-10 text-right font-mono text-[11px] tabular-nums text-muted">{pctOf(s.tokens, usage.tokens)}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 text-[12px]">
+                <span className="h-2 w-2 shrink-0 rounded-[3px] border border-line-strong bg-elev-2" />
+                <span className="flex-1 text-dim">Free</span>
+                <span className="font-mono text-[11px] tabular-nums text-dim">{compact(Math.max(0, window_ - usage.tokens))}</span>
+                <span className="w-10" />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
+              <span className="flex-1 text-[11px] leading-snug text-dim">
+                {usage.threshold ? `Older messages are summarised automatically at ${compact(usage.threshold)}.` : 'Summarise older messages to free up space.'} Shares are estimates.
+              </span>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setOpen(false)
+                  onCompact()
+                }}
+                className="h-7 shrink-0 rounded-lg border border-line-strong px-2.5 text-[11.5px] font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
+              >
+                Summarise now
+              </button>
+            </div>
+          </motion.div>
         )}
-        {busy ? 'summarising' : `${pct < 1 && usage.tokens > 0 ? '<1' : pct}%`}
+      </AnimatePresence>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-label="Context usage"
+        title="Context: what the conversation is made of, and how full the window is"
+        aria-expanded={open}
+        className={clsx('flex h-[30px] items-center gap-2 rounded-full border px-2.5 transition-colors', open ? 'border-line-strong bg-elev-2' : 'border-line hover:border-line-strong')}
+      >
+        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1.5 w-20" of={Math.max(1, slices.reduce((n, x) => n + x.tokens, 0))} />}
+        <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
-    </Tooltip>
+    </div>
   )
 }

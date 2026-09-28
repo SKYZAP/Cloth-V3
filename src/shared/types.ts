@@ -392,6 +392,16 @@ export interface ContextUsage {
   window: number | null
   /** Tokens at which Cloth summarises automatically. */
   threshold: number | null
+  /** What the tokens are spent on (estimates, scaled to `tokens`). */
+  breakdown: ContextSlice[]
+}
+
+export type ContextSliceKey = 'system' | 'tools' | 'skills' | 'summary' | 'user' | 'assistant' | 'toolResults'
+
+export interface ContextSlice {
+  key: ContextSliceKey
+  label: string
+  tokens: number
 }
 
 export type ChatEvent =

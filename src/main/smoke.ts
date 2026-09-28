@@ -53,6 +53,8 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
         .prepare('UPDATE sessions SET messages = ? WHERE id = ?')
         .run(JSON.stringify([
           { role: 'user', content: 'Explain the difference between a process and a thread.', timestamp: t - 2000 },
+          { role: 'assistant', content: [{ type: 'toolCall', id: 'r1', name: 'read', arguments: { path: 'notes.md' } }], stopReason: 'toolUse', api: 'openai-completions', provider: lm.id, model: 'qwen/qwen3.5-9b', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, timestamp: t - 1800 },
+          { role: 'toolResult', toolCallId: 'r1', toolName: 'read', content: [{ type: 'text', text: 'x'.repeat(24000) }], isError: false, timestamp: t - 1600 },
           { role: 'assistant', content: [{ type: 'text', text: 'A **process** has its own address space; **threads** share one within a process.' }], usage: { input: 21000, output: 900, cacheRead: 0, cacheWrite: 0, totalTokens: 21900, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: 'stop', api: 'openai-completions', provider: lm.id, model: 'qwen/qwen3.5-9b', timestamp: t - 1000 }
         ]), chat.id)
       win.webContents.reload()
@@ -60,6 +62,11 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       await clickNav(win, 'Chat')
       await wait(1500)
       writeFileSync(join(outDir, 'composer.png'), await screenshot(win))
+      await js(`document.querySelector('button[aria-label="Context usage"]')?.click()`)
+      await wait(700)
+      writeFileSync(join(outDir, 'context-open.png'), await screenshot(win))
+      await js(`document.querySelector('button[aria-label="Context usage"]')?.click()`)
+      await wait(400)
       // Real mouse input: hover (tooltip shows), then click — the tooltip must not linger over the sheet.
       const r = (await js(`(() => { const b = document.querySelector('button[aria-label="Thinking"]').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()`)) as { x: number; y: number }
       win.webContents.sendInputEvent({ type: 'mouseMove', x: r.x, y: r.y })

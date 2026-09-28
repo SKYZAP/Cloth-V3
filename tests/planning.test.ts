@@ -123,6 +123,23 @@ describe('conversation summarising', () => {
     expect(last.blocks.find((b) => b.type === 'text')).toMatchObject({ text: 'still has summary' })
   })
 
+  it('breaks context usage down by what it is spent on', async () => {
+    const env = setup(32_768)
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('todo_write', { todos: [{ content: 'step one', status: 'in_progress' }] }, { id: 'tw' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage(long(200, 'answer'))
+    ])
+    await send(env, long(100, 'question'))
+    const u = await env.services.chat.contextUsage(env.session.id)
+    const keys = u.breakdown.map((s) => s.key)
+    expect(keys).toEqual(expect.arrayContaining(['system', 'tools', 'user', 'assistant', 'toolResults']))
+    expect(keys).not.toContain('summary')
+    const sum = u.breakdown.reduce((n, s) => n + s.tokens, 0)
+    expect(Math.abs(sum - u.tokens)).toBeLessThanOrEqual(u.breakdown.length)
+    expect(u.breakdown.find((s) => s.key === 'assistant')!.tokens).toBeGreaterThan(u.breakdown.find((s) => s.key === 'user')!.tokens)
+  })
+
   it('reports context usage against the model window', async () => {
     const env = setup(8000)
     const u = await env.services.chat.contextUsage(env.session.id)
