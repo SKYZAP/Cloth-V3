@@ -13,6 +13,11 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   blocks, collapsible tool-call traces (args, result, duration, status), RAG references with `[n]` citation
   hover cards, per-chat knowledge scope, skills toggle, read-only workspace tools, regenerate, stop. Type `/` to
   invoke a skill for a message.
+- **Coding agent** — with a workspace folder the chat agent can read, search and (if allowed) edit files and run
+  commands: pi's coding tools (read/ls/find/write/edit, bash or PowerShell) confined to the folder, approval cards
+  with diffs, per-step checkpoints with Undo, ast-grep structural search/rewrite (TS/JS/HTML/CSS/Python/Go/Rust/Java),
+  LSP code intelligence (TypeScript 7 native server, Pyright) with type errors fed back after each edit, subagents
+  (`task`: scouts and workers, in parallel), a `todo_write` plan, and automatic conversation summarising.
 - **Hybrid & agentic RAG** — index files, folders (code-aware), PDF, DOCX, HTML, URLs (parallel crawl; client-rendered
   docs sites are rendered with the bundled Obscura browser automatically) and pasted text.
   Markdown-aware chunking with heading paths. SQLite FTS5 BM25 + embeddings fused with reciprocal-rank fusion

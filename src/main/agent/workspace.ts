@@ -20,6 +20,21 @@ import type { ApprovalDecision, AutoApprove, BuiltinToolInfo, ChatEvent, FileAcc
 import { newId } from '../core/context'
 import { Type } from 'typebox'
 import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
+import { fileURLToPath } from 'node:url'
+import {
+  applyEdits,
+  describeLocations,
+  findPosition,
+  formatDiagnostics,
+  hoverText,
+  locations,
+  lspLanguage,
+  outline,
+  workspaceEditFiles,
+  type DocumentSymbol,
+  type LspManager,
+  type WorkspaceEdit
+} from './lsp'
 
 const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target', '.venv', '__pycache__']
 const MAX_DIFF_LINES = 600
@@ -188,6 +203,8 @@ interface CallState {
   /** Checkpoint key: the outermost tool call (a subagent's edits belong to its `task` call). */
   checkpointId: string
   parent?: CallState
+  /** Extra lines appended to the tool result (e.g. type errors after an edit). */
+  notes: string[]
 }
 
 const call = new AsyncLocalStorage<CallState>()
@@ -203,9 +220,11 @@ export interface WorkspaceOptions {
   autoApprove(): AutoApprove
   /** The user picked "always" on an approval card. */
   onAlways?(scope: 'edits' | 'all'): void
+  /** Language servers for the `lsp` tool and post-edit type checking; null = off. */
+  lsp?: LspManager | null
 }
 
-export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit']
+export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit', 'lsp']
 
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
@@ -221,6 +240,7 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     t('find', 'Find files', 'Find files by glob pattern (e.g. **/*.ts) in the workspace.', 'Chats with a workspace folder', obj({ pattern: 'string', path: 'string', limit: 'number' }, ['pattern'])),
     t('ast_grep', 'AST search', 'Structural code search with ast-grep patterns ($VAR, $$ARGS). TS/JS/TSX/HTML/CSS, Python, Go, Rust, Java.', 'Chats with a workspace folder', obj({ pattern: 'string', language: 'string', path: 'string' }, ['pattern'])),
     t('ast_edit', 'AST rewrite', 'Rewrite every match of an ast-grep pattern, reusing captured $VARS. One approval (combined diff) for all files; undoable.', 'Chats with a workspace in read & write mode', obj({ pattern: 'string', rewrite: 'string', language: 'string', path: 'string' }, ['pattern', 'rewrite'])),
+    t('lsp', 'Code intelligence', 'Language-server diagnostics, definition, references, hover, symbols and rename for TypeScript/JavaScript (TypeScript 7 native server) and Python (Pyright). Also reports type errors right after each edit.', 'Chats with a workspace and code intelligence on', obj({ action: 'string', path: 'string', symbol: 'string', line: 'number', query: 'string', newName: 'string' }, ['action'])),
     t('write', 'Write file', 'Create or overwrite a file. Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', content: 'string' }, ['path', 'content'])),
     t('edit', 'Edit file', 'Replace exact text in a file (one or more edits). Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', edits: 'array' }, ['path', 'edits'])),
     t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. Always asks for approval unless everything is auto-approved.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number' }, ['command']))
@@ -270,6 +290,18 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       for (let s: CallState | undefined = state; s; s = s.parent) s.changes.push(change)
       changes.push(change)
     }
+    // Tell the agent right away if the change broke the types, so it can fix it in the same turn.
+    if (o.lsp && state) {
+      for (const p of planned.filter((x) => lspLanguage(x.abs)).slice(0, 5)) {
+        try {
+          const server = await o.lsp.server(rootReal, p.abs)
+          const errors = (await server.diagnostics(p.abs, 12_000)).filter((d) => d.severity === 1)
+          state.notes.push(errors.length ? `Type errors after this change — ${formatDiagnostics(p.rel, errors, { errorsOnly: true, max: 8 })}` : `✓ ${p.rel}: no type errors`)
+        } catch {
+          /* no server / too slow: skip the check rather than fail the edit */
+        }
+      }
+    }
     return changes
   }
 
@@ -318,6 +350,72 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     }
   }
 
+  const lspTool: AgentTool<any> = {
+    name: 'lsp',
+    label: 'Code intelligence',
+    description:
+      'Language-server code intelligence for TypeScript/JavaScript and Python. actions: "diagnostics" (type errors and warnings in path), "definition", "references" and "hover" (for symbol — give its 1-based line when you know it), "symbols" (outline of path, or search the project for query), "rename" (rename symbol to newName everywhere it is used; read & write chats only, shown as one diff for approval). Point at symbols by name and line, never by column.',
+    parameters: Type.Object({
+      action: Type.Union([Type.Literal('diagnostics'), Type.Literal('definition'), Type.Literal('references'), Type.Literal('hover'), Type.Literal('symbols'), Type.Literal('rename')]),
+      path: Type.Optional(Type.String({ description: 'File the symbol is in (relative to the workspace)' })),
+      symbol: Type.Optional(Type.String()),
+      line: Type.Optional(Type.Number({ description: '1-based line of the symbol' })),
+      query: Type.Optional(Type.String({ description: 'For symbols: project-wide symbol search' })),
+      newName: Type.Optional(Type.String({ description: 'For rename' }))
+    }),
+    async execute(_id, params) {
+      const p = params as { action: string; path?: string; symbol?: string; line?: number; query?: string; newName?: string }
+      if (!o.lsp) throw new Error('Code intelligence is off for this chat')
+      const rootReal = await realpath(o.root)
+      const text = (t: string) => ({ content: [{ type: 'text' as const, text: t || '(nothing found)' }], details: {} })
+      if (p.action === 'symbols' && p.query && !p.path) {
+        const server = await o.lsp.server(rootReal, join(rootReal, 'index.ts'))
+        const found = (await server.request<DocumentSymbol[] | null>('workspace/symbol', { query: p.query })) ?? []
+        return text(await describeLocations(rootReal, found.filter((s) => s.location).map((s) => s.location!), 40))
+      }
+      if (!p.path) throw new Error('path is required')
+      const abs = await inside(p.path)
+      const rel = relative(rootReal, abs).split(sep).join('/')
+      const server = await o.lsp.server(rootReal, abs)
+      if (p.action === 'diagnostics') return text(formatDiagnostics(rel, await server.diagnostics(abs)))
+      const uri = await server.sync(abs)
+      if (p.action === 'symbols') {
+        if (p.query) {
+          const found = (await server.request<DocumentSymbol[] | null>('workspace/symbol', { query: p.query })) ?? []
+          return text(await describeLocations(rootReal, found.filter((s) => s.location).map((s) => s.location!), 40))
+        }
+        const syms = (await server.request<DocumentSymbol[] | null>('textDocument/documentSymbol', { textDocument: { uri } })) ?? []
+        return text(outline(syms).join('\n'))
+      }
+      const position = findPosition(await readFile(abs, 'utf8'), p.symbol, p.line)
+      const at = { textDocument: { uri }, position }
+      switch (p.action) {
+        case 'definition':
+          return text(await describeLocations(rootReal, locations(await server.request('textDocument/definition', at))))
+        case 'references':
+          return text(await describeLocations(rootReal, locations(await server.request('textDocument/references', { ...at, context: { includeDeclaration: true } })), 60))
+        case 'hover':
+          return text(hoverText(await server.request('textDocument/hover', at)))
+        case 'rename': {
+          if (o.access !== 'write') throw new Error('Renaming changes files — this chat is read-only')
+          if (!p.newName) throw new Error('newName is required')
+          const edit = await server.request<WorkspaceEdit | null>('textDocument/rename', { ...at, newName: p.newName })
+          const files = []
+          for (const f of workspaceEditFiles(edit)) {
+            const target = await inside(fileURLToPath(f.uri))
+            const before = await readFile(target, 'utf8')
+            files.push({ abs: target, before, after: applyEdits(before, f.edits) })
+          }
+          if (!files.length) return text(`Nothing to rename at ${rel}:${position.line + 1}`)
+          const changes = await commit(files, 'edit')
+          return text(`Renamed ${p.symbol ?? 'symbol'} → ${p.newName} in ${changes.length} file${changes.length === 1 ? '' : 's'}: ${changes.map((c) => c.path).join(', ')}`)
+        }
+        default:
+          throw new Error(`Unknown action "${p.action}"`)
+      }
+    }
+  }
+
   const readOps = {
     readFile: async (p: string) => readFile(await inside(p)),
     access: async (p: string) => void (await stat(await inside(p)))
@@ -346,7 +444,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
         }
       }
     }),
-    astGrep
+    astGrep,
+    ...(o.lsp ? [lspTool] : [])
   ]
 
   if (o.access === 'write') {
@@ -387,11 +486,11 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
  * Run `fn` as a tool call: file changes made inside it (including by nested calls, e.g. a
  * subagent's edits) are collected and checkpointed under this call's id.
  */
-export async function runAsCall<T>(toolCallId: string, toolName: string, signal: AbortSignal | undefined, fn: () => Promise<T>): Promise<{ result: T; changes: FileChange[] }> {
+export async function runAsCall<T>(toolCallId: string, toolName: string, signal: AbortSignal | undefined, fn: () => Promise<T>): Promise<{ result: T; changes: FileChange[]; notes: string[] }> {
   const parent = call.getStore()
-  const state: CallState = { toolCallId, toolName, signal, changes: [], checkpointId: parent?.checkpointId ?? toolCallId, parent }
+  const state: CallState = { toolCallId, toolName, signal, changes: [], checkpointId: parent?.checkpointId ?? toolCallId, parent, notes: [] }
   const result = await call.run(state, fn)
-  return { result, changes: state.changes }
+  return { result, changes: state.changes, notes: state.notes }
 }
 
 /** Run each call with its id in async context, and attach the files it changed to the result. */
@@ -400,7 +499,8 @@ function withCallState<T extends AgentTool<any>>(tool: T): T {
     ...tool,
     async execute(id, params, signal, onUpdate) {
       const started = performance.now()
-      const { result: res, changes } = await runAsCall(id, tool.name, signal, () => tool.execute(id, params, signal, onUpdate))
+      const { result: raw, changes, notes } = await runAsCall(id, tool.name, signal, () => tool.execute(id, params, signal, onUpdate))
+      const res = notes.length ? { ...raw, content: [...raw.content, { type: 'text' as const, text: `\n${notes.join('\n')}` }] } : raw
       const state = { changes }
       const details = (res.details && typeof res.details === 'object' ? res.details : {}) as Record<string, unknown>
       return {

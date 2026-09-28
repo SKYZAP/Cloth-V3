@@ -1,4 +1,5 @@
 import type { AutoApprove, FileAccess, FileChange } from '@shared/types'
+import type { LspManager } from './lsp'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore } from './workspace'
 import type { JsonValue } from '@earendil-works/pi-ai'
 import type { UsageService } from '../core/usage'
@@ -28,6 +29,7 @@ export interface ToolDeps {
   usage?: UsageService
   approvals?: ApprovalService
   checkpoints?: CheckpointStore
+  lsp?: LspManager
 }
 
 export interface ToolScope {
@@ -47,6 +49,8 @@ export interface ToolScope {
   subagents?: boolean
   /** 0 for the chat agent, 1 inside a subagent. */
   depth?: number
+  /** Language-server tools and post-edit type checks (default on). */
+  codeIntel?: boolean
 }
 
 interface Ctx {
@@ -294,7 +298,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         approvals: deps.approvals ?? null,
         checkpoints: deps.checkpoints ?? null,
         autoApprove: scope.autoApprove ?? (() => 'none'),
-        onAlways: scope.onAlways
+        onAlways: scope.onAlways,
+        lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null
       })
     )
   }

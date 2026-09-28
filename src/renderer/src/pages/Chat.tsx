@@ -17,6 +17,7 @@ import {
   LockSimple,
   PencilSimpleLine,
   Robot,
+  Code,
   ShieldCheck,
   ShieldWarning,
   TerminalWindow,
@@ -825,6 +826,15 @@ function ContextSheet({
               options={[
                 { value: 'off', icon: X, title: 'No commands', sub: 'The agent cannot run programs' },
                 { value: 'on', icon: TerminalWindow, title: window.cloth.platform === 'win32' ? 'PowerShell' : 'bash', sub: 'Runs in the workspace folder' }
+              ]}
+            />
+            <OptionRow
+              label="Code intel"
+              value={session.codeIntel ? 'on' : 'off'}
+              onChange={(v) => void update({ codeIntel: v === 'on' })}
+              options={[
+                { value: 'off', icon: X, title: 'Off', sub: 'No language servers' },
+                { value: 'on', icon: Code, title: 'TypeScript · Python', sub: 'Definitions, references, type errors' }
               ]}
             />
             <OptionRow<AutoApprove>
