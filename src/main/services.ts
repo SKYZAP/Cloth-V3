@@ -6,6 +6,7 @@ import { ProviderService } from './providers/providers'
 import { RagService } from './rag/rag'
 import { ExamplesService } from './rag/examples'
 import { SkillService } from './skills/skills'
+import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
 import { BUILTIN_NAMES } from './agent/tools'
 import { CustomToolService } from './tools/custom'
@@ -20,6 +21,7 @@ export interface Services {
   rag: RagService
   examples: ExamplesService
   skills: SkillService
+  registry: SkillRegistry
   web: WebService
   custom: CustomToolService
   runtime: AgentRuntime
@@ -55,6 +57,7 @@ export function createServices(opts: {
   const rag = new RagService(ctx, providers, settings, () => (web.obscura.path() ? (url, signal) => web.obscura.renderHtml(url, signal) : null))
   const examples = new ExamplesService(ctx, rag, settings)
   const skills = new SkillService(ctx, providers)
+  const registry = new SkillRegistry(ctx, skills)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom)
   const chat = new ChatService(ctx, runtime, settings, skills)
@@ -69,5 +72,5 @@ export function createServices(opts: {
     }
   })
 
-  return { ctx, settings, providers, rag, examples, skills, web, custom, runtime, chat, workflows, mcp }
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp }
 }

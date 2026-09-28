@@ -12,6 +12,7 @@ import type {
   SkillHealth,
   SkillInput,
   SkillRun,
+  SkillSource,
   SkillTestInput,
   SkillVerdict
 } from '@shared/types'
@@ -100,7 +101,8 @@ export class SkillService {
       files: await listFiles(dir),
       updatedAt: s.mtimeMs,
       evals: await readEvalsFile(dir),
-      health: this.health(name)
+      health: this.health(name),
+      source: await readSourceFile(dir)
     }
   }
 
@@ -163,7 +165,7 @@ export class SkillService {
     const { text } = await this.providers.complete(model, {
       system: 'You write evaluation cases for AI agent skills. Reply with JSON only.',
       prompt: `Skill "${skill.name}": ${skill.description}\n\n${skill.body.slice(0, 12_000)}\n\nWrite 3 realistic user prompts that should trigger this skill, each with 2-4 objectively checkable expectations about a correct response (things the skill teaches that a model without it would likely miss). JSON: {"cases": [{"prompt": "...", "expectations": ["..."]}]}`,
-      maxTokens: 1500,
+      maxTokens: 3000,
       temperature: 0.4
     })
     const parsed = parseJsonLoose<{ cases: { prompt: string; expectations: string[] }[] }>(text)
@@ -394,7 +396,7 @@ async function listFiles(dir: string): Promise<string[]> {
     for (const e of await readdir(d, { withFileTypes: true })) {
       const p = join(d, e.name)
       if (e.isDirectory()) await walk(p)
-      else out.push(relative(dir, p).split(sep).join('/'))
+      else if (!e.name.startsWith('.cloth')) out.push(relative(dir, p).split(sep).join('/'))
     }
   }
   await walk(dir)
@@ -419,6 +421,12 @@ async function findSkillDirs(root: string, depth = 3): Promise<string[]> {
   }
   await walk(root, 0)
   return out
+}
+
+async function readSourceFile(dir: string): Promise<SkillSource | null> {
+  const file = join(dir, '.cloth-source.json')
+  if (!existsSync(file)) return null
+  return json<SkillSource | null>(await readFile(file, 'utf8'), null)
 }
 
 async function readEvalsFile(dir: string): Promise<SkillEvalCase[]> {

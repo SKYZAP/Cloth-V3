@@ -132,7 +132,12 @@ export class ProviderService {
     const fetched = await this.fetchModels(id)
     // Keep user overrides (e.g. embedding flag, context window) for models we already know.
     const previous = new Map(this.get(id).models.map((m) => [m.id, m]))
-    const merged = fetched.map((m) => ({ ...m, ...(previous.get(m.id) ?? {}) , id: m.id }))
+    const merged = fetched.map((m) => {
+      const prev = previous.get(m.id)
+      if (!prev) return m
+      // Capability flags only get switched on by detection; a user's ticks are never removed.
+      return { ...m, ...prev, id: m.id, reasoning: prev.reasoning || m.reasoning, vision: prev.vision || m.vision }
+    })
     return this.setModels(id, merged)
   }
 
@@ -168,6 +173,9 @@ export class ProviderService {
         supportsReasoningEffort: info.reasoning,
         supportsStrictMode: false
       }
+      // Local reasoning models (Qwen 3.x, DeepSeek-R1, …) think by default. With thinking "off",
+      // send reasoning_effort "none" so they answer directly (LM Studio / Ollama honour it).
+      if (info.reasoning) model.thinkingLevelMap = { off: 'none' }
     }
     // Local servers accept any key; pi-ai still wants a non-empty one.
     return { model, apiKey: this.apiKey(provider.id) || 'cloth-local' }
@@ -189,20 +197,39 @@ export class ProviderService {
       systemPrompt: input.system,
       messages: [{ role: 'user', content: input.prompt ?? '', timestamp: Date.now() }]
     }
-    const message = await completeSimple(model, context, {
-      apiKey,
-      maxTokens: input.maxTokens ?? Math.min(model.maxTokens, 8192),
-      temperature: input.temperature,
-      signal: input.signal,
-      reasoning: input.thinking && input.thinking !== 'off' && model.reasoning ? input.thinking : undefined
-    })
+    const thinking = input.thinking && input.thinking !== 'off' && model.reasoning ? input.thinking : undefined
+    const call = (m: Model<Api>) =>
+      completeSimple(m, context, {
+        apiKey,
+        maxTokens: input.maxTokens ?? Math.min(model.maxTokens, 8192),
+        temperature: input.temperature,
+        signal: input.signal,
+        reasoning: thinking
+      })
+    let message = await call(model)
     if (message.stopReason === 'error' || message.stopReason === 'aborted') {
       throw new Error(message.errorMessage || `Model call ${message.stopReason}`)
     }
-    const text = message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { text: string }).text)
-      .join('')
+    // A model we didn't know reasons by default can burn the whole output budget thinking and
+    // never answer. Retry once with thinking explicitly disabled.
+    if (!thinking && !textOf(message) && hasThinking(message) && model.api === 'openai-completions') {
+      const noThink: Model<Api> = {
+        ...model,
+        reasoning: true,
+        thinkingLevelMap: { ...model.thinkingLevelMap, off: 'none' },
+        compat: { ...(model as Model<'openai-completions'>).compat, supportsReasoningEffort: true }
+      } as Model<Api>
+      message = await call(noThink)
+      if (message.stopReason === 'error' || message.stopReason === 'aborted') {
+        throw new Error(message.errorMessage || `Model call ${message.stopReason}`)
+      }
+    }
+    const text = stripThinkTags(textOf(message))
+    if (!text.trim() && message.stopReason === 'length') {
+      throw new Error(
+        `${ref.modelId} used its whole output budget${hasThinking(message) ? ' reasoning' : ''} and returned no answer. Tick “Reason” for it on the Models page so Cloth can switch thinking off, or use a different model.`
+      )
+    }
     return { text, message }
   }
 
@@ -323,7 +350,7 @@ export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
   }
   const lower = id.toLowerCase()
   const embedding = /embed|bge|e5-|gte-|nomic|minilm/.test(lower)
-  const reasoning = kind === 'anthropic' || /(^o\d|gpt-5|reason|think|r1|qwq|gpt-oss)/.test(lower)
+  const reasoning = kind === 'anthropic' || isReasoningModelId(lower)
   return {
     id,
     name: id,
@@ -341,17 +368,39 @@ async function enrichFromLmStudio(baseUrl: string, models: ModelInfo[]): Promise
     const origin = new URL(baseUrl).origin
     const res = await fetch(`${origin}/api/v0/models`, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return
-    const body = (await res.json()) as { data: { id: string; type: string; max_context_length?: number; capabilities?: string[] }[] }
+    const body = (await res.json()) as { data: { id: string; type: string; arch?: string; max_context_length?: number; capabilities?: string[] }[] }
     const byId = new Map(body.data.map((m) => [m.id, m]))
     for (const m of models) {
       const meta = byId.get(m.id)
       if (!meta) continue
       m.embedding = meta.type === 'embeddings'
       if (meta.type === 'vlm') m.vision = true
+      if (meta.arch && isReasoningModelId(meta.arch)) m.reasoning = true
       if (meta.max_context_length) m.contextWindow = meta.max_context_length
       if (meta.capabilities?.includes('tool_use') === false) m.name = `${m.id} (no tools)`
     }
   } catch {
     // Not LM Studio — ignore.
   }
+}
+
+/** Model families that reason (think) by default. Matches ids and LM Studio `arch` values. */
+export function isReasoningModelId(id: string): boolean {
+  return /(^o\d|gpt-5|reason|think|deepseek-r1|r1-distill|qwq|qwen-?3|qwen35|gpt-oss|magistral|nemotron|phi-4-(mini-)?reasoning|glm-4\.[5-9]|glm-z1|kimi-k2|smollm3|exaone-deep|seed-oss)/.test(id.toLowerCase())
+}
+
+function textOf(message: AssistantMessage): string {
+  return message.content
+    .filter((b) => b.type === 'text')
+    .map((b) => (b as { text: string }).text)
+    .join('')
+}
+
+function hasThinking(message: AssistantMessage): boolean {
+  return message.content.some((b) => b.type === 'thinking' && b.thinking.trim()) || /<think>/.test(textOf(message))
+}
+
+/** Some servers leave the reasoning inline as <think>…</think> in the content. */
+export function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
 }

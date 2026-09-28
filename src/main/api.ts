@@ -105,6 +105,10 @@ export function createApi(s: Services): ClothApi {
       knownSources: async () => s.skills.knownSources(),
       test: async (input) => s.skills.startTest(input),
       runs: async (name) => s.skills.runs(name),
+      registrySearch: (q) => s.registry.search(q),
+      registryPreview: (id) => s.registry.preview(id),
+      registryInstall: (id, overwrite) => s.registry.install(id, { overwrite }),
+      registryCheckUpdate: (name) => s.registry.checkUpdate(name),
       dir: async () => s.ctx.skillsDir
     },
     chat: {

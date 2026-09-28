@@ -16,6 +16,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
   }
   try {
     if (process.env.CLOTH_PROBE === 'kb-search') return await probeKnowledgeSearch(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -232,4 +233,40 @@ async function probeKnowledgeSearch(win: BrowserWindow, s: Services, outDir: str
   })`)
   note(`typed="${typed}" diag=${diag}`)
   writeFileSync(join(outDir, 'kb-search.png'), await screenshot(win))
+}
+
+/** skills.sh search + install through the dialog, then Draft with AI against a local LM Studio model. */
+async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const setInput = (selector: string, value: string) =>
+    js(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  s.settings.update({ defaultModel: { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' } })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Skills')
+  await wait(700)
+  await js(`document.querySelector('button[title="Browse skills.sh"]').click()`)
+  await wait(500)
+  await setInput('input[placeholder^="Search skills.sh"]', 'nestjs')
+  for (let i = 0; i < 40 && !(await js(`!!document.querySelector('[role] .font-mono, .font-mono.text-\[14px\]')`).catch(() => false)); i++) await wait(250)
+  await wait(2500)
+  writeFileSync(join(outDir, 'registry-search.png'), await screenshot(win))
+  await clickText(win, 'Install')
+  for (let i = 0; i < 60 && !(await s.skills.list()).some((k) => k.source); i++) await wait(250)
+  const installed = (await s.skills.list()).find((k) => k.source)
+  note(`registry install: ${installed?.name} from ${installed?.source?.id} files=${installed?.files.join(',')}`)
+  await wait(800)
+  writeFileSync(join(outDir, 'registry-installed.png'), await screenshot(win))
+  await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+  await wait(600)
+  await clickText(win, 'Tests (')
+  await wait(600)
+  const t0 = Date.now()
+  await clickText(win, 'Draft with AI')
+  for (let i = 0; i < 240 && (await js(`document.querySelectorAll('textarea').length`)) < 2; i++) await wait(500)
+  const drafted = await js(`document.querySelectorAll('textarea').length / 2`)
+  note(`draft with AI: ${drafted} case(s) in the editor after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+  writeFileSync(join(outDir, 'draft-evals.png'), await screenshot(win))
 }

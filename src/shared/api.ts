@@ -20,6 +20,8 @@ import type {
   ProviderTestResult,
   RagDocument,
   RagAskResult,
+  RegistryPreview,
+  RegistrySkill,
   RagSearchInput,
   RagSearchResult,
   Settings,
@@ -114,6 +116,10 @@ export interface ClothApi {
     knownSources(): Promise<string[]>
     test(input: SkillTestInput): Promise<SkillRun>
     runs(name: string): Promise<SkillRun[]>
+    registrySearch(query: string): Promise<RegistrySkill[]>
+    registryPreview(id: string): Promise<RegistryPreview>
+    registryInstall(id: string, overwrite?: boolean): Promise<string>
+    registryCheckUpdate(name: string): Promise<{ updateAvailable: boolean; current: string | null; latest: string | null }>
     dir(): Promise<string>
   }
   chat: {

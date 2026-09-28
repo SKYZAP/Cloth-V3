@@ -199,3 +199,29 @@ describe('example knowledge', () => {
     expect(services.rag.listCollections()).toHaveLength(0)
   })
 })
+
+describe('reasoning models in one-shot calls', () => {
+  it('retries with thinking off when a model spends its whole budget thinking', async () => {
+    const { services } = makeServices()
+    const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-think' })
+    faux.setResponses([
+      fauxAssistantMessage([{ type: 'thinking', thinking: 'Let me think about this at great length…' }], { stopReason: 'length' }),
+      fauxAssistantMessage('{"cases": []}')
+    ])
+    try {
+      const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      const { text } = await services.providers.complete({ providerId: provider.id, modelId: 'faux-1' }, { prompt: 'json please' })
+      expect(text).toBe('{"cases": []}')
+      expect(faux.state.callCount).toBe(2)
+    } finally {
+      faux.unregister()
+    }
+  })
+
+  it('recognises reasoning-by-default model families', async () => {
+    const { isReasoningModelId, stripThinkTags } = await import('../src/main/providers/providers')
+    for (const id of ['qwen/qwen3.5-9b', 'qwen35', 'deepseek-r1-distill-qwen-7b', 'openai/gpt-oss-20b', 'qwq-32b']) expect(isReasoningModelId(id)).toBe(true)
+    for (const id of ['google/gemma-4-e4b', 'llama-3.1-8b-instruct', 'mistral-small']) expect(isReasoningModelId(id)).toBe(false)
+    expect(stripThinkTags('<think>hmm</think>{"a":1}')).toBe('{"a":1}')
+  })
+})
