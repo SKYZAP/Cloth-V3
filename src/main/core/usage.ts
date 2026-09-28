@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Agent } from '@mariozechner/pi-agent-core'
-import type { AssistantMessage } from '@mariozechner/pi-ai'
+import type { Agent } from '@earendil-works/pi-agent-core'
+import type { AssistantMessage } from '@earendil-works/pi-ai'
 import type { UsageSource } from '@shared/types'
 import type { Ctx } from './context'
 

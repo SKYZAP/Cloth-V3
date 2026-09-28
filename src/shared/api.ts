@@ -9,6 +9,8 @@ import type {
   WebEngine,
   WorkflowGraph,
   ChatSession,
+  ApprovalDecision,
+  PendingApproval,
   DashboardStats,
   UsageRange,
   Collection,
@@ -134,6 +136,9 @@ export interface ClothApi {
     abort(id: string): Promise<void>
     rewind(id: string, messageId: string): Promise<UiMessage[]>
     running(): Promise<string[]>
+    pendingApprovals(id: string): Promise<PendingApproval[]>
+    resolveApproval(approvalId: string, decision: ApprovalDecision): Promise<void>
+    undoChange(id: string, toolCallId: string, force?: boolean): Promise<UiMessage[]>
   }
   workflows: {
     list(): Promise<Workflow[]>

@@ -19,6 +19,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -271,6 +272,53 @@ async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note
   const drafted = await js(`document.querySelectorAll('textarea').length / 2`)
   note(`draft with AI: ${drafted} case(s) in the editor after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   writeFileSync(join(outDir, 'draft-evals.png'), await screenshot(win))
+}
+
+/** A real chat against LM Studio that edits files in a workspace, approved through the UI. */
+async function probeCoding(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const { mkdirSync: mk, writeFileSync: wf, readFileSync: rf, existsSync: ex } = await import('node:fs')
+  const ws = join(outDir, 'workspace')
+  mk(ws, { recursive: true })
+  wf(join(ws, 'math.js'), "export function add(a, b) {\n  return a + b\n}\n")
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  const model = { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' }
+  s.settings.update({ defaultModel: model })
+  const chat = s.chat.create({ model, workspace: ws, fileAccess: 'write', knowledgeEnabled: false, skillsEnabled: false, customTools: false, webEnabled: false })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Chat')
+  await wait(1200)
+  const t0 = Date.now()
+  await s.chat.send(chat.id, 'In math.js, add an exported `multiply(a, b)` function below `add`. Then create a short README.md describing the two functions. Use the edit and write tools.')
+  let shots = 0
+  for (let i = 0; i < 600 && s.chat.isRunning(chat.id); i++) {
+    const pending = s.chat.pendingApprovals(chat.id)
+    if (pending.length) {
+      await wait(900)
+      shots++
+      note(`approval ${shots}: ${pending[0].kind} ${pending[0].path} +${pending[0].added} -${pending[0].removed} after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+      if (shots <= 2) writeFileSync(join(outDir, `coding-approval-${shots}.png`), await screenshot(win))
+      await clickText(win, 'Apply')
+      await wait(700)
+      continue
+    }
+    await wait(500)
+  }
+  await wait(1500)
+  note(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s; running=${s.chat.isRunning(chat.id)}`)
+  note(`math.js:\n${rf(join(ws, 'math.js'), 'utf8')}`)
+  note(`README.md exists: ${ex(join(ws, 'README.md'))}`)
+  const traces = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool')
+  note(`tools: ${traces.map((b) => (b.type === 'tool' ? `${b.trace.name}:${b.trace.status}${b.trace.changes ? `(${b.trace.changes.length} change)` : ''}` : '')).join(', ')}`)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+  await wait(600)
+  writeFileSync(join(outDir, 'coding-done.png'), await screenshot(win))
+  // Open the workspace sheet to show the new settings.
+  await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
+  await wait(1200)
+  writeFileSync(join(outDir, 'coding-sheet.png'), await screenshot(win))
 }
 
 /** Seed a week of synthetic usage + a messy loop flow; screenshot the dashboard and Arrange. */

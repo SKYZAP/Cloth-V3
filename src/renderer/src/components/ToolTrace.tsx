@@ -2,7 +2,12 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import {
+  ArrowCounterClockwise,
   Books,
+  FilePlus,
+  Files,
+  NotePencil,
+  TerminalWindow,
   CaretRight,
   CheckCircle,
   CircleNotch,
@@ -17,6 +22,7 @@ import {
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
 import { duration, pretty } from '@/lib/format'
+import { DiffStat, DiffView } from './DiffView'
 import { api } from '@/lib/api'
 
 const ICONS: Record<string, Icon> = {
@@ -27,7 +33,14 @@ const ICONS: Record<string, Icon> = {
   skill_use: Sparkle,
   read_file: FileText,
   list_dir: FolderSimple,
-  grep: ListMagnifyingGlass
+  grep: ListMagnifyingGlass,
+  read: FileText,
+  ls: FolderSimple,
+  find: Files,
+  write: FilePlus,
+  edit: NotePencil,
+  bash: TerminalWindow,
+  powershell: TerminalWindow
 }
 
 function summarize(t: Trace): string {
@@ -36,7 +49,9 @@ function summarize(t: Trace): string {
   if (t.name === 'web_search') return `“${a.query ?? ''}”`
   if (t.name === 'web_fetch') return String(a.url ?? '')
   if (t.name === 'skill_use') return `${a.name ?? ''}${a.file ? ` / ${a.file}` : ''}`
-  if (t.name === 'read_file' || t.name === 'list_dir') return String(a.path ?? '.')
+  if (['read_file', 'list_dir', 'read', 'ls', 'write', 'edit'].includes(t.name)) return String(a.path ?? '.')
+  if (t.name === 'find') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
+  if (t.name === 'bash' || t.name === 'powershell') return `$ ${String(a.command ?? '').split('\n')[0]}`
   if (t.name === 'grep') return `/${a.pattern ?? ''}/ ${a.path ?? ''}`
   const s = JSON.stringify(a)
   return s === '{}' ? '' : s.slice(0, 80)
@@ -54,8 +69,11 @@ const refLabel = (r: RagHit) => {
 }
 
 /** `fresh` animates the card in — only for traces that appear live, not when loading history. */
-export function ToolTraceCard({ trace, fresh }: { trace: Trace; fresh?: boolean }) {
+export function ToolTraceCard({ trace, fresh, awaiting, onUndo }: { trace: Trace; fresh?: boolean; awaiting?: boolean; onUndo?(toolCallId: string): Promise<void> }) {
   const [open, setOpen] = useState(false)
+  const [undoing, setUndoing] = useState(false)
+  const changes = trace.changes ?? []
+  const undone = changes.length > 0 && changes.every((c) => c.undone)
   const Icon = ICONS[trace.name] ?? Wrench
   const refs = trace.references
   return (
@@ -72,6 +90,7 @@ export function ToolTraceCard({ trace, fresh }: { trace: Trace; fresh?: boolean 
         <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.name}</span>
         <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
+          {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">awaiting approval</span>}
           {refs.length > 0 && <span>{refs.length} refs</span>}
           {trace.durationMs !== null && <span>{duration(trace.durationMs)}</span>}
           {trace.status === 'running' ? (
@@ -90,6 +109,41 @@ export function ToolTraceCard({ trace, fresh }: { trace: Trace; fresh?: boolean 
           <CaretRight size={13} />
         </motion.span>
       </button>
+
+      {changes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pb-2.5 pl-12 pr-3">
+          {changes.map((c) => (
+            <span key={c.path} className={clsx('flex items-center gap-1.5 rounded-full border border-line bg-elev py-0.5 pl-2 pr-2.5 text-[11.5px]', c.undone && 'opacity-50 line-through')}>
+              {c.kind === 'create' ? <FilePlus size={12} className="text-ok" /> : <NotePencil size={12} className="text-muted" />}
+              <span className="font-mono text-muted">{c.path}</span>
+              <DiffStat added={c.added} removed={c.removed} />
+            </span>
+          ))}
+          <div className="flex-1" />
+          {undone ? (
+            <span className="text-[11px] text-dim">undone</span>
+          ) : (
+            onUndo && (
+              <button
+                disabled={undoing}
+                onClick={async () => {
+                  setUndoing(true)
+                  try {
+                    await onUndo(trace.id)
+                  } finally {
+                    setUndoing(false)
+                  }
+                }}
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:bg-elev-2 hover:text-fg disabled:opacity-50"
+                title="Restore the files as they were before this step"
+              >
+                <ArrowCounterClockwise size={12} />
+                Undo
+              </button>
+            )
+          )}
+        </div>
+      )}
 
       <AnimatePresence initial={false}>
         {!open && refs.length > 0 && (
@@ -131,9 +185,17 @@ export function ToolTraceCard({ trace, fresh }: { trace: Trace; fresh?: boolean 
             className="overflow-hidden"
           >
             <div className="space-y-2 pb-3 pl-12 pr-3">
-              <Section label="Arguments">
-                <pre className="selectable max-h-48 overflow-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px] text-muted">{pretty(trace.args)}</pre>
-              </Section>
+              {changes.length > 0 ? (
+                changes.map((c) => (
+                  <Section key={c.path} label={`${c.kind === 'create' ? 'Created' : 'Changed'} ${c.path}${c.undone ? ' (undone)' : ''}`}>
+                    <DiffView diff={c.diff} />
+                  </Section>
+                ))
+              ) : (
+                <Section label="Arguments">
+                  <pre className="selectable max-h-48 overflow-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px] text-muted">{pretty(trace.args)}</pre>
+                </Section>
+              )}
               {refs.length > 0 ? (
                 <Section label={`References (${refs.length})`}>
                   <div className="space-y-1.5">

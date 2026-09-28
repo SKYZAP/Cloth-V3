@@ -285,10 +285,46 @@ export interface ChatSession {
   webEnabled: boolean
   customTools: boolean
   workspace: string | null
+  /** What the agent may do in the workspace folder. */
+  fileAccess: FileAccess
+  /** Offer a shell tool (bash, or PowerShell on Windows) that runs in the workspace. */
+  shell: boolean
+  /** Which actions run without asking first. */
+  autoApprove: AutoApprove
   thinking: ThinkingLevel
   createdAt: number
   updatedAt: number
 }
+
+export type FileAccess = 'read' | 'write'
+export type AutoApprove = 'none' | 'edits' | 'all'
+
+/** One file changed by a write/edit tool call; undoable from its checkpoint. */
+export interface FileChange {
+  path: string
+  kind: 'create' | 'modify'
+  /** Unified diff, workspace-relative paths. */
+  diff: string
+  added: number
+  removed: number
+  undone?: boolean
+}
+
+/** A write, edit or shell command waiting for the user's go-ahead. */
+export interface PendingApproval {
+  id: string
+  sessionId: string
+  toolCallId: string | null
+  kind: 'write' | 'edit' | 'command'
+  path?: string
+  command?: string
+  diff?: string
+  added?: number
+  removed?: number
+  createdAt: number
+}
+
+export type ApprovalDecision = 'allow' | 'deny' | 'always'
 
 export interface ToolTrace {
   id: string
@@ -298,6 +334,8 @@ export interface ToolTrace {
   result: string
   durationMs: number | null
   references: RagHit[]
+  /** Files written or edited by this call. */
+  changes?: FileChange[]
 }
 
 export type UiBlock =
@@ -328,6 +366,8 @@ export type ChatEvent =
   | { sessionId: string; type: 'message'; message: UiMessage }
   | { sessionId: string; type: 'end'; error?: string }
   | { sessionId: string; type: 'title'; title: string }
+  | { sessionId: string; type: 'approval'; approval: PendingApproval }
+  | { sessionId: string; type: 'approval-done'; id: string }
 
 // ─── Workflows ────────────────────────────────────────────────────────────────
 

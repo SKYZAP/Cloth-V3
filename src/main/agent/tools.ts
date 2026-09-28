@@ -1,8 +1,11 @@
+import type { AutoApprove, FileAccess, FileChange } from '@shared/types'
+import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore } from './workspace'
+import type { JsonValue } from '@earendil-works/pi-ai'
 import type { UsageService } from '../core/usage'
-import { readFile, readdir, stat } from 'node:fs/promises'
-import { join, relative, resolve, sep } from 'node:path'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
 import { Type, type Static, type TSchema } from 'typebox'
-import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
+import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
 import type { BuiltinToolInfo, RagHit, RagMode, WebResult } from '@shared/types'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
@@ -12,7 +15,8 @@ import type { CustomToolService } from '../tools/custom'
 export interface ToolDetails {
   durationMs?: number
   references?: RagHit[]
-  [key: string]: unknown
+  changes?: FileChange[]
+  [key: string]: JsonValue | RagHit[] | FileChange[] | undefined
 }
 
 export interface ToolDeps {
@@ -21,6 +25,8 @@ export interface ToolDeps {
   web: WebService
   custom: CustomToolService
   usage?: UsageService
+  approvals?: ApprovalService
+  checkpoints?: CheckpointStore
 }
 
 export interface ToolScope {
@@ -30,6 +36,12 @@ export interface ToolScope {
   webEnabled?: boolean
   customTools?: boolean
   workspace: string | null
+  /** Default read-only. Write access needs a session to ask for approvals. */
+  fileAccess?: FileAccess
+  shell?: boolean
+  sessionId?: string
+  autoApprove?: () => AutoApprove
+  onAlways?: (scope: 'edits' | 'all') => void
 }
 
 interface Ctx {
@@ -55,13 +67,6 @@ function scopedCollections(ctx: Ctx) {
   if (ctx.scope.knowledgeEnabled === false) return []
   const all = ctx.deps.rag.listCollections()
   return ctx.scope.collectionIds.length ? all.filter((c) => ctx.scope.collectionIds.includes(c.id)) : all
-}
-
-function workspacePath(ctx: Ctx, p: string | undefined): { base: string; full: string } {
-  const base = resolve(ctx.scope.workspace!)
-  const full = resolve(base, p || '.')
-  if (full !== base && !full.startsWith(base + sep)) throw new Error('Path is outside the workspace')
-  return { base, full }
 }
 
 export function webToHits(results: WebResult[]): RagHit[] {
@@ -170,77 +175,44 @@ export const BUILTINS: BuiltinSpec[] = [
     }
   }),
   spec({
-    name: 'list_dir',
-    label: 'List directory',
-    group: 'workspace',
-    availability: 'Chats with a workspace folder (read-only)',
-    parameters: Type.Object({ path: Type.Optional(Type.String()) }),
-    description: (ctx) => `List files in the workspace${ctx?.scope.workspace ? ` (${ctx.scope.workspace})` : ''}. Paths are relative to the workspace root.`,
-    when: (ctx) => !!ctx.scope.workspace,
-    async run(p, ctx) {
-      const { full } = workspacePath(ctx, p.path)
-      const entries = await readdir(full, { withFileTypes: true })
-      const lines = entries
-        .filter((e) => !['node_modules', '.git'].includes(e.name))
-        .slice(0, 400)
-        .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-      return { text: lines.join('\n') || '(empty)' }
-    }
-  }),
-  spec({
-    name: 'read_file',
-    label: 'Read file',
-    group: 'workspace',
-    availability: 'Chats with a workspace folder (read-only)',
-    parameters: Type.Object({ path: Type.String(), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
-    description: () => 'Read a text file from the workspace. Use offset/limit (lines) for large files.',
-    when: (ctx) => !!ctx.scope.workspace,
-    async run(p, ctx) {
-      const { full } = workspacePath(ctx, p.path)
-      if ((await stat(full)).size > 5_000_000) throw new Error('File too large')
-      const lines = (await readFile(full, 'utf8')).split('\n')
-      const start = Math.max(0, (p.offset ?? 1) - 1)
-      const slice = lines.slice(start, start + (p.limit ?? 400))
-      const more = start + slice.length < lines.length ? `\n… (${lines.length} lines total)` : ''
-      return { text: slice.map((l, i) => `${start + i + 1}\t${l}`).join('\n') + more, details: { path: p.path } }
-    }
-  }),
-  spec({
     name: 'grep',
     label: 'Search files',
     group: 'workspace',
-    availability: 'Chats with a workspace folder (read-only)',
+    availability: 'Chats with a workspace folder',
     parameters: Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()), maxResults: Type.Optional(Type.Number()) }),
-    description: () => 'Regex search across text files in the workspace. Returns path:line: text.',
+    description: () => 'Regex search (case-insensitive) across text files in the workspace, or in one file when path is a file. Returns path:line: text.',
     when: (ctx) => !!ctx.scope.workspace,
     async run(p, ctx, signal) {
       const re = new RegExp(p.pattern, 'i')
       const max = p.maxResults ?? 80
       const hits: string[] = []
-      const { base, full: root } = workspacePath(ctx, p.path)
+      const base = await realpath(ctx.scope.workspace!)
+      const root = await confine(ctx.scope.workspace!, p.path || '.')
+      const searchFile = async (full: string) => {
+        if ((await stat(full)).size > 1_000_000) return
+        const text = await readFile(full, 'utf8').catch(() => '')
+        if (text.includes('\u0000')) return
+        text.split('\n').forEach((line, i) => {
+          if (hits.length < max && re.test(line)) hits.push(`${relative(base, full).split(sep).join('/')}:${i + 1}: ${line.trim().slice(0, 200)}`)
+        })
+      }
       const walk = async (dir: string): Promise<void> => {
         for (const e of await readdir(dir, { withFileTypes: true })) {
           if (hits.length >= max || signal?.aborted) return
           if (['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target'].includes(e.name)) continue
           const full = join(dir, e.name)
           if (e.isDirectory()) await walk(full)
-          else {
-            if ((await stat(full)).size > 1_000_000) continue
-            const text = await readFile(full, 'utf8').catch(() => '')
-            if (text.includes('\u0000')) continue
-            text.split('\n').forEach((line, i) => {
-              if (hits.length < max && re.test(line)) hits.push(`${relative(base, full)}:${i + 1}: ${line.trim().slice(0, 200)}`)
-            })
-          }
+          else if (e.isFile()) await searchFile(full)
         }
       }
-      await walk(root)
+      if ((await stat(root)).isFile()) await searchFile(root)
+      else await walk(root)
       return { text: hits.join('\n') || 'No matches.' }
     }
   })
 ]
 
-export const BUILTIN_NAMES = BUILTINS.map((b) => b.name)
+export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES]
 
 export function describeBuiltins(): BuiltinToolInfo[] {
   return BUILTINS.map((b) => ({
@@ -250,7 +222,7 @@ export function describeBuiltins(): BuiltinToolInfo[] {
     group: b.group,
     availability: b.availability,
     schema: JSON.parse(JSON.stringify(b.parameters))
-  }))
+  })).concat(describeWorkspaceTools())
 }
 
 function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> {
@@ -270,6 +242,21 @@ function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> 
 export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, ToolDetails>[] {
   const ctx: Ctx = { deps, scope }
   const tools: AgentTool<any, ToolDetails>[] = BUILTINS.filter((b) => b.when(ctx)).map((b) => instantiate(b, ctx))
+  if (scope.workspace) {
+    const writable = scope.fileAccess === 'write' && !!scope.sessionId
+    tools.push(
+      ...buildWorkspaceTools({
+        root: scope.workspace,
+        sessionId: scope.sessionId ?? null,
+        access: writable ? 'write' : 'read',
+        shell: !!scope.shell && !!scope.sessionId,
+        approvals: deps.approvals ?? null,
+        checkpoints: deps.checkpoints ?? null,
+        autoApprove: scope.autoApprove ?? (() => 'none'),
+        onAlways: scope.onAlways
+      })
+    )
+  }
   if (scope.customTools !== false) for (const t of deps.custom.list()) if (t.enabled) tools.push(deps.custom.toAgentTool(t))
   const usage = deps.usage
   return usage ? tools.map((t) => withUsage(t, BUILTIN_NAMES.includes(t.name) ? 'builtin' : 'custom', usage)) : tools

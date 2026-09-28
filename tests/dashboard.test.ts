@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { fauxAssistantMessage, registerFauxProvider } from '@mariozechner/pi-ai'
+import { fauxAssistantMessage } from '@earendil-works/pi-ai'
+import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
 
 describe('usage log and dashboard', () => {

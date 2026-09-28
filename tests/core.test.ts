@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Agent } from '@mariozechner/pi-agent-core'
-import { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider, Type } from '@mariozechner/pi-ai'
+import { Agent } from '@earendil-works/pi-agent-core'
+import { fauxAssistantMessage, fauxText, fauxToolCall, Type } from '@earendil-works/pi-ai'
+import { registerFauxProvider, streamSimple } from '@earendil-works/pi-ai/compat'
 import { chunkText, cleanHeading } from '../src/main/rag/chunker'
 import { executeGraph, renderTemplate, topoSort } from '../src/main/workflows/engine'
 import { computeVerdict, parseSkillMd, serializeSkillMd } from '../src/main/skills/skills'
@@ -182,6 +183,7 @@ describe('agent (pi-agent-core)', () => {
           }
         ]
       },
+      streamFn: streamSimple,
       getApiKey: async () => 'k'
     })
     await agent.prompt('question')

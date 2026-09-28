@@ -1,6 +1,8 @@
-import { Agent, type AgentMessage } from '@mariozechner/pi-agent-core'
-import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@mariozechner/pi-ai'
-import type { ChatEvent, ChatSession, ModelRef, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import { streamSimple } from '@earendil-works/pi-ai/compat'
+import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
+import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
+import type { ApprovalDecision, ChatEvent, ChatSession, FileChange, ModelRef, PendingApproval, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalService, CheckpointStore } from './workspace'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -35,6 +37,9 @@ const DEFAULT_CONFIG: SessionConfig = {
   webEnabled: false,
   customTools: true,
   workspace: null,
+  fileAccess: 'read',
+  shell: false,
+  autoApprove: 'none',
   thinking: 'off'
 }
 
@@ -56,7 +61,8 @@ export class AgentRuntime {
     private rag: RagService,
     private skills: SkillService,
     private web: WebService,
-    private custom: CustomToolService
+    private custom: CustomToolService,
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore } = {}
   ) {}
 
   async systemPrompt(scope: ToolScope, extra: string): Promise<string> {
@@ -83,7 +89,20 @@ export class AgentRuntime {
     if (scope.webEnabled) {
       lines.push('', '## Web', 'You can search the public web with `web_search` and read pages with `web_fetch`. Prefer the local knowledge base for project-specific questions; use the web for current or external information, and cite web results as [n].')
     }
-    if (scope.workspace) lines.push('', '## Workspace', `You can read files under ${scope.workspace} with list_dir, read_file and grep.`)
+    if (scope.workspace) {
+      const writable = scope.fileAccess === 'write' && !!scope.sessionId
+      const shell = scope.shell && scope.sessionId ? (process.platform === 'win32' ? 'powershell' : 'bash') : null
+      lines.push(
+        '',
+        '## Workspace',
+        `The workspace folder is ${scope.workspace}. Use paths relative to it; nothing outside it is accessible.`,
+        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them.',
+        writable
+          ? 'You can change files: use edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
+          : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
+        ...(shell ? [`You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`] : [])
+      )
+    }
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
     return lines.join('\n')
   }
@@ -95,9 +114,10 @@ export class AgentRuntime {
         systemPrompt: opts.systemPrompt,
         model,
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
-        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage }, opts.scope),
+        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
         messages: opts.history ?? []
       },
+      streamFn: streamSimple,
       getApiKey: async (providerId) => this.providers.apiKey(providerId) || 'cloth-local',
       toolExecution: 'parallel'
     })
@@ -137,7 +157,9 @@ export class ChatService {
     private runtime: AgentRuntime,
     private settings: SettingsService,
     private skills: SkillService,
-    private usage?: UsageService
+    private usage?: UsageService,
+    private approvals?: ApprovalService,
+    private checkpoints?: CheckpointStore
   ) {}
 
   list(): ChatSession[] {
@@ -169,6 +191,9 @@ export class ChatService {
       webEnabled: cur.webEnabled,
       customTools: cur.customTools,
       workspace: cur.workspace,
+      fileAccess: cur.fileAccess,
+      shell: cur.shell,
+      autoApprove: cur.autoApprove,
       thinking: cur.thinking,
       ...config
     }
@@ -179,6 +204,31 @@ export class ChatService {
   remove(id: string): void {
     this.abort(id)
     this.ctx.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+    void this.checkpoints?.removeSession(id)
+  }
+
+  pendingApprovals(id: string): PendingApproval[] {
+    return this.approvals?.list(id) ?? []
+  }
+
+  resolveApproval(approvalId: string, decision: ApprovalDecision): void {
+    if (!this.approvals) throw new Error('Approvals are not available')
+    this.approvals.resolve(approvalId, decision)
+  }
+
+  /** Restore the files one tool call changed, and mark its changes as undone in the history. */
+  async undoChange(id: string, toolCallId: string, force = false): Promise<UiMessage[]> {
+    if (!this.checkpoints) throw new Error('Checkpoints are not available')
+    if (this.active.has(id)) throw new Error('Wait for the agent to finish before undoing')
+    await this.checkpoints.undo(id, toolCallId, force)
+    const raw = this.rawMessages(id)
+    for (const m of raw) {
+      if (m.role !== 'toolResult' || m.toolCallId !== toolCallId) continue
+      const details = (m.details ?? {}) as { changes?: FileChange[] }
+      if (details.changes) details.changes = details.changes.map((c) => ({ ...c, undone: true }))
+    }
+    this.saveMessages(id, raw)
+    return this.messages(id)
   }
 
   messages(id: string): UiMessage[] {
@@ -190,6 +240,7 @@ export class ChatService {
   }
 
   abort(id: string): void {
+    this.approvals?.cancel(id)
     this.active.get(id)?.abort()
   }
 
@@ -235,7 +286,15 @@ export class ChatService {
       skillsEnabled: session.skillsEnabled,
       webEnabled: session.webEnabled,
       customTools: session.customTools,
-      workspace: session.workspace
+      workspace: session.workspace,
+      fileAccess: session.fileAccess,
+      shell: session.shell,
+      sessionId: id,
+      autoApprove: () => this.get(id).autoApprove,
+      onAlways: (scope) => {
+        const cur = this.get(id).autoApprove
+        if (cur !== 'all') this.update(id, { autoApprove: scope === 'all' ? 'all' : 'edits' })
+      }
     }
     const history = this.rawMessages(id)
     const systemPrompt = await this.runtime.systemPrompt(scope, session.systemPrompt)
@@ -368,7 +427,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           status: r ? (r.isError ? 'error' : 'ok') : pending?.has(block.id) || a.stopReason === 'toolUse' ? 'running' : 'error',
           result: r ? r.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n') : '',
           durationMs: r?.details?.durationMs ?? null,
-          references: r?.details?.references ?? []
+          references: r?.details?.references ?? [],
+          ...(r?.details?.changes?.length ? { changes: r.details.changes } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })

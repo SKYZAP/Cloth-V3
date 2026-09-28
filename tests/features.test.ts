@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from '@mariozechner/pi-ai'
+import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
+import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { DraftGraph, buildWorkflow } from '../src/main/workflows/builder'
 import { executeGraph } from '../src/main/workflows/engine'
 import { parseDuckDuckGo } from '../src/main/web/obscura'
