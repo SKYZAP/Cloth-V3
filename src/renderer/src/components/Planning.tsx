@@ -107,7 +107,9 @@ const SLICE_COLOR: Record<ContextSliceKey, string> = {
 
 const pctOf = (n: number, of: number) => {
   const p = of ? (n / of) * 100 : 0
-  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`
+  // One decimal below 10% so small parts stay distinguishable and parts add up to the total.
+  if (p > 0 && p < 0.1) return '<0.1%'
+  return p < 10 ? `${p.toFixed(1).replace(/\.0$/, '')}%` : `${Math.round(p)}%`
 }
 
 /** Segmented bar of the context window (what the tokens are spent on); click for the breakdown. */
@@ -176,14 +178,16 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
                   <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: SLICE_COLOR[s.key] }} />
                   <span className="flex-1 text-muted">{s.label}</span>
                   <span className="font-mono text-[11px] tabular-nums text-dim">{compact(s.tokens)}</span>
-                  <span className="w-10 text-right font-mono text-[11px] tabular-nums text-muted">{pctOf(s.tokens, usage.tokens)}</span>
+                  <span className="w-12 text-right font-mono text-[11px] tabular-nums text-muted" title={`${pctOf(s.tokens, usage.tokens)} of what is used`}>
+                    {pctOf(s.tokens, window_)}
+                  </span>
                 </div>
               ))}
               <div className="flex items-center gap-2 text-[12px]">
                 <span className="h-2 w-2 shrink-0 rounded-[3px] border border-line-strong bg-elev-2" />
                 <span className="flex-1 text-dim">Free</span>
                 <span className="font-mono text-[11px] tabular-nums text-dim">{compact(Math.max(0, window_ - usage.tokens))}</span>
-                <span className="w-10" />
+                <span className="w-12 text-right font-mono text-[11px] tabular-nums text-dim">{pctOf(Math.max(0, window_ - usage.tokens), window_)}</span>
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
@@ -207,11 +211,11 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
       <button
         onClick={() => setOpen(!open)}
         aria-label="Context usage"
-        title="Context: what the conversation is made of, and how full the window is"
+        title="Context window: how full it is and what fills it"
         aria-expanded={open}
         className={clsx('flex h-[30px] items-center gap-2 rounded-full border px-2.5 transition-colors', open ? 'border-line-strong bg-elev-2' : 'border-line hover:border-line-strong')}
       >
-        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1.5 w-20" of={Math.max(1, slices.reduce((n, x) => n + x.tokens, 0))} />}
+        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1.5 w-24" />}
         <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>
