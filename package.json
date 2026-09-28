@@ -110,7 +110,8 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "artifactName": "Cloth-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [

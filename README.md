@@ -93,6 +93,18 @@ on which upstream engines answer from your network — Obscura is the default en
 No model server handy? `npm run mock-llm` starts an OpenAI-compatible mock on `http://127.0.0.1:5055/v1`
 (`mock-chat` streams + calls `rag_search`, `mock-embed` returns hashed vectors) — add it as a Custom provider.
 
+## Releasing
+
+`.github/workflows/release.yml` builds the Windows installer (`Cloth-Setup-<version>.exe`) and macOS disk images for
+Apple silicon and Intel (`Cloth-<version>-mac-arm64.dmg`, `Cloth-<version>-mac-x64.dmg`) and attaches them to a GitHub release:
+
+- **Publish a release** with a tag like `v1.2.0`: the workflow builds that tag and uploads the installers.
+- **Run it manually** (Actions → Release → Run workflow) with a version such as `1.2.0`: it creates release `v1.2.0`
+  from the selected branch if it doesn't exist (optionally as a pre-release), or re-uploads the installers to it.
+
+Each platform builds on its own runner (the bundled sidecars, TypeScript server and ast-grep are native per architecture),
+after typecheck and tests. Builds are unsigned unless signing secrets are set — see the comment at the top of the workflow.
+
 ## Known limits / next steps
 
 - Brute-force vector search is fine to ~100k chunks per collection; beyond that add `sqlite-vec`.
