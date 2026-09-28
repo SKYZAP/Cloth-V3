@@ -2,9 +2,11 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
+import type { GeneratedImage, ImageSize } from '@shared/types'
 import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
+import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -68,6 +70,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   autoApprove: 'none',
   subagents: true,
   codeIntel: true,
+  imagesEnabled: true,
   thinking: 'off'
 }
 
@@ -90,7 +93,7 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService } = {}
   ) {}
 
   async systemPrompt(scope: ToolScope, extra: string): Promise<string> {
@@ -124,6 +127,7 @@ export class AgentRuntime {
         'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
     }
+    if (this.imagesAvailable(scope)) lines.push('', '## Images', 'You can create images with `generate_image` when the user asks for a picture, illustration, logo, mockup or similar. The image appears inline for the user.')
     if (scope.sessionId && !scope.depth) lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
     if (scope.workspace) {
       const writable = scope.fileAccess === 'write' && !!scope.sessionId
@@ -148,7 +152,8 @@ export class AgentRuntime {
   toolDefinitions(scope: ToolScope): string {
     const tools = [
       ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...this.ws }, scope),
-      ...(scope.subagents && !scope.depth ? [this.taskTool({ model: { providerId: '', modelId: '' }, scope })] : [])
+      ...(scope.subagents && !scope.depth ? [this.taskTool({ model: { providerId: '', modelId: '' }, scope })] : []),
+      ...(this.imagesAvailable(scope) ? [this.imageTool()] : [])
     ]
     return JSON.stringify(tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))
   }
@@ -162,7 +167,8 @@ export class AgentRuntime {
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
         tools: [
           ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
-          ...(opts.scope.subagents && !opts.scope.depth ? [this.taskTool(opts)] : [])
+          ...(opts.scope.subagents && !opts.scope.depth ? [this.taskTool(opts)] : []),
+          ...(this.imagesAvailable(opts.scope) ? [this.imageTool()] : [])
         ],
         messages: opts.history ?? []
       },
@@ -172,6 +178,38 @@ export class AgentRuntime {
     })
     this.providers.usage.track(agent)
     return agent
+  }
+
+private imagesAvailable(scope: ToolScope): boolean {
+    return !!scope.images && !scope.depth && !!scope.sessionId && !!this.ws.images?.defaultModel()
+  }
+
+  /** generate_image: create an image with the configured image model; the UI shows it inline. */
+  private imageTool(): AgentTool<any, ToolDetails> {
+    const images = this.ws.images!
+    return {
+      name: 'generate_image',
+      label: 'Generate image',
+      description:
+        'Create an image from a text description with the image model configured in Cloth. The user sees the image inline in the chat, so do not repeat a link. Write a rich prompt: subject, composition, style, lighting, colours, and any text that must appear.',
+      parameters: Type.Object({
+        prompt: Type.String({ description: 'Detailed description of the image' }),
+        size: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal('1024x1024'), Type.Literal('1536x1024'), Type.Literal('1024x1536')], { description: 'square, landscape or portrait (default auto)' }))
+      }),
+      execute: async (_id, params, signal, onUpdate) => {
+        const p = params as { prompt: string; size?: ImageSize }
+        const model = images.defaultModel()
+        const base: GeneratedImage = { status: 'generating', prompt: p.prompt, size: p.size ?? 'auto', model: model?.modelId, startedAt: Date.now() }
+        onUpdate?.({ content: [{ type: 'text', text: 'Generating…' }], details: { image: base } as unknown as ToolDetails })
+        const img = await images.generate({ prompt: p.prompt, size: p.size, signal })
+        const image: GeneratedImage = { id: img.id, status: 'complete', prompt: img.prompt, revisedPrompt: img.revisedPrompt, size: img.size, width: img.width, height: img.height, model: img.model, startedAt: base.startedAt }
+        const dims = img.width && img.height ? `${img.width}×${img.height} ` : ''
+        return {
+          content: [{ type: 'text', text: `Generated a ${dims}image with ${img.model}; it is shown to the user.${img.revisedPrompt ? ` The model revised the prompt to: ${img.revisedPrompt}` : ''}` }],
+          details: { image } as unknown as ToolDetails
+        }
+      }
+    }
   }
 
   /** The `task` tool: run a subagent with a fresh context and a scoped toolset. */
@@ -292,6 +330,7 @@ export class ChatService {
       autoApprove: cur.autoApprove,
       subagents: cur.subagents,
       codeIntel: cur.codeIntel,
+      imagesEnabled: cur.imagesEnabled,
       thinking: cur.thinking,
       ...config
     }
@@ -490,6 +529,7 @@ export class ChatService {
       sessionId: id,
       subagents: session.subagents,
       codeIntel: session.codeIntel,
+      images: session.imagesEnabled,
       depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {
@@ -654,7 +694,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           durationMs: r?.details?.durationMs ?? null,
           references: r?.details?.references ?? [],
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
-          ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {})
+          ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
+          ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })
@@ -669,6 +710,15 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
     if (a.stopReason === 'aborted') turn.error = 'Stopped'
   }
   return out
+}
+
+/** The image card's state: final details, live progress, or an error built from the call. */
+function imageTrace(args: unknown, r: ToolResultMessage<ToolDetails> | undefined, partial: ToolDetails | undefined): GeneratedImage {
+  const a = (args ?? {}) as { prompt?: string; size?: string }
+  const done = r?.details?.image as unknown as GeneratedImage | undefined
+  if (done) return done
+  if (r?.isError) return { status: 'error', prompt: a.prompt ?? '', size: a.size ?? 'auto', error: r.content.map((c) => (c.type === 'text' ? c.text : '')).join(' ') }
+  return (partial?.image as unknown as GeneratedImage | undefined) ?? { status: 'queued', prompt: a.prompt ?? '', size: a.size ?? 'auto' }
 }
 
 function pushText(blocks: UiBlock[], type: 'text' | 'thinking', text: string): void {

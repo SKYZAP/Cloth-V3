@@ -17,6 +17,7 @@ import {
   LockSimple,
   PencilSimpleLine,
   Robot,
+  ImageSquare,
   Code,
   ShieldCheck,
   ShieldWarning,
@@ -767,6 +768,7 @@ function ContextSheet({
           <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
           <Capability icon={Wrench} title="Custom tools" sub="From the Tools page" on={session.customTools} onToggle={() => void update({ customTools: !session.customTools })} />
           <Capability icon={Robot} title="Subagents" sub="task · delegate in parallel" on={session.subagents} onToggle={() => void update({ subagents: !session.subagents })} />
+          <Capability icon={ImageSquare} title="Images" sub="generate_image · needs an image model" on={session.imagesEnabled} onToggle={() => void update({ imagesEnabled: !session.imagesEnabled })} />
         </div>
       </SheetSection>
 

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, protocol, safeStorage, shell } from 'electron'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ClothApi } from '@shared/api'
@@ -14,6 +15,9 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 // Keep dev data out of the installed app's profile.
 if (!app.isPackaged && !process.env.CLOTH_HOME) app.setPath('userData', join(app.getPath('appData'), 'Cloth-dev'))
 if (process.env.CLOTH_HOME) app.setPath('userData', process.env.CLOTH_HOME)
+
+// Generated images load in the UI as cloth-image://image/<id> (files in the data folder).
+protocol.registerSchemesAsPrivileged([{ scheme: 'cloth-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
 let mainWindow: BrowserWindow | null = null
 let services: Services | null = null
@@ -97,6 +101,13 @@ else {
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
       }
+    })
+    const images = services.images
+    protocol.handle('cloth-image', async (req) => {
+      const id = new URL(req.url).pathname.replace(/^\/+/, '')
+      const found = await images.file(id)
+      if (!found) return new Response('Not found', { status: 404 })
+      return new Response(new Uint8Array(await readFile(found.file)), { headers: { 'content-type': found.mime, 'cache-control': 'max-age=31536000, immutable' } })
     })
     registerIpc(createApi(services), services.providers.usage)
     createWindow()

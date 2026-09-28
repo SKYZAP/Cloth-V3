@@ -18,6 +18,9 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   with diffs, per-step checkpoints with Undo, ast-grep structural search/rewrite (TS/JS/HTML/CSS/Python/Go/Rust/Java),
   LSP code intelligence (TypeScript 7 native server, Pyright) with type errors fed back after each edit, subagents
   (`task`: scouts and workers, in parallel), a `todo_write` plan, and automatic conversation summarising.
+- **Image generation** — models flagged Image (auto-detected: gpt-image, DALL·E, Flux, SDXL…, OpenRouter image output) via
+  the OpenAI Images API or OpenRouter; a `generate_image` chat tool and a Models-page playground, both rendered with
+  an adapted [beui.dev ImageGeneration](https://beui.dev/components/agents/image-generation) surface; files served via `cloth-image://`.
 - **Hybrid & agentic RAG** — index files, folders (code-aware), PDF, DOCX, HTML, URLs (parallel crawl; client-rendered
   docs sites are rendered with the bundled Obscura browser automatically) and pasted text.
   Markdown-aware chunking with heading paths. SQLite FTS5 BM25 + embeddings fused with reciprocal-rank fusion

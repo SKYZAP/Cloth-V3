@@ -15,7 +15,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mcpRequireToken: false,
   chunkSize: 1600,
   chunkOverlap: 200,
-  autoCompact: true
+  autoCompact: true,
+  imageModel: null
 }
 
 export class SettingsService {

@@ -12,6 +12,14 @@ Open **Models** to register a provider.
 - Pick a **default chat model** and a **default embedding model** at the top of the page. Workflows, agentic search and skill tests fall back to the default chat model.
 - API keys are encrypted with the operating system keychain.
 
+## Image generation
+
+Models that generate images are marked **Image** on the Models page (detected automatically for OpenAI `gpt-image` / DALL·E and common open models such as Flux or SDXL, and for OpenRouter models that output images; tick it by hand for others). OpenAI and OpenAI-compatible servers are called through the Images API (`/images/generations`); OpenRouter models through its image output.
+
+- **Generate** on an image model opens a playground: type a prompt, pick square, landscape or portrait, and watch the image resolve.
+- In chat, the agent can call `generate_image` (toggle **Images** under Capabilities). It uses the default image model from Settings, or the first model marked Image. The image appears inline; **Open** shows it in your image viewer and **Save as…** copies it anywhere.
+- Generated images are stored in Cloth's data folder under `images`.
+
 ## Agent chat
 
 Each chat has its own model, knowledge scope and tool switches.

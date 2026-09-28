@@ -32,6 +32,9 @@ export function SettingsPage() {
           <Field label="Default embedding model">
             <ModelPicker kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
           </Field>
+          <Field label="Default image model" hint="Used by generate_image in chat. Mark models as Image on the Models page.">
+            <ModelPicker kind="image" value={settings.imageModel} onChange={(m) => void update({ imageModel: m })} allowNone noneLabel="First image model available" />
+          </Field>
         </Section>
 
         <Section title="Chat" hint="When a conversation nears the model's context window, older turns are summarised into a checkpoint before the next message. The originals stay visible in the chat. You can also summarise any time from the context ring next to the send button.">

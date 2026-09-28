@@ -13,6 +13,8 @@ export interface ModelInfo {
   vision: boolean
   /** Model produces embeddings rather than chat completions. */
   embedding: boolean
+  /** Model generates images (OpenAI Images API, or OpenRouter image output). */
+  image?: boolean
   /** User-set price in USD per 1M tokens; overrides the built-in price list. */
   pricing?: { input: number; output: number } | null
 }
@@ -295,6 +297,8 @@ export interface ChatSession {
   subagents: boolean
   /** Language servers (TypeScript, Python) for the `lsp` tool and type checks after edits. */
   codeIntel: boolean
+  /** Offer generate_image (needs an image model in Settings). */
+  imagesEnabled: boolean
   thinking: ThinkingLevel
   createdAt: number
   updatedAt: number
@@ -342,7 +346,27 @@ export interface ToolTrace {
   changes?: FileChange[]
   /** For `task` calls: the subagent's own run. */
   subagent?: SubagentRun
+  /** For `generate_image` calls. */
+  image?: GeneratedImage
 }
+
+export type ImageStatus = 'queued' | 'generating' | 'refining' | 'complete' | 'error'
+
+/** A generated image; files live in the app's data folder and load via cloth-image://<id>. */
+export interface GeneratedImage {
+  id?: string
+  status: ImageStatus
+  prompt: string
+  revisedPrompt?: string
+  size: string
+  width?: number
+  height?: number
+  model?: string
+  error?: string
+  startedAt?: number
+}
+
+export type ImageSize = 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
 
 export interface SubagentRun {
   role: 'scout' | 'worker'
@@ -513,6 +537,8 @@ export interface Settings {
   chunkOverlap: number
   /** Summarise older chat turns automatically when a conversation nears the model's context window. */
   autoCompact: boolean
+  /** Model used by the generate_image tool and the image playground. */
+  imageModel: ModelRef | null
 }
 
 export interface McpStatus {

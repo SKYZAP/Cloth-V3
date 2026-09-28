@@ -1,5 +1,6 @@
 import { app, dialog, shell, BrowserWindow } from 'electron'
 import type { ClothApi } from '@shared/api'
+import { copyFile } from 'node:fs/promises'
 import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
 import { describeBuiltins } from './agent/tools'
@@ -146,6 +147,28 @@ export function createApi(s: Services): ClothApi {
       stats: (range) => s.dashboard.stats(range),
       clearUsage: async () => {
         s.ctx.db.exec('DELETE FROM usage_events')
+      }
+    },
+    images: {
+      defaultModel: async () => s.images.defaultModel(),
+      generate: async (input) => {
+        const img = await s.providers.usage.run({ source: 'other' }, () => s.images.generate(input))
+        return { id: img.id, status: 'complete', prompt: img.prompt, revisedPrompt: img.revisedPrompt, size: img.size, width: img.width, height: img.height, model: img.model }
+      },
+      open: async (id) => {
+        const f = await s.images.file(id)
+        if (f) await shell.openPath(f.file)
+      },
+      saveAs: async (id) => {
+        const f = await s.images.file(id)
+        if (!f) throw new Error('Image not found')
+        const ext = f.file.split('.').pop() ?? 'png'
+        const win = BrowserWindow.getFocusedWindow()
+        const opts = { title: 'Save image', defaultPath: `cloth-image.${ext}`, filters: [{ name: 'Image', extensions: [ext] }] }
+        const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+        if (res.canceled || !res.filePath) return null
+        await copyFile(f.file, res.filePath)
+        return res.filePath
       }
     },
     mcp: {
