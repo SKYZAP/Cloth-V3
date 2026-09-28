@@ -120,9 +120,9 @@ export class AgentRuntime {
         '',
         '## Workspace',
         `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
-        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them.',
+        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`.',
         writable
-          ? 'You can change files: use edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
+          ? 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
           : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
         ...(shell ? [`You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`] : [])
       )

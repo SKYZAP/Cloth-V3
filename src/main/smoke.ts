@@ -22,6 +22,22 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'subagents') return await probeSubagents(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'ast') {
+      // Native ast-grep + bundled grammars must load in the packaged app (asar unpacked).
+      const { astSearch, resolveLanguage, supportedLanguages } = await import('./agent/ast')
+      const { writeFileSync: wf, mkdirSync: mk } = await import('node:fs')
+      const dir = join(outDir, 'ast')
+      mk(dir, { recursive: true })
+      wf(join(dir, 'a.ts'), 'console.log(1, 2)\n')
+      wf(join(dir, 'b.py'), 'print("x")\n')
+      wf(join(dir, 'c.go'), 'package main\nfunc main() { println("go") }\n')
+      note(`languages: ${supportedLanguages().join(', ')}`)
+      for (const [lang, pattern] of [['ts', 'console.log($$$A)'], ['python', 'print($X)'], ['go', 'println($X)']]) {
+        const r = await astSearch(dir, dir, { pattern, lang: resolveLanguage(lang), max: 5 })
+        note(`${lang}: ${r.matches.map((m) => `${m.file}:${m.line} ${m.text}`).join('; ') || 'no match'}`)
+      }
+      return
+    }
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)

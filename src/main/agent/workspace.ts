@@ -18,6 +18,8 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { ApprovalDecision, AutoApprove, BuiltinToolInfo, ChatEvent, FileAccess, FileChange, PendingApproval } from '@shared/types'
 import { newId } from '../core/context'
+import { Type } from 'typebox'
+import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
 
 const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target', '.venv', '__pycache__']
 const MAX_DIFF_LINES = 600
@@ -203,7 +205,7 @@ export interface WorkspaceOptions {
   onAlways?(scope: 'edits' | 'all'): void
 }
 
-export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell']
+export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit']
 
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
@@ -217,6 +219,8 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     t('read', 'Read file', 'Read a text or image file from the workspace, with offset/limit for large files.', 'Chats with a workspace folder', obj({ path: 'string', offset: 'number', limit: 'number' }, ['path'])),
     t('ls', 'List directory', 'List a directory in the workspace.', 'Chats with a workspace folder', obj({ path: 'string', limit: 'number' }, [])),
     t('find', 'Find files', 'Find files by glob pattern (e.g. **/*.ts) in the workspace.', 'Chats with a workspace folder', obj({ pattern: 'string', path: 'string', limit: 'number' }, ['pattern'])),
+    t('ast_grep', 'AST search', 'Structural code search with ast-grep patterns ($VAR, $$ARGS). TS/JS/TSX/HTML/CSS, Python, Go, Rust, Java.', 'Chats with a workspace folder', obj({ pattern: 'string', language: 'string', path: 'string' }, ['pattern'])),
+    t('ast_edit', 'AST rewrite', 'Rewrite every match of an ast-grep pattern, reusing captured $VARS. One approval (combined diff) for all files; undoable.', 'Chats with a workspace in read & write mode', obj({ pattern: 'string', rewrite: 'string', language: 'string', path: 'string' }, ['pattern', 'rewrite'])),
     t('write', 'Write file', 'Create or overwrite a file. Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', content: 'string' }, ['path', 'content'])),
     t('edit', 'Edit file', 'Replace exact text in a file (one or more edits). Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', edits: 'array' }, ['path', 'edits'])),
     t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. Always asks for approval unless everything is auto-approved.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number' }, ['command']))
@@ -243,18 +247,75 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     if (decision === 'always') o.onAlways?.(input.kind === 'command' ? 'all' : 'edits')
   }
 
-  const writeChecked = async (abs: string, content: string) => {
-    const rel = relative(await realpath(o.root), abs).split(sep).join('/')
-    const before = existsSync(abs) ? await readFile(abs, 'utf8') : null
-    if (before === content) return
-    const { diff, added, removed } = makeDiff(rel, before, content)
+  /** Apply one or more file changes behind a single approval, checkpointing each file. */
+  const commit = async (files: { abs: string; before: string | null; after: string }[], kind: 'write' | 'edit') => {
+    const rootReal = await realpath(o.root)
+    const planned = files
+      .filter((f) => f.before !== f.after)
+      .map((f) => {
+        const rel = relative(rootReal, f.abs).split(sep).join('/')
+        return { ...f, rel, ...makeDiff(rel, f.before, f.after) }
+      })
+    if (!planned.length) return []
+    const added = planned.reduce((n, p) => n + p.added, 0)
+    const removed = planned.reduce((n, p) => n + p.removed, 0)
+    await ask({ kind, path: planned.length === 1 ? planned[0].rel : `${planned.length} files`, diff: planned.map((p) => p.diff).join('\n'), added, removed })
     const state = call.getStore()
-    await ask({ kind: state?.toolName === 'edit' ? 'edit' : 'write', path: rel, diff, added, removed })
-    if (o.checkpoints && o.sessionId && state) await o.checkpoints.record(o.sessionId, state.checkpointId, { abs, before, after: content })
-    await mkdir(dirname(abs), { recursive: true })
-    await writeFile(abs, content)
-    const change: FileChange = { path: rel, kind: before === null ? 'create' : 'modify', diff, added, removed }
-    for (let s: CallState | undefined = state; s; s = s.parent) s.changes.push(change)
+    const changes: FileChange[] = []
+    for (const p of planned) {
+      if (o.checkpoints && o.sessionId && state) await o.checkpoints.record(o.sessionId, state.checkpointId, { abs: p.abs, before: p.before, after: p.after })
+      await mkdir(dirname(p.abs), { recursive: true })
+      await writeFile(p.abs, p.after)
+      const change: FileChange = { path: p.rel, kind: p.before === null ? 'create' : 'modify', diff: p.diff, added: p.added, removed: p.removed }
+      for (let s: CallState | undefined = state; s; s = s.parent) s.changes.push(change)
+      changes.push(change)
+    }
+    return changes
+  }
+
+  const writeChecked = async (abs: string, content: string) => {
+    const before = existsSync(abs) ? await readFile(abs, 'utf8') : null
+    await commit([{ abs, before, after: content }], call.getStore()?.toolName === 'edit' ? 'edit' : 'write')
+  }
+
+  const langs = () => supportedLanguages().join(', ')
+  const astGrep: AgentTool<any> = {
+    name: 'ast_grep',
+    label: 'AST search',
+    description: `Structural code search with ast-grep: the pattern is code, with $NAME matching any single node and $$ARGS matching a list (e.g. "console.log($$ARGS)", "useEffect($FN, [])", "def $F($$P): $$B"). Finds code by shape regardless of formatting — better than grep for calls, definitions and usages. Languages: ${langs()} (inferred from file extensions; set language to restrict).`,
+    parameters: Type.Object({
+      pattern: Type.String({ description: 'Code pattern with $VARS' }),
+      language: Type.Optional(Type.String()),
+      path: Type.Optional(Type.String({ description: 'File or directory (default: workspace root)' })),
+      maxResults: Type.Optional(Type.Number())
+    }),
+    async execute(_id, params, signal) {
+      const p = params as { pattern: string; language?: string; path?: string; maxResults?: number }
+      const { matches, files } = await astSearch(await realpath(o.root), await inside(p.path || '.'), { pattern: p.pattern, lang: resolveLanguage(p.language), max: p.maxResults ?? 60, signal })
+      const text = matches.length
+        ? matches.map((m) => `${m.file}:${m.line}: ${m.text.length > 300 ? m.text.slice(0, 300) + '…' : m.text}`).join('\n\n')
+        : `No matches in ${files} file${files === 1 ? '' : 's'}.`
+      return { content: [{ type: 'text', text }], details: { matches: matches.length, files } }
+    }
+  }
+  const astEdit: AgentTool<any> = {
+    name: 'ast_edit',
+    label: 'AST rewrite',
+    description: `Structural rewrite with ast-grep across a file or directory: every match of pattern is replaced by rewrite, where $NAME / $$ARGS in rewrite insert what the pattern captured (e.g. pattern "console.log($$A)" → rewrite "logger.debug($$A)"). Use for renames and mechanical refactors across many places; use edit for one-off changes. Run ast_grep first to check what matches. All changed files are shown to the user as one diff for approval. Languages: ${langs()}.`,
+    parameters: Type.Object({
+      pattern: Type.String(),
+      rewrite: Type.String(),
+      language: Type.Optional(Type.String()),
+      path: Type.Optional(Type.String({ description: 'File or directory (default: workspace root)' }))
+    }),
+    async execute(_id, params, signal) {
+      const p = params as { pattern: string; rewrite: string; language?: string; path?: string }
+      const found = await astRewrite(await inside(p.path || '.'), { pattern: p.pattern, rewrite: p.rewrite, lang: resolveLanguage(p.language), signal })
+      if (!found.length) return { content: [{ type: 'text', text: 'No matches — nothing changed.' }], details: {} }
+      const changes = await commit(found, 'edit')
+      const total = found.reduce((n, f) => n + f.count, 0)
+      return { content: [{ type: 'text', text: `Rewrote ${total} match${total === 1 ? '' : 'es'} in ${changes.length} file${changes.length === 1 ? '' : 's'}: ${changes.map((c) => c.path).join(', ')}` }], details: {} }
+    }
   }
 
   const readOps = {
@@ -284,11 +345,13 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
           return out
         }
       }
-    })
+    }),
+    astGrep
   ]
 
   if (o.access === 'write') {
     tools.push(
+      astEdit,
       createWriteTool(o.root, {
         operations: {
           writeFile: async (p, content) => writeChecked(await inside(p), content),
