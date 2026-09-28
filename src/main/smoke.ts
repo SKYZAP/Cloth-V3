@@ -17,6 +17,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
   try {
     if (process.env.CLOTH_PROBE === 'kb-search') return await probeKnowledgeSearch(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -269,4 +270,55 @@ async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note
   const drafted = await js(`document.querySelectorAll('textarea').length / 2`)
   note(`draft with AI: ${drafted} case(s) in the editor after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   writeFileSync(join(outDir, 'draft-evals.png'), await screenshot(win))
+}
+
+/** Run a flow whose output is markdown, then open it in the output modal. */
+async function probeFlowOutput(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const md = [
+    '# Top Search Results Summary: TypeScript Releases',
+    '',
+    'Based on the search results, here are the key findings about **TypeScript** releases:',
+    '',
+    '## Latest Versions & Availability',
+    '',
+    '| Source | Status |',
+    '| --- | --- |',
+    '| GitHub releases | 5.9 stable |',
+    '| npm | `typescript@next` nightly |',
+    '',
+    '## Highlights',
+    '',
+    '- `import defer` support',
+    '- Faster `--build` mode',
+    '',
+    '```ts',
+    'const x: number = 42',
+    '```'
+  ].join('\n')
+  const wf = s.workflows.create({ name: 'typescript-release-digest' })
+  s.workflows.save(wf.id, {
+    nodes: [
+      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{}' } },
+      { id: 'n_md', type: 'transform', position: { x: 320, y: 120 }, data: { key: 'digest', label: 'Digest', code: 'return ' + JSON.stringify(md) } },
+      { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'result', label: 'Digest Output', value: '' } }
+    ],
+    edges: [
+      { id: 'e1', source: 'n_trigger', target: 'n_md' },
+      { id: 'e2', source: 'n_md', target: 'n_out' }
+    ]
+  })
+  const run = await s.workflows.run(wf.id, {})
+  note(`run: ${run.status} ${run.error ?? typeof run.output}`)
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Flows')
+  await wait(1200)
+  await clickText(win, 'typescript-release-digest')
+  await wait(1500)
+  writeFileSync(join(outDir, 'flow-panel.png'), await screenshot(win))
+  await clickText(win, 'View output')
+  await wait(800)
+  writeFileSync(join(outDir, 'flow-output-modal.png'), await screenshot(win))
+  const found = await win.webContents.executeJavaScript(`[...document.querySelectorAll('.fixed h1, .fixed h2, .fixed table, .fixed pre')].map(e => e.tagName).join(',')`)
+  note(`modal elements: ${found}`)
 }
