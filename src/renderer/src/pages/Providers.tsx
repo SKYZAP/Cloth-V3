@@ -247,7 +247,7 @@ function ProviderView({ provider }: { provider: Provider }) {
             <IconButton
               title="Remove provider"
               onClick={async () => {
-                if (!confirmAction(`Remove ${provider.name}? Chats using it will need a new model.`)) return
+                if (!(await confirmAction(`Chats using ${provider.name} will need a new model.`, { title: `Remove ${provider.name}?`, confirmLabel: 'Remove', danger: true }))) return
                 await attempt(() => api.providers.remove(provider.id))
                 await loadProviders()
               }}

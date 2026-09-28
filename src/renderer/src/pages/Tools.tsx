@@ -328,7 +328,7 @@ function CustomToolEditor({ tool, onSaved, onDeleted }: { tool: CustomTool; onSa
             <IconButton
               title="Delete tool"
               onClick={async () => {
-                if (!confirmAction(`Delete tool “${tool.name}”?`)) return
+                if (!(await confirmAction(`Chats and flows that use “${tool.name}” will no longer be able to call it.`, { title: 'Delete tool?', confirmLabel: 'Delete', danger: true }))) return
                 await attempt(() => api.tools.remove(tool.id))
                 onDeleted()
               }}

@@ -38,7 +38,7 @@ import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContextUsa
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
-import { Button, Empty, Input, ListPane } from '@/components/ui'
+import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
@@ -324,7 +324,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!/changed since/.test(msg)) return void useApp.getState().toast(msg, 'error')
-      if (!window.confirm(msg + '.\n\nUndo anyway and overwrite the newer changes?')) return
+      if (!(await confirmAction(`${msg}.`, { title: 'Undo anyway?', confirmLabel: 'Overwrite newer changes', danger: true }))) return
       const ms = await attempt(() => api.chat.undoChange(session.id, toolCallId, true))
       if (ms) setMessages(ms)
     }

@@ -273,6 +273,4 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
   )
 }
 
-export function confirmAction(message: string): boolean {
-  return window.confirm(message)
-}
+export { confirmAction, type ConfirmOptions } from './ConfirmDialog'

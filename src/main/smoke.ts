@@ -70,6 +70,30 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       writeFileSync(join(outDir, 'sheet-open.png'), await screenshot(win))
       return
     }
+    if (process.env.CLOTH_PROBE === 'dialogs') {
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      await s.skills.create({ name: 'int-skill', description: 'Integration-test skill', body: '# Int skill' })
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Skills')
+      await wait(900)
+      await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.includes('int-skill'))?.click()`)
+      await wait(700)
+      await js(`document.querySelector('button[title^="Delete"]')?.click()`)
+      await wait(700)
+      writeFileSync(join(outDir, 'confirm-dialog.png'), await screenshot(win))
+      const focused = await js(`document.activeElement?.textContent`)
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+      await wait(600)
+      const afterEsc = (await s.skills.list()).some((k) => k.name === 'int-skill')
+      await js(`document.querySelector('button[title^="Delete"]')?.click()`)
+      await wait(600)
+      await clickText(win, 'Move to trash')
+      await wait(1000)
+      const afterConfirm = (await s.skills.list()).some((k) => k.name === 'int-skill')
+      note(`default focus: "${focused}"; exists after Escape: ${afterEsc}; exists after "Move to trash": ${afterConfirm}`)
+      return
+    }
     if (process.env.CLOTH_PROBE === 'cites') {
       const js = (code: string) => win.webContents.executeJavaScript(code)
       const chat = s.chat.create({})
