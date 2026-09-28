@@ -66,7 +66,8 @@ export function BottomSheet({
     if (open) {
       setVisible(true)
       if (y.get() > closedY - 1) y.set(closedY)
-      glide(yFor(snapPoints[0]))
+      // Open fully; dragging down still stops at the lower snap points before dismissing.
+      glide(yFor(snapPoints[snapPoints.length - 1]))
     } else if (visible) {
       glide(closedY, () => setVisible(false))
     }

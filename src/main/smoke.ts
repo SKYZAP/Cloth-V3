@@ -42,6 +42,34 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       s.lsp.disposeAll()
       return
     }
+    if (process.env.CLOTH_PROBE === 'composer') {
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+      await s.providers.refreshModels(lm.id)
+      const chat = s.chat.create({ model: { providerId: lm.id, modelId: 'qwen/qwen3.5-9b' }, workspace: outDir, webEnabled: true })
+      // Seed some history so the context meter shows a real percentage.
+      const t = Date.now()
+      s.ctx.db
+        .prepare('UPDATE sessions SET messages = ? WHERE id = ?')
+        .run(JSON.stringify([
+          { role: 'user', content: 'Explain the difference between a process and a thread.', timestamp: t - 2000 },
+          { role: 'assistant', content: [{ type: 'text', text: 'A **process** has its own address space; **threads** share one within a process.' }], usage: { input: 21000, output: 900, cacheRead: 0, cacheWrite: 0, totalTokens: 21900, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: 'stop', api: 'openai-completions', provider: lm.id, model: 'qwen/qwen3.5-9b', timestamp: t - 1000 }
+        ]), chat.id)
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Chat')
+      await wait(1500)
+      writeFileSync(join(outDir, 'composer.png'), await screenshot(win))
+      // Real mouse input: hover (tooltip shows), then click — the tooltip must not linger over the sheet.
+      const r = (await js(`(() => { const b = document.querySelector('button[aria-label="Thinking"]').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()`)) as { x: number; y: number }
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: r.x, y: r.y })
+      await wait(500)
+      win.webContents.sendInputEvent({ type: 'mouseDown', x: r.x, y: r.y, button: 'left', clickCount: 1 })
+      win.webContents.sendInputEvent({ type: 'mouseUp', x: r.x, y: r.y, button: 'left', clickCount: 1 })
+      await wait(1400)
+      writeFileSync(join(outDir, 'sheet-open.png'), await screenshot(win))
+      return
+    }
     if (process.env.CLOTH_PROBE === 'codeintel') return await probeCodeIntel(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'ast') {
       // Native ast-grep + bundled grammars must load in the packaged app (asar unpacked).

@@ -549,10 +549,10 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               onClick={() => openSheet('thinking')}
             />
             <div className="flex-1" />
-            <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
             <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100">
               <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
             </span>
+            <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
             <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
         </div>

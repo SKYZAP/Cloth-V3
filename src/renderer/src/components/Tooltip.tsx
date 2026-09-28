@@ -12,7 +12,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
   }
   const hide = () => setPos(null)
   return (
-    <span ref={ref} className="inline-flex" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onPointerDown={hide}>
+    <span ref={ref} className="inline-flex" onMouseEnter={show} onMouseLeave={hide} onFocus={(e) => (e.target as HTMLElement).matches(':focus-visible') && show()} onBlur={hide} onPointerDown={hide}>
       {children}
       {createPortal(
         <AnimatePresence>
