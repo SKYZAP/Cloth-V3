@@ -13,6 +13,8 @@ export interface ModelInfo {
   vision: boolean
   /** Model produces embeddings rather than chat completions. */
   embedding: boolean
+  /** User-set price in USD per 1M tokens; overrides the built-in price list. */
+  pricing?: { input: number; output: number } | null
 }
 
 export interface Provider {
@@ -340,6 +342,7 @@ export type WorkflowNodeType =
   | 'http'
   | 'transform'
   | 'condition'
+  | 'loop'
   | 'output'
 
 export interface WorkflowNode {
@@ -382,6 +385,8 @@ export interface NodeRunTrace {
   error?: string
   startedAt?: number
   durationMs?: number
+  /** Loop nodes: iterations run. Body nodes: times the node ran across iterations. */
+  iterations?: number
 }
 
 export interface WorkflowRun {
@@ -537,3 +542,67 @@ export interface WorkflowBuildStep {
 export type WorkflowBuildEvent =
   | { type: 'build-step'; buildId: string; step: WorkflowBuildStep }
   | { type: 'build-text'; buildId: string; text: string }
+
+// ─── Usage & dashboard ────────────────────────────────────────────────────────
+
+/** Where a model call / tool call / skill use came from. */
+export type UsageSource = 'chat' | 'workflow' | 'skills' | 'knowledge' | 'mcp' | 'builder' | 'tools' | 'other'
+export type UsageRange = '24h' | '7d' | '30d' | '90d' | 'all'
+
+export interface DashboardTotals {
+  calls: number
+  errors: number
+  inputTokens: number
+  outputTokens: number
+  cacheTokens: number
+  embedTokens: number
+  /** input + output (+ cache) tokens of model calls, plus embedding tokens. */
+  tokens: number
+  cost: number
+  /** Tokens from models with no known price (local models, or pricing not set). */
+  unpricedTokens: number
+  avgLatencyMs: number | null
+  toolCalls: number
+  toolErrors: number
+  skillUses: number
+}
+
+export interface DashboardStats {
+  range: UsageRange
+  since: number | null
+  generatedAt: number
+  totals: DashboardTotals
+  /** Same totals for the preceding period of equal length (null for "all"). */
+  previous: DashboardTotals | null
+  bucket: 'hour' | 'day'
+  timeline: { t: number; input: number; output: number; calls: number; errors: number; cost: number }[]
+  models: {
+    providerId: string
+    provider: string
+    modelId: string
+    calls: number
+    errors: number
+    input: number
+    output: number
+    cost: number
+    priced: boolean
+    avgLatencyMs: number | null
+    lastUsed: number
+  }[]
+  tools: { name: string; kind: string; calls: number; errors: number; avgMs: number | null; lastUsed: number }[]
+  skills: { name: string; uses: number; via: Record<string, number>; lastUsed: number; verdict: SkillVerdict | null }[]
+  sources: { source: UsageSource; calls: number; tokens: number; cost: number }[]
+  /** Model + tool calls by local hour of day, 0–23. */
+  hours: number[]
+  workflows: {
+    runs: number
+    ok: number
+    errors: number
+    avgMs: number | null
+    scheduled: number
+    top: { id: string; name: string; runs: number; errors: number; avgMs: number | null; lastRun: number }[]
+  }
+  skillHealth: { total: number; tested: number; passing: number; failing: number; outdated: number; redundant: number }
+  inventory: { providers: number; models: number; collections: number; documents: number; chunks: number; skills: number; customTools: number; workflows: number; chats: number }
+  recent: { at: number; kind: 'llm' | 'embed' | 'tool' | 'skill'; source: UsageSource; label: string; detail: string; ok: boolean }[]
+}

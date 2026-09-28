@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import clsx from 'clsx'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { Bot, BrainCircuit, Code2, Flag, GitBranch, Globe, Link2, Play, Search, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
+import { Bot, BrainCircuit, Code2, Flag, GitBranch, Globe, Link2, Play, Repeat, Search, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
 import { NODE_SPECS } from '@shared/workflow-nodes'
 import type { NodeRunStatus, WorkflowNodeType } from '@shared/types'
 import { Loader2 } from 'lucide-react'
@@ -26,6 +26,7 @@ const VISUALS: Record<WorkflowNodeType, { icon: LucideIcon; color: string }> = {
   http: { icon: Link2, color: '#3fb97a' },
   transform: { icon: Code2, color: '#8b8b95' },
   condition: { icon: GitBranch, color: '#f472b6' },
+  loop: { icon: Repeat, color: '#fb923c' },
   output: { icon: Flag, color: '#ececef' }
 }
 
@@ -33,7 +34,7 @@ export const NODE_TYPES: NodeMeta[] = NODE_SPECS.map((s) => ({ type: s.type, lab
 
 export const META: Record<WorkflowNodeType, NodeMeta> = Object.fromEntries(NODE_TYPES.map((m) => [m.type, m])) as Record<WorkflowNodeType, NodeMeta>
 
-export type FlowNodeData = Record<string, unknown> & { key: string; label?: string; __status?: NodeRunStatus; __ms?: number; __summary?: string }
+export type FlowNodeData = Record<string, unknown> & { key: string; label?: string; __status?: NodeRunStatus; __ms?: number; __summary?: string; __iter?: number }
 
 function summary(type: WorkflowNodeType, d: FlowNodeData): string {
   switch (type) {
@@ -54,6 +55,8 @@ function summary(type: WorkflowNodeType, d: FlowNodeData): string {
       return String(d.code ?? '').split('\n')[0]
     case 'condition':
       return String(d.expression ?? '')
+    case 'loop':
+      return d.mode === 'until' ? `until ${String(d.until ?? 'false')} · max ${d.maxIterations ?? 5}` : `each of ${String(d.items ?? '{{prev}}')}`
     case 'output':
       return String(d.value ?? '')
     case 'trigger':
@@ -82,7 +85,7 @@ const FlowNode = memo(function FlowNode({ type, data, selected }: NodeProps & { 
         {status === 'running' && <Loader2 size={12} className="animate-spin text-crimson" />}
         {status && status !== 'running' && status !== 'pending' && (
           <span className={clsx('font-mono text-[10px]', status === 'ok' ? 'text-ok' : status === 'error' ? 'text-crimson-hi' : 'text-dim')}>
-            {status === 'ok' && data.__ms !== undefined ? `${data.__ms}ms` : status}
+            {status === 'ok' && data.__ms !== undefined ? `${data.__iter ? `×${data.__iter} · ` : ''}${data.__ms}ms` : status}
           </span>
         )}
       </div>
@@ -96,6 +99,15 @@ const FlowNode = memo(function FlowNode({ type, data, selected }: NodeProps & { 
           <Handle type="source" id="false" position={Position.Right} style={{ top: '78%', background: '#dc2645' }} />
           <span className="pointer-events-none absolute -right-8 top-[30%] text-[9px] text-ok">true</span>
           <span className="pointer-events-none absolute -right-8 top-[70%] text-[9px] text-crimson-hi">false</span>
+        </>
+      ) : type === 'loop' ? (
+        <>
+          <Handle type="source" id="body" position={Position.Right} style={{ top: '38%', background: '#fb923c' }} />
+          <Handle type="source" id="done" position={Position.Right} style={{ top: '78%', background: '#ececef' }} />
+          <Handle type="target" id="next" position={Position.Bottom} style={{ background: '#fb923c' }} />
+          <span className="pointer-events-none absolute -right-8 top-[30%] text-[9px] text-[#fb923c]">body</span>
+          <span className="pointer-events-none absolute -right-8 top-[70%] text-[9px] text-muted">done</span>
+          <span className="pointer-events-none absolute -bottom-4 left-1/2 ml-2 text-[9px] text-[#fb923c]">next</span>
         </>
       ) : type !== 'output' ? (
         <Handle type="source" position={Position.Right} />

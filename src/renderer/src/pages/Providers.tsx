@@ -337,6 +337,7 @@ function ProviderView({ provider }: { provider: Provider }) {
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Embedding model">Embed</th>
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Supports reasoning / thinking">Reason</th>
                   <th className="w-16 px-2 py-2 text-center font-medium" title="Image input">Vision</th>
+                  <th className="w-28 px-2 py-2 font-medium" title="USD per 1M tokens (input / output) — used for cost on the Dashboard. Leave empty to use the built-in price list.">$ / 1M in·out</th>
                   <th className="w-44" />
                 </tr>
               </thead>
@@ -366,6 +367,12 @@ function ProviderView({ provider }: { provider: Provider }) {
                           <input type="checkbox" className="accent-[#dc2645]" checked={m[k]} onChange={() => void toggle(m.id, k)} />
                         </td>
                       ))}
+                      <td className="px-2 py-1.5">
+                        <PriceCell
+                          value={m.pricing ?? null}
+                          onChange={(pricing) => void setModels(provider.models.map((x) => (x.id === m.id ? { ...x, pricing } : x)))}
+                        />
+                      </td>
                       <td className="px-2 py-1.5">
                         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
                           {!m.embedding && (
@@ -398,6 +405,59 @@ function ProviderView({ provider }: { provider: Provider }) {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+
+/** Inline editor for a model's price (USD per 1M tokens). Empty = use the built-in price list. */
+function PriceCell({ value, onChange }: { value: { input: number; output: number } | null; onChange(v: { input: number; output: number } | null): void }) {
+  const [editing, setEditing] = useState(false)
+  const [input, setInput] = useState('')
+  const [output, setOutput] = useState('')
+  const open = () => {
+    setInput(value ? String(value.input) : '')
+    setOutput(value ? String(value.output) : '')
+    setEditing(true)
+  }
+  const commit = () => {
+    setEditing(false)
+    const i = parseFloat(input)
+    const o = parseFloat(output)
+    const next = Number.isFinite(i) || Number.isFinite(o) ? { input: Number.isFinite(i) ? i : 0, output: Number.isFinite(o) ? o : 0 } : null
+    if (JSON.stringify(next) !== JSON.stringify(value)) onChange(next)
+  }
+  if (!editing) {
+    return (
+      <button onClick={open} className="font-mono text-[11px] text-muted hover:text-crimson-hi" title="Set price (USD per 1M tokens)">
+        {value ? `${value.input} · ${value.output}` : <span className="text-dim">auto</span>}
+      </button>
+    )
+  }
+  const field = (v: string, set: (s: string) => void, label: string, autoFocus?: boolean) => (
+    <input
+      autoFocus={autoFocus}
+      aria-label={label}
+      placeholder={label}
+      inputMode="decimal"
+      value={v}
+      onChange={(e) => set(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') setEditing(false)
+      }}
+      className="h-6 w-full min-w-0 rounded border border-line-strong bg-bg px-1 font-mono text-[11px] outline-none focus:border-crimson"
+    />
+  )
+  return (
+    <div
+      className="flex items-center gap-1"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commit()
+      }}
+    >
+      {field(input, setInput, 'in', true)}
+      {field(output, setOutput, 'out')}
     </div>
   )
 }

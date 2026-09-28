@@ -1,3 +1,4 @@
+import type { UsageService } from '../core/usage'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -28,7 +29,7 @@ export class McpHost {
   constructor(
     private ctx: Ctx,
     private settings: SettingsService,
-    private deps: { rag: RagService; skills: SkillService; web: WebService }
+    private deps: { rag: RagService; skills: SkillService; web: WebService; usage?: UsageService }
   ) {}
 
   token(): string {
@@ -225,15 +226,23 @@ export class McpHost {
   }
 
   private async logged(tool: string, args: unknown, fn: () => Promise<ToolResult>): Promise<ToolResult> {
-    const started = Date.now()
-    try {
-      const out = await fn()
-      this.record({ at: started, tool, args, ok: true, durationMs: Date.now() - started })
-      return out
-    } catch (err) {
-      this.record({ at: started, tool, args, ok: false, durationMs: Date.now() - started, error: errorMessage(err) })
-      return { content: [{ type: 'text', text: `Error: ${errorMessage(err)}` }], isError: true }
+    const usage = this.deps.usage
+    const call = async (): Promise<ToolResult> => {
+      const started = Date.now()
+      try {
+        const out = await fn()
+        this.record({ at: started, tool, args, ok: true, durationMs: Date.now() - started })
+        usage?.tool(tool, 'mcp', Date.now() - started, true)
+        const a = args as { name?: unknown; file?: unknown }
+        if (tool === 'skill_use' && typeof a?.name === 'string' && !a.file) usage?.skill(a.name, 'mcp')
+        return out
+      } catch (err) {
+        this.record({ at: started, tool, args, ok: false, durationMs: Date.now() - started, error: errorMessage(err) })
+        usage?.tool(tool, 'mcp', Date.now() - started, false)
+        return { content: [{ type: 'text', text: `Error: ${errorMessage(err)}` }], isError: true }
+      }
     }
+    return usage ? usage.run({ source: 'mcp' }, call) : call()
   }
 
   private record(entry: McpCallLog): void {

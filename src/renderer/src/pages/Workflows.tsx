@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
@@ -17,13 +18,14 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Check, Clock, Copy, FileText, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Check, Clock, Copy, FileText, LayoutDashboard, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, pretty, timeAgo } from '@/lib/format'
 import { Badge, Button, Dot, Empty, IconButton, Input, ListItem, ListPane, Modal, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
+import { layeredLayout } from '@shared/layout'
 import { Editor } from '@/components/Editor'
 import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes'
 import { Inspector } from './workflow/Inspector'
@@ -233,14 +235,49 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     const byId = new Map(activeRun.nodes.map((t) => [t.nodeId, t]))
     return nodes.map((n) => {
       const t = byId.get(n.id)
-      return t ? { ...n, data: { ...n.data, __status: t.status, __ms: t.durationMs } } : n
+      return t ? { ...n, data: { ...n.data, __status: t.status, __ms: t.durationMs, __iter: t.iterations } } : n
     })
   }, [nodes, activeRun])
   const displayEdges = useMemo(() => {
-    if (!activeRun || activeRun.status !== 'running') return edges
-    const running = new Set(activeRun.nodes.filter((t) => t.status === 'running').map((t) => t.nodeId))
-    return edges.map((e) => ({ ...e, animated: running.has(e.target) }))
+    const running = activeRun?.status === 'running' ? new Set(activeRun.nodes.filter((t) => t.status === 'running').map((t) => t.nodeId)) : null
+    return edges.map((e) => {
+      const loopBack = e.targetHandle === 'next'
+      const body = e.sourceHandle === 'body'
+      const style = loopBack ? LOOP_BACK_STYLE : body ? LOOP_BODY_STYLE : undefined
+      return { ...e, ...(style ? { style } : {}), ...(loopBack ? { type: 'smoothstep' } : {}), animated: loopBack || !!running?.has(e.target) }
+    })
   }, [edges, activeRun])
+
+  // Auto-arrange: layered layout from the measured node sizes, eased into place.
+  const [arranging, setArranging] = useState(false)
+  const arrange = () => {
+    const target = layeredLayout(
+      nodes.map((n) => ({ id: n.id, width: n.measured?.width ?? 230, height: n.measured?.height ?? 70, position: n.position })),
+      edges,
+      { gapX: 80, gapY: 40 }
+    )
+    const from = new Map(nodes.map((n) => [n.id, n.position]))
+    const started = performance.now()
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3)
+    setArranging(true)
+    const step = (now: number) => {
+      const t = Math.min(1, (now - started) / 420)
+      const k = ease(t)
+      setNodes((ns) =>
+        ns.map((n) => {
+          const a = from.get(n.id)
+          const b = target.get(n.id)
+          return a && b ? { ...n, position: { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k } } : n
+        })
+      )
+      if (t < 1) requestAnimationFrame(step)
+      else {
+        setArranging(false)
+        void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2, duration: 380 })
+      }
+    }
+    requestAnimationFrame(step)
+  }
 
   const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge({ ...c, id: `e_${Date.now().toString(36)}` }, es)), [setEdges])
 
@@ -406,6 +443,11 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1.2} color="#26262c" />
             <Controls showInteractive={false} />
+            <Panel position="top-right">
+              <Button size="sm" icon={<LayoutDashboard size={13} />} disabled={arranging || nodes.length < 2} onClick={arrange} title="Auto-arrange nodes left to right in run order">
+                Arrange
+              </Button>
+            </Panel>
             <MiniMap pannable zoomable nodeColor={(n) => META[n.type as WorkflowNodeType]?.color ?? '#555'} maskColor="rgb(9 9 10 / 0.7)" />
           </ReactFlow>
         </div>
@@ -550,6 +592,7 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
                 <button onClick={() => setOpenNode(open ? null : t.nodeId)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left">
                   <Dot tone={t.status === 'ok' ? 'ok' : t.status === 'error' ? 'crimson' : t.status === 'running' ? 'info' : 'dim'} pulse={t.status === 'running'} />
                   <span className="min-w-0 flex-1 truncate text-[11.5px]">{label}</span>
+                  {t.iterations ? <span className="rounded bg-elev-2 px-1 font-mono text-[10px] text-[#fb923c]" title={t.type === 'loop' ? 'iterations' : 'runs across loop iterations'}>×{t.iterations}</span> : null}
                   <span className="font-mono text-[10px] text-dim">{t.status === 'skipped' ? 'skipped' : duration(t.durationMs)}</span>
                 </button>
                 {!open && t.output !== undefined && <div className="truncate px-2.5 pb-1.5 font-mono text-[10.5px] text-dim">{preview(t.output, 90)}</div>}
@@ -651,18 +694,22 @@ function OutputModal({ view, onClose }: { view: { title: string; value: unknown 
   )
 }
 
+const LOOP_BODY_STYLE = { stroke: '#fb923c', strokeWidth: 1.6 }
+const LOOP_BACK_STYLE = { stroke: '#fb923c', strokeWidth: 1.6, strokeDasharray: '6 4' }
+
 function stripRuntime(d: FlowNodeData): FlowNodeData & { key: string } {
-  const { __status, __ms, __summary, ...rest } = d
+  const { __status, __ms, __summary, __iter, ...rest } = d
+  void __iter
   void __status
   void __ms
   void __summary
   return rest as FlowNodeData & { key: string }
 }
 
-function snapshot(nodes: { id: string; type?: string; position: { x: number; y: number }; data: unknown }[], edges: { id: string; source: string; target: string; sourceHandle?: string | null }[], name: string, cron: string, enabled: boolean): string {
+function snapshot(nodes: { id: string; type?: string; position: { x: number; y: number }; data: unknown }[], edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[], name: string, cron: string, enabled: boolean): string {
   return JSON.stringify({
     n: nodes.map((n) => [n.id, n.type, Math.round(n.position.x), Math.round(n.position.y), n.data]),
-    e: edges.map((e) => [e.source, e.target, e.sourceHandle ?? null]),
+    e: edges.map((e) => [e.source, e.target, e.sourceHandle ?? null, e.targetHandle ?? null]),
     name,
     cron: cron.trim(),
     enabled

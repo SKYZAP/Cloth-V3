@@ -244,6 +244,34 @@ export function Inspector({
       )}
       {type === 'transform' && template('code', 'JavaScript (function body)', 10, 'In scope: input, prev, nodes (all outputs by key), JSON, Math, Date. Must return a value. 1s timeout.')}
       {type === 'condition' && template('expression', 'Expression', 3, 'Truthy → "true" handle, otherwise "false". Scope: input, prev, nodes.')}
+      {type === 'loop' && (
+        <>
+          <Field label="Mode">
+            <Select value={str('mode') || 'each'} onChange={set('mode')}>
+              <option value="each">For each item</option>
+              <option value="until">Repeat until</option>
+            </Select>
+          </Field>
+          {str('mode') === 'until' ? (
+            <>
+              {template('until', 'Stop when', 2, 'JavaScript, checked after each pass. prev = this pass’s result, e.g. String(prev).includes("LGTM").')}
+              <Field label="Max iterations" hint="Hard stop, 1–100">
+                <Input type="number" min={1} max={100} value={str('maxIterations')} onChange={set('maxIterations')} />
+              </Field>
+            </>
+          ) : (
+            template('items', 'Items', 2, 'A {{path}} to an array (e.g. {{search.hits}}), JSON text, or text with one item per line.')
+          )}
+          <div className="rounded-md border border-line bg-bg p-2.5 text-[11px] leading-relaxed text-dim">
+            Wire the steps to repeat from the <span className="text-[#fb923c]">body</span> handle and what comes after from <span className="text-muted">done</span>. Inside the body use{' '}
+            <span className="font-mono text-muted">{'{{loop.item}}'}</span>, <span className="font-mono text-muted">{'{{loop.index}}'}</span> and <span className="font-mono text-muted">{'{{loop.last}}'}</span>. Connect the last body step back into{' '}
+            <span className="text-[#fb923c]">next</span> to choose each pass’s result.
+            <div className="mt-1.5">
+              Output: {str('mode') === 'until' ? 'the last pass’s result' : 'an array with one result per item'}.
+            </div>
+          </div>
+        </>
+      )}
       {type === 'output' && template('value', 'Value', 4, 'Empty = pass through the previous output.')}
 
       {type !== 'trigger' && type !== 'output' && (

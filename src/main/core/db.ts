@@ -112,6 +112,28 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  `,
+  /* 3 — usage log for the dashboard */ `
+  CREATE TABLE usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    ref TEXT,
+    provider_id TEXT,
+    model_id TEXT,
+    name TEXT,
+    detail TEXT,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read INTEGER NOT NULL DEFAULT 0,
+    cache_write INTEGER NOT NULL DEFAULT 0,
+    cost REAL NOT NULL DEFAULT 0,
+    duration_ms INTEGER,
+    ok INTEGER NOT NULL DEFAULT 1
+  );
+  CREATE INDEX usage_at ON usage_events(at);
+  CREATE INDEX usage_kind_at ON usage_events(kind, at);
   `
 ]
 

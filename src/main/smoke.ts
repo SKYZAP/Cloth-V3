@@ -18,6 +18,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'kb-search') return await probeKnowledgeSearch(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
     const base = process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1'
     const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: base })
     const p = await s.providers.refreshModels(provider.id)
@@ -270,6 +271,96 @@ async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note
   const drafted = await js(`document.querySelectorAll('textarea').length / 2`)
   note(`draft with AI: ${drafted} case(s) in the editor after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   writeFileSync(join(outDir, 'draft-evals.png'), await screenshot(win))
+}
+
+/** Seed a week of synthetic usage + a messy loop flow; screenshot the dashboard and Arrange. */
+async function probeDashboard(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const openai = s.providers.create({ name: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1' })
+  s.providers.setModels(openai.id, [{ id: 'gpt-6-luna', name: 'gpt-6-luna', contextWindow: 400000, maxTokens: 128000, reasoning: true, vision: true, embedding: false, pricing: { input: 1.25, output: 10 } }])
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  s.providers.setModels(lm.id, [
+    { id: 'qwen/qwen3.5-9b', name: 'qwen3.5-9b', contextWindow: 32768, maxTokens: 8192, reasoning: true, vision: false, embedding: false },
+    { id: 'text-embedding-nomic-embed-text-v1.5', name: 'nomic', contextWindow: 8192, maxTokens: 0, reasoning: false, vision: false, embedding: true }
+  ])
+  const ins = s.ctx.db.prepare(
+    'INSERT INTO usage_events (at, kind, source, ref, provider_id, model_id, name, detail, input_tokens, output_tokens, cache_read, cache_write, cost, duration_ms, ok) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)'
+  )
+  let seed = 7
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const now = Date.now()
+  const sources = ['chat', 'chat', 'chat', 'workflow', 'workflow', 'skills', 'knowledge', 'mcp', 'builder']
+  const tools = ['rag_search', 'rag_search', 'rag_search', 'skill_use', 'web_search', 'web_search', 'read_file', 'grep', 'date_math', 'web_fetch']
+  const skillNames = ['nestjs-best-practices', 'nestjs-guards', 'commit-messages', 'react-testing']
+  const vias = ['slash', 'tool', 'tool', 'mcp', 'workflow']
+  for (let i = 0; i < 520; i++) {
+    const day = Math.floor(rnd() * 7)
+    const hour = 9 + Math.floor(rnd() * 11 + (rnd() > 0.85 ? -8 : 0))
+    const at = now - day * 86_400_000 - ((new Date(now).getHours() - hour + 24) % 24) * 3_600_000 - Math.floor(rnd() * 3_600_000)
+    if (at > now) continue
+    const src = sources[Math.floor(rnd() * sources.length)]
+    const local = rnd() > 0.35
+    const r = rnd()
+    if (r < 0.45) {
+      const inTok = Math.floor(800 + rnd() * 9000)
+      ins.run(at, 'llm', src, local ? lm.id : openai.id, local ? 'qwen/qwen3.5-9b' : 'gpt-6-luna', null, null, inTok, Math.floor(150 + rnd() * 1800), Math.floor((local ? 1800 : 900) + rnd() * 9000), rnd() > 0.03 ? 1 : 0)
+    } else if (r < 0.55) {
+      ins.run(at, 'embed', 'knowledge', lm.id, 'text-embedding-nomic-embed-text-v1.5', null, null, Math.floor(2000 + rnd() * 20000), 0, 300, 1)
+    } else if (r < 0.9) {
+      ins.run(at, 'tool', src, null, null, tools[Math.floor(Math.pow(rnd(), 1.6) * tools.length)], rnd() > 0.85 ? 'mcp' : 'builtin', 0, 0, Math.floor(20 + rnd() * 900), rnd() > 0.05 ? 1 : 0)
+    } else {
+      ins.run(at, 'skill', src, null, null, skillNames[Math.floor(Math.pow(rnd(), 1.4) * skillNames.length)], vias[Math.floor(rnd() * vias.length)], 0, 0, null, 1)
+    }
+  }
+  await s.skills.create({ name: 'nestjs-guards', description: 'Write NestJS guards.', body: '# Guards' })
+  await s.skills.create({ name: 'commit-messages', description: 'Write conventional commits.', body: '# Commits' })
+
+  // A loop flow with deliberately scattered nodes.
+  const wf = s.workflows.create({ name: 'summarize-each-url' })
+  s.workflows.save(wf.id, {
+    nodes: [
+      { id: 't', type: 'trigger', position: { x: 420, y: 380 }, data: { key: 'start', label: 'Start', defaultInput: '{"urls":["a","b","c"]}' } },
+      { id: 'l', type: 'loop', position: { x: -80, y: 40 }, data: { key: 'each_url', label: 'For each URL', mode: 'each', items: '{{input.urls}}' } },
+      { id: 'f', type: 'transform', position: { x: 700, y: -60 }, data: { key: 'fetch', label: 'Fetch page', code: 'return "page " + nodes.loop.item' } },
+      { id: 'c', type: 'condition', position: { x: 160, y: 520 }, data: { key: 'long', label: 'Long enough?', expression: 'String(prev).length > 5' } },
+      { id: 's', type: 'transform', position: { x: 980, y: 300 }, data: { key: 'summarize', label: 'Summarize', code: 'return "summary of " + prev' } },
+      { id: 'k', type: 'transform', position: { x: 600, y: 640 }, data: { key: 'skip', label: 'Mark empty', code: 'return "(empty)"' } },
+      { id: 'o', type: 'output', position: { x: 60, y: 260 }, data: { key: 'result', label: 'Digest', value: '' } }
+    ],
+    edges: [
+      { id: 'e1', source: 't', target: 'l' },
+      { id: 'e2', source: 'l', target: 'f', sourceHandle: 'body' },
+      { id: 'e3', source: 'f', target: 'c' },
+      { id: 'e4', source: 'c', target: 's', sourceHandle: 'true' },
+      { id: 'e5', source: 'c', target: 'k', sourceHandle: 'false' },
+      { id: 'e6', source: 's', target: 'l', targetHandle: 'next' },
+      { id: 'e7', source: 'k', target: 'l', targetHandle: 'next' },
+      { id: 'e8', source: 'l', target: 'o', sourceHandle: 'done' }
+    ]
+  })
+  const run = await s.workflows.run(wf.id, { urls: ['alpha', 'b', 'gamma'] })
+  note(`loop run: ${run.status} ${JSON.stringify(run.output)} iterations=${run.nodes.find((n) => n.nodeId === 'l')?.iterations}`)
+
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Flows')
+  await wait(1500)
+  writeFileSync(join(outDir, 'flow-before-arrange.png'), await screenshot(win))
+  await clickText(win, 'Arrange')
+  await wait(1400)
+  writeFileSync(join(outDir, 'flow-after-arrange.png'), await screenshot(win))
+  for (let i = 0; i < 3; i++) await js(`document.querySelector('.react-flow__controls-zoomin')?.click()`)
+  await wait(700)
+  writeFileSync(join(outDir, 'flow-zoomed.png'), await screenshot(win))
+
+  await clickNav(win, 'Dashboard')
+  await wait(2200)
+  writeFileSync(join(outDir, 'dashboard-top.png'), await screenshot(win))
+  await js(`document.querySelector('main .overflow-y-auto').scrollTo(0, 99999)`)
+  await wait(900)
+  writeFileSync(join(outDir, 'dashboard-bottom.png'), await screenshot(win))
+  const stats = await s.dashboard.stats('7d')
+  note(`dashboard: calls=${stats.totals.calls} tokens=${stats.totals.tokens} cost=${stats.totals.cost.toFixed(2)} tools=${stats.tools.length} skills=${stats.skills.length}`)
 }
 
 /** Run a flow whose output is markdown, then open it in the output modal. */

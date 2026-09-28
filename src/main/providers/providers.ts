@@ -11,6 +11,7 @@ import type {
 } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
+import { UsageService, type Pricing } from '../core/usage'
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'openai', label: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', needsKey: true, hint: 'Responses API' },
@@ -55,7 +56,25 @@ export class ProviderService {
   /** "providerId/modelId" for models that rejected a custom temperature this session. */
   private noTemperature = new Set<string>()
 
-  constructor(private ctx: Ctx) {}
+  constructor(
+    private ctx: Ctx,
+    readonly usage: UsageService = new UsageService(ctx)
+  ) {
+    usage.pricing = (providerId, modelId) => this.pricing(providerId, modelId)
+  }
+
+  /** USD per 1M tokens: the user's price for the model, else the built-in list; null when unknown or free. */
+  pricing(providerId: string, modelId: string): Pricing | null {
+    try {
+      const provider = this.get(providerId)
+      const info = provider.models.find((m) => m.id === modelId)
+      if (info?.pricing && (info.pricing.input > 0 || info.pricing.output > 0)) return info.pricing
+      const c = knownCost(provider.kind, modelId)
+      return c.input > 0 || c.output > 0 ? c : null
+    } catch {
+      return null
+    }
+  }
 
   presets(): ProviderPreset[] {
     return PROVIDER_PRESETS
@@ -164,7 +183,7 @@ export class ProviderService {
       baseUrl: provider.baseUrl,
       reasoning: info.reasoning,
       input: info.vision ? ['text', 'image'] : ['text'],
-      cost: knownCost(provider.kind, info.id),
+      cost: info.pricing ? { input: info.pricing.input, output: info.pricing.output, cacheRead: 0, cacheWrite: 0 } : knownCost(provider.kind, info.id),
       contextWindow: info.contextWindow,
       maxTokens: info.maxTokens,
       headers: Object.keys(provider.headers).length ? provider.headers : undefined
@@ -212,12 +231,17 @@ export class ProviderService {
           signal: input.signal,
           reasoning: thinking
         })
+      const t0 = Date.now()
       const first = await send(temperature)
+      this.usage.message(first, Date.now() - t0, ref)
       // Reasoning-class models (OpenAI o-series, gpt-5+, …) only accept their default temperature.
       if (temperature !== undefined && first.stopReason === 'error' && rejectsTemperature(first.errorMessage)) {
         this.noTemperature.add(modelKey)
         this.ctx.log('providers', `${modelKey} rejects temperature; retrying with the model default`)
-        return send(undefined)
+        const t1 = Date.now()
+        const second = await send(undefined)
+        this.usage.message(second, Date.now() - t1, ref)
+        return second
       }
       return first
     }
@@ -257,6 +281,7 @@ export class ProviderService {
     const batchSize = 32
     for (let i = 0; i < texts.length; i += batchSize) {
       const batch = texts.slice(i, i + batchSize)
+      const t0 = Date.now()
       const res = await fetch(`${provider.baseUrl}/embeddings`, {
         method: 'POST',
         signal,
@@ -267,8 +292,14 @@ export class ProviderService {
         },
         body: JSON.stringify({ model: ref.modelId, input: batch })
       })
-      if (!res.ok) throw new Error(`Embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`)
-      const body = (await res.json()) as { data: { index: number; embedding: number[] }[] }
+      if (!res.ok) {
+        this.usage.embed(ref.providerId, ref.modelId, 0, Date.now() - t0, false)
+        throw new Error(`Embeddings ${res.status}: ${(await res.text()).slice(0, 300)}`)
+      }
+      const body = (await res.json()) as { data: { index: number; embedding: number[] }[]; usage?: { prompt_tokens?: number; total_tokens?: number } }
+      // Servers that don't report usage get a chars/4 estimate.
+      const tokens = body.usage?.prompt_tokens ?? body.usage?.total_tokens ?? Math.ceil(batch.reduce((n, t) => n + t.length, 0) / 4)
+      this.usage.embed(ref.providerId, ref.modelId, tokens, Date.now() - t0, true)
       const sorted = [...body.data].sort((a, b) => a.index - b.index)
       for (const d of sorted) out.push(normalize(Float32Array.from(d.embedding)))
     }

@@ -6,6 +6,8 @@ import { createServices, type Services } from './services'
 import { createApi } from './api'
 import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
+import type { UsageService } from './core/usage'
+import type { UsageSource } from '@shared/types'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -56,13 +58,16 @@ function createWindow(): void {
   else void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-function registerIpc(api: ClothApi): void {
+/** Default attribution for work started from each part of the UI. */
+const IPC_SOURCE: Record<string, UsageSource> = { chat: 'chat', rag: 'knowledge', skills: 'skills', workflows: 'workflow', tools: 'tools', web: 'tools', mcp: 'mcp' }
+
+function registerIpc(api: ClothApi, usage: UsageService): void {
   ipcMain.handle('cloth:invoke', async (_e, path: string, args: unknown[]) => {
     const [ns, method] = path.split('.') as [keyof ClothApi, string]
     const fn = (api[ns] as Record<string, (...a: unknown[]) => Promise<unknown>> | undefined)?.[method]
     if (typeof fn !== 'function') throw new Error(`Unknown API ${path}`)
     try {
-      return { ok: true, value: await fn(...(args ?? [])) }
+      return { ok: true, value: await usage.run({ source: IPC_SOURCE[ns] ?? 'other' }, () => fn(...(args ?? []))) }
     } catch (err) {
       console.error(`[ipc] ${path} failed`, err)
       return { ok: false, error: errorMessage(err) }
@@ -93,7 +98,7 @@ else {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
       }
     })
-    registerIpc(createApi(services))
+    registerIpc(createApi(services), services.providers.usage)
     createWindow()
     services.workflows.startScheduler()
     await services.mcp.restart()
