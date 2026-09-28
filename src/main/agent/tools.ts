@@ -87,6 +87,33 @@ export function webToHits(results: WebResult[]): RagHit[] {
 
 export const BUILTINS: BuiltinSpec[] = [
   spec({
+    name: 'todo_write',
+    label: 'Todo list',
+    group: 'planning',
+    availability: 'Chats (not headless flow agents)',
+    parameters: Type.Object({
+      todos: Type.Array(
+        Type.Object({
+          content: Type.String({ description: 'The task, as a short imperative sentence' }),
+          status: Type.Union([Type.Literal('pending'), Type.Literal('in_progress'), Type.Literal('completed')])
+        }),
+        { description: 'The complete, updated list — it replaces the previous one' }
+      )
+    }),
+    description: () =>
+      'Plan and track multi-step work with a todo list the user can see. Write the full list each time (it replaces the previous one). Mark exactly one item in_progress while working on it and mark items completed as soon as they are done. Use for tasks with 3 or more steps; skip for simple questions.',
+    when: (ctx) => !!ctx.scope.sessionId,
+    async run(p) {
+      const todos = (p.todos ?? []).filter((t) => t && typeof t.content === 'string' && t.content.trim())
+      const done = todos.filter((t) => t.status === 'completed').length
+      const current = todos.find((t) => t.status === 'in_progress')
+      return {
+        text: todos.length ? `Todo list updated: ${done}/${todos.length} completed.${current ? ` In progress: ${current.content}` : ''}` : 'Todo list cleared.',
+        details: { todos: todos.map((t) => ({ content: t.content.trim(), status: t.status })) }
+      }
+    }
+  }),
+  spec({
     name: 'rag_search',
     label: 'Knowledge search',
     group: 'knowledge',

@@ -3,7 +3,7 @@ import { FolderOpen } from 'lucide-react'
 import type { AppInfo } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
-import { Button, Card, Field, Input, PageHeader } from '@/components/ui'
+import { Button, Card, Field, Input, PageHeader, Switch } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
 import { WebSearchSettings } from './WebSearchSettings'
@@ -32,6 +32,10 @@ export function SettingsPage() {
           <Field label="Default embedding model">
             <ModelPicker kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
           </Field>
+        </Section>
+
+        <Section title="Chat" hint="When a conversation nears the model's context window, older turns are summarised into a checkpoint before the next message. The originals stay visible in the chat. You can also summarise any time from the context ring next to the send button.">
+          <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} label="Summarise long conversations automatically" />
         </Section>
 
         <WebSearchSettings />

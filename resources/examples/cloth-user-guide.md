@@ -21,7 +21,14 @@ Each chat has its own model, knowledge scope and tool switches.
 - Every tool call appears as a trace card with its arguments, result, duration and status. Click a card to expand it.
 - When the agent searches the knowledge base or the web, results appear as numbered references. Citations such as `[2]` in the answer show the source on hover.
 - **Regenerate** reruns the last question; **Stop** aborts a running turn.
-- A **workspace folder** gives the agent read-only `list_dir`, `read_file` and `grep` tools.
+- A **workspace folder** lets the agent work with files there. Choose it from the folder icon, then pick what it may do:
+  - **Files: Read only** gives `read`, `ls`, `find` and `grep`. **Read & write** adds `write` (new files, rewrites) and `edit` (targeted replacements).
+  - **Shell** adds a command tool (PowerShell on Windows, bash elsewhere) that runs in the workspace folder.
+  - **Approvals**: *Ask every time* shows each change as a diff (or the command) with **Apply** / **Decline**; *Auto-approve edits* stops asking for file changes but still asks before commands; *Auto-approve all* asks for nothing. On an approval card, "Allow all edits in this chat" switches to auto-approving edits.
+  - Paths can never leave the workspace folder, including through links.
+  - Every change is checkpointed. Trace cards list the files changed with +/− line counts; **Undo** restores them (Cloth warns if a file was changed again since).
+- For multi-step work the agent keeps a **plan** with `todo_write`: the checklist appears in the chat and pinned above the composer while work is in progress.
+- **Long conversations are summarised**: near the model's context window, older turns are condensed into a structured summary (goal, progress, decisions, next steps) before the next message. The ring next to the send button shows how full the context is; click it to summarise now. Summarised turns stay visible under *Show earlier messages*, and the summary itself opens from the divider. Turn automatic summarising off under Settings → Chat.
 
 ## Knowledge (RAG)
 

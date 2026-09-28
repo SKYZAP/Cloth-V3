@@ -123,7 +123,9 @@ export function createApi(s: Services): ClothApi {
       running: async () => s.chat.list().filter((c) => s.chat.isRunning(c.id)).map((c) => c.id),
       pendingApprovals: async (id) => s.chat.pendingApprovals(id),
       resolveApproval: async (approvalId, decision) => s.chat.resolveApproval(approvalId, decision),
-      undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force)
+      undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force),
+      compact: (id, instructions) => s.chat.compact(id, { instructions }),
+      contextUsage: (id) => s.chat.contextUsage(id)
     },
     workflows: {
       list: async () => s.workflows.list(),
