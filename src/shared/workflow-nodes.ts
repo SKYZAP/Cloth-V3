@@ -131,6 +131,20 @@ export const NODE_SPECS: NodeSpec[] = [
     fields: [{ key: 'expression', description: 'JavaScript expression over input, prev, nodes' }]
   },
   {
+    type: 'loop',
+    label: 'Loop',
+    description:
+      'Repeat part of the flow. Connect the steps to repeat from the "body" handle and the steps that follow from the "done" handle; optionally connect the last body step back into the loop’s "next" handle to pick the per-iteration result. mode "each" runs the body once per item of `items`; mode "until" re-runs it (feeding each result back in as prev) until `until` is true or maxIterations is reached. Inside the body, {{loop.item}}, {{loop.index}} and {{loop.last}} (previous result) are available.',
+    output: 'each: array of per-iteration results · until: the last result',
+    defaults: { mode: 'each', items: '{{prev}}', until: 'false', maxIterations: 5 },
+    fields: [
+      { key: 'mode', description: 'each | until' },
+      { key: 'items', description: 'each mode: array to iterate — a {{path}} to an array, JSON text, or text (one item per line)' },
+      { key: 'until', description: 'until mode: JavaScript expression checked after every iteration, e.g. String(prev).includes("LGTM"). Scope: prev (this iteration’s result), loop, input, nodes' },
+      { key: 'maxIterations', description: 'until mode: hard stop (1–100)' }
+    ]
+  },
+  {
     type: 'output',
     label: 'Output',
     description: 'Final result of the run.',

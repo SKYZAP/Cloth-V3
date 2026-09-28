@@ -8,7 +8,8 @@ import type { ProviderService } from '../providers/providers'
 import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { CustomToolService } from '../tools/custom'
-import { topoSort } from './engine'
+import { LOOP_BACK, LOOP_BODY, LOOP_DONE, loopBodies, topoSort } from './engine'
+import { layeredLayout } from '@shared/layout'
 
 const KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,40}$/
 const MAX_TURNS = 40
@@ -77,7 +78,14 @@ export class DraftGraph {
     if (b.type === 'trigger') throw new Error('Nothing can connect into the trigger')
     if (a.type === 'output') throw new Error('Output nodes have no outgoing connections')
     if (a.type === 'condition' && branch !== 'true' && branch !== 'false') throw new Error('Edges from a condition need branch "true" or "false"')
-    const handle = a.type === 'condition' ? branch! : null
+    // An edge from inside a loop's body back to the loop closes it (its "next" handle).
+    if (b.type === 'loop' && loopBodies(this.nodes, this.edges).bodies.get(b.id)?.has(a.id)) {
+      if (this.edges.some((e) => e.source === a.id && e.target === b.id && e.targetHandle === LOOP_BACK)) return 'Already connected'
+      this.edges.push({ id: newId('e_'), source: a.id, target: b.id, sourceHandle: a.type === 'condition' ? branch! : null, targetHandle: LOOP_BACK })
+      return `Connected ${from} → ${to} (loop back: this is the per-iteration result)`
+    }
+    if (a.type === 'loop' && branch !== LOOP_BODY && branch !== LOOP_DONE) throw new Error('Edges from a loop need branch "body" (steps to repeat) or "done" (steps after the loop)')
+    const handle = a.type === 'condition' || a.type === 'loop' ? branch! : null
     if (this.edges.some((e) => e.source === a.id && e.target === b.id && (e.sourceHandle ?? null) === handle)) return 'Already connected'
     const edge: WorkflowEdge = { id: newId('e_'), source: a.id, target: b.id, sourceHandle: handle }
     this.edges.push(edge)
@@ -106,7 +114,7 @@ export class DraftGraph {
           const { key, label, ...data } = n.data
           return { key, type: n.type, label, data }
         }),
-        edges: this.edges.map((e) => ({ from: byId.get(e.source), to: byId.get(e.target), ...(e.sourceHandle ? { branch: e.sourceHandle } : {}) }))
+        edges: this.edges.map((e) => ({ from: byId.get(e.source), to: byId.get(e.target), ...(e.sourceHandle ? { branch: e.sourceHandle } : {}), ...(e.targetHandle === LOOP_BACK ? { loopBack: true } : {}) }))
       },
       null,
       1
@@ -133,10 +141,11 @@ export class DraftGraph {
       }
       for (const n of this.nodes) if (!reach.has(n.id)) issues.push(`Node "${n.data.key}" is not reachable from the trigger`)
     }
-    const keys = new Set(['input', 'prev', 'nodes', ...this.nodes.map((n) => String(n.data.key))])
+    const keys = new Set(['input', 'prev', 'nodes', ...(this.nodes.some((n) => n.type === 'loop') ? ['loop'] : []), ...this.nodes.map((n) => String(n.data.key))])
     for (const n of this.nodes) {
       const k = n.data.key
       if (n.type === 'condition' && !this.edges.some((e) => e.source === n.id)) issues.push(`Condition "${k}" has no outgoing branches`)
+      if (n.type === 'loop' && !this.edges.some((e) => e.source === n.id && e.sourceHandle === LOOP_BODY)) issues.push(`Loop "${k}" has nothing connected to its "body" branch`)
       for (const [field, value] of Object.entries(n.data)) {
         if (typeof value !== 'string') continue
         for (const m of value.matchAll(/\{\{\s*([\w$]+)/g)) if (!keys.has(m[1])) issues.push(`"${k}".${field} references unknown {{${m[1]}}}`)
@@ -157,19 +166,11 @@ export class DraftGraph {
 
   /** Layered left→right layout from the topological order. */
   layout(): void {
-    const order = topoSort(this.nodes, this.edges)
-    const layer = new Map<string, number>()
-    for (const n of order) {
-      const ins = this.edges.filter((e) => e.target === n.id).map((e) => (layer.get(e.source) ?? 0) + 1)
-      layer.set(n.id, ins.length ? Math.max(...ins) : 0)
-    }
-    const columns = new Map<number, WorkflowNode[]>()
-    for (const n of order) columns.set(layer.get(n.id)!, [...(columns.get(layer.get(n.id)!) ?? []), n])
-    for (const [col, nodes] of columns) {
-      nodes.forEach((n, i) => {
-        n.position = { x: col * 320, y: (i - (nodes.length - 1) / 2) * 170 + 200 }
-      })
-    }
+    const pos = layeredLayout(
+      this.nodes.map((n) => ({ id: n.id, width: 230, height: 70, position: n.position })),
+      this.edges
+    )
+    for (const n of this.nodes) n.position = pos.get(n.id) ?? n.position
   }
 
   toGraph(): WorkflowGraph {
@@ -233,7 +234,7 @@ export async function buildWorkflow(
     {
       name: 'connect',
       label: 'Connect',
-      description: 'Connect two nodes by key. From a condition node, pass branch "true" or "false".',
+      description: 'Connect two nodes by key. From a condition node, pass branch "true" or "false"; from a loop node, branch "body" (steps to repeat) or "done" (after the loop). Connecting a body step back to its loop closes the loop.',
       parameters: Type.Object({ from: Type.String(), to: Type.String(), branch: Type.Optional(Type.String()) }),
       execute: act('connect', (p: { from: string; to: string; branch?: string }) => draft.connect(p.from, p.to, p.branch))
     },
@@ -272,9 +273,10 @@ export async function buildWorkflow(
   const systemPrompt = [
     'You assemble workflows for Cloth, a local developer hub, by calling graph-editing tools. Build the graph node by node, connect it, then call `finish`.',
     'Rules:',
-    '- Exactly one `trigger` node; every other node must be reachable from it. At least one `output` node. No cycles.',
+    '- Exactly one `trigger` node; every other node must be reachable from it. At least one `output` node. No cycles except the loop-back edge into a loop node.',
     '- Templates: {{input.field}} reads the run input, {{prev}} the output of the node feeding in, {{key}} / {{key.field}} any earlier node by key.',
     '- Condition nodes branch: connect with branch "true" and/or "false".',
+    '- To repeat steps use a `loop` node: connect it to the first repeated step with branch "body", to the step after the loop with branch "done", and connect the last repeated step back to the loop. Inside the body use {{loop.item}} / {{loop.index}} / {{loop.last}}. The only allowed cycle is that loop-back edge.',
     '- Leave `model` fields unset (null) so the default model is used, unless the user names one.',
     '- Give the trigger a realistic `defaultInput` JSON (as text) with the fields your templates use.',
     '- Prefer few, purposeful nodes. Use short snake_case keys.',
@@ -298,6 +300,7 @@ export async function buildWorkflow(
     getApiKey: async (id) => deps.providers.apiKey(id) || 'cloth-local',
     toolExecution: 'sequential'
   })
+  deps.providers.usage.track(agent)
   let turns = 0
   agent.subscribe((e) => {
     if (e.type === 'turn_end' && ++turns >= MAX_TURNS) agent.abort()

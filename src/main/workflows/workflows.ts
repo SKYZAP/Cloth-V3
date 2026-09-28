@@ -200,12 +200,14 @@ export class WorkflowService {
     const controller = new AbortController()
     this.running.set(run.id, controller)
     this.persist(run)
-    const done = executeGraph(wf, effectiveInput, this.executor(), controller.signal, {
-      onUpdate: (traces) => {
-        run.nodes = traces
-        this.persist(run)
-      }
-    })
+    const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
+      executeGraph(wf, effectiveInput, this.executor(), controller.signal, {
+        onUpdate: (traces) => {
+          run.nodes = traces
+          this.persist(run)
+        }
+      })
+    )
       .then(({ output, traces }) => {
         run.nodes = traces
         run.output = output
@@ -247,6 +249,18 @@ export class WorkflowService {
 
   private executor(): Executor {
     const { providers, rag, skills, runtime, web, custom } = this.deps
+    /** Tool-like nodes count as tool calls on the dashboard. */
+    const timed = async <T>(name: string, kind: string, fn: () => Promise<T>): Promise<T> => {
+      const started = Date.now()
+      try {
+        const out = await fn()
+        providers.usage.tool(name, kind, Date.now() - started, true)
+        return out
+      } catch (err) {
+        providers.usage.tool(name, kind, Date.now() - started, false)
+        throw err
+      }
+    }
     return async (node, { scope, prev, signal }) => {
       const d = node.data
       const t = (s: unknown) => renderTemplate(String(s ?? ''), scope)
@@ -284,18 +298,18 @@ export class WorkflowService {
         }
 
         case 'rag': {
-          const res = await rag.search({
+          const res = await timed('rag_search', 'builtin', () => rag.search({
             query: t(d.query) || String(prev ?? ''),
             collectionIds: d.collectionIds ?? [],
             k: d.k ? Number(d.k) : 6,
             mode: (d.mode ?? 'hybrid') as RagMode,
             model: d.model?.providerId ? d.model : undefined
-          })
+          }))
           return { output: { text: formatHitsForModel(res.hits), hits: res.hits.map((h) => ({ title: h.title, source: h.source, heading: h.headingPath, text: h.text, score: h.score })), queries: res.queries } }
         }
 
         case 'web': {
-          const res = await web.search(t(d.query) || String(prev ?? ''), { k: d.k ? Number(d.k) : undefined, signal })
+          const res = await timed('web_search', 'builtin', () => web.search(t(d.query) || String(prev ?? ''), { k: d.k ? Number(d.k) : undefined, signal }))
           const fetchTop = Math.min(Number(d.fetchTop) || 0, res.results.length)
           const pages: string[] = []
           for (const r of res.results.slice(0, fetchTop)) {
@@ -311,11 +325,12 @@ export class WorkflowService {
           const tool = custom.list().find((x) => x.name === d.tool)
           if (!tool) throw new Error(`Custom tool "${d.tool}" not found`)
           const args = json<Record<string, unknown>>(t(d.args || '{}'), {})
-          return { output: await custom.execute(tool, args, signal) }
+          return { output: await timed(tool.name, 'custom', () => custom.execute(tool, args, signal)) }
         }
 
         case 'skill': {
           const skill = await skills.get(String(d.skill ?? ''))
+          providers.usage.skill(skill.name, 'workflow')
           if ((d.mode ?? 'content') === 'content') return { output: skill.body }
           const { text } = await providers.complete(this.modelFor(d.model), { system: skillSystemPrompt(skill), prompt: t(d.prompt) || String(prev ?? ''), signal })
           return { output: text }

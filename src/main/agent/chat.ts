@@ -10,6 +10,7 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { buildTools, type ToolDetails, type ToolScope } from './tools'
+import type { UsageService } from '../core/usage'
 
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
@@ -94,12 +95,13 @@ export class AgentRuntime {
         systemPrompt: opts.systemPrompt,
         model,
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
-        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom }, opts.scope),
+        tools: buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage }, opts.scope),
         messages: opts.history ?? []
       },
       getApiKey: async (providerId) => this.providers.apiKey(providerId) || 'cloth-local',
       toolExecution: 'parallel'
     })
+    this.providers.usage.track(agent)
     return agent
   }
 
@@ -134,7 +136,8 @@ export class ChatService {
     private ctx: Ctx,
     private runtime: AgentRuntime,
     private settings: SettingsService,
-    private skills: SkillService
+    private skills: SkillService,
+    private usage?: UsageService
   ) {}
 
   list(): ChatSession[] {
@@ -280,7 +283,9 @@ export class ChatService {
     const userMsg = toUiMessages([message])[0]
     emit({ sessionId: id, type: 'message', message: userMsg })
 
-    void (async () => {
+    const attributed = <T>(fn: () => T): T => (this.usage ? this.usage.run({ source: 'chat', ref: id }, fn) : fn())
+    void attributed(async () => {
+      for (const name of new Set(skillNames)) this.usage?.skill(name, 'slash')
       let error: string | undefined
       try {
         await agent.prompt(message)
@@ -294,7 +299,7 @@ export class ChatService {
         this.active.delete(id)
         emit({ sessionId: id, type: 'end', error })
       }
-    })()
+    })
   }
 
   private rawMessages(id: string): AgentMessage[] {

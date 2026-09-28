@@ -9,6 +9,8 @@ import type {
   WebEngine,
   WorkflowGraph,
   ChatSession,
+  DashboardStats,
+  UsageRange,
   Collection,
   IngestUrlInput,
   McpStatus,
@@ -147,6 +149,10 @@ export interface ClothApi {
     build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph>
     cancelBuild(buildId: string): Promise<void>
     createFromGraph(graph: WorkflowGraph): Promise<Workflow>
+  }
+  dashboard: {
+    stats(range: UsageRange): Promise<DashboardStats>
+    clearUsage(): Promise<void>
   }
   mcp: {
     status(): Promise<McpStatus>

@@ -23,7 +23,8 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   eval cases (write or AI-draft), LLM judge, optional no-skill baseline and a freshness audit →
   verdict `fresh | stale | failing | redundant`, with regression detection against earlier runs.
 - **Workflows** — node editor (React Flow): Trigger, LLM, Agent, Knowledge search, Web search, Skill, Custom tool,
-  HTTP, JS Transform, Condition (true/false branches), Output. `{{key.path}}` templating, cron scheduling (croner),
+  HTTP, JS Transform, Condition (true/false branches), Loop (for-each / repeat-until with a loop-back edge), Output.
+  **Arrange** auto-lays out the graph (layered, crossing-reduced); run output opens in a Markdown viewer. `{{key.path}}` templating, cron scheduling (croner),
   live node status on the canvas, run history with per-node input/output traces. **Assemble with AI**: describe a
   workflow (or a change to one) and a pi agent builds it with `add_node` / `connect` / `finish` tools, validating
   structure and references as it goes; the result opens in the editor for review.
@@ -36,6 +37,9 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   `web_fetch` blocks private-network targets unless allowed.
 - **Example knowledge** — bundled docs (Cloth user guide, Git, HTTP/REST, regex, cron, SQL) seeded into a
   "Cloth examples" collection on first run, re-loadable from the Knowledge page.
+- **Dashboard** — tokens, estimated cost (built-in price list or per-model prices), model calls, latency, failures,
+  most used tools and skills, usage by source (chat / flows / skill tests / knowledge / MCP), busiest hours, flow
+  success rates and skill health. Backed by a local usage log (`usage_events`), attributed with AsyncLocalStorage.
 - **MCP server** — Streamable HTTP on `http://127.0.0.1:7811/mcp` with `skill_list`, `skill_use`, `rag_search`,
   `rag_collections`, `web_search`. Optional bearer token, localhost-only, call log, copy-paste client configs.
 

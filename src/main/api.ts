@@ -133,9 +133,15 @@ export function createApi(s: Services): ClothApi {
       cancel: async (runId) => s.workflows.cancel(runId),
       runs: async (id) => s.workflows.runs(id),
       validateCron: async (expr) => validateCron(expr),
-      build: (input) => s.workflows.build(input),
+      build: (input) => s.providers.usage.run({ source: 'builder' }, () => s.workflows.build(input)),
       cancelBuild: async (buildId) => s.workflows.cancelBuild(buildId),
       createFromGraph: async (graph) => s.workflows.createFromGraph(graph)
+    },
+    dashboard: {
+      stats: (range) => s.dashboard.stats(range),
+      clearUsage: async () => {
+        s.ctx.db.exec('DELETE FROM usage_events')
+      }
     },
     mcp: {
       status: async () => s.mcp.status(),

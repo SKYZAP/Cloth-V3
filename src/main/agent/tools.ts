@@ -1,3 +1,4 @@
+import type { UsageService } from '../core/usage'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { Type, type Static, type TSchema } from 'typebox'
@@ -19,6 +20,7 @@ export interface ToolDeps {
   skills: SkillService
   web: WebService
   custom: CustomToolService
+  usage?: UsageService
 }
 
 export interface ToolScope {
@@ -269,5 +271,27 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
   const ctx: Ctx = { deps, scope }
   const tools: AgentTool<any, ToolDetails>[] = BUILTINS.filter((b) => b.when(ctx)).map((b) => instantiate(b, ctx))
   if (scope.customTools !== false) for (const t of deps.custom.list()) if (t.enabled) tools.push(deps.custom.toAgentTool(t))
-  return tools
+  const usage = deps.usage
+  return usage ? tools.map((t) => withUsage(t, BUILTIN_NAMES.includes(t.name) ? 'builtin' : 'custom', usage)) : tools
+}
+
+/** Record every call of a tool (and skills loaded through skill_use) in the usage log. */
+function withUsage<T extends AgentTool<any, ToolDetails>>(tool: T, kind: string, usage: UsageService): T {
+  return {
+    ...tool,
+    async execute(id, params, signal, onUpdate) {
+      const started = Date.now()
+      try {
+        const res = await tool.execute(id, params, signal, onUpdate)
+        usage.tool(tool.name, kind, Date.now() - started, true)
+        if (tool.name === 'skill_use' && params && typeof (params as { name?: unknown }).name === 'string' && !(params as { file?: unknown }).file) {
+          usage.skill((params as { name: string }).name, 'tool')
+        }
+        return res
+      } catch (err) {
+        usage.tool(tool.name, kind, Date.now() - started, false)
+        throw err
+      }
+    }
+  }
 }

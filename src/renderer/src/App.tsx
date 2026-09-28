@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import { Books, ChatCircleDots, Cpu, FlowArrow, GearSix, PlugsConnected, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
+import { Books, ChartLineUp, ChatCircleDots, Cpu, FlowArrow, GearSix, PlugsConnected, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
 import { MotionConfig } from 'motion/react'
 import { useApp, type Page } from './lib/store'
 import { useEvent } from './lib/api'
 import { ChatPage } from './pages/Chat'
+import { DashboardPage } from './pages/Dashboard'
 import { KnowledgePage } from './pages/Knowledge'
 import { SkillsPage } from './pages/Skills'
 import { ToolsPage } from './pages/Tools'
@@ -19,6 +20,7 @@ import { api } from './lib/api'
 import { Logo } from './components/Logo'
 
 const NAV: { page: Page; label: string; icon: Icon }[] = [
+  { page: 'dashboard', label: 'Dashboard', icon: ChartLineUp },
   { page: 'chat', label: 'Chat', icon: ChatCircleDots },
   { page: 'knowledge', label: 'Knowledge', icon: Books },
   { page: 'skills', label: 'Skills', icon: Sparkle },
@@ -78,6 +80,7 @@ export function App() {
         </nav>
 
         <main className="min-w-0 flex-1 bg-bg">
+          {page === 'dashboard' && <DashboardPage />}
           {page === 'chat' && <ChatPage />}
           {page === 'knowledge' && <KnowledgePage />}
           {page === 'skills' && <SkillsPage />}

@@ -66,12 +66,21 @@ Cloth ships two engines; pick one in **Settings → Web search**.
 
 ## Workflows
 
-Workflows are graphs of nodes: Trigger, LLM, Agent, Knowledge search, Web search, Skill, Custom tool, HTTP, Transform, Condition and Output.
+Workflows are graphs of nodes: Trigger, LLM, Agent, Knowledge search, Web search, Skill, Custom tool, HTTP, Transform, Condition, Loop and Output.
 
 - Templates reference data with `{{input.field}}` (run input), `{{prev}}` (the node feeding in) and `{{key}}` or `{{key.field}}` (any earlier node by its key).
 - Condition nodes branch through their **true** and **false** handles; nodes on the untaken branch are skipped.
+- **Loop** nodes repeat part of a flow. Wire the steps to repeat from the **body** handle and what comes after from **done**; connect the last repeated step back into the loop's **next** handle to choose each pass's result. *For each item* runs the body once per element of `items` (for example `{{search.hits}}`) and outputs an array; *Repeat until* re-runs the body, feeding each result back in as `{{prev}}`, until the stop expression is true or the iteration limit is reached. Inside the body use `{{loop.item}}`, `{{loop.index}}` and `{{loop.last}}`.
+- **Arrange** (top-right of the canvas) lays the nodes out left to right in run order.
+- Click **View output** in the Runs panel to read a run's result as formatted Markdown.
 - Add a cron expression and switch on **Scheduled** to run automatically. For example `0 9 * * 1-5` runs at 09:00 on weekdays.
 - **Assemble with AI** describes a workflow in plain language and lets an agent build (or modify) the graph, which you review before saving.
+
+## Dashboard
+
+The Dashboard shows usage for the last 24 hours, 7, 30 or 90 days, or all time: total tokens (input, output, embeddings), estimated cost, model calls and failures, average response time, tool calls and skill uses, each compared with the previous period. Below that: usage over time, which parts of Cloth use the most tokens (chat, flows, skill tests, knowledge, MCP), busiest hours, a per-model table, the most used tools and skills, flow success rates, skill health and a recent-activity feed.
+
+Cost uses the built-in price list for OpenAI and Anthropic models. For other models, set a price (USD per 1M input and output tokens) in the **$ / 1M** column on the Models page; local models without a price are counted as unpriced.
 
 ## MCP server
 

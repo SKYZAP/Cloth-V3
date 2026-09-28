@@ -13,6 +13,7 @@ import { CustomToolService } from './tools/custom'
 import { WebService } from './web/web'
 import { WorkflowService } from './workflows/workflows'
 import { McpHost } from './mcp/server'
+import { DashboardService } from './dashboard'
 
 export interface Services {
   ctx: Ctx
@@ -28,6 +29,7 @@ export interface Services {
   chat: ChatService
   workflows: WorkflowService
   mcp: McpHost
+  dashboard: DashboardService
 }
 
 export function createServices(opts: {
@@ -60,9 +62,9 @@ export function createServices(opts: {
   const registry = new SkillRegistry(ctx, skills)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom)
-  const chat = new ChatService(ctx, runtime, settings, skills)
+  const chat = new ChatService(ctx, runtime, settings, skills, providers.usage)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
-  const mcp = new McpHost(ctx, settings, { rag, skills, web })
+  const mcp = new McpHost(ctx, settings, { rag, skills, web, usage: providers.usage })
 
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
@@ -72,5 +74,7 @@ export function createServices(opts: {
     }
   })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp }
+  const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
+
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp, dashboard }
 }
