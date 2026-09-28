@@ -8,6 +8,8 @@ import {
   Files,
   ListChecks,
   Robot,
+  Code,
+  TreeStructure,
   NotePencil,
   TerminalWindow,
   CaretRight,
@@ -46,7 +48,10 @@ const ICONS: Record<string, Icon> = {
   bash: TerminalWindow,
   powershell: TerminalWindow,
   todo_write: ListChecks,
-  task: Robot
+  task: Robot,
+  lsp: Code,
+  ast_grep: TreeStructure,
+  ast_edit: TreeStructure
 }
 
 function summarize(t: Trace): string {
@@ -64,6 +69,9 @@ function summarize(t: Trace): string {
     return `${todos.filter((x) => x.status === 'completed').length}/${todos.length} done${current ? ` · ${current.content}` : ''}`
   }
   if (t.name === 'task') return String(a.description ?? '')
+  if (t.name === 'lsp') return [a.action, a.symbol ?? a.query, a.newName ? `→ ${a.newName}` : '', a.path ? `· ${a.path}${a.line ? `:${a.line}` : ''}` : ''].filter(Boolean).join(' ')
+  if (t.name === 'ast_grep') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
+  if (t.name === 'ast_edit') return `${a.pattern ?? ''} → ${a.rewrite ?? ''}`
   if (t.name === 'grep') return `/${a.pattern ?? ''}/ ${a.path ?? ''}`
   const s = JSON.stringify(a)
   return s === '{}' ? '' : s.slice(0, 80)

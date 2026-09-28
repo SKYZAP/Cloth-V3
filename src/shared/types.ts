@@ -293,6 +293,8 @@ export interface ChatSession {
   autoApprove: AutoApprove
   /** Let the agent delegate work to subagents with the `task` tool. */
   subagents: boolean
+  /** Language servers (TypeScript, Python) for the `lsp` tool and type checks after edits. */
+  codeIntel: boolean
   thinking: ThinkingLevel
   createdAt: number
   updatedAt: number

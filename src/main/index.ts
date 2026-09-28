@@ -127,6 +127,7 @@ else {
     e.preventDefault()
     quitting = true
     services.workflows.stopScheduler()
+    services.lsp.disposeAll()
     void Promise.allSettled([services.mcp.stop(), services.web.stop()]).finally(() => app.quit())
   })
 }

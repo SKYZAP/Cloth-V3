@@ -22,6 +22,27 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'subagents') return await probeSubagents(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'lsp') {
+      // Bundled language servers must start from the packaged app (asar unpacked).
+      const { writeFileSync: wf, mkdirSync: mk } = await import('node:fs')
+      const dir = join(outDir, 'lsp')
+      mk(dir, { recursive: true })
+      wf(join(dir, 'a.ts'), 'const n: number = "x"\n')
+      wf(join(dir, 'b.py'), 'x: int = "y"\n')
+      for (const f of ['a.ts', 'b.py']) {
+        const t0 = Date.now()
+        try {
+          const server = await s.lsp.server(dir, join(dir, f))
+          const d = await server.diagnostics(join(dir, f))
+          note(`${f}: ${d.map((x) => x.message.split('\n')[0]).join(' | ') || 'no diagnostics'} (${Date.now() - t0}ms)`)
+        } catch (err) {
+          note(`${f}: FAILED ${err instanceof Error ? err.message : err}`)
+        }
+      }
+      s.lsp.disposeAll()
+      return
+    }
+    if (process.env.CLOTH_PROBE === 'codeintel') return await probeCodeIntel(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'ast') {
       // Native ast-grep + bundled grammars must load in the packaged app (asar unpacked).
       const { astSearch, resolveLanguage, supportedLanguages } = await import('./agent/ast')
@@ -337,6 +358,39 @@ async function probeCoding(win: BrowserWindow, s: Services, outDir: string, note
   await js(`document.querySelector('button[aria-label="Workspace"]')?.click()`)
   await wait(1200)
   writeFileSync(join(outDir, 'coding-sheet.png'), await screenshot(win))
+}
+
+/** A small TS project with a type error: the model should find it with lsp and fix it. */
+async function probeCodeIntel(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const { mkdirSync: mk, writeFileSync: wf, readFileSync: rf } = await import('node:fs')
+  const ws = join(outDir, 'project')
+  mk(join(ws, 'src'), { recursive: true })
+  wf(join(ws, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'es2022', module: 'esnext', moduleResolution: 'bundler', noEmit: true }, include: ['src'] }, null, 2))
+  wf(join(ws, 'src', 'cart.ts'), 'export interface Item {\n  name: string\n  price: number\n  qty: number\n}\n\nexport function total(items: Item[]): number {\n  return items.reduce((sum, i) => sum + i.price * i.qty, 0)\n}\n')
+  wf(join(ws, 'src', 'checkout.ts'), "import { total, type Item } from './cart'\n\nconst items: Item[] = [\n  { name: 'pen', price: '1.50', qty: 2 },\n  { name: 'book', price: 12, quantity: 1 }\n]\n\nexport const amount: string = total(items)\n")
+  const lm = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://localhost:1234/v1' })
+  await s.providers.refreshModels(lm.id)
+  const model = { providerId: lm.id, modelId: process.env.CLOTH_PROBE_MODEL ?? 'qwen/qwen3.5-9b' }
+  const chat = s.chat.create({ model, workspace: ws, fileAccess: 'write', autoApprove: 'edits', subagents: false, knowledgeEnabled: false, skillsEnabled: false, customTools: false, webEnabled: false })
+  win.webContents.reload()
+  await wait(2500)
+  await clickNav(win, 'Chat')
+  await wait(1200)
+  const t0 = Date.now()
+  await s.chat.send(chat.id, 'checkout.ts does not type-check. Use the lsp tool to see the diagnostics, fix every error in checkout.ts (do not change cart.ts), and confirm there are no type errors left.')
+  for (let i = 0; i < 900 && s.chat.isRunning(chat.id); i++) await wait(400)
+  await wait(1200)
+  const traces = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool')
+  note(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s; tools: ${traces.map((b) => (b.type === 'tool' ? `${b.trace.name}${b.trace.name === 'lsp' ? `(${(b.trace.args as { action?: string }).action})` : ''}:${b.trace.status}` : '')).join(', ')}`)
+  const server = await s.lsp.server(ws, join(ws, 'src', 'checkout.ts'))
+  const left = (await server.diagnostics(join(ws, 'src', 'checkout.ts'))).filter((d) => d.severity === 1)
+  note(`errors left in checkout.ts: ${left.length}${left.length ? ' — ' + left.map((d) => d.message).join(' | ') : ''}`)
+  note(`checkout.ts now:\n${rf(join(ws, 'src', 'checkout.ts'), 'utf8')}`)
+  await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+  await wait(600)
+  writeFileSync(join(outDir, 'codeintel.png'), await screenshot(win))
+  s.lsp.disposeAll()
 }
 
 /** Two scouts in parallel over Cloth's own source (read-only). */

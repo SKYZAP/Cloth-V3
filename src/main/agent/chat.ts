@@ -4,6 +4,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { ApprovalDecision, ChatEvent, ChatSession, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
+import type { LspManager } from './lsp'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -56,6 +57,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   shell: false,
   autoApprove: 'none',
   subagents: true,
+  codeIntel: true,
   thinking: 'off'
 }
 
@@ -78,7 +80,7 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager } = {}
   ) {}
 
   async systemPrompt(scope: ToolScope, extra: string): Promise<string> {
@@ -124,6 +126,7 @@ export class AgentRuntime {
         writable
           ? 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
           : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
+        ...(scope.codeIntel !== false ? ['Use `lsp` for TypeScript/JavaScript/Python code intelligence: go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
         ...(shell ? [`You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`] : [])
       )
     }
@@ -269,6 +272,7 @@ export class ChatService {
       shell: cur.shell,
       autoApprove: cur.autoApprove,
       subagents: cur.subagents,
+      codeIntel: cur.codeIntel,
       thinking: cur.thinking,
       ...config
     }
@@ -437,6 +441,7 @@ export class ChatService {
       shell: session.shell,
       sessionId: id,
       subagents: session.subagents,
+      codeIntel: session.codeIntel,
       depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {
