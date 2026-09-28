@@ -166,6 +166,37 @@ export interface SkillHealth {
   model: ModelRef
 }
 
+export interface SkillSource {
+  registry: 'skills.sh'
+  /** owner/repo/skill */
+  id: string
+  hash: string | null
+  installedAt: number
+  url: string
+}
+
+export interface RegistrySkill {
+  id: string
+  source: string
+  skillId: string
+  name: string
+  installs: number
+  url: string
+  /** Local hub name when already installed. */
+  installedAs: string | null
+}
+
+export interface RegistryPreview {
+  id: string
+  name: string
+  description: string
+  body: string
+  files: { path: string; bytes: number }[]
+  hash: string | null
+  url: string
+  installedAs: string | null
+}
+
 export interface Skill {
   name: string
   description: string
@@ -176,6 +207,8 @@ export interface Skill {
   updatedAt: number
   evals: SkillEvalCase[]
   health: SkillHealth | null
+  /** Set when the skill was installed from the skills.sh registry. */
+  source: SkillSource | null
 }
 
 export interface SkillInput {

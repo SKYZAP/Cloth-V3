@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { CheckCircle2, ChevronRight, Download, FileCode2, FlaskConical, FolderOpen, Import, Plus, Save, Search, Sparkles, Trash2, Upload, Wand2, XCircle } from 'lucide-react'
-import type { ModelRef, Skill, SkillEvalCase, SkillRun, SkillVerdict } from '@shared/types'
+import { CheckCircle2, ChevronRight, Download, ExternalLink, FileCode2, FlaskConical, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2, XCircle } from 'lucide-react'
+import type { ModelRef, RegistryPreview, RegistrySkill, Skill, SkillEvalCase, SkillRun, SkillVerdict } from '@shared/types'
 import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { duration, timeAgo } from '@/lib/format'
+import { bytes, compact, duration, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
@@ -26,7 +26,7 @@ export function SkillsPage() {
   const [activeName, setActiveName] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
-  const [importing, setImporting] = useState(false)
+  const [adding, setAdding] = useState<{ open: boolean; tab: AddTab }>({ open: false, tab: 'registry' })
 
   const load = async (select?: string) => {
     const list = await api.skills.list()
@@ -64,8 +64,11 @@ export function SkillsPage() {
                 </div>
               </div>
               <div className="flex gap-1">
-                <IconButton title="Import skills" onClick={() => setImporting(true)}>
-                  <Import size={14} />
+                <IconButton title="Browse skills.sh" onClick={() => setAdding({ open: true, tab: 'registry' })}>
+                  <Store size={14} />
+                </IconButton>
+                <IconButton title="Import from local folders" onClick={() => setAdding({ open: true, tab: 'local' })}>
+                  <FolderOpen size={14} />
                 </IconButton>
                 <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
                   New
@@ -103,7 +106,10 @@ export function SkillsPage() {
             title="Your central skill hub"
             action={
               <div className="flex gap-2">
-                <Button onClick={() => setImporting(true)}>Import existing</Button>
+                <Button icon={<Store size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
+                  Browse skills.sh
+                </Button>
+                <Button onClick={() => setAdding({ open: true, tab: 'local' })}>Import existing</Button>
                 <Button variant="primary" onClick={() => setCreating(true)}>
                   Create a skill
                 </Button>
@@ -115,7 +121,13 @@ export function SkillsPage() {
         )}
       </div>
       <NewSkill open={creating} onClose={() => setCreating(false)} onCreated={(n) => void load(n)} />
-      <ImportSkills open={importing} onClose={() => setImporting(false)} onImported={() => void load()} />
+      <AddSkills
+        open={adding.open}
+        tab={adding.tab}
+        onTab={(tab) => setAdding((a) => ({ ...a, tab }))}
+        onClose={() => setAdding((a) => ({ ...a, open: false }))}
+        onImported={(name) => void load(name)}
+      />
     </div>
   )
 }
@@ -173,7 +185,194 @@ function NewSkill({ open, onClose, onCreated }: { open: boolean; onClose(): void
   )
 }
 
-function ImportSkills({ open, onClose, onImported }: { open: boolean; onClose(): void; onImported(): void }) {
+type AddTab = 'registry' | 'local'
+
+function AddSkills({ open, tab, onTab, onClose, onImported }: { open: boolean; tab: AddTab; onTab(t: AddTab): void; onClose(): void; onImported(name?: string): void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Add skills" width={900}>
+      <Tabs
+        className="-mx-4 -mt-4 mb-4 px-3"
+        value={tab}
+        onChange={onTab}
+        items={[
+          { value: 'registry', label: <span className="flex items-center gap-1.5"><Store size={13} /> skills.sh registry</span> },
+          { value: 'local', label: <span className="flex items-center gap-1.5"><FolderOpen size={13} /> Local folders</span> }
+        ]}
+      />
+      {tab === 'registry' ? <RegistryBrowser onInstalled={onImported} /> : <LocalImport open={open} onImported={() => onImported()} />}
+    </Modal>
+  )
+}
+
+const REGISTRY_TOPICS = ['react', 'testing', 'git', 'security', 'design', 'docs', 'python', 'nestjs']
+
+function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<RegistrySkill[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [preview, setPreview] = useState<RegistryPreview | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
+
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      setResults(null)
+      setError(null)
+      return
+    }
+    setSearching(true)
+    const t = setTimeout(() => {
+      api.skills
+        .registrySearch(q)
+        .then((r) => {
+          setResults(r)
+          setError(null)
+          if (r[0] && !r.some((x) => x.id === selected)) setSelected(r[0].id)
+        })
+        .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+        .finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query])
+
+  useEffect(() => {
+    if (!selected) return setPreview(null)
+    setPreview(null)
+    setPreviewError(null)
+    let live = true
+    api.skills
+      .registryPreview(selected)
+      .then((p) => live && setPreview(p))
+      .catch((err) => live && setPreviewError(err instanceof Error ? err.message : String(err)))
+    return () => {
+      live = false
+    }
+  }, [selected])
+
+  const install = async (overwrite = false) => {
+    if (!preview) return
+    setInstalling(true)
+    try {
+      const name = await api.skills.registryInstall(preview.id, overwrite)
+      useApp.getState().toast(`Installed ${name} from skills.sh`, 'ok')
+      setPreview({ ...preview, installedAs: name })
+      setResults((rs) => rs?.map((r) => (r.id === preview.id ? { ...r, installedAs: name } : r)) ?? null)
+      onInstalled(name)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/already exists/.test(msg) && confirmAction(`${msg}.\n\nReplace the existing skill?`)) {
+        setInstalling(false)
+        return install(true)
+      }
+      useApp.getState().toast(msg, 'error')
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <div className="grid h-[min(520px,60vh)] grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
+      <div className="flex min-h-0 flex-col">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-2.5 text-dim" />
+          <Input autoFocus className="pl-7" placeholder="Search skills.sh — e.g. react, testing, commit" value={query} onChange={(e) => setQuery(e.target.value)} />
+          {searching && <Spinner size={13} className="absolute right-2.5 top-2.5" />}
+        </div>
+        <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+          {error && <div className="rounded-lg border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{error}</div>}
+          {!results && !error && (
+            <div className="p-2">
+              <div className="mb-2 text-[11.5px] text-dim">Browse the open agent-skills registry. Popular topics:</div>
+              <div className="flex flex-wrap gap-1.5">
+                {REGISTRY_TOPICS.map((t) => (
+                  <button key={t} onClick={() => setQuery(t)} className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-crimson-line hover:text-fg">
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {results && !results.length && <div className="p-3 text-[12px] text-dim">No skills match “{query}”.</div>}
+          {results?.map((r) => (
+            <ListItem key={r.id} active={r.id === selected} onClick={() => setSelected(r.id)}>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-mono text-[12px] text-fg">{r.name}</span>
+                  {r.installedAs && <Badge tone="ok">installed</Badge>}
+                </div>
+                <div className="truncate text-[11px] text-dim">{r.source}</div>
+              </div>
+              <span className="flex shrink-0 items-center gap-1 text-[11px] text-dim" title={`${r.installs.toLocaleString()} installs`}>
+                <Download size={11} />
+                {compact(r.installs)}
+              </span>
+            </ListItem>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-col rounded-xl border border-line bg-bg">
+        {!selected ? (
+          <Empty icon={<Store size={20} />} title="skills.sh">
+            Search the registry, pick a skill to preview its SKILL.md, then install it into your hub.
+          </Empty>
+        ) : previewError ? (
+          <div className="p-4 text-[12.5px] text-crimson-hi">{previewError}</div>
+        ) : !preview ? (
+          <div className="flex h-full items-center justify-center">
+            <Spinner />
+          </div>
+        ) : (
+          <>
+            <div className="border-b border-line p-4">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-[14px] font-semibold">{preview.name}</div>
+                  <div className="mt-0.5 line-clamp-3 text-[12px] text-muted">{preview.description || 'No description'}</div>
+                  <button onClick={() => void api.app.openExternal(preview.url)} className="mt-1 flex max-w-full items-center gap-1 font-mono text-[11px] text-dim hover:text-crimson-hi" title={preview.url}>
+                    <ExternalLink size={11} className="shrink-0" />
+                    <span className="truncate">{preview.id}</span>
+                  </button>
+                </div>
+                {preview.installedAs ? (
+                  <Button size="sm" icon={<RefreshCw size={12} />} loading={installing} onClick={() => void install(true)} title="Download the latest snapshot again">
+                    Reinstall
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="primary" icon={<Download size={12} />} loading={installing} onClick={() => void install()}>
+                    Install
+                  </Button>
+                )}
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {preview.files.slice(0, 6).map((f) => (
+                  <Badge key={f.path} tone="dim">
+                    {f.path} · {bytes(f.bytes)}
+                  </Badge>
+                ))}
+                {preview.files.length > 6 && (
+                  <Badge tone="dim" title={preview.files.slice(6).map((f) => f.path).join('\n')}>
+                    +{preview.files.length - 6} more files
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-2 text-[11px] text-dim">Third-party instructions from a public repository — review them before relying on the skill. Nothing in a skill runs until an agent chooses to follow it.</div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <Markdown text={preview.body} />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LocalImport({ open, onImported }: { open: boolean; onImported(): void }) {
   const [found, setFound] = useState<ExternalSkillInfo[] | null>(null)
   const [extra, setExtra] = useState<string[]>([])
   useEffect(() => {
@@ -195,13 +394,11 @@ function ImportSkills({ open, onClose, onImported }: { open: boolean; onClose():
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Import skills"
-      width={680}
-      footer={
+    <div className="h-[min(520px,60vh)] overflow-y-auto">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-[12px] text-dim">Skills found in ~/.claude/skills, ~/.agents/skills, ~/.codex/skills, ~/.cursor/skills and ~/.omp/skills.</div>
         <Button
+          size="sm"
           icon={<FolderOpen size={13} />}
           onClick={async () => {
             const [dir] = await api.app.pickPaths({ directory: true, title: 'Folder containing skills' })
@@ -210,12 +407,11 @@ function ImportSkills({ open, onClose, onImported }: { open: boolean; onClose():
         >
           Scan another folder…
         </Button>
-      }
-    >
+      </div>
       {!found ? (
         <Spinner />
       ) : !found.length ? (
-        <div className="text-[12.5px] text-dim">No skills found in ~/.claude/skills, ~/.agents/skills, ~/.codex/skills, ~/.cursor/skills or ~/.omp/skills. Scan another folder below.</div>
+        <div className="text-[12.5px] text-dim">No skills found in those folders.</div>
       ) : (
         <div className="space-y-4">
           {bySource.map(([source, items]) => (
@@ -249,7 +445,7 @@ function ImportSkills({ open, onClose, onImported }: { open: boolean; onClose():
           ))}
         </div>
       )}
-    </Modal>
+    </div>
   )
 }
 
@@ -260,8 +456,23 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
   const [body, setBody] = useState(skill.body)
   const [saving, setSaving] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
+  const [checking, setChecking] = useState(false)
   const dirty = name !== skill.name || description !== skill.description || body !== skill.body
   const v = VERDICT[skill.health?.verdict ?? 'untested']
+
+  const checkUpdate = async () => {
+    if (!skill.source) return
+    setChecking(true)
+    const res = await attempt(() => api.skills.registryCheckUpdate(skill.name))
+    setChecking(false)
+    if (!res) return
+    if (!res.updateAvailable) return useApp.getState().toast(`${skill.name} is up to date with skills.sh`, 'ok')
+    if (!confirmAction(`skills.sh has a newer version of ${skill.name}. Update now? Your local edits to its files will be replaced (eval cases are kept).`)) return
+    setChecking(true)
+    const updated = await attempt(() => api.skills.registryInstall(skill.source!.id, true), `Updated ${skill.name}`)
+    setChecking(false)
+    if (updated) onChanged(updated)
+  }
 
   const save = async () => {
     setSaving(true)
@@ -293,9 +504,24 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
             </Badge>
           </span>
         }
-        subtitle={skill.health ? `Last tested ${timeAgo(skill.health.lastRunAt)} with ${skill.health.model.modelId}` : `Updated ${timeAgo(skill.updatedAt)}`}
+        subtitle={
+          <span className="flex items-center gap-2">
+            {skill.source && (
+              <button onClick={() => void api.app.openExternal(skill.source!.url)} className="flex items-center gap-1 text-dim hover:text-crimson-hi" title={`Installed from skills.sh ${timeAgo(skill.source.installedAt)}`}>
+                <Store size={11} /> skills.sh · {skill.source.id.split('/').slice(0, 2).join('/')}
+                <span className="text-line-strong">|</span>
+              </button>
+            )}
+            {skill.health ? `Last tested ${timeAgo(skill.health.lastRunAt)} with ${skill.health.model.modelId}` : `Updated ${timeAgo(skill.updatedAt)}`}
+          </span>
+        }
         actions={
           <>
+            {skill.source && (
+              <Button icon={<RefreshCw size={13} />} loading={checking} onClick={() => void checkUpdate()} title="Compare with the latest snapshot on skills.sh">
+                Check for update
+              </Button>
+            )}
             <IconButton title="Open folder" onClick={() => void api.app.openPath(skill.dir)}>
               <FolderOpen size={14} />
             </IconButton>
@@ -469,6 +695,11 @@ function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
   const settings = useApp((s) => s.settings)
   const [cases, setCases] = useState<SkillEvalCase[]>(skill.evals)
   const [model, setModel] = useState<ModelRef | null>(settings?.defaultModel ?? null)
+  // Settings can arrive after this tab mounts; adopt the default model once it does.
+  useEffect(() => {
+    if (!model && settings?.defaultModel) setModel(settings.defaultModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.defaultModel])
   const [judge, setJudge] = useState<ModelRef | null>(null)
   const [baseline, setBaseline] = useState(true)
   const [audit, setAudit] = useState(true)
