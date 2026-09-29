@@ -47,7 +47,10 @@ export function AssembleModal({
       if (mode === 'new') setDescription('')
     }
   }, [open, mode])
-  useEffect(() => logEnd.current?.scrollIntoView({ block: 'nearest' }), [log])
+  // Braces matter: scrollIntoView returns a Promise in current Chromium, and an effect must not return one.
+  useEffect(() => {
+    logEnd.current?.scrollIntoView({ block: 'nearest' })
+  }, [log])
 
   useEvent('workflow', (e) => {
     if ((e.type === 'build-step' || e.type === 'build-text') && e.buildId === buildId.current) {

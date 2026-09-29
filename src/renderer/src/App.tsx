@@ -21,6 +21,7 @@ import { api } from './lib/api'
 import { Logo } from './components/Logo'
 import { ConfirmHost } from './components/ConfirmDialog'
 import { isMobile } from './lib/platform'
+import { ErrorBoundary } from './components/ErrorBoundary'
 // Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
 const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
@@ -39,7 +40,7 @@ export function App() {
 /** Renders one page of the app — shared by the desktop window and the phone shell. */
 export function PageContent({ page }: { page: Page }) {
   return (
-    <>
+    <ErrorBoundary resetKey={page} label="page">
       {page === 'dashboard' && <DashboardPage />}
       {page === 'chat' && <ChatPage />}
       {page === 'knowledge' && <KnowledgePage />}
@@ -49,7 +50,7 @@ export function PageContent({ page }: { page: Page }) {
       {page === 'providers' && <ProvidersPage />}
       {page === 'mcp' && <McpPage />}
       {page === 'settings' && <SettingsPage />}
-    </>
+    </ErrorBoundary>
   )
 }
 
