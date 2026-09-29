@@ -78,6 +78,21 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       return
     }
     if (process.env.CLOTH_PROBE === 'images') return await probeImages(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'settings') {
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      await clickNav(win, 'Settings')
+      await wait(900)
+      for (const title of ['Models', 'Chat', 'Subagents', 'Web search', 'Knowledge', 'Phone', 'MCP server', 'Data & about']) {
+        await js(`[...document.querySelectorAll('button')].find((b) => b.querySelector('span span')?.textContent === ${JSON.stringify(title)})?.click()`)
+        await wait(500)
+        writeFileSync(join(outDir, `settings-${title.split(' ')[0].toLowerCase()}.png`), await screenshot(win))
+      }
+      await js(`(() => { const i = document.querySelector('input[placeholder="Search settings"]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'parallel'); i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+      await wait(500)
+      writeFileSync(join(outDir, 'settings-search.png'), await screenshot(win))
+      note(`search "parallel" shows: ${await js(`document.querySelector('h1')?.textContent`)}`)
+      return
+    }
     if (process.env.CLOTH_PROBE === 'assemble') {
       // Flows → AI: assemble a workflow with a scripted model and check the editor survives it.
       const js = (code: string) => win.webContents.executeJavaScript(code)

@@ -546,6 +546,25 @@ export interface Settings {
   remotePort: number
   /** Keep the PC from sleeping while a phone is connected. */
   remoteKeepAwake: boolean
+  /** Subagents (the chat agent's `task` tool). */
+  subagents: SubagentSettings
+}
+
+export interface SubagentSettings {
+  /** New chats start with subagents on. */
+  enabledByDefault: boolean
+  /** null = the same model as the chat that delegates. */
+  model: ModelRef | null
+  /** 'inherit' = the delegating chat's thinking level. */
+  thinking: ThinkingLevel | 'inherit'
+  /** Agent turns a subagent may take before it has to report. */
+  maxTurns: number
+  /** Subagents running at once across all chats; extra tasks wait their turn. */
+  maxParallel: number
+  /** Allow the "worker" role, which can edit files (still subject to the chat's approvals). */
+  allowWorkers: boolean
+  /** Extra instructions every subagent gets. */
+  instructions: string
 }
 
 export interface McpStatus {

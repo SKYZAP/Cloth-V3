@@ -41,13 +41,8 @@ export function PhoneSettings() {
 
   return (
     <Card className="space-y-3 p-4">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold">Phone</div>
-          <div className="text-[11.5px] text-dim">
-            Use Cloth from the Android app. Your PC does all the work — models, files and keys stay here. Phones connect over your home Wi-Fi, or from anywhere through Tailscale. Everything is end-to-end encrypted with a key shared only through the QR code.
-          </div>
-        </div>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 text-[12.5px] text-muted">{devices.length ? `${devices.length} paired phone${devices.length > 1 ? 's' : ''}` : 'No phones paired yet'}</div>
         <Button variant="primary" icon={<Plus size={13} weight="bold" />} onClick={() => void pair()}>
           Pair a phone
         </Button>
