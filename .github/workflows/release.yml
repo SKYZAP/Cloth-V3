@@ -201,7 +201,13 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
+      # The runner image ships the Android SDK (ANDROID_HOME); add what Capacitor 8 builds against.
+      # (android-actions/setup-android is avoided: it installs the retired "tools" package and fails.)
+      - name: Android SDK
+        run: |
+          sdkmanager="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
       - name: Install dependencies
         run: npm ci
