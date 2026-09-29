@@ -193,6 +193,7 @@ export class RagService {
     start.hash = ''
     const prefix = start.origin + start.pathname.replace(/[^/]*$/, '')
     const renderer = this.renderer()
+    const caCertPath = this.settings.get().webCaCertPath
     const mode = input.render ?? 'auto'
     void this.enqueue(async () => {
       const seen = new Set<string>([start.toString()])
@@ -210,7 +211,7 @@ export class RagService {
         try {
           let links: string[] = []
           const doc = await this.index(collectionId, 'url', url, async () => {
-            const page = await loadUrl(url, { mode, renderer, sticky })
+            const page = await loadUrl(url, { mode, renderer, sticky, caCertPath })
             if (page.rendered) rendered++
             links = page.links ?? []
             return page
@@ -261,11 +262,12 @@ export class RagService {
     const doc = this.ctx.db.prepare('SELECT * FROM documents WHERE id = ?').get(docId) as DocRow | undefined
     if (!doc) throw new Error('Unknown document')
     this.ctx.db.prepare('UPDATE documents SET hash = NULL WHERE id = ?').run(docId)
+    const caCertPath = this.settings.get().webCaCertPath
     const loader =
       doc.source_type === 'file'
         ? () => extractFile(doc.source)
         : doc.source_type === 'url'
-          ? () => loadUrl(doc.source, { renderer: this.renderer() })
+          ? () => loadUrl(doc.source, { renderer: this.renderer(), caCertPath })
           : async () => ({ title: doc.title, text: this.getChunks(docId).map((c) => c.text).join('\n\n'), code: false })
     return this.enqueue(() => this.index(doc.collection_id, doc.source_type, doc.source, loader))
   }

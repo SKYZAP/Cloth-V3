@@ -3,6 +3,7 @@ import { basename, extname, join } from 'node:path'
 import { parseHTML } from 'linkedom'
 import { Readability } from '@mozilla/readability'
 import TurndownService from 'turndown'
+import { fetchWithWebCa } from '../web/transport'
 
 export interface Extracted {
   title: string
@@ -35,15 +36,14 @@ export function needsRendering(page: Extracted): boolean {
  */
 export async function loadUrl(
   url: string,
-  opts: { mode?: RenderMode; renderer?: PageRenderer | null; sticky?: { render: boolean }; signal?: AbortSignal } = {}
+  opts: { mode?: RenderMode; renderer?: PageRenderer | null; sticky?: { render: boolean }; signal?: AbortSignal; caCertPath?: string } = {}
 ): Promise<Extracted & { rendered: boolean }> {
   const mode = opts.mode ?? 'auto'
   const renderer = mode === 'never' ? null : opts.renderer ?? null
   if (renderer && (mode === 'always' || opts.sticky?.render)) {
     return { ...extractHtml(await renderer(url, opts.signal), url), rendered: true }
   }
-  const page = await fetchUrl(url, opts.signal)
-  if (!needsRendering(page)) return { ...page, rendered: false }
+  const page = await fetchUrl(url, opts.signal, opts.caCertPath)
   if (!renderer) return { ...page, rendered: false }
   const rendered = { ...extractHtml(await renderer(url, opts.signal), url), rendered: true }
   if (opts.sticky && !needsRendering(rendered)) opts.sticky.render = true
@@ -110,12 +110,12 @@ export async function extractFile(path: string): Promise<Extracted> {
   return { title, text: raw, code: false }
 }
 
-export async function fetchUrl(url: string, signal?: AbortSignal): Promise<Extracted> {
-  const res = await fetch(url, {
+export async function fetchUrl(url: string, signal?: AbortSignal, caCertPath?: string): Promise<Extracted> {
+  const res = await fetchWithWebCa(url, {
     signal: signal ?? AbortSignal.timeout(20_000),
     headers: { 'user-agent': 'Mozilla/5.0 (Cloth; offline developer hub)', accept: 'text/html,text/plain,text/markdown,application/pdf,*/*' },
     redirect: 'follow'
-  })
+  }, caCertPath)
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
   const type = res.headers.get('content-type') ?? ''
   if (type.includes('application/pdf')) {

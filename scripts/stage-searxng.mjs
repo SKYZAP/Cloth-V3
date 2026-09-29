@@ -39,7 +39,7 @@ const SEARXNG_TARBALL_SHA256 = SEARXNG_REF === SEARXNG_DEFAULT_REF ? '732959590d
 
 const log = logger('stage-searxng')
 const STAGE = path.join(SIDECARS, 'searxng')
-const pythonExe = (dir) => (process.platform === 'win32' ? path.join(dir, 'python', 'python.exe') : path.join(dir, 'python', 'bin', 'python3'))
+const pythonExe = (dir) => (process.platform === 'win32' ? path.join(dir, 'python', 'python.exe') : path.join(dir, 'python', 'bin', 'python3.12'))
 
 async function extract(file, dest, strip = 0) {
   await ensureDir(dest)

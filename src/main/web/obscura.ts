@@ -4,6 +4,7 @@ import { parseHTML } from 'linkedom'
 import type { WebResult } from '@shared/types'
 import type { Ctx } from '../core/context'
 import { run } from './process'
+import { webCaBundlePath } from './transport'
 
 const SERP = 'https://html.duckduckgo.com/html/'
 
@@ -14,7 +15,8 @@ const SERP = 'https://html.duckduckgo.com/html/'
 export class Obscura {
   constructor(
     private ctx: Ctx,
-    private customPath: () => string
+    private customPath: () => string,
+    private caCertPath: () => string
   ) {}
 
   path(): string | null {
@@ -42,7 +44,9 @@ export class Obscura {
   private async fetch(url: string, dump: 'html' | 'markdown' | 'text', opts: { signal?: AbortSignal; allowPrivate?: boolean; timeoutS?: number } = {}): Promise<string> {
     const timeoutS = opts.timeoutS ?? 25
     const args = ['--stealth', ...(opts.allowPrivate ? ['--allow-private-network'] : []), 'fetch', url, '--dump', dump, '--quiet', '--timeout', String(timeoutS)]
-    const { stdout, stderr, code } = await run(this.bin(), args, { timeoutMs: (timeoutS + 15) * 1000, signal: opts.signal })
+    const caCertPath = this.caCertPath().trim()
+    const env = caCertPath ? { ...process.env, SSL_CERT_FILE: webCaBundlePath(caCertPath, join(this.ctx.dataDir, 'web-certificates')) } : process.env
+    const { stdout, stderr, code } = await run(this.bin(), args, { timeoutMs: (timeoutS + 15) * 1000, signal: opts.signal, env })
     if (code !== 0 && !stdout.trim()) throw new Error(`Obscura failed (exit ${code}): ${stderr.trim().split('\n').slice(-2).join(' ') || 'no output'}`)
     return stdout
   }

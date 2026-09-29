@@ -81,6 +81,7 @@ Cloth ships two engines; pick one in **Settings → Web search**.
 - **Obscura** is a stealthy headless browser. Cloth runs `obscura fetch` against the DuckDuckGo HTML results page. It starts instantly and also renders pages for `web_fetch`.
 - **SearXNG** is a metasearch engine that queries several search engines at once. Cloth starts its bundled copy on first use (a few seconds), bound to 127.0.0.1. You can point Cloth at an external SearXNG instance instead.
 - `web_fetch` blocks localhost and private network addresses unless you allow them in Settings.
+- The same CA certificate also applies to skills.sh registry searches, downloads, and update checks.
 
 ## Workflows
 

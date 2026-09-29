@@ -82,7 +82,7 @@ export function createApi(s: Services): ClothApi {
       status: async () => s.web.status(),
       search: (query, opts) => s.web.search(query, opts),
       startSearxng: async () => {
-        await s.web.searxng.ensure()
+        await s.web.searxng.ensure(s.settings.get().webCaCertPath)
         return s.web.status()
       },
       stopSearxng: async () => {
