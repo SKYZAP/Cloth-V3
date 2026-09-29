@@ -1,4 +1,4 @@
-import type { Settings } from '@shared/types'
+import type { Settings, SubagentSettings } from '@shared/types'
 import type { Ctx } from './context'
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -20,8 +20,19 @@ export const DEFAULT_SETTINGS: Settings = {
   imageModel: null,
   remoteEnabled: false,
   remotePort: 7812,
-  remoteKeepAwake: true
+  remoteKeepAwake: true,
+  subagents: {
+    enabledByDefault: true,
+    model: null,
+    thinking: 'inherit',
+    maxTurns: 30,
+    maxParallel: 4,
+    allowWorkers: true,
+    instructions: ''
+  }
 }
+
+export const DEFAULT_SUBAGENTS: SubagentSettings = DEFAULT_SETTINGS.subagents
 
 export class SettingsService {
   private listeners: ((s: Settings, prev: Settings) => void)[] = []
@@ -29,7 +40,9 @@ export class SettingsService {
   constructor(private ctx: Ctx) {}
 
   get(): Settings {
-    return { ...DEFAULT_SETTINGS, ...this.ctx.kv.get<Partial<Settings>>('settings', {}) }
+    const stored = this.ctx.kv.get<Partial<Settings>>('settings', {})
+    // Nested groups merge field by field so settings added later get their defaults.
+    return { ...DEFAULT_SETTINGS, ...stored, subagents: { ...DEFAULT_SETTINGS.subagents, ...stored.subagents } }
   }
 
   update(patch: Partial<Settings>): Settings {

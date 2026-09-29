@@ -72,7 +72,7 @@ export function createServices(opts: {
   const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
   const lsp = new LspManager()
   const images = new ImageService(ctx, providers, settings)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images })
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings })
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, usage: providers.usage })

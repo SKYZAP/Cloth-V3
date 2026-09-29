@@ -141,4 +141,31 @@ describe('subagents', () => {
     const traces = await send(ro, 'go')
     expect(traces.find((t) => t.id === 't')?.subagent?.role).toBe('scout')
   })
+
+  it('follows Settings → Subagents: model, workers, instructions and the default for new chats', async () => {
+    const env = setup({ fileAccess: 'write' })
+    const provider = env.services.providers.list()[0]
+    env.services.settings.update({
+      subagents: { ...env.services.settings.get().subagents, model: { providerId: provider.id, modelId: 'faux-small' }, allowWorkers: false, instructions: 'Answer in one line.', enabledByDefault: false }
+    })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    let childModel = ''
+    let childPrompt = ''
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('task', { description: 'Edit it', prompt: 'Change config.txt', role: 'worker' }, { id: 't' })], { stopReason: 'toolUse' }),
+      (ctx, _opts, _state, model) => {
+        childModel = model.id
+        childPrompt = JSON.stringify(ctx.messages[0])
+        return fauxAssistantMessage('Done.')
+      },
+      fauxAssistantMessage('ok')
+    ])
+    const traces = await send(env, 'go')
+    const task = traces.find((t) => t.id === 't')!
+    expect(task.subagent).toMatchObject({ role: 'scout', model: 'faux-small' })
+    expect(childModel).toBe('faux-small')
+    expect(childPrompt).toContain('read-only scout')
+    expect(childPrompt).toContain('Answer in one line.')
+    expect(env.services.chat.create({}).subagents).toBe(false)
+  })
 })

@@ -36,12 +36,6 @@ export function WebSearchSettings() {
 
   return (
     <Card className="space-y-3 p-4">
-      <div>
-        <div className="text-[13px] font-semibold">Web search</div>
-        <div className="text-[11.5px] text-dim">
-          Powers the web_search / web_fetch tools, the Web search workflow node and MCP web_search. Both engines ship with Cloth.
-        </div>
-      </div>
       <div className="flex items-center gap-3">
         <Segmented<WebEngine>
           value={settings.webEngine}

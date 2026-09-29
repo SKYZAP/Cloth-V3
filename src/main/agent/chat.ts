@@ -3,14 +3,14 @@ import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
-import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
-import type { SettingsService } from '../core/settings'
+import { DEFAULT_SUBAGENTS, type SettingsService } from '../core/settings'
 import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
@@ -93,8 +93,43 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService } = {}
   ) {}
+
+  private subagentSettings(): SubagentSettings {
+    return this.ws.settings?.get().subagents ?? DEFAULT_SUBAGENTS
+  }
+
+  // Subagents running now across every chat, and the tasks waiting for a slot.
+  private activeSubagents = 0
+  private subagentQueue: (() => void)[] = []
+
+  private async subagentSlot(signal: AbortSignal | undefined, onWait: () => void): Promise<() => void> {
+    const limit = Math.max(1, this.subagentSettings().maxParallel)
+    if (this.activeSubagents >= limit) {
+      onWait()
+      await new Promise<void>((resolve, reject) => {
+        const go = () => {
+          signal?.removeEventListener('abort', cancel)
+          resolve()
+        }
+        const cancel = () => {
+          this.subagentQueue = this.subagentQueue.filter((f) => f !== go)
+          reject(new Error('Cancelled'))
+        }
+        signal?.addEventListener('abort', cancel, { once: true })
+        this.subagentQueue.push(go)
+      })
+    }
+    this.activeSubagents++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.activeSubagents--
+      this.subagentQueue.shift()?.()
+    }
+  }
 
   async systemPrompt(scope: ToolScope, extra: string): Promise<string> {
     const lines = [
@@ -217,8 +252,9 @@ private imagesAvailable(scope: ToolScope): boolean {
     return {
       name: 'task',
       label: 'Subagent',
-      description:
-        'Run a subagent on a self-contained job with its own fresh context and return its report. role "scout" (default) can read and search but not change anything; role "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.',
+      description: this.subagentSettings().allowWorkers
+        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role "scout" (default) can read and search but not change anything; role "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.'
+        : 'Run a read-only subagent on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation — put everything it needs in prompt.',
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
@@ -226,26 +262,34 @@ private imagesAvailable(scope: ToolScope): boolean {
       }),
       execute: async (id, params, signal, onUpdate) => {
         const p = params as { description: string; prompt: string; role?: 'scout' | 'worker' }
-        const role: SubagentRun['role'] = p.role === 'worker' && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
+        const cfg = this.subagentSettings()
+        const role: SubagentRun['role'] = p.role === 'worker' && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
         const scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
-        const base = { role, description: p.description || 'Subagent', model: parent.model.modelId }
+        // A dedicated subagent model, unless its provider is gone or switched off.
+        const model = cfg.model && this.providers.list().some((pr) => pr.id === cfg.model!.providerId && pr.enabled) ? cfg.model : parent.model
+        const base = { role, description: p.description || 'Subagent', model: model.modelId }
+        const release = await this.subagentSlot(signal, () =>
+          onUpdate?.({ content: [{ type: 'text', text: 'Queued…' }], details: { subagent: { ...base, blocks: [], running: true } } as unknown as ToolDetails })
+        )
         const started = Date.now()
         const { result, changes } = await runAsCall(id, 'task', signal, () =>
           this.run({
-            model: parent.model,
+            model,
             prompt: p.prompt,
-            systemPrompt: SUBAGENT_INSTRUCTIONS(role),
+            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), cfg.instructions.trim()].filter(Boolean).join('\n\n'),
             scope,
-            thinking: parent.thinking,
+            thinking: cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking,
             signal,
-            maxTurns: 30,
+            maxTurns: Math.max(1, cfg.maxTurns),
             onEvent: (turn) =>
               onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: { ...base, blocks: turn.blocks, running: true } } as unknown as ToolDetails })
           })
-        ).catch((err) => {
-          this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
-          throw err
-        })
+        )
+          .catch((err) => {
+            this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
+            throw err
+          })
+          .finally(release)
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
         return {
           content: [{ type: 'text', text: result.text || '(the subagent finished without a report)' }],
@@ -308,7 +352,8 @@ export class ChatService {
   create(config: Partial<SessionConfig> = {}): ChatSession {
     const id = newId('ses_')
     const now = Date.now()
-    const full: SessionConfig = { ...DEFAULT_CONFIG, model: this.settings.get().defaultModel, ...config }
+    const s = this.settings.get()
+    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...config }
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
   }
