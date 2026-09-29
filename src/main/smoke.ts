@@ -78,6 +78,52 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       return
     }
     if (process.env.CLOTH_PROBE === 'images') return await probeImages(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'assemble') {
+      // Flows → AI: assemble a workflow with a scripted model and check the editor survives it.
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const errors: string[] = []
+      win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(e.message.slice(0, 2500)))
+      const { registerFauxProvider } = await import('@earendil-works/pi-ai/compat')
+      const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai')
+      const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-builder' })
+      const provider = s.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      s.providers.setModels(provider.id, [{ id: 'faux-1', name: 'faux-1', embedding: false, reasoning: false, vision: false, contextWindow: 32000, maxTokens: 4096 } as never])
+      s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
+      faux.setResponses([
+        fauxAssistantMessage(
+          [
+            fauxToolCall('add_node', { type: 'trigger', key: 'start', data: { defaultInput: '{"topic":"typescript"}' } }),
+            fauxToolCall('add_node', { type: 'web', key: 'news', data: { query: '{{input.topic}} release news' } }),
+            fauxToolCall('add_node', { type: 'llm', key: 'digest', data: { prompt: 'Summarize: {{news}}' } }),
+            fauxToolCall('add_node', { type: 'output', key: 'result', data: { value: '{{digest}}' } }),
+            fauxToolCall('connect', { from: 'start', to: 'news' }),
+            fauxToolCall('connect', { from: 'news', to: 'digest' }),
+            fauxToolCall('connect', { from: 'digest', to: 'result' })
+          ],
+          { stopReason: 'toolUse' }
+        ),
+        fauxAssistantMessage([fauxToolCall('finish', { name: 'News digest', description: 'Digest of release news' })], { stopReason: 'toolUse' })
+      ])
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Flows')
+      await wait(900)
+      await js(`window.__errs = []; const ce = console.error; console.error = (...a) => { window.__errs.push(a.map((x) => typeof x === 'string' ? x : x && x.stack ? x.stack : String(x)).join(' | ').slice(0, 3000)); ce(...a) }; 1`)
+      await clickText(win, 'AI')
+      await wait(700)
+      await js(`(() => { const t = document.querySelector('textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Search the web for TypeScript news and summarize it'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+      await wait(600)
+      note(`assemble button: ${await js(`(() => { const b = [...document.querySelectorAll('button')].filter((x) => x.textContent.trim() === 'Assemble').at(-1); if (!b) return 'missing'; b.click(); return b.disabled ? 'disabled' : 'clicked' })()`)}`)
+      await wait(5000)
+      writeFileSync(join(outDir, 'assemble.png'), await screenshot(win))
+      const text = (await js(`document.getElementById('root')?.innerText.slice(0, 300)`)) as string
+      note(`root text: ${JSON.stringify(text)}`)
+      note(`workflows: ${JSON.stringify(s.workflows.list().map((w) => [w.name, w.nodes.length]))}`)
+      note(`console errors: ${errors.length ? errors.join(' || ') : 'none'}`)
+      note(`detailed: ${JSON.stringify(await js('window.__errs'))}`)
+      faux.unregister()
+      return
+    }
     if (process.env.CLOTH_PROBE === 'phone') {
       // Settings → Phone: QR pairing dialog, a phone connecting (simulated with the real client), device list.
       const js = (code: string) => win.webContents.executeJavaScript(code)
