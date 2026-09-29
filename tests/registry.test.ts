@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createServer, type Server } from 'node:http'
-import { existsSync } from 'node:fs'
+import { createServer as createHttpServer, type Server } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { SkillRegistry } from '../src/main/skills/registry'
 import { makeServices } from './helpers'
 
@@ -17,7 +20,7 @@ const snapshot = () => ({
 })
 
 beforeAll(async () => {
-  server = createServer((req, res) => {
+  server = createHttpServer((req, res) => {
     const url = new URL(req.url!, 'http://x')
     res.setHeader('content-type', 'application/json')
     if (url.pathname === '/api/search') return res.end(JSON.stringify({ skills: [{ id: 'acme/skills/nest-guards', source: 'acme/skills', skillId: 'nest-guards', name: 'nest-guards', installs: 1234 }] }))
@@ -65,5 +68,25 @@ describe('skills.sh registry', () => {
     await expect(registry.install('evil/skills/escape')).rejects.toThrow(/unsafe path/)
     expect(existsSync(join(dataDir, 'outside.txt'))).toBe(false)
     expect(existsSync(join(services.ctx.skillsDir, 'escape'))).toBe(false)
+  })
+  it('registrySearch_whenCustomCaSelected_shouldTrustPrivateRegistryCertificate', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'cloth-skills-ca-'))
+    const keyPath = join(directory, 'server.key')
+    const certPath = join(directory, 'ca.pem')
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath, '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=IP:127.0.0.1'])
+    const tlsServer = createHttpsServer({ key: readFileSync(keyPath), cert: readFileSync(certPath) }, (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ skills: [] }))
+    })
+    await new Promise<void>((resolve) => tlsServer.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = tlsServer.address()
+      if (!address || typeof address === 'string') throw new Error('Skills TLS test server failed to bind')
+      const { services } = makeServices()
+      const registry = new SkillRegistry(services.ctx, services.skills, `https://127.0.0.1:${address.port}`, () => certPath)
+      await expect(registry.search('guards')).resolves.toEqual([])
+    } finally {
+      await new Promise<void>((resolve, reject) => tlsServer.close((error) => error ? reject(error) : resolve()))
+    }
   })
 })

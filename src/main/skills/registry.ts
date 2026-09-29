@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import type { RegistryPreview, RegistrySkill, SkillSource } from '@shared/types'
 import type { Ctx } from '../core/context'
+import { fetchWithWebCa } from '../web/transport'
 import { parseSkillMd, slugify, type SkillService } from './skills'
 
 /**
@@ -26,7 +27,8 @@ export class SkillRegistry {
   constructor(
     private ctx: Ctx,
     private skills: SkillService,
-    private base = process.env.CLOTH_SKILLS_REGISTRY || SKILLS_REGISTRY
+    private base = process.env.CLOTH_SKILLS_REGISTRY || SKILLS_REGISTRY,
+    private caCertPath: () => string = () => ''
   ) {}
 
   async search(query: string, limit = 30): Promise<RegistrySkill[]> {
@@ -35,7 +37,7 @@ export class SkillRegistry {
     const url = new URL('/api/search', this.base)
     url.searchParams.set('q', q)
     url.searchParams.set('limit', String(Math.min(Math.max(limit, 1), 100)))
-    const res = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { accept: 'application/json' } })
+    const res = await fetchWithWebCa(url, { signal: AbortSignal.timeout(15_000), headers: { accept: 'application/json' } }, this.caCertPath())
     if (!res.ok) throw new Error(`skills.sh search failed (HTTP ${res.status})`)
     const body = (await res.json()) as { skills?: { id: string; source?: string; skillId?: string; name: string; installs?: number }[] }
     const installed = await this.installedSources()
@@ -137,7 +139,7 @@ export class SkillRegistry {
     if (!fresh && cached && Date.now() - cached.at < 5 * 60_000) return cached.data
     const [owner, repo, ...rest] = parts
     const url = `${this.base}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(rest.join('/'))}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000), headers: { accept: 'application/json' } })
+    const res = await fetchWithWebCa(url, { signal: AbortSignal.timeout(30_000), headers: { accept: 'application/json' } }, this.caCertPath())
     if (res.status === 404) throw new Error('skills.sh has no downloadable snapshot for this skill yet')
     if (!res.ok) throw new Error(`skills.sh download failed (HTTP ${res.status})`)
     const data = (await res.json()) as DownloadResponse

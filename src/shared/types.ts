@@ -526,6 +526,8 @@ export interface Settings {
   searxngUrl: string
   /** Custom Obscura binary; empty = use the bundled one. */
   obscuraPath: string
+  /** PEM CA certificate path trusted by web search/fetch; empty uses defaults. */
+  webCaCertPath: string
   webResults: number
   /** Let web_fetch reach localhost / private network addresses. */
   webAllowPrivate: boolean

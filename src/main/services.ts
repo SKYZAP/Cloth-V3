@@ -66,7 +66,7 @@ export function createServices(opts: {
   const rag = new RagService(ctx, providers, settings, () => (web.obscura.path() ? (url, signal) => web.obscura.renderHtml(url, signal) : null))
   const examples = new ExamplesService(ctx, rag, settings)
   const skills = new SkillService(ctx, providers)
-  const registry = new SkillRegistry(ctx, skills)
+  const registry = new SkillRegistry(ctx, skills, undefined, () => settings.get().webCaCertPath)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const approvals = new ApprovalService((e) => ctx.emit('chat', e))
   const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
@@ -81,7 +81,8 @@ export function createServices(opts: {
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
     if (next.remoteEnabled !== prev.remoteEnabled || next.remotePort !== prev.remotePort) void remote.restart()
-    if (next.webEngine !== prev.webEngine || next.searxngUrl !== prev.searxngUrl || next.obscuraPath !== prev.obscuraPath) {
+    if (next.webEngine !== prev.webEngine || next.searxngUrl !== prev.searxngUrl || next.obscuraPath !== prev.obscuraPath || next.webCaCertPath !== prev.webCaCertPath) {
+      void web.searxng.stop()
       web.warm()
       ctx.emit('web', { type: 'status' })
     }

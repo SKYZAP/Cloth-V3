@@ -16,7 +16,7 @@ export class WebService {
     private settings: SettingsService
   ) {
     this.searxng = new SearxngSidecar(ctx)
-    this.obscura = new Obscura(ctx, () => this.settings.get().obscuraPath)
+    this.obscura = new Obscura(ctx, () => this.settings.get().obscuraPath, () => this.settings.get().webCaCertPath)
   }
 
   status(): WebStatus {
@@ -46,7 +46,7 @@ export class WebService {
   /** Warm up the selected engine (SearXNG takes a few seconds to boot). */
   warm(): void {
     const s = this.settings.get()
-    if (s.webEngine === 'searxng' && !s.searxngUrl.trim() && this.searxng.bundled()) void this.searxng.ensure().catch(() => undefined)
+    if (s.webEngine === 'searxng' && !s.searxngUrl.trim() && this.searxng.bundled()) void this.searxng.ensure(s.webCaCertPath).catch(() => undefined)
   }
 
   async search(query: string, opts: { k?: number; engine?: WebEngine; signal?: AbortSignal } = {}): Promise<WebSearchResult> {
@@ -56,8 +56,8 @@ export class WebService {
     const started = Date.now()
     let results: WebResult[]
     if (engine === 'searxng') {
-      const base = s.searxngUrl.trim() || (await this.searxng.ensure())
-      results = await searxngSearch(base, query, k, opts.signal)
+      const base = s.searxngUrl.trim() || (await this.searxng.ensure(s.webCaCertPath))
+      results = await searxngSearch(base, query, k, opts.signal, s.searxngUrl.trim() ? s.webCaCertPath : undefined)
     } else {
       results = await this.obscura.search(query, k, opts.signal)
     }
@@ -75,7 +75,7 @@ export class WebService {
       const title = /^#\s+(.+)$/m.exec(md)?.[1]?.trim() ?? u.hostname
       return { title, markdown: truncate(md), via: 'obscura' }
     }
-    const page = await fetchUrl(url, signal)
+    const page = await fetchUrl(url, signal, s.webCaCertPath)
     return { title: page.title, markdown: truncate(page.text), via: 'http' }
   }
 

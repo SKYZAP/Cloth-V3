@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { WebResult } from '@shared/types'
 import type { Ctx } from '../core/context'
+import { webCaBundlePath, fetchWithWebCa } from './transport'
 import { killTree } from './process'
 
 const START_TIMEOUT_MS = 45_000
@@ -19,6 +20,7 @@ export class SearxngSidecar {
   private starting: Promise<string> | null = null
   private lastError: string | null = null
   private logTail: string[] = []
+  private caCertPath: string | null = null
 
   constructor(private ctx: Ctx) {}
 
@@ -27,7 +29,7 @@ export class SearxngSidecar {
   }
 
   private get python(): string {
-    return process.platform === 'win32' ? join(this.root, 'python', 'python.exe') : join(this.root, 'python', 'bin', 'python3')
+    return process.platform === 'win32' ? join(this.root, 'python', 'python.exe') : join(this.root, 'python', 'bin', 'python3.12')
   }
 
   bundled(): boolean {
@@ -48,19 +50,22 @@ export class SearxngSidecar {
   }
 
   /** Start the sidecar if needed and return its base URL. */
-  ensure(): Promise<string> {
-    if (this.child && this.url) return Promise.resolve(this.url)
-    if (!this.starting) {
-      this.starting = this.start().finally(() => {
-        this.starting = null
-        this.ctx.emit('web', { type: 'status' })
-      })
+  ensure(caCertPath?: string): Promise<string> {
+    const requestedCertPath = caCertPath?.trim() || null
+    if (this.child && this.url && this.caCertPath === requestedCertPath) return Promise.resolve(this.url)
+    if (this.starting) return this.starting.then(() => this.ensure(caCertPath))
+    this.starting = (async () => {
+      if (this.child) await this.stop()
+      return this.start(requestedCertPath)
+    })().finally(() => {
+      this.starting = null
       this.ctx.emit('web', { type: 'status' })
-    }
+    })
+    this.ctx.emit('web', { type: 'status' })
     return this.starting
   }
 
-  private async start(): Promise<string> {
+  private async start(caCertPath: string | null): Promise<string> {
     if (!this.bundled()) throw new Error('SearXNG is not bundled with this build — run `npm run sidecars`, or set an external SearXNG URL in Settings')
     this.lastError = null
     this.logTail = []
@@ -76,15 +81,23 @@ export class SearxngSidecar {
     const template = readFileSync(join(this.root, 'settings.yml'), 'utf8')
     const settingsFile = join(dir, 'settings.yml')
     writeFileSync(settingsFile, template.replaceAll('__PORT__', String(port)).replace('__SECRET__', secret))
-
     const src = join(this.root, 'src', 'searxng')
+    const caBundlePath = caCertPath ? webCaBundlePath(caCertPath, dir) : null
     const child = spawn(this.python, ['-m', 'searx.webapp'], {
       cwd: src,
-      env: { ...process.env, PYTHONPATH: src, SEARXNG_SETTINGS_PATH: settingsFile, PYTHONUNBUFFERED: '1', PYTHONDONTWRITEBYTECODE: '1' },
+      env: {
+        ...process.env,
+        PYTHONPATH: src,
+        SEARXNG_SETTINGS_PATH: settingsFile,
+        PYTHONUNBUFFERED: '1',
+        PYTHONDONTWRITEBYTECODE: '1',
+        ...(caBundlePath ? { SSL_CERT_FILE: caBundlePath, REQUESTS_CA_BUNDLE: caBundlePath, CURL_CA_BUNDLE: caBundlePath } : {})
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     })
     this.child = child
+    this.caCertPath = caCertPath
     const capture = (buf: Buffer) => {
       this.logTail = [...this.logTail, ...buf.toString().split(/\r?\n/).filter(Boolean)].slice(-40)
     }
@@ -124,18 +137,19 @@ export class SearxngSidecar {
     const child = this.child
     this.child = null
     this.url = null
+    this.caCertPath = null
     if (child?.pid) await killTree(child.pid)
   }
 }
 
-export async function searxngSearch(baseUrl: string, query: string, k: number, signal?: AbortSignal): Promise<WebResult[]> {
+export async function searxngSearch(baseUrl: string, query: string, k: number, signal?: AbortSignal, caCertPath?: string): Promise<WebResult[]> {
   const url = new URL('/search', baseUrl.replace(/\/+$/, '') + '/')
   url.searchParams.set('q', query)
   url.searchParams.set('format', 'json')
   url.searchParams.set('language', 'en')
   url.searchParams.set('safesearch', '1')
   url.searchParams.set('categories', 'general,it')
-  const res = await fetch(url, { signal: signal ?? AbortSignal.timeout(20_000), headers: { accept: 'application/json' } })
+  const res = await fetchWithWebCa(url, { signal: signal ?? AbortSignal.timeout(20_000), headers: { accept: 'application/json' } }, caCertPath)
   if (!res.ok) throw new Error(`SearXNG HTTP ${res.status}${res.status === 403 ? ' — enable the json format in its settings.yml' : ''}`)
   const body = (await res.json()) as { results?: { title?: string; url?: string; content?: string; engine?: string }[]; unresponsive_engines?: [string, string][] }
   const seen = new Set<string>()
@@ -185,4 +199,3 @@ function freePort(preferred: number): Promise<number> {
     })
   return tryPort(preferred).catch(() => tryPort(0))
 }
-

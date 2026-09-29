@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS: Settings = {
   embeddingModel: null,
   webEngine: 'obscura',
   searxngUrl: '',
+  webCaCertPath: '',
   obscuraPath: '',
   webResults: 6,
   webAllowPrivate: false,

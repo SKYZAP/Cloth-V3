@@ -43,6 +43,7 @@ all to other tools over MCP. Black/grey UI with crimson highlights.
   **Obscura** (stealth headless browser; `obscura fetch` against DuckDuckGo's HTML results, also renders pages) and
   **SearXNG** (metasearch; bundled CPython sidecar started on demand on 127.0.0.1, or point at an external instance).
   `web_fetch` blocks private-network targets unless allowed.
+- The same CA certificate also applies to skills.sh registry searches, downloads, and update checks. Certificate verification remains enabled.
 - **Example knowledge** — bundled docs (Cloth user guide, Git, HTTP/REST, regex, cron, SQL) seeded into a
   "Cloth examples" collection on first run, re-loadable from the Knowledge page.
 - **Dashboard** — tokens, estimated cost (built-in price list or per-model prices), model calls, latency, failures,
@@ -77,7 +78,7 @@ npm run typecheck
 npm run sidecars   # stage Obscura + SearXNG into sidecars/ (pinned, sha256-verified; cached)
 CLOTH_LIVE_WEB=1 npx vitest run tests/sidecars.test.ts   # live checks against the staged engines
 npm run smoke      # builds, starts scripts/mock-llm.mjs, drives the real app, screenshots → .cloth-dev/smoke
-npm run package    # stages sidecars, then an unpacked build in release/   (npm run dist for installers)
+`npm run package`  # stages sidecars, then an unpacked build in release/ (`npm run dist` builds installers without publishing)
 ```
 
 ### Bundled sidecars
