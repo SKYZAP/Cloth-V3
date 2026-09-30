@@ -272,6 +272,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     el.style.height = `${Math.min(220, el.scrollHeight)}px`
   }, [draft])
 
+  const [titling, setTitling] = useState(false)
   const update = async (patch: Partial<ChatSession>) => {
     const s = await attempt(() => api.chat.update(session.id, patch))
     if (s) onChange(s)
@@ -376,6 +377,22 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
           onBlur={(e) => e.target.value.trim() && e.target.value !== session.title && void update({ title: e.target.value.trim() })}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
+        {session.titleSource && (
+          <Tooltip content={titling ? 'Writing a title…' : 'Write a new title with AI'}>
+            <button
+              onClick={async () => {
+                setTitling(true)
+                await attempt(() => api.chat.retitle(session.id))
+                setTitling(false)
+              }}
+              disabled={titling}
+              aria-label="Write a new title with AI"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-crimson-hi disabled:opacity-60 mobile:hidden"
+            >
+              <Sparkle size={14} className={titling ? 'animate-pulse text-crimson-hi' : undefined} />
+            </button>
+          </Tooltip>
+        )}
         <ModelPicker pill className="w-64 mobile:w-[46%] mobile:shrink-0" value={session.model} onChange={(model) => void update({ model })} />
         <Tooltip content="Chat context">
           <motion.button

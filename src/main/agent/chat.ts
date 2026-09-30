@@ -41,6 +41,26 @@ const SLICE_LABELS: Record<ContextSliceKey, string> = {
   toolResults: 'Tool calls & results'
 }
 
+const TITLE_SYSTEM = `You name chat conversations for a sidebar. Reply with the title only: 2 to 6 words that say specifically what the conversation is about — the project, task, file or question — in sentence case. No quotes, no trailing punctuation, no emoji, and never generic words like "Chat", "Help", "Question" or "Conversation".`
+
+/** A model's reply turned into a sidebar title (or '' when it gave nothing usable). */
+export function cleanTitle(raw: string): string {
+  const line =
+    raw
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) ?? ''
+  let t = line
+    .replace(/[*_`#]+/g, '')
+    .replace(/^(title|chat title)\s*[:\-–]\s*/i, '')
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .replace(/[.!?:;,]+$/, '')
+    .trim()
+  if (t.length > 60) t = t.slice(0, 60).replace(/\s+\S*$/, '')
+  return t
+}
+
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
 
@@ -380,8 +400,12 @@ export class ChatService {
       codeIntel: cur.codeIntel,
       imagesEnabled: cur.imagesEnabled,
       thinking: cur.thinking,
+      titleSource: cur.titleSource,
+      titleTurns: cur.titleTurns,
       ...config
     }
+    // A title set without saying where it came from was typed by the user: AI titles leave it alone.
+    if (title !== undefined && config.titleSource === undefined) next.titleSource = 'user'
     this.ctx.db.prepare('UPDATE sessions SET title = ?, config = ?, updated_at = ? WHERE id = ?').run(title ?? cur.title, JSON.stringify(next), Date.now(), id)
     return this.get(id)
   }
@@ -666,7 +690,7 @@ export class ChatService {
     this.carry.delete(id)
     if (session.title === 'New chat') {
       const title = (text.trim() ? text : skillNames.map((n) => `/${n}`).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat'
-      this.update(id, { title })
+      this.update(id, { title, titleSource: 'first-message' })
       emit({ sessionId: id, type: 'title', title })
     }
     emit({ sessionId: id, type: 'start' })
@@ -694,7 +718,56 @@ export class ChatService {
         }
         emit({ sessionId: id, type: 'end', error })
       }
+      if (!error) await this.retitle(id).catch((err) => this.ctx.log('chat', 'title failed', errorMessage(err)))
     })
+  }
+
+  private titling = new Set<string>()
+
+  /**
+   * Give the chat an AI-written title: after the first reply, and once more when the conversation
+   * has grown (its subject is clearer by then). Titles the user typed are never replaced.
+   */
+  async retitle(id: string, opts: { force?: boolean } = {}): Promise<string | null> {
+    const cfg = this.settings.get()
+    const session = this.get(id)
+    if ((!cfg.aiTitles && !opts.force) || (session.titleSource === 'user' && !opts.force) || this.titling.has(id)) return null
+    const raw = this.rawMessages(id)
+    const said = (m: AgentMessage) => {
+      const c = (m as { content?: unknown }).content
+      const parts = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN)).map((b) => String(b.text)) : []
+      return parts.join('\n').replace(/\s+/g, ' ').trim()
+    }
+    const users = raw.filter((m) => m.role === 'user').map(said).filter(Boolean)
+    const done = session.titleTurns ?? 0
+    const due = opts.force || (done === 0 ? users.length >= 1 : done < 4 && users.length >= 4)
+    const model = cfg.titleModel ?? session.model
+    if (!due || !model || !users.length) return null
+    const reply = raw.filter((m) => m.role === 'assistant').map(said).find(Boolean) ?? ''
+    const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
+    const excerpt = [
+      ...users.slice(0, 2).map((u) => `User: ${clip(u, 700)}`),
+      reply ? `Assistant: ${clip(reply, 700)}` : '',
+      ...(users.length > 2 ? users.slice(-2).map((u) => `User (later): ${clip(u, 400)}`) : [])
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    this.titling.add(id)
+    try {
+      const { text } = await this.runtime.providers.complete(model, { system: TITLE_SYSTEM, prompt: `Conversation:\n\n${excerpt}\n\nTitle:`, maxTokens: 400, temperature: 0.3, thinking: 'off' })
+      const title = cleanTitle(text)
+      if (!title) {
+        this.ctx.log('chat', `title: ${model.modelId} replied without a usable title`, JSON.stringify(text.slice(0, 200)))
+        return null
+      }
+      // The user may have renamed the chat while the model was writing.
+      if (this.get(id).titleSource === 'user' && !opts.force) return null
+      this.update(id, { title, titleSource: 'ai', titleTurns: users.length })
+      this.ctx.emit('chat', { sessionId: id, type: 'title', title } satisfies ChatEvent)
+      return title
+    } finally {
+      this.titling.delete(id)
+    }
   }
 
   private rawMessages(id: string): AgentMessage[] {

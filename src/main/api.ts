@@ -134,6 +134,7 @@ export function createApi(s: Services): ClothApi {
       pendingQuestions: async (id) => s.chat.pendingQuestions(id),
       answerQuestion: async (questionId, answer) => s.chat.answerQuestion(questionId, answer),
       undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force),
+      retitle: (id) => s.chat.retitle(id, { force: true }),
       compact: (id, instructions) => s.chat.compact(id, { instructions }),
       contextUsage: (id) => s.chat.contextUsage(id)
     },
