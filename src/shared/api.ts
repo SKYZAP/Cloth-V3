@@ -162,14 +162,25 @@ export interface ClothApi {
     list(): Promise<Workflow[]>
     get(id: string): Promise<Workflow>
     create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }): Promise<Workflow>
-    save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>): Promise<Workflow>
+    save(
+      id: string,
+      patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>,
+      meta?: { source?: import('./types').WorkflowVersionSource; note?: string }
+    ): Promise<Workflow>
     remove(id: string): Promise<void>
     duplicate(id: string): Promise<Workflow>
     run(id: string, input?: unknown): Promise<WorkflowRun>
     cancel(runId: string): Promise<void>
     runs(id: string): Promise<WorkflowRun[]>
     validateCron(expr: string): Promise<{ ok: boolean; next: number | null; error?: string }>
-    build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph>
+    /** `fixRunId`: repair the flow so that failed run would succeed (the builder gets the failure details). */
+    build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string; fixRunId?: string }): Promise<WorkflowGraph>
+    /** The failure report the builder gets for a failed run. */
+    failureReport(runId: string): Promise<string>
+    versions(id: string): Promise<import('./types').WorkflowVersion[]>
+    version(versionId: string): Promise<import('./types').WorkflowVersion>
+    /** Bring back an earlier version (saved as a new version; nothing is lost). */
+    restore(id: string, versionId: string): Promise<Workflow>
     cancelBuild(buildId: string): Promise<void>
     /** What exporting this flow as an app would include, and whether the toolchain is ready. */
     exportPreview(id: string): Promise<import('./flow-bundle').ExportPreview>

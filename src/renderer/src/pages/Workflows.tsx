@@ -18,8 +18,8 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
-import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
+import { ArrowLeft, Eye, RotateCcw, Wand2, Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
+import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, pretty, timeAgo } from '@/lib/format'
@@ -202,6 +202,13 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const [runOpen, setRunOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  // History: the side panel, and a version shown read-only on the canvas.
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [preview, setPreview] = useState<WorkflowVersion | null>(null)
+  // Fix with AI: the failed run it works from.
+  const [fixRun, setFixRun] = useState<WorkflowRun | null>(null)
+  // Where unsaved changes came from, recorded with the next save.
+  const [pendingSource, setPendingSource] = useState<{ source: WorkflowVersionSource; note?: string } | null>(null)
   // Phone: the palette and run history open as sheets over the canvas.
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [runsOpen, setRunsOpen] = useState(false)
@@ -244,16 +251,18 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   })
 
   const activeRun = runs.find((r) => r.id === runId) ?? null
-  // Overlay the selected run's node statuses on the canvas.
+  // Overlay the selected run's node statuses on the canvas (or show a version being previewed).
   const displayNodes = useMemo(() => {
+    if (preview?.snapshot) return preview.snapshot.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData, draggable: false, selectable: false }))
     if (!activeRun) return nodes
     const byId = new Map(activeRun.nodes.map((t) => [t.nodeId, t]))
     return nodes.map((n) => {
       const t = byId.get(n.id)
       return t ? { ...n, data: { ...n.data, __status: t.status, __ms: t.durationMs, __iter: t.iterations } } : n
     })
-  }, [nodes, activeRun])
+  }, [nodes, activeRun, preview])
   const displayEdges = useMemo(() => {
+    if (preview?.snapshot) return preview.snapshot.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined, style: e.targetHandle === 'next' ? LOOP_BACK_STYLE : e.sourceHandle === 'body' ? LOOP_BODY_STYLE : undefined }))
     const running = activeRun?.status === 'running' ? new Set(activeRun.nodes.filter((t) => t.status === 'running').map((t) => t.nodeId)) : null
     return edges.map((e) => {
       const loopBack = e.targetHandle === 'next'
@@ -261,7 +270,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
       const style = loopBack ? LOOP_BACK_STYLE : body ? LOOP_BODY_STYLE : undefined
       return { ...e, ...(style ? { style } : {}), ...(loopBack ? { type: 'smoothstep' } : {}), animated: loopBack || !!running?.has(e.target) }
     })
-  }, [edges, activeRun])
+  }, [edges, activeRun, preview])
 
   // Auto-arrange: layered layout from the measured node sizes, eased into place.
   const [arranging, setArranging] = useState(false)
@@ -294,6 +303,16 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     requestAnimationFrame(step)
   }
 
+  /** Load an AI-made graph into the editor unsaved, so it can be reviewed (or discarded by switching away). */
+  const loadDraft = (graph: WorkflowGraph) => {
+    setPreview(null)
+    setNodes(graph.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData })))
+    setEdges(graph.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
+    if (graph.name) setName(graph.name)
+    setSelected(null)
+    setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2 }), 80)
+  }
+
   const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge({ ...c, id: `e_${Date.now().toString(36)}` }, es)), [setEdges])
 
   const keys = nodes.map((n) => n.data.key)
@@ -311,8 +330,31 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     setSelected(id)
   }
 
+  /** Put a saved workflow into the editor (after a restore). */
+  const loadSaved = (w: Workflow) => {
+    setNodes(w.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData })))
+    setEdges(w.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
+    setName(w.name)
+    setWorkspace(w.workspace)
+    setSavedSnapshot(snapshot(w.nodes, w.edges, w.name, w.cron ?? '', w.cronEnabled, w.workspace))
+    setPendingSource(null)
+    setSelected(null)
+    onSaved(w)
+    setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2, duration: 300 }), 60)
+  }
+
+  const restore = async (v: WorkflowVersion) => {
+    if (dirty && !(await confirmAction('Your unsaved changes will be replaced by this version. The current saved state stays in the history.', { title: 'Restore this version?', confirmLabel: 'Restore', danger: true }))) return
+    const w = await attempt(() => api.workflows.restore(workflow.id, v.id), 'Version restored')
+    if (w) {
+      setPreview(null)
+      loadSaved(w)
+    }
+  }
+
   const save = async (): Promise<boolean> => {
     setSaving(true)
+    const meta = pendingSource ?? undefined
     const w = await attempt(() =>
       api.workflows.save(workflow.id, {
         name,
@@ -321,10 +363,11 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         workspace,
         nodes: nodes.map((n) => ({ id: n.id, type: n.type as WorkflowNodeType, position: n.position, data: stripRuntime(n.data) })),
         edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null }))
-      })
+      }, meta)
     )
     setSaving(false)
     if (w) {
+      setPendingSource(null)
       setSavedSnapshot(snapshot(w.nodes, w.edges, w.name, w.cron ?? '', w.cronEnabled, w.workspace))
       onSaved(w)
     }
@@ -395,6 +438,18 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             <Package size={14} />
           </IconButton>
         )}
+        <IconButton
+          title="Change history"
+          aria-pressed={historyOpen}
+          className={historyOpen ? '!text-crimson-hi' : undefined}
+          onClick={() => {
+            setHistoryOpen((o) => !o)
+            setPreview(null)
+            setSelected(null)
+          }}
+        >
+          <History size={14} />
+        </IconButton>
         <IconButton title="Duplicate" onClick={async () => {
           const w = await attempt(() => api.workflows.duplicate(workflow.id))
           if (w) onDuplicated(w.id)
@@ -470,12 +525,13 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             nodes={displayNodes}
             edges={displayEdges}
             nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={(_, n) => setSelected(n.id)}
+            onNodesChange={preview ? undefined : onNodesChange}
+            onEdgesChange={preview ? undefined : onEdgesChange}
+            onConnect={preview ? undefined : onConnect}
+            nodesConnectable={!preview}
+            deleteKeyCode={preview ? null : ['Delete', 'Backspace']}
+            onNodeClick={(_, n) => !preview && setSelected(n.id)}
             onPaneClick={() => setSelected(null)}
-            deleteKeyCode={['Delete', 'Backspace']}
             colorMode="dark"
             fitView
             minZoom={0.2}
@@ -485,6 +541,22 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1.2} color="#26262c" />
             <Controls showInteractive={false} />
+            {preview && (
+              <Panel position="top-center" className="!mt-3">
+                <div className="flex items-center gap-2 rounded-xl border border-crimson-line bg-panel/95 py-1.5 pl-3 pr-1.5 shadow-lg shadow-black/40 backdrop-blur">
+                  <Eye size={13} className="shrink-0 text-crimson-hi" />
+                  <span className="text-[12px]">
+                    Previewing the version from <b className="font-semibold">{timeAgo(preview.createdAt)}</b>
+                  </span>
+                  <Button size="sm" variant="ghost" icon={<ArrowLeft size={12} />} onClick={() => setPreview(null)}>
+                    Back to current
+                  </Button>
+                  <Button size="sm" variant="primary" icon={<RotateCcw size={12} />} onClick={() => void restore(preview)}>
+                    Restore
+                  </Button>
+                </div>
+              </Panel>
+            )}
             <Panel position="top-right">
               <Button size="sm" icon={<LayoutDashboard size={13} />} disabled={arranging || nodes.length < 2} onClick={arrange} title="Auto-arrange nodes left to right in run order">
                 Arrange
@@ -507,7 +579,20 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         {/* Inspector */}
         {!isMobile && (
         <div className="w-80 shrink-0 overflow-y-auto border-l border-line bg-panel">
-          {sel ? (
+          {historyOpen ? (
+            <HistoryPanel
+              workflowId={workflow.id}
+              refreshKey={workflow.updatedAt}
+              previewId={preview?.id ?? null}
+              onPreview={async (v) => {
+                if (!v) return setPreview(null)
+                const full = await attempt(() => api.workflows.version(v.id))
+                if (full) setPreview(full)
+              }}
+              onRestore={(v) => void restore(v)}
+              onClose={() => (setHistoryOpen(false), setPreview(null))}
+            />
+          ) : sel ? (
             <Inspector
               key={sel.id}
               type={sel.type as WorkflowNodeType}
@@ -521,7 +606,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
               }}
             />
           ) : (
-            <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} />
+            <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} onFix={setFixRun} />
           )}
         </div>
         )}
@@ -571,7 +656,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           </BottomSheet>
           <BottomSheet open={runsOpen && !sel} onClose={() => setRunsOpen(false)} title="Runs" snapPoints={[0.6, 0.92]}>
             <div className="-mx-4 -mt-2 h-[70vh]">
-              <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} />
+              <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} onFix={setFixRun} />
             </div>
           </BottomSheet>
         </>
@@ -583,14 +668,24 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         workflowId={workflow.id}
         workflowName={workflow.name}
         onClose={() => setAiOpen(false)}
-        onGraph={(graph: WorkflowGraph) => {
-          // Load into the editor unsaved so the change can be reviewed (and discarded by switching away).
-          setNodes(graph.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData })))
-          setEdges(graph.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
-          if (graph.name) setName(graph.name)
-          setSelected(null)
-          setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2 }), 80)
+        onGraph={(graph: WorkflowGraph, request) => {
+          loadDraft(graph)
+          setPendingSource({ source: 'ai-edit', note: request.slice(0, 300) })
           useApp.getState().toast('AI changes loaded — review them, then Save', 'info')
+        }}
+      />
+      <AssembleModal
+        open={!!fixRun}
+        mode="fix"
+        fixRun={fixRun ?? undefined}
+        workflowId={workflow.id}
+        workflowName={workflow.name}
+        onClose={() => setFixRun(null)}
+        onGraph={(graph: WorkflowGraph) => {
+          loadDraft(graph)
+          setPendingSource({ source: 'ai-fix', note: (fixRun?.error ?? '').slice(0, 300) })
+          setHistoryOpen(false)
+          useApp.getState().toast('Fix loaded — review it, then Save and run again', 'info')
         }}
       />
       <ExportModal open={exportOpen} workflow={workflow} onClose={() => setExportOpen(false)} beforeExport={async () => !dirty || (await save())} />
@@ -652,7 +747,7 @@ function RunModal({ open, onClose, defaultInput, onRun }: { open: boolean; onClo
   )
 }
 
-function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; runId: string | null; onSelect(id: string): void; workflow: Workflow }) {
+function RunPanel({ runs, runId, onSelect, workflow, onFix }: { runs: WorkflowRun[]; runId: string | null; onSelect(id: string): void; workflow: Workflow; onFix(run: WorkflowRun): void }) {
   const run = runs.find((r) => r.id === runId)
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [viewing, setViewing] = useState<{ title: string; value: unknown } | null>(null)
@@ -672,7 +767,16 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
       </div>
       {run && (
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-          {run.error && <div className="rounded-md border border-crimson-line bg-crimson-soft p-2 text-[11.5px] text-crimson-hi">{run.error}</div>}
+          {run.error && (
+            <div className="space-y-2 rounded-md border border-crimson-line bg-crimson-soft p-2.5">
+              <div className="selectable text-[11.5px] text-crimson-hi">{run.error}</div>
+              {run.status === 'error' && (
+                <Button size="sm" variant="primary" icon={<Wand2 size={12} />} onClick={() => onFix(run)}>
+                  Fix with AI
+                </Button>
+              )}
+            </div>
+          )}
           {!!run.files?.length && (
             <div>
               <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Files ({run.files.length})</div>
@@ -815,6 +919,90 @@ function OutputModal({ view, onClose }: { view: { title: string; value: unknown 
         <pre className="selectable min-h-[40vh] whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-fg">{raw}</pre>
       )}
     </Modal>
+  )
+}
+
+const SOURCE_LABEL: Record<WorkflowVersionSource, { label: string; tone: 'crimson' | 'info' | 'ok' | 'dim' | 'warn' }> = {
+  original: { label: 'Before history', tone: 'dim' },
+  created: { label: 'Created', tone: 'dim' },
+  edit: { label: 'Edited', tone: 'dim' },
+  'ai-build': { label: 'Built with AI', tone: 'info' },
+  'ai-edit': { label: 'AI edit', tone: 'info' },
+  'ai-fix': { label: 'AI fix', tone: 'crimson' },
+  restore: { label: 'Restored', tone: 'warn' }
+}
+
+/** Saved versions of the flow, newest first: preview any of them on the canvas, or restore it. */
+function HistoryPanel({
+  workflowId,
+  refreshKey,
+  previewId,
+  onPreview,
+  onRestore,
+  onClose
+}: {
+  workflowId: string
+  refreshKey: number
+  previewId: string | null
+  onPreview(v: WorkflowVersion | null): void
+  onRestore(v: WorkflowVersion): void
+  onClose(): void
+}) {
+  const [versions, setVersions] = useState<WorkflowVersion[] | null>(null)
+  useEffect(() => {
+    void api.workflows.versions(workflowId).then(setVersions)
+  }, [workflowId, refreshKey])
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
+        <History size={14} className="text-crimson-hi" />
+        <span className="flex-1 text-[12.5px] font-semibold">Change history</span>
+        <IconButton title="Close history" onClick={onClose}>
+          <X size={13} />
+        </IconButton>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {versions === null && <div className="p-3 text-[12px] text-dim">Loading…</div>}
+        {versions?.length === 0 && <div className="p-3 text-[12px] leading-relaxed text-dim">No saved versions yet. Every save from now on is kept here, so you can go back to it.</div>}
+        {versions?.map((v, i) => {
+          const tag = SOURCE_LABEL[v.source] ?? SOURCE_LABEL.edit
+          const current = i === 0
+          const previewing = v.id === previewId
+          return (
+            <div
+              key={v.id}
+              className={clsx(
+                'group relative mb-1 rounded-lg border px-2.5 py-2 transition-colors',
+                previewing ? 'border-crimson-line bg-crimson-soft' : 'border-transparent hover:border-line hover:bg-elev'
+              )}
+            >
+              {/* Timeline rail */}
+              {i < versions.length - 1 && <span className="absolute bottom-[-6px] left-[15px] top-[26px] w-px bg-line" />}
+              <div className="flex items-center gap-2">
+                <span className={clsx('relative z-[1] h-2.5 w-2.5 shrink-0 rounded-full border-2', current ? 'border-crimson bg-crimson' : 'border-line-strong bg-panel')} />
+                <span className="text-[12px] text-fg" title={new Date(v.createdAt).toLocaleString()}>
+                  {timeAgo(v.createdAt)}
+                </span>
+                <Badge tone={tag.tone}>{tag.label}</Badge>
+                {current && <span className="ml-auto text-[10.5px] text-dim">current</span>}
+              </div>
+              <div className="ml-[18px] mt-1 text-[11.5px] leading-snug text-muted">{v.summary || 'No visible changes'}</div>
+              {v.note && <div className="ml-[18px] mt-0.5 line-clamp-2 text-[11px] text-dim" title={v.note}>{v.note}</div>}
+              {!current && (
+                <div className="ml-[18px] mt-1.5 flex gap-1.5">
+                  <Button size="sm" variant="ghost" icon={<Eye size={12} />} onClick={() => onPreview(previewing ? null : v)}>
+                    {previewing ? 'Hide preview' : 'Preview'}
+                  </Button>
+                  <Button size="sm" icon={<RotateCcw size={12} />} onClick={() => onRestore(v)}>
+                    Restore
+                  </Button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

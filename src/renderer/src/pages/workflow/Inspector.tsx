@@ -29,7 +29,8 @@ export function Inspector({
     if (type === 'tool' || type === 'agent') void api.tools.list().then(setTools)
   }, [type])
 
-  const str = (k: string) => String(data[k] ?? '')
+  // Settings saved as objects (e.g. tool args written by the AI builder) show as JSON, not "[object Object]".
+  const str = (k: string) => (data[k] && typeof data[k] === 'object' ? JSON.stringify(data[k], null, 2) : String(data[k] ?? ''))
   const set = (k: string) => (e: { target: { value: string } }) => onChange({ [k]: e.target.value })
   const template = (k: string, label: string, rows = 4, hint?: string) => (
     <Field label={label} hint={hint}>

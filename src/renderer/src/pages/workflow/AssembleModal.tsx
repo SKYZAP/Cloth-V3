@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AlertTriangle, Check, Loader2, Sparkles, Square } from 'lucide-react'
-import type { ModelRef, WorkflowBuildStep, WorkflowGraph } from '@shared/types'
+import type { ModelRef, WorkflowBuildStep, WorkflowGraph, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { preview } from '@/lib/format'
@@ -22,14 +22,17 @@ export function AssembleModal({
   mode,
   workflowId,
   workflowName,
+  fixRun,
   onGraph
 }: {
   open: boolean
   onClose(): void
-  mode: 'new' | 'modify'
+  /** fix: repair the flow so `fixRun` would succeed. */
+  mode: 'new' | 'modify' | 'fix'
   workflowId?: string
   workflowName?: string
-  onGraph(graph: WorkflowGraph): Promise<void> | void
+  fixRun?: WorkflowRun
+  onGraph(graph: WorkflowGraph, request: string): Promise<void> | void
 }) {
   const settings = useApp((s) => s.settings)
   const [description, setDescription] = useState('')
@@ -40,13 +43,19 @@ export function AssembleModal({
   const buildId = useRef<string>('')
   const logEnd = useRef<HTMLDivElement>(null)
 
+  const [report, setReport] = useState<string | null>(null)
+  const [showReport, setShowReport] = useState(false)
   useEffect(() => {
     if (open) {
       setLog([])
       setError(null)
-      if (mode === 'new') setDescription('')
+      if (mode !== 'modify') setDescription('')
+      setShowReport(false)
+      setReport(null)
+      if (mode === 'fix' && fixRun) void api.workflows.failureReport(fixRun.id).then(setReport, () => setReport(null))
     }
-  }, [open, mode])
+  }, [open, mode, fixRun])
+  const failedStep = fixRun?.nodes.find((t) => t.status === 'error')
   // Braces matter: scrollIntoView returns a Promise in current Chromium, and an effect must not return one.
   useEffect(() => {
     logEnd.current?.scrollIntoView({ block: 'nearest' })
@@ -64,8 +73,8 @@ export function AssembleModal({
     setError(null)
     setLog([])
     try {
-      const graph = await api.workflows.build({ description, model, workflowId: mode === 'modify' ? workflowId : undefined, buildId: buildId.current })
-      await onGraph(graph)
+      const graph = await api.workflows.build({ description, model, workflowId: mode === 'new' ? undefined : workflowId, buildId: buildId.current, fixRunId: mode === 'fix' ? fixRun?.id : undefined })
+      await onGraph(graph, description)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -82,7 +91,7 @@ export function AssembleModal({
       title={
         <span className="flex items-center gap-2">
           <Sparkles size={15} className="text-crimson-hi" />
-          {mode === 'new' ? 'Assemble a workflow with AI' : `Modify “${workflowName}” with AI`}
+          {mode === 'new' ? 'Assemble a workflow with AI' : mode === 'fix' ? `Fix “${workflowName}” with AI` : `Modify “${workflowName}” with AI`}
         </span>
       }
       width={720}
@@ -96,22 +105,38 @@ export function AssembleModal({
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" icon={<Sparkles size={13} />} disabled={!description.trim() || (!model && !settings?.defaultModel)} onClick={() => void start()}>
-              {mode === 'new' ? 'Assemble' : 'Apply changes'}
+            <Button variant="primary" icon={<Sparkles size={13} />} disabled={(mode !== 'fix' && !description.trim()) || (!model && !settings?.defaultModel)} onClick={() => void start()}>
+              {mode === 'new' ? 'Assemble' : mode === 'fix' ? 'Fix it' : 'Apply changes'}
             </Button>
           </>
         )
       }
     >
       <div className="space-y-3">
-        <Field label={mode === 'new' ? 'Describe the workflow' : 'Describe the change'} hint="An agent builds the graph with add_node / connect / finish tools, validating as it goes. You review the result before saving.">
+        {mode === 'fix' && fixRun && (
+          <div className="rounded-lg border border-crimson-line bg-crimson-soft p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-crimson-hi" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-semibold">{failedStep ? `“${failedStep.key}” failed` : 'The run failed'}</div>
+                <div className="selectable mt-0.5 break-words text-[12px] text-crimson-hi">{failedStep?.error ?? fixRun.error}</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowReport((s) => !s)} className="mt-2 text-[11.5px] text-muted underline-offset-2 hover:text-fg hover:underline" disabled={!report}>
+              {report ? (showReport ? 'Hide what the AI gets' : 'Show what the AI gets: the step, its input, earlier outputs') : 'Collecting the failure details…'}
+            </button>
+            {showReport && report && <pre className="selectable mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-bg p-2.5 font-mono text-[10.5px] text-muted">{report}</pre>}
+          </div>
+        )}
+        <Field
+          label={mode === 'new' ? 'Describe the workflow' : mode === 'fix' ? 'Anything to add? (optional)' : 'Describe the change'} hint="An agent builds the graph with add_node / connect / finish tools, validating as it goes. You review the result before saving.">
           <Textarea
             rows={4}
             autoFocus
             disabled={running}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder={mode === 'new' ? 'Every morning, search my docs for… and send the summary to…' : 'Add a web search fallback when the knowledge search finds nothing'}
+            placeholder={mode === 'new' ? 'Every morning, search my docs for… and send the summary to…' : mode === 'fix' ? 'e.g. the slides come from the outline step' : 'Add a web search fallback when the knowledge search finds nothing'}
           />
         </Field>
         {mode === 'new' && !description && (

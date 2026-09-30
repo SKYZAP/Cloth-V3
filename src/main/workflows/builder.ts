@@ -188,7 +188,7 @@ function catalogText(): string {
 export async function buildWorkflow(
   ctx: Ctx,
   deps: BuildDeps,
-  input: { description: string; model: ModelRef; existing?: WorkflowGraph; buildId: string; signal?: AbortSignal }
+  input: { description: string; model: ModelRef; existing?: WorkflowGraph; buildId: string; signal?: AbortSignal; failure?: string }
 ): Promise<WorkflowGraph> {
   const draft = new DraftGraph(input.existing)
   const collections = deps.rag.listCollections()
@@ -291,9 +291,19 @@ export async function buildWorkflow(
     `Custom tools: ${tools.map((t) => `${t.name}(${t.params.map((p) => p.name).join(', ')}) — ${t.description}`).join('; ') || 'none'}`
   ].join('\n')
 
-  const task = input.existing?.nodes.length
-    ? `Modify the existing workflow "${input.existing.name}" to satisfy this request. Current graph:\n${draft.view()}\n\nRequest: ${input.description}`
-    : `Build a workflow for: ${input.description}`
+  const task = input.failure
+    ? [
+        `A run of the workflow "${input.existing?.name ?? ''}" failed. Fix the workflow so the same input would succeed.`,
+        'Change as little as possible: usually a template that points at the wrong field ({{key.field}}), a missing tool argument, a step setting, or a connection. Keep the failing step unless it cannot work, and do not touch unrelated steps. Then call `finish`.',
+        '',
+        `Current graph:\n${draft.view()}`,
+        '',
+        input.failure,
+        input.description.trim() ? `\nThe user adds: ${input.description.trim()}` : ''
+      ].join('\n')
+    : input.existing?.nodes.length
+      ? `Modify the existing workflow "${input.existing.name}" to satisfy this request. Current graph:\n${draft.view()}\n\nRequest: ${input.description}`
+      : `Build a workflow for: ${input.description}`
 
   const { model } = deps.providers.resolve(input.model)
   const agent = new Agent({

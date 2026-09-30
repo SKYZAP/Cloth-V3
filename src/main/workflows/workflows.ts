@@ -2,7 +2,8 @@ import { runInNewContext } from 'node:vm'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun } from '@shared/types'
+import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
+import { describeChange, failureReport } from './history'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -13,12 +14,26 @@ import type { AgentRuntime } from '../agent/chat'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
-import { executeGraph, renderTemplate, type Executor } from './engine'
+import { executeGraph, renderArgs, renderTemplate, type Executor } from './engine'
 import { buildWorkflow } from './builder'
 
 export interface RunOptions {
   /** Overrides the flow's workspace for this run (null = none). */
   workspace?: string | null
+}
+
+interface VersionRow {
+  id: string
+  workflow_id: string
+  source: WorkflowVersionSource
+  note: string | null
+  summary: string
+  node_count: number
+  created_at: number
+}
+
+function toVersion(r: VersionRow): WorkflowVersion {
+  return { id: r.id, workflowId: r.workflow_id, source: r.source, note: r.note, summary: r.summary, nodeCount: r.node_count, createdAt: r.created_at }
 }
 
 interface WorkflowRow {
@@ -63,18 +78,28 @@ export class WorkflowService {
     return this.toWorkflow(row)
   }
 
-  create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }): Workflow {
+  /** `source: null` skips the first version (the caller saves real content right after). */
+  create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }, source: WorkflowVersionSource | null = 'created'): Workflow {
     const id = newId('wf_')
     const now = Date.now()
     const graph = input.template === 'rag-digest' ? ragDigestTemplate() : blankTemplate()
     this.ctx.db
       .prepare('INSERT INTO workflows (id, name, description, graph, cron, cron_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 0, ?, ?)')
       .run(id, input.name.trim() || 'Untitled workflow', input.description ?? '', JSON.stringify(graph), now, now)
-    return this.get(id)
+    const wf = this.get(id)
+    if (source) this.recordVersion(wf, source)
+    else this.unversioned.add(id)
+    return wf
   }
 
-  save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>): Workflow {
+  save(
+    id: string,
+    patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>,
+    meta: { source?: WorkflowVersionSource; note?: string } = {}
+  ): Workflow {
     const cur = this.get(id)
+    // Flows from before history existed: keep what they were, so the first change can be undone.
+    if (!this.unversioned.delete(id) && !this.lastVersion(id)) this.recordVersion(cur, 'original')
     const cron = patch.cron === undefined ? cur.cron : patch.cron?.trim() || null
     if (cron) {
       const v = validateCron(cron)
@@ -85,7 +110,64 @@ export class WorkflowService {
       .prepare('UPDATE workflows SET name = ?, description = ?, graph = ?, cron = ?, cron_enabled = ?, updated_at = ? WHERE id = ?')
       .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
     this.schedule(id)
-    return this.get(id)
+    const saved = this.get(id)
+    this.recordVersion(saved, meta.source ?? 'edit', meta.note)
+    return saved
+  }
+
+  // ─── History ──────────────────────────────────────────────────────────────
+
+  /** Flows created empty on purpose, whose first save is their first version. */
+  private unversioned = new Set<string>()
+
+  private snapshot(wf: Workflow): WorkflowSnapshot {
+    return { name: wf.name, description: wf.description, nodes: wf.nodes, edges: wf.edges, workspace: wf.workspace }
+  }
+
+  private lastVersion(id: string): { snapshot: WorkflowSnapshot } | null {
+    const row = this.ctx.db.prepare('SELECT snapshot FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(id) as { snapshot: string } | undefined
+    return row ? { snapshot: json<WorkflowSnapshot>(row.snapshot, { name: '', description: '', nodes: [], edges: [], workspace: null }) } : null
+  }
+
+  /** Store the flow as a version when its content changed (schedule changes alone don't count). */
+  private recordVersion(wf: Workflow, source: WorkflowVersionSource, note?: string): void {
+    const next = this.snapshot(wf)
+    const prev = this.lastVersion(wf.id)?.snapshot
+    const summary = prev ? describeChange(prev, next) : source === 'original' ? 'As it was before history was kept' : `${next.nodes.length} nodes`
+    if (prev && !summary) return
+    this.ctx.db
+      .prepare('INSERT INTO workflow_versions (id, workflow_id, snapshot, source, note, summary, node_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(newId('wfv_'), wf.id, JSON.stringify(next), source, note ?? null, summary, next.nodes.length, Date.now())
+    // Keep the most recent 100.
+    this.ctx.db
+      .prepare('DELETE FROM workflow_versions WHERE workflow_id = ? AND id NOT IN (SELECT id FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 100)')
+      .run(wf.id, wf.id)
+  }
+
+  versions(id: string): WorkflowVersion[] {
+    const rows = this.ctx.db.prepare('SELECT id, workflow_id, source, note, summary, node_count, created_at FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC').all(id) as unknown as VersionRow[]
+    return rows.map(toVersion)
+  }
+
+  version(versionId: string): WorkflowVersion {
+    const row = this.ctx.db.prepare('SELECT * FROM workflow_versions WHERE id = ?').get(versionId) as (VersionRow & { snapshot: string }) | undefined
+    if (!row) throw new Error('That version no longer exists')
+    return { ...toVersion(row), snapshot: json<WorkflowSnapshot>(row.snapshot, { name: '', description: '', nodes: [], edges: [], workspace: null }) }
+  }
+
+  restore(id: string, versionId: string): Workflow {
+    const v = this.version(versionId)
+    if (v.workflowId !== id) throw new Error('That version belongs to another flow')
+    const s = v.snapshot!
+    return this.save(id, { name: s.name, description: s.description, nodes: s.nodes, edges: s.edges, workspace: s.workspace }, { source: 'restore', note: `Restored the version from ${new Date(v.createdAt).toLocaleString()}` })
+  }
+
+  /** A description of a failed run for the AI builder: where it broke, what that step got, and what came before. */
+  failureReport(runId: string): string {
+    const row = this.ctx.db.prepare('SELECT data FROM workflow_runs WHERE id = ?').get(runId) as { data: string } | undefined
+    if (!row) throw new Error('That run no longer exists')
+    const run = JSON.parse(row.data) as WorkflowRun
+    return failureReport(run, this.get(run.workflowId), { tools: this.deps.custom.list() })
   }
 
   remove(id: string): void {
@@ -94,14 +176,14 @@ export class WorkflowService {
   }
 
   createFromGraph(graph: WorkflowGraph): Workflow {
-    const wf = this.create({ name: graph.name || 'Assembled workflow', description: graph.description })
-    return this.save(wf.id, { nodes: graph.nodes, edges: graph.edges })
+    const wf = this.create({ name: graph.name || 'Assembled workflow', description: graph.description }, null)
+    return this.save(wf.id, { nodes: graph.nodes, edges: graph.edges }, { source: 'ai-build' })
   }
 
   private builds = new Map<string, AbortController>()
 
   /** Have an agent assemble (or modify) a workflow graph from a description. Not saved — the editor reviews it first. */
-  async build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph> {
+  async build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string; fixRunId?: string }): Promise<WorkflowGraph> {
     const model = this.modelFor(input.model)
     const existing = input.workflowId ? this.get(input.workflowId) : undefined
     const controller = new AbortController()
@@ -112,7 +194,8 @@ export class WorkflowService {
         model,
         buildId: input.buildId,
         signal: controller.signal,
-        existing: existing && { name: existing.name, description: existing.description, nodes: existing.nodes, edges: existing.edges }
+        existing: existing && { name: existing.name, description: existing.description, nodes: existing.nodes, edges: existing.edges },
+        failure: input.fixRunId ? this.failureReport(input.fixRunId) : undefined
       })
     } finally {
       this.builds.delete(input.buildId)
@@ -125,8 +208,8 @@ export class WorkflowService {
 
   duplicate(id: string): Workflow {
     const cur = this.get(id)
-    const copy = this.create({ name: `${cur.name} (copy)`, description: cur.description })
-    return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false, workspace: cur.workspace })
+    const copy = this.create({ name: `${cur.name} (copy)`, description: cur.description }, null)
+    return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false, workspace: cur.workspace }, { source: 'created', note: `Copied from “${cur.name}”` })
   }
 
   runs(workflowId: string, limit = 30): WorkflowRun[] {
@@ -365,7 +448,7 @@ export class WorkflowService {
         case 'tool': {
           const tool = custom.list().find((x) => x.name === d.tool)
           if (!tool) throw new Error(`Custom tool "${d.tool}" not found`)
-          const args = json<Record<string, unknown>>(t(d.args || '{}'), {})
+          const args = renderArgs(d.args, scope)
           const toolEnv = env.workspace ? { workspace: { root: env.workspace, writable: true, onWrite: env.onFile } } : {}
           return { output: await timed(tool.name, 'custom', () => custom.execute(tool, args, signal, toolEnv)) }
         }
