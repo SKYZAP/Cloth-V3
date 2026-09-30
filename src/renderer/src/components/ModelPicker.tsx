@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { ArrowsHorizontal, Brain, CaretDown, Check, Desktop, Eye, MagnifyingGlass, Star } from '@phosphor-icons/react'
-import type { ModelInfo, ModelRef, Provider } from '@shared/types'
+import { contextIsGuess, type ModelInfo, type ModelRef, type Provider } from '@shared/types'
 import { useApp } from '@/lib/store'
 import { fuzzyBest } from '@/lib/fuzzy'
 import { isMobile } from '@/lib/platform'
@@ -420,7 +420,7 @@ function PickerList({
 
 function ModelRow({ option, hits, starred, onStar, selected }: { option: Option; hits: number[]; starred: boolean; onStar(): void; selected: boolean }) {
   const m = option.model
-  const guess = m.contextSource === 'guess'
+  const guess = contextIsGuess(m)
   return (
     <>
       <span className="min-w-0 flex-1 truncate">

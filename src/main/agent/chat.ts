@@ -3,6 +3,7 @@ import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
+import { contextIsGuess } from '@shared/types'
 import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
@@ -542,7 +543,7 @@ export class ChatService {
   private contextEstimated(ref: ModelRef): boolean {
     try {
       const info = this.runtime.providers.get(ref.providerId).models.find((m) => m.id === ref.modelId)
-      return !info || info.contextSource === 'guess'
+      return !info || contextIsGuess(info)
     } catch {
       return true
     }

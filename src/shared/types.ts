@@ -21,6 +21,11 @@ export interface ModelInfo {
   contextSource?: 'server' | 'catalog' | 'guess'
 }
 
+/** The context size is a default guess (older model lists don't say where it came from; 32,768 was the default). */
+export function contextIsGuess(m: Pick<ModelInfo, 'contextSource' | 'contextWindow'>): boolean {
+  return m.contextSource === 'guess' || (!m.contextSource && m.contextWindow === 32_768)
+}
+
 export interface Provider {
   id: string
   name: string
