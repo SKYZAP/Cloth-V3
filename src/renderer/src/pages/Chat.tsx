@@ -348,7 +348,29 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const archived = useMemo(() => messages.filter((m) => m.archived), [messages])
   const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
   const todos = useMemo(() => latestTodos(messages), [messages])
-  const showPlan = !!todos?.length && (running || todos.some((t) => t.status !== 'completed'))
+  // The plan stays pinned while it has open items, then lingers briefly once finished and goes away
+  // (a finished plan doesn't come back when the next message starts a run).
+  const planActive = !!todos?.length && todos.some((t) => t.status !== 'completed')
+  const planDone = !!todos?.length && !planActive
+  const [planLingering, setPlanLingering] = useState(false)
+  const planWasActive = useRef(false)
+  useEffect(() => {
+    if (planActive) {
+      planWasActive.current = true
+      setPlanLingering(false)
+      return
+    }
+    if (!planWasActive.current) return
+    planWasActive.current = false
+    if (!planDone) return
+    setPlanLingering(true)
+    const t = setTimeout(() => setPlanLingering(false), 3000)
+    return () => {
+      clearTimeout(t)
+      setPlanLingering(false)
+    }
+  }, [planActive, planDone])
+  const showPlan = planActive || planLingering
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
   const regenerate = async (assistantId: string) => {
