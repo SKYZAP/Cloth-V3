@@ -433,6 +433,8 @@ export class ChatService {
   /** How full the model's context is, and where auto-summarising kicks in. */
   async contextUsage(id: string): Promise<ContextUsage> {
     const session = this.get(id)
+    // Keep the model's limit current (throttled; offline providers keep what they had).
+    if (session.model) await this.runtime.providers.refreshModel(session.model).catch(() => undefined)
     const window = session.model ? this.contextWindow(session.model) : null
     const raw = this.rawMessages(id)
     const scope = this.scope(id)
@@ -466,7 +468,7 @@ export class ChatService {
     const breakdown: ContextSlice[] = (Object.keys(SLICE_LABELS) as ContextSliceKey[])
       .map((key) => ({ key, label: SLICE_LABELS[key], tokens: Math.round(parts[key] * scale) }))
       .filter((s) => s.tokens > 0)
-    return { tokens, window, threshold: window ? budget(window).threshold : null, breakdown }
+    return { tokens, window, estimated: session.model ? this.contextEstimated(session.model) : false, threshold: window ? budget(window).threshold : null, breakdown }
   }
 
   /**
@@ -510,6 +512,15 @@ export class ChatService {
       throw err
     } finally {
       this.compacting.delete(id)
+    }
+  }
+
+  private contextEstimated(ref: ModelRef): boolean {
+    try {
+      const info = this.runtime.providers.get(ref.providerId).models.find((m) => m.id === ref.modelId)
+      return !info || info.contextSource === 'guess'
+    } catch {
+      return true
     }
   }
 
@@ -676,6 +687,11 @@ export class ChatService {
         pushTurn()
         this.saveMessages(id, agent.state.messages)
         this.active.delete(id)
+        // Local servers (LM Studio) load a model on first use: its real context size is known now.
+        const ref = this.get(id).model
+        if (ref && this.runtime.providers.list().find((p) => p.id === ref.providerId)?.kind === 'openai-compatible') {
+          await this.runtime.providers.refreshModel(ref, { force: true, timeoutMs: 3000 }).catch(() => undefined)
+        }
         emit({ sessionId: id, type: 'end', error })
       }
     })

@@ -165,9 +165,11 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[12.5px] font-semibold">Context</span>
-              <span className="font-mono text-[11px] tabular-nums text-muted">
-                {compact(usage.tokens)} / {compact(window_)}
+              <span className="font-mono text-[11px] tabular-nums text-muted" title={usage.estimated ? "Estimated — the provider doesn't report this model's context size" : undefined}>
+                {compact(usage.tokens)} / {usage.estimated ? '≈' : ''}
+                {compact(window_)}
               </span>
+              {usage.estimated && <span className="text-[10.5px] text-dim">estimated</span>}
               <div className="flex-1" />
               <span className={clsx('font-mono text-[11px] tabular-nums', tone)}>{pctOf(usage.tokens, window_)} used</span>
             </div>

@@ -154,15 +154,37 @@ export class ProviderService {
 
   async refreshModels(id: string): Promise<Provider> {
     const fetched = await this.fetchModels(id)
-    // Keep user overrides (e.g. embedding flag, context window) for models we already know.
+    // Keep user overrides (e.g. embedding flag, pricing) for models we already know.
     const previous = new Map(this.get(id).models.map((m) => [m.id, m]))
     const merged = fetched.map((m) => {
       const prev = previous.get(m.id)
       if (!prev) return m
       // Capability flags only get switched on by detection; a user's ticks are never removed.
-      return { ...m, ...prev, id: m.id, reasoning: prev.reasoning || m.reasoning, vision: prev.vision || m.vision }
+      return { ...m, ...prev, id: m.id, reasoning: prev.reasoning || m.reasoning, vision: prev.vision || m.vision, ...freshLimits(m) }
     })
     return this.setModels(id, merged)
+  }
+
+  private limitChecks = new Map<string, number>()
+
+  /**
+   * Re-read one model's context size from its provider (e.g. after switching a chat to it, or once a
+   * local server has loaded it). Throttled per model unless forced; never drops models from the list.
+   */
+  async refreshModel(ref: ModelRef, opts: { force?: boolean; timeoutMs?: number } = {}): Promise<ModelInfo | null> {
+    const key = `${ref.providerId}:${ref.modelId}`
+    const last = this.limitChecks.get(key) ?? 0
+    const current = () => this.get(ref.providerId).models.find((m) => m.id === ref.modelId) ?? null
+    if (!opts.force && Date.now() - last < 15_000) return current()
+    this.limitChecks.set(key, Date.now())
+    const fetched = (await this.fetchModels(ref.providerId, opts.timeoutMs ?? 4000)).find((m) => m.id === ref.modelId)
+    const provider = this.get(ref.providerId)
+    const existing = provider.models.find((m) => m.id === ref.modelId)
+    if (!fetched) return existing ?? null
+    const next = existing ? { ...existing, ...freshLimits(fetched), contextSource: fetched.contextSource ?? existing.contextSource } : fetched
+    if (existing && next.contextWindow === existing.contextWindow && next.maxTokens === existing.maxTokens && next.contextSource === existing.contextSource) return existing
+    this.setModels(ref.providerId, existing ? provider.models.map((m) => (m.id === ref.modelId ? next : m)) : [...provider.models, next])
+    return next
   }
 
   apiKey(id: string): string {
@@ -308,10 +330,10 @@ export class ProviderService {
     return out
   }
 
-  private async fetchModels(id: string): Promise<ModelInfo[]> {
+  private async fetchModels(id: string, timeoutMs = 10_000): Promise<ModelInfo[]> {
     const provider = this.get(id)
     const key = this.apiKey(id)
-    const signal = AbortSignal.timeout(10_000)
+    const signal = AbortSignal.timeout(timeoutMs)
     if (provider.kind === 'anthropic') {
       const res = await fetch(`${provider.baseUrl}/v1/models?limit=100`, {
         signal,
@@ -330,7 +352,10 @@ export class ProviderService {
     const body = (await res.json()) as { data?: { id: string; context_length?: number; architecture?: { output_modalities?: string[] } }[] }
     const models = (body.data ?? []).map((m) => {
       const info = guessModelInfo(provider.kind, m.id)
-      if (m.context_length) info.contextWindow = m.context_length
+      if (m.context_length) {
+        info.contextWindow = m.context_length
+        info.contextSource = 'server'
+      }
       // OpenRouter lists what each model outputs.
       if (m.architecture?.output_modalities?.includes('image')) info.image = true
       return info
@@ -400,11 +425,12 @@ export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
       maxTokens: known.maxTokens,
       reasoning: known.reasoning,
       vision: known.input.includes('image'),
-      embedding: false
+      embedding: false,
+      contextSource: 'catalog'
     }
   }
   const lower = id.toLowerCase()
-  if (isImageModelId(lower)) return { id, name: id, contextWindow: 4096, maxTokens: 0, reasoning: false, vision: false, embedding: false, image: true }
+  if (isImageModelId(lower)) return { id, name: id, contextWindow: 4096, maxTokens: 0, reasoning: false, vision: false, embedding: false, image: true, contextSource: 'guess' }
   const embedding = /embed|bge|e5-|gte-|nomic|minilm/.test(lower)
   const reasoning = kind === 'anthropic' || isReasoningModelId(lower)
   return {
@@ -414,8 +440,16 @@ export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
     maxTokens: kind === 'anthropic' ? 32_000 : 8_192,
     reasoning: !embedding && reasoning,
     vision: kind === 'anthropic' || /vision|vl|gpt-4o|gpt-5|llava|gemma-3/.test(lower),
-    embedding
+    embedding,
+    contextSource: 'guess'
   }
+}
+
+/** Limits from a fresh model listing that should replace stored ones (a guess never does). */
+function freshLimits(m: ModelInfo): Partial<ModelInfo> {
+  if (m.contextSource === 'server') return { contextWindow: m.contextWindow, contextSource: 'server' }
+  if (m.contextSource === 'catalog') return { contextWindow: m.contextWindow, maxTokens: m.maxTokens, contextSource: 'catalog' }
+  return {}
 }
 
 /** LM Studio exposes richer metadata (model type, context length) on /api/v0/models. */
@@ -424,7 +458,7 @@ async function enrichFromLmStudio(baseUrl: string, models: ModelInfo[]): Promise
     const origin = new URL(baseUrl).origin
     const res = await fetch(`${origin}/api/v0/models`, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return
-    const body = (await res.json()) as { data: { id: string; type: string; arch?: string; max_context_length?: number; capabilities?: string[] }[] }
+    const body = (await res.json()) as { data: { id: string; type: string; arch?: string; max_context_length?: number; loaded_context_length?: number; capabilities?: string[] }[] }
     const byId = new Map(body.data.map((m) => [m.id, m]))
     for (const m of models) {
       const meta = byId.get(m.id)
@@ -432,7 +466,12 @@ async function enrichFromLmStudio(baseUrl: string, models: ModelInfo[]): Promise
       m.embedding = meta.type === 'embeddings'
       if (meta.type === 'vlm') m.vision = true
       if (meta.arch && isReasoningModelId(meta.arch)) m.reasoning = true
-      if (meta.max_context_length) m.contextWindow = meta.max_context_length
+      // A loaded model's real limit is the context it was loaded with, often far below its maximum.
+      const ctx = meta.loaded_context_length || meta.max_context_length
+      if (ctx) {
+        m.contextWindow = ctx
+        m.contextSource = 'server'
+      }
       if (meta.capabilities?.includes('tool_use') === false) m.name = `${m.id} (no tools)`
     }
   } catch {
