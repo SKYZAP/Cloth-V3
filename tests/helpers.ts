@@ -17,5 +17,7 @@ export function makeServices() {
     sidecarsDir: join(REPO, 'sidecars'),
     examplesDir: join(REPO, 'resources', 'examples')
   })
+  // Tests script every model reply; the background title request would take one of them.
+  services.settings.update({ aiTitles: false })
   return { services, events, dataDir }
 }

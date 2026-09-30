@@ -302,6 +302,10 @@ export interface ChatSession {
   /** Offer generate_image (needs an image model in Settings). */
   imagesEnabled: boolean
   thinking: ThinkingLevel
+  /** Where the title came from: the first message, a model's summary, or the user (never overwritten). */
+  titleSource?: 'first-message' | 'ai' | 'user'
+  /** How many user messages the AI title was written from. */
+  titleTurns?: number
   createdAt: number
   updatedAt: number
 }
@@ -565,6 +569,12 @@ export interface Settings {
   chunkOverlap: number
   /** Summarise older chat turns automatically when a conversation nears the model's context window. */
   autoCompact: boolean
+  /** Name chats with a short AI-written summary of what they're about. */
+  aiTitles: boolean
+  /** Model that writes chat titles; null = the chat's own model. */
+  titleModel: ModelRef | null
+  /** Models pinned at the top of the model picker ("providerId::modelId"). */
+  starredModels: string[]
   /** Model used by the generate_image tool and the image playground. */
   imageModel: ModelRef | null
   /** Let paired phones connect over the network (home Wi-Fi / Tailscale). */

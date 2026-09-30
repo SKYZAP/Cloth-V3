@@ -41,7 +41,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Default chat, embedding and image models', keywords: 'default model embedding image llm provider' },
-  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'Summarising long conversations', keywords: 'compact summarise summarize context window' },
+  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'Summarising long conversations and naming chats', keywords: 'compact summarise summarize context window title name rename ai titles' },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Delegation with the task tool', keywords: 'task delegate scout worker parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Search engine and page fetching', keywords: 'searxng obscura web_fetch internet results' },
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split for search', keywords: 'chunk chunking overlap rag index' },
@@ -173,6 +173,14 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           <Row label="Summarise long conversations" hint="Near the model's context window, older turns are summarised into a checkpoint before the next message. The originals stay visible. You can also summarise any time from the context meter.">
             <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} />
           </Row>
+          <Row label="Name chats with AI" hint="After the first reply, and again once the chat has grown, a model writes a short title saying what the chat is about. Titles you type yourself are kept.">
+            <Switch checked={settings.aiTitles} onChange={(aiTitles) => void update({ aiTitles })} />
+          </Row>
+          {settings.aiTitles && (
+            <Row label="Title model" hint="A small, fast model is plenty. Uses the chat's own model unless you pick one.">
+              <ModelPicker className="w-72 mobile:w-full" value={settings.titleModel} onChange={(titleModel) => void update({ titleModel })} allowNone noneLabel="Same as the chat" />
+            </Row>
+          )}
         </Group>
       )
     case 'subagents':
