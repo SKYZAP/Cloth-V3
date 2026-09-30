@@ -6,3 +6,4 @@ release/
 .cloth-dev/
 .DS_Store
 sidecars/
+build/

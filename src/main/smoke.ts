@@ -213,6 +213,94 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       faux.unregister()
       return
     }
+    if (process.env.CLOTH_PROBE === 'export') {
+      // Flow workspace + agent pickers in the editor, a run that makes a .pptx, then Export → installer with the live log.
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const errors: string[] = []
+      win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(e.message.slice(0, 1500)))
+      const ws = join(outDir, 'flow-workspace')
+      mkdirSync(ws, { recursive: true })
+      const provider = s.providers.create({ name: 'LM Studio', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      s.providers.setModels(provider.id, [{ id: 'qwen', name: 'qwen', embedding: false, reasoning: false, vision: false, contextWindow: 32000, maxTokens: 4096 } as never])
+      s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'qwen' } })
+      await s.skills.create({ name: 'slide-style', description: 'House style for business slides: dark backgrounds, crimson titles', body: '# Slide style\n\n- Titles in crimson #EF3D5C on #0F0F11' })
+      s.custom.create({
+        name: 'make_slides',
+        description: 'Save slides as a PowerPoint file in the workspace',
+        kind: 'javascript',
+        params: [
+          { name: 'title', type: 'string', description: 'Deck title', required: true },
+          { name: 'slides', type: 'json', description: 'Array of {title, bullets}', required: true }
+        ],
+        config: {
+          code: [
+            "const P = require('pptxgenjs')",
+            'const deck = new P()',
+            "deck.layout = 'LAYOUT_WIDE'",
+            "const cover = deck.addSlide(); cover.background = { color: '0F0F11' }",
+            "cover.addText(args.title, { x: 0.8, y: 2.8, w: 11.5, fontSize: 40, bold: true, color: 'EF3D5C' })",
+            "for (const s of args.slides) { const sl = deck.addSlide(); sl.background = { color: '0F0F11' }; sl.addText(s.title, { x: 0.8, y: 0.5, w: 11.5, fontSize: 28, bold: true, color: 'EF3D5C' }); sl.addText(s.bullets.map((b) => ({ text: b, options: { bullet: true } })), { x: 0.8, y: 1.6, w: 11.5, h: 4.5, fontSize: 18, color: 'ECECEF' }) }",
+            "const file = args.title.replace(/[^A-Za-z0-9]+/g, '-') + '.pptx'",
+            "return 'Saved ' + await workspace.write(file, await deck.write({ outputType: 'nodebuffer' }))"
+          ].join('\n')
+        }
+      })
+      const wf = s.workflows.create({ name: 'Business deck' })
+      s.workflows.save(wf.id, {
+        workspace: ws,
+        nodes: [
+          { id: 't', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Brief', defaultInput: '{\n  "topic": "Q3 business review",\n  "brief": "Growth, margins and next quarter plans"\n}' } },
+          { id: 'w', type: 'web', position: { x: 300, y: 40 }, data: { key: 'research', label: 'Research', query: '{{input.topic}}', k: 5, fetchTop: 0 } },
+          { id: 'a', type: 'agent', position: { x: 600, y: 120 }, data: { key: 'writer', label: 'Write the slides', prompt: 'Make a deck about {{input.topic}}: {{input.brief}}', tools: ['make_slides'], skills: ['slide-style'], customTools: true, skillsEnabled: true, webEnabled: true } },
+          { id: 'k', type: 'tool', position: { x: 900, y: 120 }, data: { key: 'deck', label: 'Save the deck', tool: 'make_slides', args: '{"title": "{{input.topic}}", "slides": [{"title": "Growth", "bullets": ["Revenue up 18%", "3 new regions"]}, {"title": "Next quarter", "bullets": ["Hire 4 engineers", "Launch v2"]}]}' } },
+          { id: 'o', type: 'output', position: { x: 1200, y: 120 }, data: { key: 'result', label: 'Output', value: '{{deck}}' } }
+        ],
+        edges: [
+          { id: 'e1', source: 't', target: 'w' },
+          { id: 'e2', source: 'w', target: 'a' },
+          { id: 'e3', source: 'a', target: 'k' },
+          { id: 'e4', source: 'k', target: 'o' }
+        ]
+      })
+      // Run just the file-making part so the run panel has a file to show (no model or network needed).
+      const quick = s.workflows.create({ name: 'Deck (tool only)' })
+      s.workflows.save(quick.id, { workspace: ws, nodes: [s.workflows.get(wf.id).nodes[0], s.workflows.get(wf.id).nodes[3], s.workflows.get(wf.id).nodes[4]], edges: [{ id: 'q1', source: 't', target: 'k' }, { id: 'q2', source: 'k', target: 'o' }] })
+      const run = await s.workflows.run(quick.id, { topic: 'Q3 business review' })
+      note(`quick run: ${run.status} ${run.error ?? ''} files=${JSON.stringify(run.files)}`)
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Flows')
+      await wait(900)
+      await js(`[...document.querySelectorAll('div.group')].find((b) => b.textContent.includes('Deck (tool only)'))?.click()`)
+      await wait(1200)
+      writeFileSync(join(outDir, 'export-run-files.png'), await screenshot(win))
+      await js(`[...document.querySelectorAll('div.group')].find((b) => b.textContent.trim().startsWith('Business deck'))?.click()`)
+      await wait(1500)
+      note(`editor: ${JSON.stringify(((await js(`document.querySelector('main')?.innerText ?? document.body.innerText`)) as string).slice(0, 200))}`)
+      await js(`[...document.querySelectorAll('.react-flow__node')].find((n) => n.textContent.includes('Write the slides'))?.click()`)
+      await wait(700)
+      writeFileSync(join(outDir, 'export-agent-pickers.png'), await screenshot(win))
+      await js(`document.querySelector('.react-flow__pane')?.click()`)
+      await js(`document.querySelector('button[title="Export as an app"]')?.click()`)
+      await wait(1500)
+      writeFileSync(join(outDir, 'export-dialog.png'), await screenshot(win))
+      note(`dialog text: ${JSON.stringify(((await js(`document.querySelector('[role=dialog]')?.innerText ?? ''`)) as string).slice(0, 900))}`)
+      await clickText(win, 'Build installer')
+      for (let i = 0; i < 12; i++) {
+        await wait(1000)
+        if (i === 6) writeFileSync(join(outDir, 'export-running.png'), await screenshot(win))
+      }
+      for (let i = 0; i < 240; i++) {
+        const text = (await js(`document.querySelector('[role=dialog]')?.innerText ?? ''`)) as string
+        if (/Installer ready|Export failed|failed/i.test(text.split('\n').slice(0, 3).join(' '))) break
+        await wait(1000)
+      }
+      await wait(800)
+      writeFileSync(join(outDir, 'export-done.png'), await screenshot(win))
+      note(`log: ${JSON.stringify(((await js(`document.querySelector('[role=log]')?.innerText ?? ''`)) as string).slice(-1500))}`)
+      note(`console errors: ${errors.length ? errors.join(' || ') : 'none'}`)
+      return
+    }
     if (process.env.CLOTH_PROBE === 'phone') {
       // Settings → Phone: QR pairing dialog, a phone connecting (simulated with the real client), device list.
       const js = (code: string) => win.webContents.executeJavaScript(code)

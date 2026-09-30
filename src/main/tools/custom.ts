@@ -8,6 +8,10 @@ import type { ProviderService } from '../providers/providers'
 import type { SettingsService } from '../core/settings'
 import { renderTemplate } from '../workflows/engine'
 import { run } from '../web/process'
+import { sandboxRequire, workspaceApi, type ToolEnv } from './sandbox'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{1,63}$/
 const MAX_OUTPUT = 20_000
@@ -107,7 +111,7 @@ export class CustomToolService {
   }
 
   /** Execute a tool definition with arguments (used by the agent and the Tools page test runner). */
-  async execute(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, rawArgs: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+  async execute(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, rawArgs: Record<string, unknown>, signal?: AbortSignal, env: ToolEnv = {}): Promise<string> {
     const args = coerceArgs(tool.params, rawArgs)
     const c = tool.config ?? {}
     const scope = { ...args, args }
@@ -133,6 +137,9 @@ export class CustomToolService {
         const logs: string[] = []
         const sandbox = {
           args,
+          workspace: workspaceApi(env),
+          require: await sandboxRequire(String(c.code ?? '')),
+          Buffer,
           fetch,
           URL,
           URLSearchParams,
@@ -172,17 +179,25 @@ export class CustomToolService {
     }
   }
 
+  /** Tools page test run. JavaScript tools get a scratch workspace, so file-writing tools can be tried too. */
   async test(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, args: Record<string, unknown>): Promise<ToolRunResult> {
     const started = Date.now()
+    const scratch = tool.kind === 'javascript' ? await mkdtemp(join(tmpdir(), 'cloth-tooltest-')) : null
+    const written: string[] = []
     try {
-      const output = await this.execute(tool, args)
-      return { ok: true, output, durationMs: Date.now() - started }
+      const env: ToolEnv = scratch ? { workspace: { root: scratch, writable: true, onWrite: (abs) => written.push(abs) } } : {}
+      const output = await this.execute(tool, args, undefined, env)
+      const files = scratch ? await readdir(scratch, { recursive: true }) : []
+      const note = written.length ? `\n\nFiles written to a scratch workspace (deleted after the test): ${files.join(', ')}` : ''
+      return { ok: true, output: output + note, durationMs: Date.now() - started }
     } catch (err) {
       return { ok: false, output: '', error: errorMessage(err), durationMs: Date.now() - started }
+    } finally {
+      if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 
-  toAgentTool(tool: CustomTool): AgentTool<TSchema, { durationMs: number; custom: true }> {
+  toAgentTool(tool: CustomTool, env: ToolEnv = {}): AgentTool<TSchema, { durationMs: number; custom: true }> {
     return {
       name: tool.name,
       label: tool.name,
@@ -190,7 +205,7 @@ export class CustomToolService {
       parameters: paramsSchema(tool.params),
       execute: async (_id, params, signal) => {
         const started = performance.now()
-        const text = await this.execute(tool, params as Record<string, unknown>, signal)
+        const text = await this.execute(tool, params as Record<string, unknown>, signal, env)
         return { content: [{ type: 'text', text }], details: { durationMs: Math.round(performance.now() - started), custom: true } }
       }
     }

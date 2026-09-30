@@ -50,6 +50,9 @@ export const NODE_SPECS: NodeSpec[] = [
       { key: 'skillsEnabled', description: 'boolean' },
       { key: 'webEnabled', description: 'boolean — allow web_search / web_fetch' },
       { key: 'customTools', description: 'boolean — allow user-defined tools' },
+      { key: 'tools', description: 'optional array of custom tool names the agent may use (omit = all enabled)' },
+      { key: 'skills', description: 'optional array of skill names the agent may use (omit = all)' },
+      { key: 'workspace', description: "optional folder of its own (read-only); empty = the flow's workspace, which it can read and write" },
       { key: 'maxTurns', description: 'number' }
     ]
   },

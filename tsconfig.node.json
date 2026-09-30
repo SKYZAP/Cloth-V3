@@ -14,5 +14,5 @@
     "noEmit": true,
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "electron.vite.config.ts", "vitest.config.ts", "tests/**/*"]
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/runner/main/**/*", "src/runner/preload/**/*", "src/runner/api.ts", "electron.vite.config.ts", "electron.runner.config.ts", "vitest.config.ts", "tests/**/*"]
 }

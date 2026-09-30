@@ -81,7 +81,7 @@ export const TOOL_CREATE_DESCRIPTION =
   'Create a custom tool in Cloth. It is listed on the Tools page and becomes callable by Cloth chats and flows. Use it when the user asks for a new tool or capability. ' +
   'name is snake_case; description tells a model when and how to use the tool; params are the arguments, referenced in templates as {{name}}. ' +
   'kind and config: "http" {url, method?, headers? (JSON object), body? (template; default the args as JSON)}; ' +
-  '"javascript" {code: async function body with args, fetch, URL, console, JSON, Math, Date in scope; return a value}; ' +
+  '"javascript" {code: async function body with args, fetch, URL, console, JSON, Math, Date, Buffer in scope; return a value. workspace.write(path, data) / read / readBytes / list / exists work inside the run workspace folder; require("pptxgenjs") builds PowerPoint files and require("docx") Word files — write the result with workspace.write}; ' +
   '"command" {command: executable, args?: one argument per line (templates allowed), cwd?}; ' +
   '"prompt" {prompt: template sent to the default model, system?}. Optional timeoutMs for any kind. ' +
   'http and prompt tools are enabled right away; javascript and command tools run code, so they start disabled until the user reviews and enables them on the Tools page. ' +

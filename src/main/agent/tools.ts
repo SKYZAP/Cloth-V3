@@ -55,6 +55,17 @@ export interface ToolScope {
   codeIntel?: boolean
   /** Offer generate_image (chat agents, when an image model is configured). */
   images?: boolean
+  /** Only these custom tools (by name); null/undefined = every enabled one. */
+  toolNames?: string[] | null
+  /** Only these skills (by name); null/undefined = all. */
+  skillNames?: string[] | null
+  /** A file was written in the workspace by a custom tool (absolute path). */
+  onFile?: (abs: string) => void
+}
+
+/** Skills an agent with this scope may see and load. */
+export function allowedSkill(scope: ToolScope, name: string): boolean {
+  return !scope.skillNames || scope.skillNames.includes(name)
 }
 
 interface Ctx {
@@ -238,7 +249,7 @@ export const BUILTINS: BuiltinSpec[] = [
     description: () => 'List the skills available in the Cloth skill hub.',
     when: (ctx) => ctx.scope.skillsEnabled,
     async run(_p, ctx) {
-      const skills = await ctx.deps.skills.list()
+      const skills = (await ctx.deps.skills.list()).filter((s) => allowedSkill(ctx.scope, s.name))
       return { text: skills.map((s) => `- ${s.name}: ${s.description}`).join('\n') || 'No skills installed.' }
     }
   }),
@@ -254,6 +265,7 @@ export const BUILTINS: BuiltinSpec[] = [
     description: () => 'Load the full instructions of a skill by name (and optionally one of its bundled files). Load a skill before doing a task it covers.',
     when: (ctx) => ctx.scope.skillsEnabled,
     async run(p, ctx) {
+      if (!allowedSkill(ctx.scope, p.name)) throw new Error(`The skill "${p.name}" is not available here`)
       if (p.file) return { text: await ctx.deps.skills.readFile(p.name, p.file), details: { skill: p.name, file: p.file } }
       const s = await ctx.deps.skills.get(p.name)
       const extra = s.files.filter((f) => f !== 'SKILL.md' && f !== 'evals.json')
@@ -386,8 +398,10 @@ function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> 
 export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, ToolDetails>[] {
   const ctx: Ctx = { deps, scope }
   const tools: AgentTool<any, ToolDetails>[] = BUILTINS.filter((b) => b.when(ctx)).map((b) => instantiate(b, ctx))
+  // Writes need someone to approve them (a chat), or a policy that approves them up front (flows).
+  const autoEdits = !!scope.autoApprove && scope.autoApprove() !== 'none'
   if (scope.workspace) {
-    const writable = scope.fileAccess === 'write' && !!scope.sessionId
+    const writable = scope.fileAccess === 'write' && (!!scope.sessionId || autoEdits)
     tools.push(
       ...buildWorkspaceTools({
         root: scope.workspace,
@@ -402,7 +416,11 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
       })
     )
   }
-  if (scope.customTools !== false) for (const t of deps.custom.list()) if (t.enabled) tools.push(deps.custom.toAgentTool(t))
+  if (scope.customTools !== false) {
+    // Custom code may only write where file edits are already allowed without asking.
+    const env = scope.workspace ? { workspace: { root: scope.workspace, writable: scope.fileAccess === 'write' && autoEdits, onWrite: scope.onFile } } : {}
+    for (const t of deps.custom.list()) if (t.enabled && (!scope.toolNames || scope.toolNames.includes(t.name))) tools.push(deps.custom.toAgentTool(t, env))
+  }
   const usage = deps.usage
   return usage ? tools.map((t) => withUsage(t, BUILTIN_NAMES.includes(t.name) ? 'builtin' : 'custom', usage)) : tools
 }

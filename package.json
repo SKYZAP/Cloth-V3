@@ -16,15 +16,16 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "package": "npm run sidecars && electron-vite build && electron-builder --dir",
-    "dist": "npm run sidecars && electron-vite build && electron-builder --publish never",
+    "package": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --dir",
+    "dist": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --publish never",
     "mock-llm": "node scripts/mock-llm.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "smoke": "electron-vite build && node scripts/smoke.mjs",
     "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs",
     "mobile:dev": "vite --config vite.mobile.config.ts",
     "mobile:apk": "node scripts/mobile-apk.mjs debug",
-    "mobile:release": "node scripts/mobile-apk.mjs release"
+    "mobile:release": "node scripts/mobile-apk.mjs release",
+    "build:runner": "node scripts/build-runner.mjs"
   },
   "dependencies": {
     "@ast-grep/lang-go": "^0.0.6",
@@ -39,8 +40,10 @@
     "@mozilla/readability": "^0.6.0",
     "croner": "^10.0.1",
     "diff": "^8.0.4",
+    "docx": "^9.8.1",
     "linkedom": "^0.18.13",
     "mammoth": "^1.12.3",
+    "pptxgenjs": "^4.0.1",
     "pyright": "^1.1.414",
     "turndown": "^7.2.4",
     "typebox": "^1.3.34",
@@ -112,7 +115,8 @@
     "files": [
       "out/**",
       "package.json",
-      "!**/*.map"
+      "!**/*.map",
+      "!out/runner/**"
     ],
     "asar": true,
     "icon": "resources/icon.png",
@@ -120,7 +124,23 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "Cloth-Setup-${version}.${ext}"
+      "artifactName": "Cloth-Setup-${version}.${ext}",
+      "extraResources": [
+        {
+          "from": "build/runner-dist/win-unpacked",
+          "to": "flow-runner",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "build/nsis",
+          "to": "nsis",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

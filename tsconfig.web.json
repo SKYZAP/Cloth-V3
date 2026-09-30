@@ -16,5 +16,5 @@
       "@/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/api.d.ts"]
+  "include": ["src/renderer/src/**/*", "src/runner/renderer/src/**/*", "src/runner/api.ts", "src/shared/**/*", "src/preload/api.d.ts"]
 }

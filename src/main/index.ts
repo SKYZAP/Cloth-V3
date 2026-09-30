@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +19,8 @@ if (process.env.CLOTH_HOME) app.setPath('userData', process.env.CLOTH_HOME)
 
 // Generated images load in the UI as cloth-image://image/<id> (files in the data folder).
 protocol.registerSchemesAsPrivileged([{ scheme: 'cloth-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+
+const firstExisting = (...paths: string[]) => paths.find((p) => existsSync(p)) ?? null
 
 let mainWindow: BrowserWindow | null = null
 let services: Services | null = null
@@ -113,6 +116,14 @@ else {
       dataDir: app.getPath('userData'),
       sidecarsDir: resources ?? join(app.getAppPath(), 'sidecars'),
       examplesDir: resources ? join(resources, 'examples') : join(app.getAppPath(), 'resources', 'examples'),
+      exportToolchain: {
+        // Packaged: shipped as extraResources. Dev: produced by `npm run build:runner`.
+        runnerDir: () => firstExisting(resources ? join(resources, 'flow-runner') : join(app.getAppPath(), 'build', 'runner-dist', 'win-unpacked')),
+        nsisDir: () => firstExisting(resources ? join(resources, 'nsis') : join(app.getAppPath(), 'build', 'nsis')),
+        iconPng: async () => nativeImage.createFromPath(join(__dirname, '../../resources/icon.png')).resize({ width: 256, height: 256, quality: 'best' }).toPNG(),
+        defaultOutputDir: () => process.env.CLOTH_EXPORT_DIR ?? app.getPath('downloads'),
+        clothVersion: app.getVersion()
+      },
       secrets,
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)

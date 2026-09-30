@@ -12,7 +12,7 @@ import { SplitDetail, SplitRoot } from '@/components/SplitView'
 
 const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: string }> = {
   http: { label: 'HTTP request', icon: Link2, blurb: 'Call a REST API. URL, headers and body are templates over the parameters.' },
-  javascript: { label: 'JavaScript', icon: Code2, blurb: 'Async function body with args, fetch and console in scope. Return a value.' },
+  javascript: { label: 'JavaScript', icon: Code2, blurb: 'Async function body with args, fetch, workspace and require("pptxgenjs" | "docx") in scope. Return a value.' },
   command: { label: 'Command', icon: SquareTerminal, blurb: 'Run an executable (no shell). One templated argument per line.' },
   prompt: { label: 'Prompt', icon: MessageSquareText, blurb: 'Call a model with a templated prompt — a reusable sub-task.' }
 }
@@ -463,7 +463,13 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
     case 'javascript':
       return (
         <div className="space-y-2">
-          <div className="text-[11px] text-dim">Async function body. In scope: args, fetch, URL, console, JSON, Math, Date. Return a string or any JSON value.</div>
+          <div className="space-y-1 text-[11px] text-dim">
+            <div>Async function body. In scope: args, fetch, URL, console, JSON, Math, Date, Buffer. Return a string or any JSON value.</div>
+            <div>
+              <span className="font-mono text-muted">workspace</span>: write(path, data), read, readBytes, list, exists — files in the flow's workspace (the test run uses a scratch folder).{' '}
+              <span className="font-mono text-muted">require</span>: pptxgenjs (PowerPoint), docx (Word).
+            </div>
+          </div>
           <div className="h-64 overflow-hidden rounded-md border border-line bg-bg">
             <Editor value={str('code')} onChange={(code) => setConfig({ code })} lang="javascript" />
           </div>

@@ -1,4 +1,6 @@
 import { runInNewContext } from 'node:vm'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { Cron } from 'croner'
 import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun } from '@shared/types'
 import { json } from '../core/db'
@@ -13,6 +15,11 @@ import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
 import { executeGraph, renderTemplate, type Executor } from './engine'
 import { buildWorkflow } from './builder'
+
+export interface RunOptions {
+  /** Overrides the flow's workspace for this run (null = none). */
+  workspace?: string | null
+}
 
 interface WorkflowRow {
   id: string
@@ -66,7 +73,7 @@ export class WorkflowService {
     return this.get(id)
   }
 
-  save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled'>>): Workflow {
+  save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>): Workflow {
     const cur = this.get(id)
     const cron = patch.cron === undefined ? cur.cron : patch.cron?.trim() || null
     if (cron) {
@@ -76,7 +83,7 @@ export class WorkflowService {
     const next = { ...cur, ...patch, cron }
     this.ctx.db
       .prepare('UPDATE workflows SET name = ?, description = ?, graph = ?, cron = ?, cron_enabled = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
+      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
     this.schedule(id)
     return this.get(id)
   }
@@ -119,7 +126,7 @@ export class WorkflowService {
   duplicate(id: string): Workflow {
     const cur = this.get(id)
     const copy = this.create({ name: `${cur.name} (copy)`, description: cur.description })
-    return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false })
+    return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false, workspace: cur.workspace })
   }
 
   runs(workflowId: string, limit = 30): WorkflowRun[] {
@@ -172,19 +179,22 @@ export class WorkflowService {
 
   // ─── Execution ────────────────────────────────────────────────────────────
 
-  startRun(id: string, input: unknown, trigger: WorkflowRun['trigger'] = 'manual'): WorkflowRun {
-    const { run } = this.begin(id, input, trigger)
+  startRun(id: string, input: unknown, trigger: WorkflowRun['trigger'] = 'manual', opts: RunOptions = {}): WorkflowRun {
+    const { run } = this.begin(id, input, trigger, opts)
     return run
   }
 
-  async run(id: string, input: unknown, trigger: WorkflowRun['trigger'] = 'manual'): Promise<WorkflowRun> {
-    const { done } = this.begin(id, input, trigger)
+  async run(id: string, input: unknown, trigger: WorkflowRun['trigger'] = 'manual', opts: RunOptions = {}): Promise<WorkflowRun> {
+    const { done } = this.begin(id, input, trigger, opts)
     return done
   }
 
-  private begin(id: string, input: unknown, trigger: WorkflowRun['trigger']): { run: WorkflowRun; done: Promise<WorkflowRun> } {
+  private begin(id: string, input: unknown, trigger: WorkflowRun['trigger'], opts: RunOptions): { run: WorkflowRun; done: Promise<WorkflowRun> } {
     const wf = this.get(id)
     const effectiveInput = input === undefined || input === null || input === '' ? this.defaultInput(wf) : input
+    const workspace = (opts.workspace === undefined ? wf.workspace : opts.workspace) || null
+    if (workspace && !existsSync(workspace)) throw new Error(`The workspace folder does not exist: ${workspace}`)
+    const files = new Set<string>()
     const run: WorkflowRun = {
       id: newId('wfr_'),
       workflowId: id,
@@ -194,6 +204,8 @@ export class WorkflowService {
       output: null,
       nodes: [],
       error: null,
+      workspace,
+      files: [],
       startedAt: Date.now(),
       finishedAt: null
     }
@@ -201,12 +213,24 @@ export class WorkflowService {
     this.running.set(run.id, controller)
     this.persist(run)
     const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
-      executeGraph(wf, effectiveInput, this.executor(), controller.signal, {
-        onUpdate: (traces) => {
-          run.nodes = traces
-          this.persist(run)
+      executeGraph(
+        wf,
+        effectiveInput,
+        this.executor({
+          workspace,
+          onFile: (abs) => {
+            files.add(abs)
+            run.files = [...files]
+          }
+        }),
+        controller.signal,
+        {
+          onUpdate: (traces) => {
+            run.nodes = traces
+            this.persist(run)
+          }
         }
-      })
+      )
     )
       .then(({ output, traces }) => {
         run.nodes = traces
@@ -247,7 +271,7 @@ export class WorkflowService {
     return m
   }
 
-  private executor(): Executor {
+  private executor(env: { workspace: string | null; onFile(abs: string): void }): Executor {
     const { providers, rag, skills, runtime, web, custom } = this.deps
     /** Tool-like nodes count as tool calls on the dashboard. */
     const timed = async <T>(name: string, kind: string, fn: () => Promise<T>): Promise<T> => {
@@ -285,14 +309,31 @@ export class WorkflowService {
         }
 
         case 'agent': {
+          // An agent works in its own folder (read-only unless set otherwise) or in the flow's workspace (read & write).
+          const workspace = d.workspace || env.workspace
+          const fileAccess = d.fileAccess ?? (workspace && workspace === env.workspace ? 'write' : 'read')
           const res = await runtime.run({
             model: this.modelFor(d.model),
             prompt: t(d.prompt) || String(prev ?? ''),
             systemPrompt: t(d.system),
-            scope: { collectionIds: d.collectionIds ?? [], skillsEnabled: d.skillsEnabled ?? true, webEnabled: !!d.webEnabled, customTools: d.customTools ?? true, workspace: d.workspace || null },
+            scope: {
+              collectionIds: d.collectionIds ?? [],
+              skillsEnabled: d.skillsEnabled ?? true,
+              webEnabled: !!d.webEnabled,
+              customTools: d.customTools ?? true,
+              toolNames: Array.isArray(d.tools) ? d.tools : null,
+              skillNames: Array.isArray(d.skills) ? d.skills : null,
+              workspace: workspace || null,
+              fileAccess,
+              // Nobody is watching a flow run: edits inside its workspace are approved up front.
+              autoApprove: () => (fileAccess === 'write' ? 'edits' : 'none'),
+              onFile: env.onFile,
+              codeIntel: false
+            },
             maxTurns: d.maxTurns ? Number(d.maxTurns) : 12,
             signal
           })
+          if (workspace) for (const b of res.turn.blocks) if (b.type === 'tool') for (const c of b.trace.changes ?? []) env.onFile(join(workspace, c.path))
           const tools = res.turn.blocks.filter((b) => b.type === 'tool').map((b) => (b.type === 'tool' ? b.trace.name : ''))
           return { output: d.includeTrace ? { text: res.text, tools } : res.text }
         }
@@ -325,7 +366,8 @@ export class WorkflowService {
           const tool = custom.list().find((x) => x.name === d.tool)
           if (!tool) throw new Error(`Custom tool "${d.tool}" not found`)
           const args = json<Record<string, unknown>>(t(d.args || '{}'), {})
-          return { output: await timed(tool.name, 'custom', () => custom.execute(tool, args, signal)) }
+          const toolEnv = env.workspace ? { workspace: { root: env.workspace, writable: true, onWrite: env.onFile } } : {}
+          return { output: await timed(tool.name, 'custom', () => custom.execute(tool, args, signal, toolEnv)) }
         }
 
         case 'skill': {
@@ -371,7 +413,7 @@ export class WorkflowService {
   }
 
   private toWorkflow(r: WorkflowRow): Workflow {
-    const graph = json<{ nodes: WorkflowNode[]; edges: WorkflowEdge[] }>(r.graph, { nodes: [], edges: [] })
+    const graph = json<{ nodes: WorkflowNode[]; edges: WorkflowEdge[]; workspace?: string | null }>(r.graph, { nodes: [], edges: [] })
     return {
       id: r.id,
       name: r.name,
@@ -381,6 +423,7 @@ export class WorkflowService {
       cron: r.cron,
       cronEnabled: !!r.cron_enabled,
       nextRunAt: this.jobs.get(r.id)?.nextRun()?.getTime() ?? null,
+      workspace: graph.workspace ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at
     }

@@ -131,6 +131,11 @@ jobs:
       - name: Test
         run: npm test
 
+      # The Flow Runner template and NSIS ship inside the Windows installer, for exporting flows as apps.
+      - name: Build flow runner
+        if: runner.os == 'Windows'
+        run: npm run build:runner
+
       - name: Build app
         run: npx electron-vite build
 

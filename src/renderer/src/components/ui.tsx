@@ -199,6 +199,8 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
         className="flex max-h-[85vh] flex-col rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60 mobile:max-h-[92vh] mobile:w-full mobile:rounded-b-none mobile:rounded-t-[22px] mobile:border-x-0 mobile:border-b-0 mobile:pb-[var(--safe-bottom)]"
         style={isMobile ? undefined : { width }}
         onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <div className="text-[14px] font-semibold">{title}</div>
