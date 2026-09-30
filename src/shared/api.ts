@@ -14,6 +14,7 @@ import type {
   ContextUsage,
   ApprovalDecision,
   PendingApproval,
+  PendingQuestion,
   DashboardStats,
   UsageRange,
   Collection,
@@ -120,6 +121,8 @@ export interface ClothApi {
     writeFile(name: string, path: string, content: string): Promise<void>
     saveEvals(name: string, cases: SkillEvalCase[]): Promise<Skill>
     draftEvals(name: string, model: ModelRef): Promise<SkillEvalCase[]>
+    /** Write a new skill with a model from a plain-language request, and save it. */
+    generate(input: { request: string; model: ModelRef; name?: string }): Promise<Skill>
     discover(extra?: string[]): Promise<ExternalSkillInfo[]>
     importFrom(path: string, overwrite?: boolean): Promise<string[]>
     exportTo(name: string, targetRoot: string): Promise<string>
@@ -144,6 +147,9 @@ export interface ClothApi {
     running(): Promise<string[]>
     pendingApprovals(id: string): Promise<PendingApproval[]>
     resolveApproval(approvalId: string, decision: ApprovalDecision): Promise<void>
+    pendingQuestions(id: string): Promise<PendingQuestion[]>
+    /** null = the user skipped the question. */
+    answerQuestion(questionId: string, answer: string | null): Promise<void>
     undoChange(id: string, toolCallId: string, force?: boolean): Promise<UiMessage[]>
     compact(id: string, instructions?: string): Promise<UiMessage[]>
     contextUsage(id: string): Promise<ContextUsage>
@@ -197,7 +203,8 @@ export type EventMap = {
   workflow: import('./types').WorkflowEvent
   ingest: import('./types').IngestProgress
   mcp: McpStatus
-  skills: { type: 'run'; run: SkillRun }
+  skills: { type: 'run'; run: SkillRun } | { type: 'changed'; name: string }
+  tools: { type: 'changed'; id: string }
   web: { type: 'status' }
   remote: RemoteStatus
 }

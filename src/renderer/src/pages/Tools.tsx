@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { BookOpen, ListChecks, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
-import type { BuiltinToolInfo, CustomTool, CustomToolInput, CustomToolKind, ModelRef, ToolParam, ToolParamType, ToolRunResult } from '@shared/types'
-import { api } from '@/lib/api'
+import { Bot, BookOpen, ListChecks, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
+import type { BuiltinToolInfo, CustomTool, CustomToolInput, CustomToolKind, ModelRef, ToolOrigin, ToolParam, ToolParamType, ToolRunResult } from '@shared/types'
+import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { duration, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Select, Switch, Textarea, confirmAction } from '@/components/ui'
@@ -17,7 +17,9 @@ const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: 
   prompt: { label: 'Prompt', icon: MessageSquareText, blurb: 'Call a model with a templated prompt — a reusable sub-task.' }
 }
 
-const GROUP_ICON: Record<BuiltinToolInfo['group'], typeof Globe> = { knowledge: BookOpen, web: Globe, skills: Sparkles, workspace: FolderSearch, planning: ListChecks }
+const GROUP_ICON: Record<BuiltinToolInfo['group'], typeof Globe> = { knowledge: BookOpen, web: Globe, skills: Sparkles, workspace: FolderSearch, planning: ListChecks, tools: Wrench }
+
+const ORIGIN: Record<Exclude<ToolOrigin, 'user'>, string> = { chat: 'a chat', mcp: 'an MCP client' }
 
 const TEMPLATES: Record<CustomToolKind, CustomToolInput> = {
   http: {
@@ -86,6 +88,8 @@ export function ToolsPage() {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Tools made by a model (chat or MCP) appear without a reload.
+  useEvent('tools', () => void load())
 
   const match = (s: string) => !filter || s.toLowerCase().includes(filter.toLowerCase())
   const selectedBuiltin = sel?.kind === 'builtin' ? builtins.find((b) => b.name === sel.name) : undefined
@@ -121,9 +125,13 @@ export function ToolsPage() {
                 <Icon size={14} className="shrink-0 text-dim" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-mono text-[12px]">{t.name}</div>
-                  <div className="truncate text-[11px] text-dim">{KINDS[t.kind].label}</div>
+                  <div className="truncate text-[11px] text-dim">
+                    {KINDS[t.kind].label}
+                    {t.createdBy !== 'user' && ` · made by AI${t.enabled ? '' : ', needs review'}`}
+                  </div>
                 </div>
-                <Dot tone={t.enabled ? 'ok' : 'dim'} />
+                {t.createdBy !== 'user' && <Bot size={12} className="shrink-0 text-dim" aria-label="Made by AI" />}
+                <Dot tone={t.enabled ? 'ok' : t.createdBy !== 'user' ? 'warn' : 'dim'} />
               </ListItem>
             )
           })}
@@ -319,7 +327,7 @@ function CustomToolEditor({ tool, onSaved, onDeleted }: { tool: CustomTool; onSa
             <Badge>{K.label}</Badge>
           </span>
         }
-        subtitle={`Updated ${timeAgo(tool.updatedAt)}`}
+        subtitle={`${tool.createdBy !== 'user' ? `Made by AI in ${ORIGIN[tool.createdBy]} · ` : ''}Updated ${timeAgo(tool.updatedAt)}`}
         actions={
           <>
             <Switch
@@ -348,6 +356,27 @@ function CustomToolEditor({ tool, onSaved, onDeleted }: { tool: CustomTool; onSa
       />
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <div className="min-h-0 space-y-4 overflow-y-auto border-r border-line p-5">
+          {tool.createdBy !== 'user' && !tool.enabled && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-warn/40 bg-warn/5 p-3 text-[12px]">
+              <ShieldAlert size={15} className="mt-px shrink-0 text-warn" />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-fg">Review before enabling</div>
+                <div className="mt-0.5 text-muted">
+                  A model made this tool in {ORIGIN[tool.createdBy]}. {draft.kind === 'command' || draft.kind === 'javascript' ? 'It runs code on this computer, so read' : 'Read'} its settings below and try it in the test panel, then enable it.
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={async () => {
+                  const t = await attempt(() => api.tools.setEnabled(tool.id, true), 'Tool enabled')
+                  if (t) onSaved(t)
+                }}
+              >
+                Enable tool
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-[220px_1fr] gap-3">
             <Field label="Name" hint="snake_case — how the model calls it">
               <Input className="font-mono" value={draft.name} onChange={(e) => set({ name: e.target.value })} />

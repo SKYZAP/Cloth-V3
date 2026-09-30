@@ -50,6 +50,37 @@ export function serializeSkillMd(fm: Record<string, unknown>, body: string): str
   return `---\n${YAML.stringify(ordered, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`
 }
 
+const SKILL_AUTHOR = `You write agent skills: a SKILL.md file that teaches an AI coding agent how to do one kind of task well.
+
+Format — reply with the file only, no commentary and no code fence around it:
+---
+name: kebab-case-name
+description: One or two sentences. Say what the skill does AND when to use it (the situations, keywords or file types that should trigger it). Agents decide whether to load the skill from this line alone.
+---
+
+# Title
+
+Then the instructions, in Markdown. Good skills:
+- Start with a short "When to use" list, then numbered steps the agent should follow.
+- Are concrete: exact commands, file names, code patterns, APIs and settings, with short examples.
+- Cover the pitfalls and checks a capable engineer would otherwise miss; skip generic advice the agent already knows.
+- Stay focused on one job and under ~400 lines.`
+
+/** Pull name / description / body out of a model-written SKILL.md (tolerating a code fence around it). */
+export function parseGeneratedSkill(text: string): SkillInput {
+  const raw = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim()
+    .replace(/^```[a-z]*\n([\s\S]*?)\n```$/i, '$1').trim()
+  const start = raw.indexOf('---')
+  const { frontmatter, body } = parseSkillMd(start > 0 ? raw.slice(start) : raw)
+  const name = slugify(String(frontmatter.name ?? ''))
+  const description = String(frontmatter.description ?? '').trim()
+  if (!name || !description || !body) throw new Error('The model did not return a usable SKILL.md (it needs a name, a description and instructions)')
+  const { name: _n, description: _d, ...rest } = frontmatter
+  return { name, description, body, frontmatter: rest }
+}
+
 export function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -106,13 +137,45 @@ export class SkillService {
     }
   }
 
-  async create(input: SkillInput): Promise<Skill> {
-    const name = slugify(input.name)
+  async create(input: SkillInput, opts: { files?: { path: string; content: string }[]; unique?: boolean } = {}): Promise<Skill> {
+    let name = slugify(input.name)
+    if (!name) throw new Error('A skill needs a name')
+    if (opts.unique) for (let i = 2; existsSync(join(this.ctx.skillsDir, name)); i++) name = `${slugify(input.name).slice(0, 60)}-${i}`
     const dir = this.dir(name)
     if (existsSync(dir)) throw new Error(`Skill "${name}" already exists`)
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'SKILL.md'), serializeSkillMd({ ...(input.frontmatter ?? {}), name, description: input.description }, input.body))
+    try {
+      for (const f of opts.files ?? []) {
+        if (/^skill\.md$/i.test(f.path.trim())) continue
+        await this.writeFile(name, f.path, f.content)
+      }
+    } catch (err) {
+      await rm(dir, { recursive: true, force: true })
+      throw err
+    }
+    this.ctx.emit('skills', { type: 'changed', name })
     return this.get(name)
+  }
+
+  /** Have a model write a skill from a plain-language request, then save it (under a free name). */
+  async generate(input: { request: string; model: ModelRef; name?: string }): Promise<Skill> {
+    const request = input.request.trim()
+    if (!request) throw new Error('Describe what the skill should do')
+    const existing = (await this.list()).map((s) => s.name)
+    const { text } = await this.providers.complete(input.model, {
+      system: SKILL_AUTHOR,
+      prompt: [
+        `Write a skill for this request:\n\n${request}`,
+        input.name?.trim() ? `\nName it "${slugify(input.name)}".` : '',
+        existing.length ? `\nSkills that already exist (do not duplicate their names): ${existing.join(', ')}` : ''
+      ].join(''),
+      maxTokens: 8000,
+      temperature: 0.4
+    })
+    const draft = parseGeneratedSkill(text)
+    if (input.name?.trim()) draft.name = slugify(input.name)
+    return this.create(draft, { unique: true })
   }
 
   async update(name: string, input: SkillInput): Promise<Skill> {
@@ -126,6 +189,7 @@ export class SkillService {
       dir = target
     }
     await writeFile(join(dir, 'SKILL.md'), serializeSkillMd({ ...(input.frontmatter ?? {}), name: nextName, description: input.description }, input.body))
+    this.ctx.emit('skills', { type: 'changed', name: nextName })
     return this.get(nextName)
   }
 
@@ -134,6 +198,7 @@ export class SkillService {
     const trash = join(this.ctx.dataDir, 'skills-trash')
     await mkdir(trash, { recursive: true })
     await rename(this.dir(name), join(trash, `${name}-${Date.now()}`))
+    this.ctx.emit('skills', { type: 'changed', name })
   }
 
   async readFile(name: string, rel: string): Promise<string> {

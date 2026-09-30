@@ -75,7 +75,7 @@ export function createServices(opts: {
   const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings })
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
-  const mcp = new McpHost(ctx, settings, { rag, skills, web, usage: providers.usage })
+  const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
 
   settings.onChange((next, prev) => {

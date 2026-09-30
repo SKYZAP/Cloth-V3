@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm'
 import { Type, type TSchema } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { CustomTool, CustomToolInput, ModelRef, ToolParam, ToolRunResult } from '@shared/types'
+import type { CustomTool, CustomToolInput, ModelRef, ToolOrigin, ToolParam, ToolRunResult } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -21,6 +21,7 @@ interface ToolRow {
   params: string
   config: string
   enabled: number
+  created_by?: string
   created_at: number
   updated_at: number
 }
@@ -43,14 +44,24 @@ export class CustomToolService {
     return toTool(row)
   }
 
-  create(input: CustomToolInput): CustomTool {
+  create(input: CustomToolInput, createdBy: ToolOrigin = 'user'): CustomTool {
     const clean = this.validate(input)
     const id = newId('tool_')
     const now = Date.now()
     this.ctx.db
-      .prepare('INSERT INTO tools (id, name, description, kind, params, config, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, clean.name, clean.description, clean.kind, JSON.stringify(clean.params), JSON.stringify(clean.config), clean.enabled === false ? 0 : 1, now, now)
+      .prepare('INSERT INTO tools (id, name, description, kind, params, config, enabled, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, clean.name, clean.description, clean.kind, JSON.stringify(clean.params), JSON.stringify(clean.config), clean.enabled === false ? 0 : 1, createdBy, now, now)
+    this.changed(id)
     return this.get(id)
+  }
+
+  findByName(name: string): CustomTool | undefined {
+    const row = this.ctx.db.prepare('SELECT * FROM tools WHERE name = ?').get(name) as ToolRow | undefined
+    return row ? toTool(row) : undefined
+  }
+
+  private changed(id: string): void {
+    this.ctx.emit('tools', { type: 'changed', id })
   }
 
   update(id: string, input: CustomToolInput): CustomTool {
@@ -59,16 +70,19 @@ export class CustomToolService {
     this.ctx.db
       .prepare('UPDATE tools SET name = ?, description = ?, kind = ?, params = ?, config = ?, enabled = ?, updated_at = ? WHERE id = ?')
       .run(clean.name, clean.description, clean.kind, JSON.stringify(clean.params), JSON.stringify(clean.config), clean.enabled === false ? 0 : 1, Date.now(), id)
+    this.changed(id)
     return this.get(id)
   }
 
   setEnabled(id: string, enabled: boolean): CustomTool {
     this.ctx.db.prepare('UPDATE tools SET enabled = ?, updated_at = ? WHERE id = ?').run(enabled ? 1 : 0, Date.now(), id)
+    this.changed(id)
     return this.get(id)
   }
 
   remove(id: string): void {
     this.ctx.db.prepare('DELETE FROM tools WHERE id = ?').run(id)
+    this.changed(id)
   }
 
   private validate(input: CustomToolInput, id?: string): CustomToolInput {
@@ -229,6 +243,7 @@ function toTool(r: ToolRow): CustomTool {
     params: json(r.params, []),
     config: json(r.config, {}),
     enabled: !!r.enabled,
+    createdBy: (r.created_by as ToolOrigin | undefined) ?? 'user',
     createdAt: r.created_at,
     updatedAt: r.updated_at
   }

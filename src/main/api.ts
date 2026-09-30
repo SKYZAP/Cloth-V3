@@ -100,6 +100,7 @@ export function createApi(s: Services): ClothApi {
       writeFile: (name, path, content) => s.skills.writeFile(name, path, content),
       saveEvals: (name, cases) => s.skills.saveEvals(name, cases),
       draftEvals: (name, model) => s.skills.draftEvals(name, model),
+      generate: (input) => s.skills.generate(input),
       discover: (extra) => s.skills.discover(extra),
       importFrom: (path, overwrite) => s.skills.importFrom(path, overwrite),
       exportTo: (name, target) => s.skills.exportTo(name, target),
@@ -124,6 +125,8 @@ export function createApi(s: Services): ClothApi {
       running: async () => s.chat.list().filter((c) => s.chat.isRunning(c.id)).map((c) => c.id),
       pendingApprovals: async (id) => s.chat.pendingApprovals(id),
       resolveApproval: async (approvalId, decision) => s.chat.resolveApproval(approvalId, decision),
+      pendingQuestions: async (id) => s.chat.pendingQuestions(id),
+      answerQuestion: async (questionId, answer) => s.chat.answerQuestion(questionId, answer),
       undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force),
       compact: (id, instructions) => s.chat.compact(id, { instructions }),
       contextUsage: (id) => s.chat.contextUsage(id)

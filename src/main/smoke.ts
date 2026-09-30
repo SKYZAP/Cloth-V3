@@ -139,6 +139,80 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       faux.unregister()
       return
     }
+    if (process.env.CLOTH_PROBE === 'hub') {
+      // ask_user in a chat (answered by clicking an option), tool_create → Tools page review, Skills → Generate with AI.
+      const js = (code: string) => win.webContents.executeJavaScript(code)
+      const errors: string[] = []
+      win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(e.message.slice(0, 1500)))
+      const { registerFauxProvider } = await import('@earendil-works/pi-ai/compat')
+      const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai')
+      const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-hub' })
+      const provider = s.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+      s.providers.setModels(provider.id, [{ id: 'faux-1', name: 'faux-1', embedding: false, reasoning: false, vision: false, contextWindow: 32000, maxTokens: 4096 } as never])
+      const model = { providerId: provider.id, modelId: 'faux-1' }
+      s.settings.update({ defaultModel: model })
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('ask_user', { question: 'Which database should the new service use?', options: ['Postgres (shared cluster)', 'SQLite (embedded)', 'Keep it in memory for now'] }, { id: 'ask1' })], {
+          stopReason: 'toolUse'
+        }),
+        fauxAssistantMessage([fauxToolCall('ask_user', { question: 'Which environments should it deploy to?', options: ['dev', 'staging', 'prod'], multiple: true }, { id: 'ask2' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage(
+          [
+            fauxToolCall('tool_create', { name: 'db_size', description: 'Report the SQLite database size', kind: 'command', params: [{ name: 'file', description: 'Database file' }], config: { command: 'du', args: ['-h', '{{file}}'] } }, { id: 'tc1' }),
+            fauxToolCall('rag_index', { collection: 'Service notes', title: 'Database choice', text: 'The service uses SQLite, embedded, deployed to dev and staging.' }, { id: 'ri1' })
+          ],
+          { stopReason: 'toolUse' }
+        ),
+        fauxAssistantMessage('SQLite it is. I made a **db_size** tool (enable it on the Tools page after a look) and saved the decision to *Service notes*.'),
+        fauxAssistantMessage('---\nname: sqlite-migrations\ndescription: Write safe SQLite schema migrations. Use when changing tables in an embedded SQLite database.\n---\n\n# SQLite migrations\n\n## When to use\n\n- Adding or changing tables\n\n## Steps\n\n1. Wrap each migration in a transaction.\n2. Bump `PRAGMA user_version`.\n3. Rebuild the table for column type changes (SQLite cannot alter them).')
+      ])
+      const chat = s.chat.create({ model, knowledgeEnabled: true, skillsEnabled: true, customTools: true })
+      win.webContents.reload()
+      await wait(2500)
+      await clickNav(win, 'Chat')
+      await wait(900)
+      await s.chat.send(chat.id, 'Set up storage for the new service.')
+      await wait(1500)
+      writeFileSync(join(outDir, 'hub-ask.png'), await screenshot(win))
+      note(`pending: ${JSON.stringify(s.chat.pendingQuestions(chat.id).map((q) => q.question))}`)
+      await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim().endsWith('SQLite (embedded)'))?.click()`)
+      await wait(1500)
+      await clickText(win, 'dev')
+      await clickText(win, 'staging')
+      await wait(300)
+      writeFileSync(join(outDir, 'hub-ask-multi.png'), await screenshot(win))
+      await clickText(win, 'Send answer')
+      for (let i = 0; i < 100 && s.chat.isRunning(chat.id); i++) await wait(100)
+      await wait(1000)
+      await js(`document.querySelector('main .overflow-y-auto')?.scrollTo(0, 999999)`)
+      await wait(400)
+      writeFileSync(join(outDir, 'hub-chat-done.png'), await screenshot(win))
+      await wait(2000)
+      note(`after end: cards=${await js(`[...document.querySelectorAll('span')].filter((x) => x.textContent === 'Question for you').length`)} visibility=${await js('document.visibilityState')} raf=${await js('new Promise((r) => { let n = 0; const t = performance.now(); const f = () => (++n < 5 ? requestAnimationFrame(f) : r(Math.round(performance.now() - t))); requestAnimationFrame(f); setTimeout(() => r(-1), 1500) })')}`)
+      const traces = s.chat.messages(chat.id).flatMap((m) => m.blocks).filter((b) => b.type === 'tool')
+      for (const b of traces) if (b.type === 'tool') note(`${b.trace.name}:${b.trace.status} → ${b.trace.result.slice(0, 160).replace(/\n/g, ' ')}`)
+
+      await clickNav(win, 'Tools')
+      await wait(900)
+      await clickText(win, 'db_size')
+      await wait(700)
+      writeFileSync(join(outDir, 'hub-tools.png'), await screenshot(win))
+
+      await clickNav(win, 'Skills')
+      await wait(900)
+      await js(`document.querySelector('button[title="Generate a skill with AI"]')?.click()`)
+      await wait(700)
+      await js(`(() => { const t = [...document.querySelectorAll('textarea')].at(-1); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Write SQLite schema migrations safely for our embedded databases: transactions, user_version, and table rebuilds for type changes.'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+      await wait(400)
+      writeFileSync(join(outDir, 'hub-skill-modal.png'), await screenshot(win))
+      await clickText(win, 'Generate skill')
+      await wait(2500)
+      writeFileSync(join(outDir, 'hub-skill-done.png'), await screenshot(win))
+      note(`skills: ${(await s.skills.list()).map((x) => x.name).join(', ')}`)
+      note(`console errors: ${errors.length ? errors.join(' || ') : 'none'}`)
+      faux.unregister()
+      return
+    }
     if (process.env.CLOTH_PROBE === 'phone') {
       // Settings → Phone: QR pairing dialog, a phone connecting (simulated with the real client), device list.
       const js = (code: string) => win.webContents.executeJavaScript(code)
