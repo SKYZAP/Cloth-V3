@@ -35,7 +35,7 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContextUsage, PendingApproval, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -47,6 +47,7 @@ import { BottomSheet } from '@/components/BottomSheet'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
+import { QuestionCard } from '@/components/QuestionCard'
 import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile } from '@/lib/platform'
@@ -196,6 +197,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
   const [invoked, setInvoked] = useState<string[]>([])
   const [approvals, setApprovals] = useState<PendingApproval[]>([])
+  const [questions, setQuestions] = useState<PendingQuestion[]>([])
   const [usage, setUsage] = useState<ContextUsage | null>(null)
   const [compacting, setCompacting] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
@@ -220,6 +222,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       setMessages(ms)
     })
     void api.chat.pendingApprovals(session.id).then(setApprovals)
+    void api.chat.pendingQuestions(session.id).then(setQuestions)
     setShowArchived(false)
   }, [session.id])
 
@@ -239,6 +242,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     }
     if (e.type === 'approval') setApprovals((as) => (as.some((a) => a.id === e.approval.id) ? as : [...as, e.approval]))
     if (e.type === 'approval-done') setApprovals((as) => as.filter((a) => a.id !== e.id))
+    if (e.type === 'question') setQuestions((qs) => (qs.some((q) => q.id === e.question.id) ? qs : [...qs, e.question]))
+    if (e.type === 'question-done') setQuestions((qs) => qs.filter((q) => q.id !== e.id))
     if (e.type === 'compacting') setCompacting(true)
     if (e.type === 'compacted') {
       setCompacting(false)
@@ -248,6 +253,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     }
     if (e.type === 'end') {
       setApprovals([])
+      setQuestions([])
       refreshUsage()
       void api.chat.messages(session.id).then(setMessages)
       if (e.error && !/abort/i.test(e.error)) useApp.getState().toast(e.error, 'error')
@@ -342,7 +348,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
   const todos = useMemo(() => latestTodos(messages), [messages])
   const showPlan = !!todos?.length && (running || todos.some((t) => t.status !== 'completed'))
-  const awaiting = useMemo(() => new Set(approvals.map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals])
+  const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
   const regenerate = async (assistantId: string) => {
     const idx = messages.findIndex((m) => m.id === assistantId)
@@ -422,6 +428,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
           <AnimatePresence>
             {approvals.map((a) => (
               <ApprovalCard key={a.id} approval={a} onDecide={(d) => decide(a, d)} />
+            ))}
+            {questions.map((q) => (
+              <QuestionCard key={q.id} question={q} onAnswer={(answer) => attempt(() => api.chat.answerQuestion(q.id, answer)).then(() => undefined)} />
             ))}
           </AnimatePresence>
           <AnimatePresence>

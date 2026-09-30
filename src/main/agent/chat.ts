@@ -3,7 +3,7 @@ import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
-import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import type { ImageService } from '../images'
@@ -163,7 +163,10 @@ export class AgentRuntime {
       )
     }
     if (this.imagesAvailable(scope)) lines.push('', '## Images', 'You can create images with `generate_image` when the user asks for a picture, illustration, logo, mockup or similar. The image appears inline for the user.')
-    if (scope.sessionId && !scope.depth) lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
+    if (scope.sessionId && !scope.depth) {
+      lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
+      if (this.ws.approvals) lines.push('When you need a decision, a preference or information only the user has before you can continue, ask with the `ask_user` tool (offer options when you can) instead of guessing or ending your reply with questions — the user answers in the chat and you carry on with the answer. Ask one question per call; call it again for the next one. Do not ask about things you can find out yourself.')
+    }
     if (scope.workspace) {
       const writable = scope.fileAccess === 'write' && !!scope.sessionId
       const shell = scope.shell && scope.sessionId ? (process.platform === 'win32' ? 'powershell' : 'bash') : null
@@ -396,6 +399,15 @@ export class ChatService {
   resolveApproval(approvalId: string, decision: ApprovalDecision): void {
     if (!this.approvals) throw new Error('Approvals are not available')
     this.approvals.resolve(approvalId, decision)
+  }
+
+  pendingQuestions(id: string): PendingQuestion[] {
+    return this.approvals?.listQuestions(id) ?? []
+  }
+
+  answerQuestion(questionId: string, answer: string | null): void {
+    if (!this.approvals) throw new Error('Questions are not available')
+    this.approvals.answer(questionId, answer)
   }
 
   /** Restore the files one tool call changed, and mark its changes as undone in the history. */

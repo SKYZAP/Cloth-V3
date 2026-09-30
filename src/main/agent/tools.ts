@@ -12,6 +12,7 @@ import { formatHitsForModel, type RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
+import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from './hub'
 
 export interface ToolDetails {
   durationMs?: number
@@ -70,7 +71,7 @@ interface BuiltinSpec<P extends TSchema = TSchema> {
   parameters: P
   description(ctx: Ctx | null): string
   when(ctx: Ctx): boolean
-  run(params: Static<P>, ctx: Ctx, signal?: AbortSignal): Promise<{ text: string; details?: ToolDetails }>
+  run(params: Static<P>, ctx: Ctx, signal: AbortSignal | undefined, toolCallId: string): Promise<{ text: string; details?: ToolDetails }>
 }
 
 const spec = <P extends TSchema>(s: BuiltinSpec<P>): BuiltinSpec => s as unknown as BuiltinSpec
@@ -126,6 +127,31 @@ export const BUILTINS: BuiltinSpec[] = [
     }
   }),
   spec({
+    name: 'ask_user',
+    label: 'Ask the user',
+    group: 'planning',
+    availability: 'Chats (not flows or subagents)',
+    parameters: Type.Object({
+      question: Type.String({ description: 'The question, self-contained and specific' }),
+      options: Type.Optional(Type.Array(Type.String(), { description: 'Suggested answers to pick from (2-6 short options). Leave out for a free-text answer.' })),
+      multiple: Type.Optional(Type.Boolean({ description: 'Allow picking several options (default false)' })),
+      allowOther: Type.Optional(Type.Boolean({ description: 'Also accept a typed answer besides the options (default true)' }))
+    }),
+    description: () =>
+      'Ask the user a question and wait for the answer. Use it when you need a decision, a preference or missing information that you cannot find out yourself, instead of guessing — e.g. choosing between approaches or confirming scope. Offer options when the likely answers are known. Ask one focused question at a time; do not ask for things you can look up.',
+    when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && !!ctx.deps.approvals,
+    async run(p, ctx, signal, toolCallId) {
+      const options = [...new Set((p.options ?? []).map((o) => String(o).trim()).filter(Boolean))].slice(0, 8)
+      const answer = await ctx.deps.approvals!.ask(
+        { sessionId: ctx.scope.sessionId!, toolCallId, question: p.question.trim(), options, multiple: !!p.multiple && options.length > 1, allowOther: p.allowOther !== false || !options.length },
+        signal
+      )
+      return answer === null
+        ? { text: 'The user skipped this question. Continue with your best judgement and say which assumption you made.', details: { answer: null } }
+        : { text: `The user answered: ${answer}`, details: { answer } }
+    }
+  }),
+  spec({
     name: 'rag_search',
     label: 'Knowledge search',
     group: 'knowledge',
@@ -145,6 +171,30 @@ export const BUILTINS: BuiltinSpec[] = [
       const res = await ctx.deps.rag.search({ query: p.query, collectionIds: requested.length ? requested : allowed, k: p.k ?? 6, mode: (p.mode ?? 'hybrid') as RagMode })
       const notes = res.notes.length ? `\n\nNotes: ${res.notes.join('; ')}` : ''
       return { text: formatHitsForModel(res.hits) + notes, details: { references: res.hits } }
+    }
+  }),
+  spec({
+    name: 'rag_index',
+    label: 'Index knowledge',
+    group: 'knowledge',
+    availability: 'Chats with knowledge on (not flows or subagents; local paths only inside the workspace)',
+    parameters: Type.Object({
+      collection: Type.String({ description: 'Collection name, as the user gave it' }),
+      create: Type.Optional(Type.Boolean({ description: 'Create the collection if it does not exist (default true)' })),
+      description: Type.Optional(Type.String({ description: 'Description for a new collection' })),
+      title: Type.Optional(Type.String({ description: 'Title for text' })),
+      text: Type.Optional(Type.String({ description: 'Markdown or plain text to index' })),
+      urls: Type.Optional(Type.Array(Type.String(), { description: 'Web pages to fetch and index' })),
+      crawl: Type.Optional(Type.Boolean({ description: 'Follow links on the same site from each URL' })),
+      maxPages: Type.Optional(Type.Number({ description: 'Page limit when crawling (default 25)' })),
+      paths: Type.Optional(Type.Array(Type.String(), { description: 'Workspace files or folders to index' }))
+    }),
+    description: () => RAG_INDEX_DESCRIPTION,
+    when: (ctx) => ctx.scope.knowledgeEnabled !== false && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx) {
+      const root = ctx.scope.workspace
+      const text = await indexKnowledge(ctx.deps.rag, p, { resolvePath: root ? (x) => confine(root, x) : undefined })
+      return { text, details: { collection: p.collection } }
     }
   }),
   spec({
@@ -214,6 +264,52 @@ export const BUILTINS: BuiltinSpec[] = [
     }
   }),
   spec({
+    name: 'skill_create',
+    label: 'Create skill',
+    group: 'skills',
+    availability: 'Chats with skills on (not flows or subagents)',
+    parameters: Type.Object({
+      name: Type.String({ description: 'kebab-case name' }),
+      description: Type.String({ description: 'What the skill does and when to use it' }),
+      instructions: Type.String({ description: 'The SKILL.md body in Markdown' }),
+      files: Type.Optional(Type.Array(Type.Object({ path: Type.String(), content: Type.String() }), { description: 'Supporting files by relative path' }))
+    }),
+    description: () => SKILL_CREATE_DESCRIPTION,
+    when: (ctx) => ctx.scope.skillsEnabled && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx) {
+      return { text: await createSkill(ctx.deps.skills, p), details: { skill: p.name } }
+    }
+  }),
+  spec({
+    name: 'tool_create',
+    label: 'Create tool',
+    group: 'tools',
+    availability: 'Chats with custom tools on (not flows or subagents)',
+    parameters: Type.Object({
+      name: Type.String({ description: 'snake_case tool name' }),
+      description: Type.String({ description: 'What the tool does and when to call it' }),
+      kind: Type.Union([Type.Literal('http'), Type.Literal('javascript'), Type.Literal('command'), Type.Literal('prompt')]),
+      params: Type.Optional(
+        Type.Array(
+          Type.Object({
+            name: Type.String(),
+            type: Type.Optional(Type.Union([Type.Literal('string'), Type.Literal('number'), Type.Literal('boolean'), Type.Literal('json')])),
+            description: Type.Optional(Type.String()),
+            required: Type.Optional(Type.Boolean())
+          })
+        )
+      ),
+      config: Type.Record(Type.String(), Type.Any(), { description: 'Kind-specific settings (see the tool description)' }),
+      replace: Type.Optional(Type.Boolean({ description: 'Update a tool you created earlier with this name' }))
+    }),
+    description: () => TOOL_CREATE_DESCRIPTION,
+    when: (ctx) => ctx.scope.customTools !== false && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx) {
+      const { tool, text } = createTool(ctx.deps.custom, p, 'chat')
+      return { text, details: { toolId: tool.id, enabled: tool.enabled } }
+    }
+  }),
+  spec({
     name: 'grep',
     label: 'Search files',
     group: 'workspace',
@@ -279,9 +375,9 @@ function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> 
     label: b.label,
     description: b.description(ctx),
     parameters: b.parameters,
-    async execute(_id, params, signal): Promise<AgentToolResult<ToolDetails>> {
+    async execute(id, params, signal): Promise<AgentToolResult<ToolDetails>> {
       const started = performance.now()
-      const out = await b.run(params, ctx, signal)
+      const out = await b.run(params, ctx, signal, id)
       return { content: [{ type: 'text', text: out.text }], details: { ...(out.details ?? {}), durationMs: Math.round(performance.now() - started) } }
     }
   }

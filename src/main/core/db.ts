@@ -137,6 +137,9 @@ const MIGRATIONS: string[] = [
   `,
   /* 4 — chat turns summarised away by compaction */ `
   ALTER TABLE sessions ADD COLUMN archive TEXT NOT NULL DEFAULT '[]';
+  `,
+  /* 5 — custom tools made by a model */ `
+  ALTER TABLE tools ADD COLUMN created_by TEXT NOT NULL DEFAULT 'user';
   `
 ]
 

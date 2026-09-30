@@ -16,7 +16,7 @@ import {
   createWriteTool,
   type BashOperations
 } from '@earendil-works/pi-coding-agent'
-import type { ApprovalDecision, AutoApprove, BuiltinToolInfo, ChatEvent, FileAccess, FileChange, PendingApproval } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, BuiltinToolInfo, ChatEvent, FileAccess, FileChange, PendingApproval, PendingQuestion } from '@shared/types'
 import { newId } from '../core/context'
 import { Type } from 'typebox'
 import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
@@ -68,9 +68,10 @@ export async function confine(root: string, p: string): Promise<string> {
 
 // ─── Approvals ───────────────────────────────────────────────────────────────
 
-/** Holds writes / edits / commands until the user answers in the chat. */
+/** Holds writes / edits / commands, and questions from `ask_user`, until the user answers in the chat. */
 export class ApprovalService {
   private pending = new Map<string, { approval: PendingApproval; done: (d: ApprovalDecision) => void }>()
+  private questions = new Map<string, { question: PendingQuestion; done: (answer: string | null, cancelled?: boolean) => void }>()
 
   constructor(private emit: (e: ChatEvent) => void) {}
 
@@ -101,9 +102,39 @@ export class ApprovalService {
     return [...this.pending.values()].filter((p) => p.approval.sessionId === sessionId).map((p) => p.approval)
   }
 
+  /** Ask the user a question. Resolves with the answer, or null when they skip it; rejects when the chat is stopped. */
+  ask(input: Omit<PendingQuestion, 'id' | 'createdAt'>, signal?: AbortSignal): Promise<string | null> {
+    const question: PendingQuestion = { ...input, id: newId('ask_'), createdAt: Date.now() }
+    return new Promise((resolvePromise, reject) => {
+      const done = (answer: string | null, cancelled = false) => {
+        if (!this.questions.delete(question.id)) return
+        signal?.removeEventListener('abort', onAbort)
+        this.emit({ sessionId: question.sessionId, type: 'question-done', id: question.id })
+        if (cancelled) reject(new Error('The chat was stopped before the user answered'))
+        else resolvePromise(answer)
+      }
+      const onAbort = () => done(null, true)
+      if (signal?.aborted) return reject(new Error('Cancelled'))
+      signal?.addEventListener('abort', onAbort, { once: true })
+      this.questions.set(question.id, { question, done })
+      this.emit({ sessionId: question.sessionId, type: 'question', question })
+    })
+  }
+
+  answer(id: string, answer: string | null): void {
+    const q = this.questions.get(id)
+    if (!q) throw new Error('This question is no longer waiting for an answer')
+    q.done(answer?.trim() ? answer.trim() : null)
+  }
+
+  listQuestions(sessionId: string): PendingQuestion[] {
+    return [...this.questions.values()].filter((q) => q.question.sessionId === sessionId).map((q) => q.question)
+  }
+
   /** Deny everything still waiting for a chat (stop / delete). */
   cancel(sessionId: string): void {
     for (const p of [...this.pending.values()]) if (p.approval.sessionId === sessionId) p.done('deny')
+    for (const q of [...this.questions.values()]) if (q.question.sessionId === sessionId) q.done(null, true)
   }
 }
 

@@ -23,6 +23,8 @@ import {
   Sparkle,
   WarningCircle,
   Wrench,
+  ChatCircleDots,
+  BookmarkSimple,
   type Icon
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
@@ -54,7 +56,11 @@ const ICONS: Record<string, Icon> = {
   lsp: Code,
   ast_grep: TreeStructure,
   ast_edit: TreeStructure,
-  generate_image: ImageSquare
+  generate_image: ImageSquare,
+  ask_user: ChatCircleDots,
+  rag_index: BookmarkSimple,
+  skill_create: Sparkle,
+  tool_create: Wrench
 }
 
 function summarize(t: Trace): string {
@@ -73,6 +79,9 @@ function summarize(t: Trace): string {
   }
   if (t.name === 'task') return String(a.description ?? '')
   if (t.name === 'generate_image') return String(a.prompt ?? '')
+  if (t.name === 'ask_user') return String(a.question ?? '')
+  if (t.name === 'rag_index') return `→ ${a.collection ?? ''}${a.title ? ` · ${a.title}` : Array.isArray(a.urls) && a.urls.length ? ` · ${a.urls[0]}` : ''}`
+  if (t.name === 'skill_create' || t.name === 'tool_create') return String(a.name ?? '')
   if (t.name === 'lsp') return [a.action, a.symbol ?? a.query, a.newName ? `→ ${a.newName}` : '', a.path ? `· ${a.path}${a.line ? `:${a.line}` : ''}` : ''].filter(Boolean).join(' ')
   if (t.name === 'ast_grep') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
   if (t.name === 'ast_edit') return `${a.pattern ?? ''} → ${a.rewrite ?? ''}`
@@ -117,7 +126,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded }: { 
         )}
         <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
-          {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">awaiting approval</span>}
+          {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
           {refs.length > 0 && <span>{refs.length} refs</span>}
           {trace.durationMs !== null && <span>{duration(trace.durationMs)}</span>}
           {trace.status === 'running' ? (

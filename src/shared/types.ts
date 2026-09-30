@@ -334,6 +334,21 @@ export interface PendingApproval {
 
 export type ApprovalDecision = 'allow' | 'deny' | 'always'
 
+/** A question the agent asked with `ask_user`; the chat waits for the answer. */
+export interface PendingQuestion {
+  id: string
+  sessionId: string
+  toolCallId: string | null
+  question: string
+  /** Suggested answers (may be empty: free text only). */
+  options: string[]
+  /** Several options may be picked. */
+  multiple: boolean
+  /** A typed answer is accepted besides the options. */
+  allowOther: boolean
+  createdAt: number
+}
+
 export interface ToolTrace {
   id: string
   name: string
@@ -435,6 +450,8 @@ export type ChatEvent =
   | { sessionId: string; type: 'title'; title: string }
   | { sessionId: string; type: 'approval'; approval: PendingApproval }
   | { sessionId: string; type: 'approval-done'; id: string }
+  | { sessionId: string; type: 'question'; question: PendingQuestion }
+  | { sessionId: string; type: 'question-done'; id: string }
   | { sessionId: string; type: 'compacting' }
   | { sessionId: string; type: 'compacted'; error?: string }
 
@@ -616,9 +633,13 @@ export interface CustomTool {
   params: ToolParam[]
   config: Record<string, any>
   enabled: boolean
+  /** Who made it: the user on the Tools page, or a model (chat `tool_create` / MCP). */
+  createdBy: ToolOrigin
   createdAt: number
   updatedAt: number
 }
+
+export type ToolOrigin = 'user' | 'chat' | 'mcp'
 
 export type CustomToolInput = Pick<CustomTool, 'name' | 'description' | 'kind' | 'params' | 'config'> & { enabled?: boolean }
 
@@ -626,7 +647,7 @@ export interface BuiltinToolInfo {
   name: string
   label: string
   description: string
-  group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning'
+  group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning' | 'tools'
   availability: string
   schema: unknown
 }

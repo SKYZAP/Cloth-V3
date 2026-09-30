@@ -10,13 +10,20 @@ import type { SettingsService } from '../core/settings'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
+import type { CustomToolService } from '../tools/custom'
+import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from '../agent/hub'
+import { stat } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 
 const TOOLS = [
   { name: 'skill_list', description: 'List skills in the Cloth skill hub (name, description, health).' },
   { name: 'skill_use', description: 'Fetch the full instructions of a skill (SKILL.md) or one of its bundled files.' },
   { name: 'rag_search', description: 'Hybrid (BM25 + vector) or agentic search over Cloth knowledge collections.' },
   { name: 'rag_collections', description: 'List the knowledge collections available to rag_search.' },
-  { name: 'web_search', description: 'Search the web through Cloth’s bundled engine (SearXNG or Obscura, set in Cloth’s settings).' }
+  { name: 'web_search', description: 'Search the web through Cloth’s bundled engine (SearXNG or Obscura, set in Cloth’s settings).' },
+  { name: 'rag_index', description: 'Index text, web pages or local files into a knowledge collection (created if needed).' },
+  { name: 'tool_create', description: 'Create a custom tool that shows up on Cloth’s Tools page (code-running kinds start disabled until reviewed).' },
+  { name: 'skill_create', description: 'Create a skill (SKILL.md plus optional files) in the Cloth skill hub.' }
 ]
 
 type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
@@ -29,7 +36,7 @@ export class McpHost {
   constructor(
     private ctx: Ctx,
     private settings: SettingsService,
-    private deps: { rag: RagService; skills: SkillService; web: WebService; usage?: UsageService }
+    private deps: { rag: RagService; skills: SkillService; web: WebService; custom: CustomToolService; usage?: UsageService }
   ) {}
 
   token(): string {
@@ -132,7 +139,10 @@ export class McpHost {
   }
 
   private buildServer(): McpServer {
-    const server = new McpServer({ name: 'cloth', version: '0.1.0' }, { instructions: 'Cloth is a local developer hub. Use rag_search to ground answers in indexed docs and skill_list/skill_use to load reusable skills.' })
+    const server = new McpServer({ name: 'cloth', version: '0.1.0' }, {
+        instructions:
+          'Cloth is a local developer hub. Use rag_search to ground answers in indexed docs and skill_list/skill_use to load reusable skills. When the user asks, save knowledge with rag_index, make skills with skill_create and add tools to Cloth with tool_create.'
+      })
     const { rag, skills } = this.deps
 
     server.registerTool(
@@ -221,6 +231,76 @@ export class McpHost {
             structuredContent: { engine: res.engine, results: res.results }
           }
         })
+    )
+    server.registerTool(
+      'rag_index',
+      {
+        title: 'Index knowledge',
+        description: RAG_INDEX_DESCRIPTION + ' Paths are absolute paths on this computer.',
+        inputSchema: {
+          collection: z.string().describe('Collection name (or id)'),
+          create: z.boolean().optional().describe('Create the collection if missing (default true)'),
+          description: z.string().optional().describe('Description for a new collection'),
+          title: z.string().optional().describe('Title for text'),
+          text: z.string().optional().describe('Markdown or plain text to index'),
+          urls: z.array(z.string()).optional().describe('Web pages to fetch and index'),
+          crawl: z.boolean().optional().describe('Follow same-site links from each URL'),
+          maxPages: z.number().int().min(1).max(1000).optional().describe('Page limit when crawling (default 25)'),
+          paths: z.array(z.string()).optional().describe('Absolute paths of files or folders')
+        }
+      },
+      (args) =>
+        this.logged('rag_index', args, async () => {
+          const text = await indexKnowledge(this.deps.rag, args, {
+            resolvePath: async (p) => {
+              if (!isAbsolute(p)) throw new Error(`Use an absolute path: ${p}`)
+              await stat(p).catch(() => {
+                throw new Error(`Not found: ${p}`)
+              })
+              return resolve(p)
+            }
+          })
+          return { content: [{ type: 'text', text }] }
+        })
+    )
+
+    server.registerTool(
+      'tool_create',
+      {
+        title: 'Create tool',
+        description: TOOL_CREATE_DESCRIPTION,
+        inputSchema: {
+          name: z.string().describe('snake_case tool name'),
+          description: z.string().describe('What the tool does and when to call it'),
+          kind: z.enum(['http', 'javascript', 'command', 'prompt']),
+          params: z
+            .array(z.object({ name: z.string(), type: z.enum(['string', 'number', 'boolean', 'json']).optional(), description: z.string().optional(), required: z.boolean().optional() }))
+            .optional()
+            .describe('Arguments, referenced in templates as {{name}}'),
+          config: z.record(z.string(), z.unknown()).describe('Kind-specific settings (see description)'),
+          replace: z.boolean().optional().describe('Update a tool created earlier through MCP or chat')
+        }
+      },
+      (args) =>
+        this.logged('tool_create', args, async () => {
+          const { tool, text } = createTool(this.deps.custom, args, 'mcp')
+          return { content: [{ type: 'text', text }], structuredContent: { id: tool.id, name: tool.name, kind: tool.kind, enabled: tool.enabled } }
+        })
+    )
+
+    server.registerTool(
+      'skill_create',
+      {
+        title: 'Create skill',
+        description: SKILL_CREATE_DESCRIPTION,
+        inputSchema: {
+          name: z.string().describe('kebab-case name'),
+          description: z.string().describe('What the skill does and when to use it'),
+          instructions: z.string().describe('The SKILL.md body in Markdown'),
+          files: z.array(z.object({ path: z.string(), content: z.string() })).optional().describe('Supporting files by relative path')
+        }
+      },
+      (args) => this.logged('skill_create', args, async () => ({ content: [{ type: 'text', text: await createSkill(this.deps.skills, args) }] }))
     )
     return server
   }

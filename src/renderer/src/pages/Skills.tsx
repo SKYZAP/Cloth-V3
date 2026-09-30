@@ -27,7 +27,7 @@ export function SkillsPage() {
   const [activeName, setActiveName] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<NewMode | null>(null)
   const [adding, setAdding] = useState<{ open: boolean; tab: AddTab }>({ open: false, tab: 'registry' })
 
   const load = async (select?: string) => {
@@ -44,7 +44,7 @@ export function SkillsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEvent('skills', (e) => {
-    if (e.run.status !== 'running') void load(activeName ?? undefined)
+    if (e.type === 'changed' || e.run.status !== 'running') void load(activeName ?? undefined)
   })
 
   const active = skills.find((s) => s.name === activeName)
@@ -75,7 +75,10 @@ export function SkillsPage() {
                 <IconButton title="Import from local folders" onClick={() => setAdding({ open: true, tab: 'local' })}>
                   <FolderOpen size={14} />
                 </IconButton>
-                <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+                <IconButton title="Generate a skill with AI" onClick={() => setCreating('ai')}>
+                  <Wand2 size={14} />
+                </IconButton>
+                <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating('ai')}>
                   New
                 </Button>
               </div>
@@ -116,8 +119,8 @@ export function SkillsPage() {
                   Browse skills.sh
                 </Button>
                 <Button onClick={() => setAdding({ open: true, tab: 'local' })}>Import existing</Button>
-                <Button variant="primary" onClick={() => setCreating(true)}>
-                  Create a skill
+                <Button variant="primary" icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
+                  Generate with AI
                 </Button>
               </div>
             }
@@ -126,7 +129,7 @@ export function SkillsPage() {
           </Empty>
         )}
       </SplitDetail>
-      <NewSkill open={creating} onClose={() => setCreating(false)} onCreated={(n) => void load(n)} />
+      <NewSkill open={!!creating} mode={creating ?? 'ai'} onClose={() => setCreating(null)} onCreated={(n) => void load(n)} />
       <AddSkills
         open={adding.open}
         tab={adding.tab}
@@ -138,55 +141,119 @@ export function SkillsPage() {
   )
 }
 
-function NewSkill({ open, onClose, onCreated }: { open: boolean; onClose(): void; onCreated(name: string): void }) {
+type NewMode = 'ai' | 'manual'
+
+function NewSkill({ open, mode: initialMode, onClose, onCreated }: { open: boolean; mode: NewMode; onClose(): void; onCreated(name: string): void }) {
+  const settings = useApp((s) => s.settings)
+  const [mode, setMode] = useState<NewMode>(initialMode)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [request, setRequest] = useState('')
+  const [model, setModel] = useState<ModelRef | null>(settings?.defaultModel ?? null)
+  const [generating, setGenerating] = useState(false)
   useEffect(() => {
     if (open) {
+      setMode(initialMode)
       setName('')
       setDescription('')
+      setRequest('')
     }
-  }, [open])
+  }, [open, initialMode])
+  useEffect(() => {
+    if (!model && settings?.defaultModel) setModel(settings.defaultModel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.defaultModel])
+
+  const createManual = async () => {
+    const s = await attempt(() =>
+      api.skills.create({
+        name,
+        description,
+        body: `# ${name}\n\n## When to use\n\n- \n\n## Instructions\n\n1. \n\n## Examples\n\n`
+      })
+    )
+    if (s) {
+      onCreated(s.name)
+      onClose()
+    }
+  }
+  const generate = async () => {
+    if (!model) return
+    setGenerating(true)
+    const s = await attempt(() => api.skills.generate({ request, model, name: name.trim() || undefined }), 'Skill drafted — review it before you rely on it')
+    setGenerating(false)
+    if (s) {
+      onCreated(s.name)
+      onClose()
+    }
+  }
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={() => !generating && onClose()}
       title="New skill"
+      width={560}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={generating} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            disabled={!name.trim() || !description.trim()}
-            onClick={async () => {
-              const s = await attempt(() =>
-                api.skills.create({
-                  name,
-                  description,
-                  body: `# ${name}\n\n## When to use\n\n- \n\n## Instructions\n\n1. \n\n## Examples\n\n`
-                })
-              )
-              if (s) {
-                onCreated(s.name)
-                onClose()
-              }
-            }}
-          >
-            Create
-          </Button>
+          {mode === 'ai' ? (
+            <Button variant="primary" icon={<Wand2 size={13} />} loading={generating} disabled={!request.trim() || !model} onClick={() => void generate()}>
+              {generating ? 'Writing the skill…' : 'Generate skill'}
+            </Button>
+          ) : (
+            <Button variant="primary" disabled={!name.trim() || !description.trim()} onClick={() => void createManual()}>
+              Create skill
+            </Button>
+          )}
         </>
       }
     >
-      <div className="space-y-3">
-        <Field label="Name" hint="Lowercase, digits and dashes — it becomes the folder name.">
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="nestjs-guards" />
-        </Field>
-        <Field label="Description" hint="What the skill does and when to use it. Agents decide whether to load a skill from this line alone.">
-          <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Write NestJS guards and role-based authorization. Use when protecting routes…" />
-        </Field>
-      </div>
+      <Tabs
+        className="-mt-1 mb-4"
+        value={mode}
+        onChange={setMode}
+        items={[
+          { value: 'ai', label: <><Wand2 size={13} /> Generate with AI</> },
+          { value: 'manual', label: 'Write it myself' }
+        ]}
+      />
+      {mode === 'ai' ? (
+        <div className="space-y-3">
+          <Field label="What should the skill do?" hint="Describe the task, the tools or stack involved, and anything the agent tends to get wrong. The model writes the SKILL.md; you can edit it afterwards.">
+            <Textarea
+              autoFocus
+              rows={6}
+              value={request}
+              disabled={generating}
+              onChange={(e) => setRequest(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && request.trim() && model && !generating) void generate()
+              }}
+              placeholder="Write database migrations with Drizzle for our Postgres setup: generate them with drizzle-kit, never edit applied ones, and always add a down step…"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3 mobile:grid-cols-1">
+            <Field label="Name (optional)" hint="Leave empty to let the model pick one.">
+              <Input value={name} disabled={generating} onChange={(e) => setName(e.target.value)} placeholder="drizzle-migrations" />
+            </Field>
+            <Field label="Model" hint={model ? 'Writes the skill.' : 'Add a model on the Providers page first.'}>
+              <ModelPicker value={model} onChange={setModel} />
+            </Field>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Field label="Name" hint="Lowercase, digits and dashes — it becomes the folder name.">
+            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="nestjs-guards" />
+          </Field>
+          <Field label="Description" hint="What the skill does and when to use it. Agents decide whether to load a skill from this line alone.">
+            <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Write NestJS guards and role-based authorization. Use when protecting routes…" />
+          </Field>
+        </div>
+      )}
     </Modal>
   )
 }
@@ -721,12 +788,13 @@ function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
     })
   }, [skill.name])
   useEvent('skills', (e) => {
-    if (e.run.skillName !== skill.name) return
+    if (e.type !== 'run' || e.run.skillName !== skill.name) return
+    const run = e.run
     setRuns((rs) => {
-      const i = rs.findIndex((r) => r.id === e.run.id)
-      if (i < 0) return [e.run, ...rs]
+      const i = rs.findIndex((r) => r.id === run.id)
+      if (i < 0) return [run, ...rs]
       const next = rs.slice()
-      next[i] = e.run
+      next[i] = run
       return next
     })
   })
