@@ -716,6 +716,28 @@ export interface WorkflowGraph {
   edges: WorkflowEdge[]
 }
 
+/** How a saved version of a flow came about. */
+export type WorkflowVersionSource = 'original' | 'created' | 'edit' | 'ai-build' | 'ai-edit' | 'ai-fix' | 'restore'
+
+/** Everything a version restores. */
+export interface WorkflowSnapshot extends WorkflowGraph {
+  workspace: string | null
+}
+
+export interface WorkflowVersion {
+  id: string
+  workflowId: string
+  source: WorkflowVersionSource
+  /** Why it was saved, when known (e.g. the error an AI fix addressed). */
+  note: string | null
+  /** What changed from the version before, in a few words. */
+  summary: string
+  nodeCount: number
+  createdAt: number
+  /** Present when one version is fetched on its own. */
+  snapshot?: WorkflowSnapshot
+}
+
 export interface WorkflowBuildStep {
   tool: string
   args: unknown

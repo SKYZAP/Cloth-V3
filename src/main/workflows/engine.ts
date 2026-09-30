@@ -297,6 +297,31 @@ export function renderTemplate(template: string, scope: Record<string, unknown>)
   })
 }
 
+/**
+ * Tool arguments: JSON text with {{templates}}, or an object whose values are filled in one by one —
+ * a value that is exactly one "{{path}}" keeps the referenced value's type (an array stays an array).
+ */
+export function renderArgs(args: unknown, scope: Record<string, unknown>): Record<string, unknown> {
+  if (args && typeof args === 'object' && !Array.isArray(args)) return renderValue(args, scope) as Record<string, unknown>
+  const text = renderTemplate(String(args ?? '') || '{}', scope)
+  try {
+    const parsed = JSON.parse(text) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function renderValue(v: unknown, scope: Record<string, unknown>): unknown {
+  if (typeof v === 'string') {
+    const whole = /^\s*\{\{\s*([\w$.[\]-]+)\s*\}\}\s*$/.exec(v)
+    return whole ? lookup(scope, whole[1]) : renderTemplate(v, scope)
+  }
+  if (Array.isArray(v)) return v.map((x) => renderValue(x, scope))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, renderValue(x, scope)]))
+  return v
+}
+
 export function lookup(scope: unknown, path: string): unknown {
   let cur: unknown = scope
   for (const part of path.replace(/\[(\d+)\]/g, '.$1').split('.')) {

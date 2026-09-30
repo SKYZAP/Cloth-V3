@@ -140,6 +140,19 @@ const MIGRATIONS: string[] = [
   `,
   /* 5 — custom tools made by a model */ `
   ALTER TABLE tools ADD COLUMN created_by TEXT NOT NULL DEFAULT 'user';
+  `,
+  /* 6 — flow change history */ `
+  CREATE TABLE workflow_versions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    snapshot TEXT NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    node_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX workflow_versions_flow ON workflow_versions(workflow_id, created_at);
   `
 ]
 
