@@ -51,7 +51,8 @@ describe('language servers', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'cloth-py-')))
     writeFileSync(join(root, 'm.py'), 'def add(a: int, b: int) -> int:\n    return a + b\n\nx: str = add(1, 2)\n')
     const server = await manager.server(root, join(root, 'm.py'))
-    const diags = await server.diagnostics(join(root, 'm.py'))
+    // Pyright's first (cold) analysis can take well over the default 10s on a busy machine or CI runner.
+    const diags = await server.diagnostics(join(root, 'm.py'), 60_000)
     expect(diags.some((d) => d.severity === 1 && /not assignable/.test(d.message))).toBe(true)
   })
 
