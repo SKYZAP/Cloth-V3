@@ -117,7 +117,12 @@ export function createApi(s: Services): ClothApi {
     chat: {
       list: async () => s.chat.list(),
       create: async (config) => s.chat.create(config),
-      update: async (id, patch) => s.chat.update(id, patch),
+      update: async (id, patch) => {
+        const next = s.chat.update(id, patch)
+        // A different model: fetch its current context size before the meter asks for it.
+        if (patch.model) await s.providers.refreshModel(patch.model, { force: true }).catch(() => undefined)
+        return next
+      },
       remove: async (id) => s.chat.remove(id),
       messages: async (id) => s.chat.messages(id),
       send: (id, text, skills) => s.chat.send(id, text, skills ?? []),

@@ -17,6 +17,8 @@ export interface ModelInfo {
   image?: boolean
   /** User-set price in USD per 1M tokens; overrides the built-in price list. */
   pricing?: { input: number; output: number } | null
+  /** Where contextWindow came from: reported by the server, the built-in catalogue, or a default guess. */
+  contextSource?: 'server' | 'catalog' | 'guess'
 }
 
 export interface Provider {
@@ -429,6 +431,8 @@ export interface ContextUsage {
   tokens: number
   /** The model's context window, when known. */
   window: number | null
+  /** The window is a default guess — the provider doesn't report this model's size. */
+  estimated?: boolean
   /** Tokens at which Cloth summarises automatically. */
   threshold: number | null
   /** What the tokens are spent on (estimates, scaled to `tokens`). */
