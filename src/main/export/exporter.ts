@@ -109,7 +109,8 @@ export class FlowExporter {
       if (plan.tools.length) log(`Tools: ${plan.tools.join(', ')}`)
       if (plan.skills.length) log(`Skills: ${plan.skills.join(', ')}`)
       for (const w of plan.warnings) log(w, 'warn')
-      const toolchainGaps = format === 'folder' ? preview.missing.filter((m) => !/NSIS/.test(m)) : preview.missing
+      // A folder export needs no installer builder, and isn't tied to Windows.
+      const toolchainGaps = format === 'folder' ? preview.missing.filter((m) => !/NSIS|available on Windows/.test(m)) : preview.missing
       if (plan.errors.length || toolchainGaps.length) {
         for (const e of [...plan.errors, ...toolchainGaps]) log(e, 'error')
         throw new Error(plan.errors[0] ?? toolchainGaps[0])

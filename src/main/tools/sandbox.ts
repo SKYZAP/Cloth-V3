@@ -1,5 +1,5 @@
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { dirname, relative, sep } from 'node:path'
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, relative, sep } from 'node:path'
 import { confine } from '../agent/workspace'
 
 /** Where a custom tool runs: the workspace it may use, if any. */
@@ -45,7 +45,8 @@ export function workspaceApi(env: ToolEnv): Record<string, unknown> {
     if (!ws) throw new Error('No workspace here — give the flow (or chat) a workspace folder to read and write files')
     return ws
   }
-  const rel = (abs: string) => relative(ws!.root, abs).split(sep).join('/')
+  // Paths are reported under the workspace as given — not its resolved form (macOS /var → /private/var).
+  const rel = async (abs: string) => relative(await realpath(ws!.root), abs)
   return {
     root: ws?.root ?? null,
     writable: !!ws?.writable,
@@ -56,8 +57,9 @@ export function workspaceApi(env: ToolEnv): Record<string, unknown> {
       const body = typeof data === 'string' ? data : isBytes(data) ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : isArrayBuffer(data) ? Buffer.from(data) : JSON.stringify(data, null, 2)
       await mkdir(dirname(abs), { recursive: true })
       await writeFile(abs, body)
-      w.onWrite?.(abs)
-      return rel(abs)
+      const r = await rel(abs)
+      w.onWrite?.(join(w.root, r))
+      return r.split(sep).join('/')
     },
     async read(path: string): Promise<string> {
       return readFile(await confine(need().root, String(path)), 'utf8')
