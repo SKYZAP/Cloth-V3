@@ -1,0 +1,4 @@
+@import '../../../renderer/src/styles.css';
+
+/* Tailwind only scans the runner's folder by default; the shared Cloth components live elsewhere. */
+@source '../../../renderer/src/components';

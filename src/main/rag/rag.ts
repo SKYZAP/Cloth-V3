@@ -19,6 +19,7 @@ import type { ProviderService } from '../providers/providers'
 import type { SettingsService } from '../core/settings'
 import { chunkText } from './chunker'
 import { expandPaths, extractFile, loadUrl, type Extracted, type PageRenderer } from './extract'
+import type { CollectionSnapshot } from '@shared/flow-bundle'
 
 interface CollectionRow {
   id: string
@@ -379,6 +380,44 @@ export class RagService {
       this.progress({ collectionId, docId, message: `Failed ${source}`, error: errorMessage(err), done: false })
       throw err
     }
+  }
+
+  // ─── Snapshots (exported flow apps) ───────────────────────────────────────
+
+  /** A collection's documents and chunks as plain data. Vectors are left out: they belong to the embedding model. */
+  snapshot(collectionId: string): CollectionSnapshot {
+    const col = this.getCollection(collectionId)
+    const docs = this.ctx.db.prepare("SELECT * FROM documents WHERE collection_id = ? AND status = 'ready' ORDER BY updated_at").all(collectionId) as unknown as DocRow[]
+    const chunks = this.ctx.db.prepare('SELECT doc_id, ord, heading_path, text FROM chunks WHERE collection_id = ? ORDER BY doc_id, ord').all(collectionId) as { doc_id: string; ord: number; heading_path: string; text: string }[]
+    const byDoc = new Map<string, { headingPath: string; text: string }[]>()
+    for (const c of chunks) byDoc.set(c.doc_id, [...(byDoc.get(c.doc_id) ?? []), { headingPath: c.heading_path, text: c.text }])
+    return {
+      name: col.name,
+      description: col.description,
+      documents: docs.map((d) => ({ title: d.title, source: d.source, sourceType: d.source_type, chunks: byDoc.get(d.id) ?? [] }))
+    }
+  }
+
+  /** Recreate a snapshot as a new keyword-searchable collection (no embedding model). */
+  importSnapshot(snap: CollectionSnapshot): Collection {
+    const col = this.createCollection({ name: snap.name, description: snap.description, embedding: null })
+    const db = this.ctx.db
+    tx(db, () => {
+      const insDoc = db.prepare(
+        "INSERT INTO documents (id, collection_id, source_type, source, title, status, hash, chunk_count, bytes, embedded, updated_at) VALUES (?, ?, ?, ?, ?, 'ready', NULL, ?, ?, 0, ?)"
+      )
+      const insChunk = db.prepare('INSERT INTO chunks (id, doc_id, collection_id, ord, heading_path, text, embedding) VALUES (?, ?, ?, ?, ?, ?, NULL)')
+      const insFts = db.prepare('INSERT INTO chunks_fts (rowid, title, heading_path, text) VALUES (?, ?, ?, ?)')
+      for (const d of snap.documents) {
+        const docId = newId('doc_')
+        insDoc.run(docId, col.id, d.sourceType, d.source, d.title, d.chunks.length, d.chunks.reduce((n, c) => n + Buffer.byteLength(c.text), 0), Date.now())
+        d.chunks.forEach((c, i) => {
+          const r = insChunk.run(newId('chk_'), docId, col.id, i, c.headingPath, c.text)
+          insFts.run(r.lastInsertRowid, d.title, c.headingPath, c.text)
+        })
+      }
+    })
+    return this.getCollection(col.id)
   }
 
   private doc(id: string): RagDocument {

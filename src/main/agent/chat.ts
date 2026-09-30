@@ -15,7 +15,7 @@ import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
-import { buildTools, type ToolDetails, type ToolScope } from './tools'
+import { allowedSkill, buildTools, type ToolDetails, type ToolScope } from './tools'
 import { runAsCall } from './workspace'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
@@ -147,7 +147,7 @@ export class AgentRuntime {
       )
     }
     if (scope.skillsEnabled) {
-      const skills = await this.skills.list().catch(() => [])
+      const skills = (await this.skills.list().catch(() => [])).filter((s) => allowedSkill(scope, s.name))
       if (skills.length) {
         lines.push('', '## Skills', 'Load a skill with `skill_use` before doing a task it covers.', ...skills.map((s) => `- ${s.name}: ${s.description}`))
       }

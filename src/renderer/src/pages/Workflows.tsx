@@ -18,7 +18,7 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { Check, Clock, Copy, FileText, History, LayoutDashboard, Maximize2, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -30,6 +30,7 @@ import { Editor } from '@/components/Editor'
 import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes'
 import { Inspector } from './workflow/Inspector'
 import { AssembleModal } from './workflow/AssembleModal'
+import { ExportModal } from './workflow/ExportModal'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { BottomSheet } from '@/components/BottomSheet'
 import { isMobile } from '@/lib/platform'
@@ -194,16 +195,18 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const [name, setName] = useState(workflow.name)
   const [cron, setCron] = useState(workflow.cron ?? '')
   const [cronEnabled, setCronEnabled] = useState(workflow.cronEnabled)
+  const [workspace, setWorkspace] = useState<string | null>(workflow.workspace)
   const [selected, setSelected] = useState<string | null>(null)
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [runId, setRunId] = useState<string | null>(null)
   const [runOpen, setRunOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   // Phone: the palette and run history open as sheets over the canvas.
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [runsOpen, setRunsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [savedSnapshot, setSavedSnapshot] = useState(() => snapshot(workflow.nodes, workflow.edges, workflow.name, workflow.cron ?? '', workflow.cronEnabled))
+  const [savedSnapshot, setSavedSnapshot] = useState(() => snapshot(workflow.nodes, workflow.edges, workflow.name, workflow.cron ?? '', workflow.cronEnabled, workflow.workspace))
   const flow = useReactFlow()
   const nodesReady = useNodesInitialized()
   useEffect(() => {
@@ -217,7 +220,8 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     edges,
     name,
     cron,
-    cronEnabled
+    cronEnabled,
+    workspace
   )
   const dirty = current !== savedSnapshot
 
@@ -314,13 +318,14 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         name,
         cron: cron.trim() || null,
         cronEnabled,
+        workspace,
         nodes: nodes.map((n) => ({ id: n.id, type: n.type as WorkflowNodeType, position: n.position, data: stripRuntime(n.data) })),
         edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null }))
       })
     )
     setSaving(false)
     if (w) {
-      setSavedSnapshot(snapshot(w.nodes, w.edges, w.name, w.cron ?? '', w.cronEnabled))
+      setSavedSnapshot(snapshot(w.nodes, w.edges, w.name, w.cron ?? '', w.cronEnabled, w.workspace))
       onSaved(w)
     }
     return !!w
@@ -363,10 +368,33 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           <span className={clsx('truncate text-[11.5px]', cronText === 'Invalid expression' ? 'text-crimson-hi' : 'text-dim')}>{cronText}</span>
           <Switch checked={cronEnabled} onChange={setCronEnabled} disabled={!cron.trim()} label="Scheduled" />
           {workflow.cronEnabled && workflow.nextRunAt && !dirty && <Badge tone="crimson">next {timeAgo(workflow.nextRunAt)}</Badge>}
+          <div className="ml-auto flex min-w-0 items-center rounded-md border border-line bg-panel mobile:ml-0">
+            <button
+              className="flex h-7 min-w-0 items-center gap-1.5 px-2 text-[12px] text-muted hover:text-fg"
+              title={workspace ? `Workspace: ${workspace}\nAgents and JavaScript tools can create files here. Click to change.` : 'Pick a folder the flow can create files in'}
+              onClick={async () => {
+                const [d] = await api.app.pickPaths({ directory: true, title: 'Workspace for this flow' })
+                if (d) setWorkspace(d)
+              }}
+            >
+              <FolderOpen size={13} className={workspace ? 'text-crimson-hi' : 'text-dim'} />
+              <span className="max-w-40 truncate">{workspace ? baseName(workspace) : 'No workspace'}</span>
+            </button>
+            {workspace && (
+              <button className="flex h-7 w-6 items-center justify-center text-dim hover:text-fg" title="Remove the workspace" aria-label="Remove the workspace" onClick={() => setWorkspace(null)}>
+                <X size={12} />
+              </button>
+            )}
+          </div>
         </div>
         <Button icon={<Sparkles size={13} />} onClick={() => setAiOpen(true)} title="Describe a change and let an agent apply it">
           <span className="mobile:hidden">AI edit</span>
         </Button>
+        {!isMobile && (
+          <IconButton title="Export as an app" onClick={() => setExportOpen(true)}>
+            <Package size={14} />
+          </IconButton>
+        )}
         <IconButton title="Duplicate" onClick={async () => {
           const w = await attempt(() => api.workflows.duplicate(workflow.id))
           if (w) onDuplicated(w.id)
@@ -565,6 +593,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           useApp.getState().toast('AI changes loaded — review them, then Save', 'info')
         }}
       />
+      <ExportModal open={exportOpen} workflow={workflow} onClose={() => setExportOpen(false)} beforeExport={async () => !dirty || (await save())} />
       <RunModal
         open={runOpen}
         onClose={() => setRunOpen(false)}
@@ -644,6 +673,24 @@ function RunPanel({ runs, runId, onSelect, workflow }: { runs: WorkflowRun[]; ru
       {run && (
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           {run.error && <div className="rounded-md border border-crimson-line bg-crimson-soft p-2 text-[11.5px] text-crimson-hi">{run.error}</div>}
+          {!!run.files?.length && (
+            <div>
+              <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Files ({run.files.length})</div>
+              <div className="space-y-1">
+                {run.files.map((f) => (
+                  <div key={f} className="flex items-center gap-2 rounded-md border border-line bg-bg px-2.5 py-1.5" title={f}>
+                    <File size={13} className="shrink-0 text-crimson-hi" />
+                    <span className="min-w-0 flex-1 truncate text-[12px]">{run.workspace && f.startsWith(run.workspace) ? f.slice(run.workspace.length + 1) : baseName(f)}</span>
+                    {!isMobile && (
+                      <IconButton title="Open file" onClick={() => void attempt(() => api.app.openPath(f))}>
+                        <ExternalLink size={12} />
+                      </IconButton>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {run.status === 'ok' && (
             <div>
               <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Output</div>
@@ -783,8 +830,18 @@ function stripRuntime(d: FlowNodeData): FlowNodeData & { key: string } {
   return rest as FlowNodeData & { key: string }
 }
 
-function snapshot(nodes: { id: string; type?: string; position: { x: number; y: number }; data: unknown }[], edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[], name: string, cron: string, enabled: boolean): string {
+const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
+
+function snapshot(
+  nodes: { id: string; type?: string; position: { x: number; y: number }; data: unknown }[],
+  edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[],
+  name: string,
+  cron: string,
+  enabled: boolean,
+  workspace: string | null
+): string {
   return JSON.stringify({
+    workspace,
     n: nodes.map((n) => [n.id, n.type, Math.round(n.position.x), Math.round(n.position.y), n.data]),
     e: edges.map((e) => [e.source, e.target, e.sourceHandle ?? null, e.targetHandle ?? null]),
     name,

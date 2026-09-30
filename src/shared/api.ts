@@ -62,6 +62,8 @@ export interface ClothApi {
     info(): Promise<AppInfo>
     pickPaths(opts: { directory?: boolean; multiple?: boolean; title?: string }): Promise<string[]>
     openPath(path: string): Promise<void>
+    /** Reveal a file in Explorer / Finder. */
+    showInFolder(path: string): Promise<void>
     openExternal(url: string): Promise<void>
   }
   settings: {
@@ -158,7 +160,7 @@ export interface ClothApi {
     list(): Promise<Workflow[]>
     get(id: string): Promise<Workflow>
     create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }): Promise<Workflow>
-    save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled'>>): Promise<Workflow>
+    save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>): Promise<Workflow>
     remove(id: string): Promise<void>
     duplicate(id: string): Promise<Workflow>
     run(id: string, input?: unknown): Promise<WorkflowRun>
@@ -167,6 +169,11 @@ export interface ClothApi {
     validateCron(expr: string): Promise<{ ok: boolean; next: number | null; error?: string }>
     build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string }): Promise<WorkflowGraph>
     cancelBuild(buildId: string): Promise<void>
+    /** What exporting this flow as an app would include, and whether the toolchain is ready. */
+    exportPreview(id: string): Promise<import('./flow-bundle').ExportPreview>
+    /** Start exporting; progress arrives as 'export' events. Returns the export id. */
+    exportStart(input: import('./flow-bundle').ExportInput): Promise<string>
+    exportCancel(exportId: string): Promise<void>
     createFromGraph(graph: WorkflowGraph): Promise<Workflow>
   }
   dashboard: {
@@ -205,6 +212,7 @@ export type EventMap = {
   mcp: McpStatus
   skills: { type: 'run'; run: SkillRun } | { type: 'changed'; name: string }
   tools: { type: 'changed'; id: string }
+  export: import('./flow-bundle').ExportEvent
   web: { type: 'status' }
   remote: RemoteStatus
 }

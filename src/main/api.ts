@@ -22,6 +22,7 @@ export function createApi(s: Services): ClothApi {
         const res = win ? await dialog.showOpenDialog(win, { title, properties: props }) : await dialog.showOpenDialog({ title, properties: props })
         return res.canceled ? [] : res.filePaths
       },
+      showInFolder: async (path) => shell.showItemInFolder(path),
       openPath: async (path) => {
         await shell.openPath(path)
       },
@@ -144,6 +145,9 @@ export function createApi(s: Services): ClothApi {
       validateCron: async (expr) => validateCron(expr),
       build: (input) => s.providers.usage.run({ source: 'builder' }, () => s.workflows.build(input)),
       cancelBuild: async (buildId) => s.workflows.cancelBuild(buildId),
+      exportPreview: (id) => s.exporter.preview(id),
+      exportStart: async (input) => s.exporter.start(input),
+      exportCancel: async (exportId) => s.exporter.cancel(exportId),
       createFromGraph: async (graph) => s.workflows.createFromGraph(graph)
     },
     dashboard: {

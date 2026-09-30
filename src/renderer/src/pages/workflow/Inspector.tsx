@@ -25,8 +25,8 @@ export function Inspector({
   const [skills, setSkills] = useState<Skill[]>([])
   const [tools, setTools] = useState<CustomTool[]>([])
   useEffect(() => {
-    if (type === 'skill') void api.skills.list().then(setSkills)
-    if (type === 'tool') void api.tools.list().then(setTools)
+    if (type === 'skill' || type === 'agent') void api.skills.list().then(setSkills)
+    if (type === 'tool' || type === 'agent') void api.tools.list().then(setTools)
   }, [type])
 
   const str = (k: string) => String(data[k] ?? '')
@@ -56,6 +56,31 @@ export function Inspector({
       </div>
     </Field>
   )
+  /** Multi-select chips over names; nothing selected is stored as "all" (the field is removed). */
+  const namePicker = (k: 'tools' | 'skills', label: string, names: { name: string; note?: string }[], empty: string) => {
+    const picked = Array.isArray(data[k]) ? (data[k] as string[]) : []
+    return (
+      <Field label={label} hint="None selected = all. Exporting the flow as an app bundles only what it can use.">
+        <div className="flex flex-wrap gap-1">
+          {names.map(({ name, note }) => {
+            const on = picked.includes(name)
+            const next = on ? picked.filter((x) => x !== name) : [...picked, name]
+            return (
+              <button
+                key={name}
+                title={note}
+                onClick={() => onChange({ [k]: next.length ? next : undefined })}
+                className={`rounded border px-1.5 py-0.5 font-mono text-[11px] ${on ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line text-muted'}`}
+              >
+                {name}
+              </button>
+            )
+          })}
+          {!names.length && <span className="text-[11px] text-dim">{empty}</span>}
+        </div>
+      </Field>
+    )
+  }
   const model = (label = 'Model') => (
     <Field label={label}>
       <ModelPicker value={(data.model as ModelRef) ?? null} onChange={(m) => onChange({ model: m })} allowNone noneLabel="Default model" />
@@ -113,11 +138,23 @@ export function Inspector({
           {template('system', 'Extra instructions', 3)}
           {collectionPicker}
           <Switch checked={data.skillsEnabled !== false} onChange={(v) => onChange({ skillsEnabled: v })} label="Skills available" />
-          <Switch checked={!!data.webEnabled} onChange={(v) => onChange({ webEnabled: v })} label="Web search & fetch" />
-          <Switch checked={data.customTools !== false} onChange={(v) => onChange({ customTools: v })} label="Custom tools" />
-          <Field label="Workspace folder (read-only tools)">
+          {data.skillsEnabled !== false && namePicker('skills', 'Only these skills', skills.map((s) => ({ name: s.name, note: s.description })), 'No skills in the hub')}
+          <div>
+            <Switch checked={!!data.webEnabled} onChange={(v) => onChange({ webEnabled: v })} label="Web search & fetch" />
+          </div>
+          <div>
+            <Switch checked={data.customTools !== false} onChange={(v) => onChange({ customTools: v })} label="Custom tools" />
+          </div>
+          {data.customTools !== false &&
+            namePicker(
+              'tools',
+              'Only these tools',
+              tools.filter((t) => t.enabled).map((t) => ({ name: t.name, note: t.description })),
+              'No enabled custom tools'
+            )}
+          <Field label="Own folder (optional)" hint="Empty = the flow's workspace, which the agent can read and write. A folder of its own is read-only.">
             <div className="flex gap-1.5">
-              <Input value={str('workspace')} onChange={set('workspace')} placeholder="none" />
+              <Input value={str('workspace')} onChange={set('workspace')} placeholder="the flow's workspace" />
               <Button
                 size="sm"
                 onClick={async () => {

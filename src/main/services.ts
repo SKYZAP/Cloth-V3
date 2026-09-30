@@ -18,6 +18,8 @@ import { McpHost } from './mcp/server'
 import { DashboardService } from './dashboard'
 import { ImageService } from './images'
 import { RemoteHost } from './remote/server'
+import { FlowExporter, type ExportToolchain } from './export/exporter'
+import { existsSync } from 'node:fs'
 
 export interface Services {
   ctx: Ctx
@@ -37,6 +39,7 @@ export interface Services {
   lsp: LspManager
   images: ImageService
   remote: RemoteHost
+  exporter: FlowExporter
 }
 
 export function createServices(opts: {
@@ -47,6 +50,8 @@ export function createServices(opts: {
   /** Where bundled sidecars live (resources/ in a packaged build, ./sidecars in dev). */
   sidecarsDir?: string
   examplesDir?: string
+  /** Flow app export: runner template, NSIS and icon locations (defaults: nothing available). */
+  exportToolchain?: Partial<ExportToolchain>
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -77,6 +82,19 @@ export function createServices(opts: {
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
+  const tc = opts.exportToolchain ?? {}
+  const exporter = new FlowExporter(
+    ctx,
+    { workflows, custom, skills, rag },
+    {
+      runnerDir: tc.runnerDir ?? (() => null),
+      nsisDir: tc.nsisDir ?? (() => null),
+      obscuraDir: tc.obscuraDir ?? (() => (existsSync(join(ctx.sidecarsDir, 'obscura')) ? join(ctx.sidecarsDir, 'obscura') : null)),
+      iconPng: tc.iconPng ?? (async () => null),
+      defaultOutputDir: tc.defaultOutputDir,
+      clothVersion: tc.clothVersion ?? '0.0.0'
+    }
+  )
 
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
@@ -90,5 +108,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp, dashboard, lsp, images, remote }
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, workflows, mcp, dashboard, lsp, images, remote, exporter }
 }

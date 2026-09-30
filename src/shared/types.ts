@@ -495,6 +495,8 @@ export interface Workflow {
   cron: string | null
   cronEnabled: boolean
   nextRunAt: number | null
+  /** Folder the flow works in: agent nodes and JavaScript tools can create files here. */
+  workspace: string | null
   createdAt: number
   updatedAt: number
 }
@@ -524,6 +526,9 @@ export interface WorkflowRun {
   output: unknown
   nodes: NodeRunTrace[]
   error: string | null
+  /** The workspace this run used, and the files it created or changed there (absolute paths). */
+  workspace?: string | null
+  files?: string[]
   startedAt: number
   finishedAt: number | null
 }

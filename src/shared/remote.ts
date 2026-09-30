@@ -151,7 +151,7 @@ export class SecureChannel {
  * screen) are replaced on the phone; pairing management stays on the desktop.
  */
 export function remoteAllowed(path: string): boolean {
-  if (['app.pickPaths', 'app.openPath', 'app.openExternal', 'images.open', 'images.saveAs'].includes(path)) return false
+  if (['app.pickPaths', 'app.openPath', 'app.showInFolder', 'app.openExternal', 'images.open', 'images.saveAs'].includes(path)) return false
   if (path.startsWith('remote.')) return ['remote.listDir', 'remote.roots', 'remote.imageData', 'remote.status'].includes(path)
   return true
 }
