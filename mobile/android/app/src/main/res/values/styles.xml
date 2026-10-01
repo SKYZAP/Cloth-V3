@@ -14,6 +14,10 @@
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
         <item name="android:windowBackground">@color/cloth_bg</item>
+        <!-- The UI is always dark: keep light bar icons even when the phone is in light mode, including
+             after a fold/unfold or rotation re-applies the theme. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 

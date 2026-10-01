@@ -58,6 +58,8 @@ const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'hi
 
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  // Only say there are no chats once the list has actually loaded (not while the phone is reconnecting).
+  const [loaded, setLoaded] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.chat') || null)
   const [running, setRunning] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
@@ -66,6 +68,7 @@ export function ChatPage() {
   const load = async () => {
     const list = await api.chat.list()
     setSessions(list)
+    setLoaded(true)
     setRunning(new Set(await api.chat.running()))
     if (!activeId || !list.some((s) => s.id === activeId)) setActiveId(list[0]?.id ?? null)
   }
@@ -168,7 +171,7 @@ export function ChatPage() {
             </div>
           )
         })}
-        {!sessions.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
+        {loaded && !sessions.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
 
       <SplitDetail>

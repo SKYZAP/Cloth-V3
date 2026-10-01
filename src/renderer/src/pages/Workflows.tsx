@@ -37,6 +37,7 @@ import { isMobile } from '@/lib/platform'
 
 export function WorkflowsPage() {
   const [flows, setFlows] = useState<Workflow[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -45,6 +46,7 @@ export function WorkflowsPage() {
   const load = async (select?: string) => {
     const list = await api.workflows.list()
     setFlows(list)
+    setLoaded(true)
     if (select) {
       setActiveId(select)
       setOpen(true)
@@ -98,7 +100,7 @@ export function WorkflowsPage() {
             </div>
           </ListItem>
         ))}
-        {!flows.length && <div className="p-4 text-center text-[12px] text-dim">No workflows yet — tap New, or AI to describe one.</div>}
+        {loaded && !flows.length && <div className="p-4 text-center text-[12px] text-dim">No workflows yet — tap New, or AI to describe one.</div>}
       </ListPane>
       <SplitDetail>
         {active ? (
@@ -656,7 +658,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           </BottomSheet>
           <BottomSheet open={runsOpen && !sel} onClose={() => setRunsOpen(false)} title="Runs" snapPoints={[0.6, 0.92]}>
             <div className="-mx-4 -mt-2 h-[70vh]">
-              <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} onFix={setFixRun} />
+              <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} onFix={setFixRun} inSheet />
             </div>
           </BottomSheet>
         </>
@@ -747,15 +749,16 @@ function RunModal({ open, onClose, defaultInput, onRun }: { open: boolean; onClo
   )
 }
 
-function RunPanel({ runs, runId, onSelect, workflow, onFix }: { runs: WorkflowRun[]; runId: string | null; onSelect(id: string): void; workflow: Workflow; onFix(run: WorkflowRun): void }) {
+/** `inSheet`: shown in the phone's Runs sheet, which has its own title. */
+function RunPanel({ runs, runId, onSelect, workflow, onFix, inSheet }: { runs: WorkflowRun[]; runId: string | null; onSelect(id: string): void; workflow: Workflow; onFix(run: WorkflowRun): void; inSheet?: boolean }) {
   const run = runs.find((r) => r.id === runId)
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [viewing, setViewing] = useState<{ title: string; value: unknown } | null>(null)
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-line px-4 py-2.5 text-[12.5px] font-semibold">Runs</div>
+      {!inSheet && <div className="border-b border-line px-4 py-2.5 text-[12.5px] font-semibold">Runs</div>}
       <div className="max-h-56 shrink-0 overflow-y-auto border-b border-line p-1.5">
-        {!runs.length && <div className="p-3 text-[12px] text-dim">No runs yet. Select a node to edit it.</div>}
+        {!runs.length && <div className="p-3 text-[12px] text-dim">{inSheet ? 'No runs yet — tap Run to try the flow.' : 'No runs yet. Select a node to edit it.'}</div>}
         {runs.map((r) => (
           <ListItem key={r.id} active={r.id === runId} onClick={() => onSelect(r.id)}>
             <Dot tone={r.status === 'ok' ? 'ok' : r.status === 'error' ? 'crimson' : 'info'} pulse={r.status === 'running'} />

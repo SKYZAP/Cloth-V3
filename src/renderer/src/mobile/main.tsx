@@ -15,6 +15,17 @@ function Root() {
   useEffect(() => {
     void initConnection()
     void styleSystemBars()
+    // Folding, unfolding or rotating can reset the bars to the system's light/dark default.
+    let t: ReturnType<typeof setTimeout> | undefined
+    const restyle = () => {
+      clearTimeout(t)
+      t = setTimeout(() => void styleSystemBars(), 250)
+    }
+    window.addEventListener('resize', restyle)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('resize', restyle)
+    }
   }, [])
   if (state === 'loading')
     return (
