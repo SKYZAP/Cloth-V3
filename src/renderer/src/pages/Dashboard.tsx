@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { isMobile } from '@/lib/platform'
 import { animate, motion } from 'motion/react'
 import {
   ArrowClockwise,
@@ -343,7 +344,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
       {cards.map((c, i) => (
-        <Panel key={c.label} delay={0.04 * i} className="group relative overflow-hidden p-4">
+        <Panel key={c.label} delay={0.04 * i} className={clsx('group relative overflow-hidden p-4', i === cards.length - 1 && cards.length % 2 === 1 && 'col-span-2 md:col-span-1')}>
           <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-crimson/5 blur-2xl transition-opacity group-hover:bg-crimson/10" />
           <div className="flex items-center gap-2 text-[11.5px] font-medium text-dim">
             <c.icon size={14} className="text-muted" />
@@ -352,7 +353,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
             {c.delta}
           </div>
           <div className="mt-2 font-mono text-[26px] font-semibold leading-none tracking-tight text-fg tabular-nums">{c.value}</div>
-          <div className="mt-2 truncate text-[11.5px] text-dim">{c.sub}</div>
+          <div className="mt-2 truncate text-[11.5px] text-dim mobile:line-clamp-2 mobile:whitespace-normal">{c.sub}</div>
           {c.foot && <div className="mt-2.5">{c.foot}</div>}
         </Panel>
       ))}
@@ -390,7 +391,8 @@ function Timeline({ stats }: { stats: DashboardStats }) {
     const d = new Date(t)
     return stats.bucket === 'hour' ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
-  const every = Math.max(1, Math.ceil(data.length / 8))
+  // Narrow (phone) charts fit fewer date labels before they collide.
+  const every = Math.max(1, Math.ceil(data.length / (isMobile ? 4 : 8)))
   const total = data.reduce((n, b) => n + value(b), 0)
   const h = hover !== null ? data[hover] : null
 
@@ -444,7 +446,7 @@ function Timeline({ stats }: { stats: DashboardStats }) {
               const hPct = nice ? (v / nice) * 100 : 0
               const inShare = metric === 'tokens' && v ? b.input / v : 0
               return (
-                <div key={b.t} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setHover(i)}>
+                <div key={b.t} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setHover(i)} onClick={() => setHover(hover === i ? null : i)}>
                   <div className={clsx('absolute inset-0 rounded-sm transition-colors', hover === i && 'bg-elev-2/60')} />
                   <motion.div
                     className="relative flex w-full flex-col-reverse overflow-hidden rounded-t-[3px]"

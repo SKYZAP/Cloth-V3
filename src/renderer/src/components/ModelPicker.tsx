@@ -190,7 +190,7 @@ export function ModelPicker({
       )}
       {isMobile && (
         <BottomSheet open={open} onClose={close} title="Choose a model" snapPoints={[0.8]} portal>
-          <div className="-mx-4 -mt-2">
+          <div className="-mx-4">
             <div className="mx-4 mb-1 flex h-10 items-center gap-2 rounded-xl border border-line bg-bg px-3">
               <MagnifyingGlass size={15} className="text-dim" />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" aria-label="Search models" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-dim" />

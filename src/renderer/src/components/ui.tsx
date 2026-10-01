@@ -232,11 +232,11 @@ export function Spinner({ size = 14, className }: { size?: number; className?: s
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-x-2 mobile:gap-y-2.5 mobile:px-4 mobile:py-3">
+    <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-x-2 mobile:gap-y-2.5 mobile:px-3 mobile:py-3">
       <SplitBack />
       <div className="min-w-0 mobile:flex-1">
         <div className="truncate text-[15px] font-semibold tracking-tight">{title}</div>
-        {subtitle && <div className="truncate text-[12px] text-dim">{subtitle}</div>}
+        {subtitle && <div className="truncate text-[12px] text-dim mobile:whitespace-normal">{subtitle}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2 mobile:w-full mobile:shrink mobile:flex-wrap">{actions}</div>}
     </div>

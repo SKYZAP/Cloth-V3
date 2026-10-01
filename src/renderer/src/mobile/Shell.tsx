@@ -7,7 +7,8 @@ import { NAV } from '@/lib/nav'
 import { useApp, type Page } from '@/lib/store'
 import { handleBack, useBackHandler } from '@/lib/back'
 import { ConfirmHost } from '@/components/ConfirmDialog'
-import { BottomSheet } from '@/components/BottomSheet'
+import { BottomSheet, EASE_DRAWER } from '@/components/BottomSheet'
+import { useDetailOpen } from '@/components/SplitView'
 import { confirmAction } from '@/components/ui'
 import { forgetPairing, reconnectNow, useConnection } from './bridge'
 import { MobileHosts } from './Hosts'
@@ -29,6 +30,7 @@ export function MobileShell() {
   const generation = useConnection((s) => s.generation)
   const [more, setMore] = useState(false)
   const [typing, setTyping] = useState(false)
+  const inDetail = useDetailOpen((s) => s.count > 0)
   useEffect(() => onKeyboard(setTyping), [])
 
   // Reload shared data on start and after every reconnect (screens remount via `generation`).
@@ -63,16 +65,22 @@ export function MobileShell() {
           <PageContent page={page} />
         </main>
 
-        <nav className={clsx('relative z-30 flex shrink-0 border-t border-line bg-panel/95 pb-[var(--safe-bottom)] backdrop-blur', typing && 'hidden')}>
+        {/* Steps aside while typing and inside a chat, flow or other detail screen. */}
+        <motion.nav
+          initial={false}
+          animate={{ height: inDetail ? 0 : 'auto', opacity: inDetail ? 0 : 1 }}
+          transition={{ duration: 0.42, ease: EASE_DRAWER }}
+          className={clsx('relative z-30 flex shrink-0 overflow-hidden border-t border-line bg-panel/95 pb-[var(--safe-bottom)] backdrop-blur', typing && 'hidden', inDetail && 'border-t-0')}
+        >
           <LayoutGroup id="tabs">
             {TABS.map((t) => (
               <Tab key={t.page} icon={t.icon} label={t.label} active={page === t.page && !more} onClick={() => go(t.page)} />
             ))}
             <Tab icon={DotsThreeOutline} label="More" active={more || inMore} onClick={() => setMore(!more)} />
           </LayoutGroup>
-        </nav>
+        </motion.nav>
 
-        <BottomSheet open={more} onClose={() => setMore(false)} title="More" snapPoints={[0.62]}>
+        <BottomSheet open={more} onClose={() => setMore(false)} title="More" snapPoints={[0.52]}>
           <MoreSheet page={page} onGo={go} />
         </BottomSheet>
 
