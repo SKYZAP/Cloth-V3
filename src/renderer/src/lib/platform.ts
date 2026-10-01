@@ -1,8 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from './api'
 
 /** True inside the Android app, where every call travels to the desktop over the network. */
 export const isMobile = !!window.cloth.remote
+
+// An unfolded foldable or a tablet has room for a list beside its detail, like the desktop.
+const wideQuery = window.matchMedia('(min-width: 700px)')
+const subscribeWide = (cb: () => void) => {
+  wideQuery.addEventListener('change', cb)
+  return () => wideQuery.removeEventListener('change', cb)
+}
+
+/** True on a phone screen wide enough for desktop-style layouts (follows folding and rotation). */
+export function useWideMobile(): boolean {
+  const wide = useSyncExternalStore(subscribeWide, () => wideQuery.matches)
+  return isMobile && wide
+}
+
+/** Lists show beside their detail (desktop, or a wide phone screen) rather than as separate screens. */
+export function useSideBySide(): boolean {
+  const wide = useWideMobile()
+  return !isMobile || wide
+}
 
 const blobs = new Map<string, Promise<string>>()
 

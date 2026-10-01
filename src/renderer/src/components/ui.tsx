@@ -1,7 +1,7 @@
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import clsx from 'clsx'
 import { Loader2, X } from 'lucide-react'
-import { isMobile } from '@/lib/platform'
+import { isMobile, useSideBySide } from '@/lib/platform'
 import { useBackHandler } from '@/lib/back'
 import { SplitBack } from './SplitView'
 
@@ -245,8 +245,9 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
 
 /** Left-hand list column used by several pages. */
 export function ListPane({ header, children, width = 272 }: { header: ReactNode; children: ReactNode; width?: number }) {
+  const side = useSideBySide()
   return (
-    <div className="flex h-full shrink-0 flex-col border-r border-line bg-panel mobile:w-full mobile:border-r-0 mobile:bg-bg" style={isMobile ? undefined : { width }}>
+    <div className={clsx('flex h-full shrink-0 flex-col', side ? 'border-r border-line bg-panel' : 'w-full bg-bg')} style={side ? { width } : undefined}>
       <div className="border-b border-line p-3">{header}</div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
     </div>
@@ -254,12 +255,14 @@ export function ListPane({ header, children, width = 272 }: { header: ReactNode;
 }
 
 export function ListItem({ active, onClick, children, className }: { active?: boolean; onClick?(): void; children: ReactNode; className?: string }) {
+  // A narrow phone shows the list on its own, so nothing reads as selected there.
+  const side = useSideBySide()
   return (
     <div
       onClick={onClick}
       className={clsx(
         'group relative mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-2.5 pl-3 pr-2 transition-colors duration-200 mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
-        active && !isMobile ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
+        active && side ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
         className
       )}
     >

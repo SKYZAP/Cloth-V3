@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretLeft } from '@phosphor-icons/react'
-import { isMobile } from '@/lib/platform'
+import { useSideBySide } from '@/lib/platform'
 import { useBackHandler } from '@/lib/back'
 import { EASE_DRAWER } from './BottomSheet'
 
@@ -14,21 +14,23 @@ const BackCtx = createContext<(() => void) | null>(null)
 export const useDetailOpen = create<{ count: number }>(() => ({ count: 0 }))
 
 /**
- * A list (ListPane) beside the selected item's detail (SplitDetail). On the desktop both show side by
- * side; on the phone the list fills the screen and the detail slides over it while `open`
- * (Android back returns to the list).
+ * A list (ListPane) beside the selected item's detail (SplitDetail). On the desktop and wide phone screens
+ * (an unfolded foldable) both show side by side; on a narrow phone the list fills the screen and the
+ * detail slides over it while `open` (Android back returns to the list).
  */
 export function SplitRoot({ open, onBack, children }: { open: boolean; onBack(): void; children: ReactNode }) {
-  useBackHandler(isMobile && open, onBack)
+  const side = useSideBySide()
+  const stacked = !side && open
+  useBackHandler(stacked, onBack)
   useEffect(() => {
-    if (!isMobile || !open) return
+    if (!stacked) return
     useDetailOpen.setState((s) => ({ count: s.count + 1 }))
     return () => useDetailOpen.setState((s) => ({ count: s.count - 1 }))
-  }, [open])
-  if (!isMobile) return <div className="flex h-full">{children}</div>
+  }, [stacked])
+  // One tree shape in both modes, so folding or unfolding keeps the list (and its scroll) in place.
   return (
-    <SplitCtx.Provider value={{ open, onBack }}>
-      <div className="relative h-full overflow-hidden">{children}</div>
+    <SplitCtx.Provider value={side ? null : { open, onBack }}>
+      <div className={side ? 'flex h-full' : 'relative h-full overflow-hidden'}>{children}</div>
     </SplitCtx.Provider>
   )
 }

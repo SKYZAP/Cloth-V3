@@ -50,7 +50,7 @@ import { ApprovalCard } from '@/components/ApprovalCard'
 import { QuestionCard } from '@/components/QuestionCard'
 import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
-import { isMobile } from '@/lib/platform'
+import { isMobile, useSideBySide } from '@/lib/platform'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -64,6 +64,7 @@ export function ChatPage() {
   const [running, setRunning] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
+  const side = useSideBySide()
 
   const load = async () => {
     const list = await api.chat.list()
@@ -143,7 +144,7 @@ export function ChatPage() {
               onClick={() => (setActiveId(s.id), setOpen(true))}
               className={clsx(
                 'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pl-3.5 pr-2 transition-colors duration-200 mobile:py-3.5',
-                on && !isMobile ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
+                on && side ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
               )}
             >
               <div className="min-w-0 flex-1">
