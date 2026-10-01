@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, motion, useMotionValue, useTransform, type AnimationPlaybackControls } from 'motion/react'
+import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 import { useBackHandler } from '@/lib/back'
 
@@ -14,6 +15,7 @@ const DISMISS_OFFSET = 120
 /**
  * Draggable bottom sheet scoped to its positioned parent (not the whole window): snap points as
  * fractions of the parent's height, elastic drag, fling to switch snaps or dismiss, blurred backdrop.
+ * portal lifts it over the whole screen instead, for sheets opened from small controls (a header pill).
  */
 export function BottomSheet({
   open,
@@ -22,7 +24,8 @@ export function BottomSheet({
   description,
   children,
   snapPoints = [0.5, SHEET_HEIGHT],
-  scrollTo
+  scrollTo,
+  portal
 }: {
   open: boolean
   onClose(): void
@@ -32,6 +35,8 @@ export function BottomSheet({
   snapPoints?: number[]
   /** Element id inside the sheet to scroll to and flash when opened. */
   scrollTo?: string | null
+  /** Cover the whole screen (rendered into document.body) rather than the positioned parent. */
+  portal?: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -131,7 +136,7 @@ export function BottomSheet({
 
   const dragProps = { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp }
 
-  return (
+  const sheet = (
     <div ref={rootRef} className="pointer-events-none absolute inset-0 z-40" style={{ pointerEvents: visible ? 'auto' : 'none' }}>
       {visible && (
         <>
@@ -154,7 +159,7 @@ export function BottomSheet({
                 <X size={15} />
               </button>
             </div>
-            <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-[22px] pb-7 mobile:px-4">
+            <div ref={bodyRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-[22px] pb-7 mobile:px-4" style={portal ? { paddingBottom: 'calc(var(--safe-bottom, 0px) + 28px)' } : undefined}>
               {children}
             </div>
           </motion.section>
@@ -162,4 +167,5 @@ export function BottomSheet({
       )}
     </div>
   )
+  return portal ? createPortal(<div className="pointer-events-none fixed inset-0 z-50">{sheet}</div>, document.body) : sheet
 }

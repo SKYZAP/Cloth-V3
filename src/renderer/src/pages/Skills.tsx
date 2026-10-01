@@ -24,6 +24,7 @@ type Tab = 'instructions' | 'files' | 'tests'
 
 export function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [activeName, setActiveName] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
@@ -33,6 +34,7 @@ export function SkillsPage() {
   const load = async (select?: string) => {
     const list = await api.skills.list()
     setSkills(list)
+    setLoaded(true)
     if (select) {
       setActiveName(select)
       setOpen(true)
@@ -104,7 +106,7 @@ export function SkillsPage() {
             </ListItem>
           )
         })}
-        {!skills.length && <div className="p-4 text-center text-[12px] text-dim">No skills yet.</div>}
+        {loaded && !skills.length && <div className="p-4 text-center text-[12px] text-dim">No skills yet.</div>}
       </ListPane>
       <SplitDetail>
         {active ? (

@@ -19,9 +19,10 @@ export function KnowledgePage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    void loadCollections()
+    void loadCollections().then(() => setLoaded(true))
   }, [loadCollections])
   useEffect(() => {
     if (!activeId || !collections.some((c) => c.id === activeId)) setActiveId(collections[0]?.id ?? null)
@@ -69,7 +70,7 @@ export function KnowledgePage() {
             {c.embeddingDim ? <Badge tone="crimson">vec</Badge> : <Badge tone="dim">bm25</Badge>}
           </ListItem>
         ))}
-        {!collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or the cap icon for example docs.</div>}
+        {loaded && !collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or the cap icon for example docs.</div>}
       </ListPane>
       <SplitDetail>
         {active ? (

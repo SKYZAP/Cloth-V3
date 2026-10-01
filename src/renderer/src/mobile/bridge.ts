@@ -26,6 +26,8 @@ export const useConnection = create<Connection>(() => ({ state: 'loading', pairi
 
 const listeners = new Set<(channel: string, payload: unknown) => void>()
 let client: RemoteClient | null = null
+/** A call failed while the PC was unreachable, so what's on screen may be incomplete: reload when it's back. */
+let missedCalls = false
 
 /** Phone replacements for desktop-only calls, registered by UI hosts (folder picker, image viewer). */
 export const mobileHooks: {
@@ -44,7 +46,9 @@ function start(pairing: PairingPayload, preferHost: string | null, name: string)
     onState: (state, info) => {
       if (c !== client) return
       if (state === 'online' && info.host) void setPref(HOST_KEY, info.host)
-      useConnection.setState((s) => ({ state, info: { ...info }, generation: state === 'online' && info.reconnected ? s.generation + 1 : s.generation }))
+      const reload = state === 'online' && (info.reconnected || missedCalls)
+      if (state === 'online') missedCalls = false
+      useConnection.setState((s) => ({ state, info: { ...info }, generation: reload ? s.generation + 1 : s.generation }))
     }
   })
   client = c
@@ -135,6 +139,7 @@ export function installBridge(): void {
       try {
         return { ok: true, value: await route(path, args ?? []) }
       } catch (err) {
+        if (useConnection.getState().state !== 'online') missedCalls = true
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },

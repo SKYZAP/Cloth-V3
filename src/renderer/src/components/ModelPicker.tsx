@@ -189,7 +189,7 @@ export function ModelPicker({
         </Popover>
       )}
       {isMobile && (
-        <BottomSheet open={open} onClose={close} title="Choose a model" snapPoints={[0.8]}>
+        <BottomSheet open={open} onClose={close} title="Choose a model" snapPoints={[0.8]} portal>
           <div className="-mx-4 -mt-2">
             <div className="mx-4 mb-1 flex h-10 items-center gap-2 rounded-xl border border-line bg-bg px-3">
               <MagnifyingGlass size={15} className="text-dim" />
