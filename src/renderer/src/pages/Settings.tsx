@@ -19,7 +19,7 @@ import {
 import type { AppInfo, Settings, SubagentSettings, ThinkingLevel } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
-import { isMobile } from '@/lib/platform'
+import { isMobile, useSideBySide } from '@/lib/platform'
 import { Button, Card, Input, ListPane, Switch, Textarea } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
@@ -64,6 +64,7 @@ export function SettingsPage() {
     }
   })
   const [open, setOpen] = useState(false)
+  const side = useSideBySide()
 
   const sections = useMemo(() => SECTIONS.filter((s) => !(s.desktopOnly && isMobile)), [])
   const shown = useMemo(() => {
@@ -107,7 +108,7 @@ export function SettingsPage() {
         }
       >
         {shown.map((s) => {
-          const on = s.id === current.id && !isMobile
+          const on = s.id === current.id && side
           return (
             <button
               key={s.id}
@@ -125,7 +126,7 @@ export function SettingsPage() {
                 <span className="block text-[12.5px] font-medium mobile:text-[14px]">{s.title}</span>
                 <span className="block truncate text-[11px] text-dim mobile:text-[12px]">{s.blurb}</span>
               </span>
-              {isMobile && <CaretRight size={14} className="text-dim" />}
+              {!side && <CaretRight size={14} className="text-dim" />}
             </button>
           )
         })}

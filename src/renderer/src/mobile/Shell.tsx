@@ -10,6 +10,7 @@ import { ConfirmHost } from '@/components/ConfirmDialog'
 import { BottomSheet, EASE_DRAWER } from '@/components/BottomSheet'
 import { useDetailOpen } from '@/components/SplitView'
 import { confirmAction } from '@/components/ui'
+import { useWideMobile } from '@/lib/platform'
 import { forgetPairing, reconnectNow, useConnection } from './bridge'
 import { MobileHosts } from './Hosts'
 import { exitApp, onBackButton, onKeyboard } from './native'
@@ -31,6 +32,7 @@ export function MobileShell() {
   const [more, setMore] = useState(false)
   const [typing, setTyping] = useState(false)
   const inDetail = useDetailOpen((s) => s.count > 0)
+  const wide = useWideMobile()
   useEffect(() => onKeyboard(setTyping), [])
 
   // Reload shared data on start and after every reconnect (screens remount via `generation`).
@@ -61,16 +63,21 @@ export function MobileShell() {
     <MotionConfig reducedMotion="user">
       <div className="relative flex h-full flex-col bg-bg pt-[var(--safe-top)]">
         <ConnectionBanner />
-        <main className="relative min-h-0 flex-1" key={`${page}-${generation}`}>
-          <PageContent page={page} />
-        </main>
+        {/* Wide screens (an unfolded foldable, a tablet) get a side rail with every page instead of tabs.
+            The page keeps its place in this row either way, so folding doesn't reset it. */}
+        <div className="flex min-h-0 flex-1">
+          {wide && <Rail page={page} onGo={go} onPc={() => setMore(true)} />}
+          <main className="relative min-w-0 flex-1" key={`${page}-${generation}`}>
+            <PageContent page={page} />
+          </main>
+        </div>
 
         {/* Steps aside while typing and inside a chat, flow or other detail screen. */}
         <motion.nav
           initial={false}
-          animate={{ height: inDetail ? 0 : 'auto', opacity: inDetail ? 0 : 1 }}
+          animate={{ height: inDetail || wide ? 0 : 'auto', opacity: inDetail || wide ? 0 : 1 }}
           transition={{ duration: 0.42, ease: EASE_DRAWER }}
-          className={clsx('relative z-30 flex shrink-0 overflow-hidden border-t border-line bg-panel/95 pb-[var(--safe-bottom)] backdrop-blur', typing && 'hidden', inDetail && 'border-t-0')}
+          className={clsx('relative z-30 flex shrink-0 overflow-hidden border-t border-line bg-panel/95 pb-[var(--safe-bottom)] backdrop-blur', typing && 'hidden', (inDetail || wide) && 'border-t-0')}
         >
           <LayoutGroup id="tabs">
             {TABS.map((t) => (
@@ -80,8 +87,8 @@ export function MobileShell() {
           </LayoutGroup>
         </motion.nav>
 
-        <BottomSheet open={more} onClose={() => setMore(false)} title="More" snapPoints={[0.52]}>
-          <MoreSheet page={page} onGo={go} />
+        <BottomSheet open={more} onClose={() => setMore(false)} title={wide ? 'Your PC' : 'More'} snapPoints={[wide ? 0.4 : 0.52]}>
+          <MoreSheet page={page} onGo={go} pages={!wide} />
         </BottomSheet>
 
         <MobileHosts />
@@ -89,6 +96,29 @@ export function MobileShell() {
         <ConfirmHost />
       </div>
     </MotionConfig>
+  )
+}
+
+/** Side navigation for wide screens: every page, plus the PC connection at the bottom. */
+function Rail({ page, onGo, onPc }: { page: Page; onGo(p: Page): void; onPc(): void }) {
+  const state = useConnection((s) => s.state)
+  return (
+    <nav className="flex w-[76px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r border-line bg-panel/95 py-2">
+      <LayoutGroup id="rail">
+        {NAV.map((t) => (
+          <button key={t.page} onClick={() => onGo(t.page)} className="relative flex h-[58px] w-full flex-col items-center justify-center gap-1 text-[10.5px] font-medium">
+            {page === t.page && <motion.span layoutId="rail-pill" transition={{ type: 'spring', stiffness: 500, damping: 38 }} className="absolute top-1.5 h-8 w-14 rounded-full bg-crimson-soft" />}
+            <t.icon size={22} weight={page === t.page ? 'fill' : 'regular'} className={clsx('relative transition-colors', page === t.page ? 'text-crimson-hi' : 'text-dim')} />
+            <span className={clsx('relative transition-colors', page === t.page ? 'text-fg' : 'text-dim')}>{t.label}</span>
+          </button>
+        ))}
+      </LayoutGroup>
+      <div className="flex-1" />
+      <button onClick={onPc} aria-label="Your PC" className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted active:bg-elev-2">
+        <Desktop size={22} />
+        <span className={clsx('absolute right-2.5 top-2.5 h-2 w-2 rounded-full ring-2 ring-panel', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-crimson')} />
+      </button>
+    </nav>
   )
 }
 
@@ -102,7 +132,7 @@ function Tab({ icon: I, label, active, onClick }: { icon: Icon; label: string; a
   )
 }
 
-function MoreSheet({ page, onGo }: { page: Page; onGo(p: Page): void }) {
+function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pages: boolean }) {
   const info = useConnection((s) => s.info)
   const state = useConnection((s) => s.state)
   const forget = async () => {
@@ -111,6 +141,7 @@ function MoreSheet({ page, onGo }: { page: Page; onGo(p: Page): void }) {
   }
   return (
     <div className="space-y-5 pb-4">
+      {pages && (
       <div className="grid grid-cols-3 gap-2.5">
         {MORE.map(({ page: p, label, icon: I }) => (
           <motion.button
@@ -124,6 +155,7 @@ function MoreSheet({ page, onGo }: { page: Page; onGo(p: Page): void }) {
           </motion.button>
         ))}
       </div>
+      )}
 
       <div className="rounded-2xl border border-line bg-elev p-4">
         <div className="flex items-center gap-3">

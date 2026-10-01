@@ -221,7 +221,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   // Phones: fitting a whole flow makes nodes unreadable, so frame its first two steps instead (pan for the rest).
   const fitOptions = (extra: { duration?: number } = {}) => {
     const all = flow.getNodes()
-    if (isMobile && all.length > 2) return { padding: 0.2, maxZoom: 1, nodes: [...all].sort((a, b) => a.position.x - b.position.x).slice(0, 2).map((n) => ({ id: n.id })), ...extra }
+    if (isMobile && all.length > 2 && !window.matchMedia('(min-width: 700px)').matches) return { padding: 0.2, maxZoom: 1, nodes: [...all].sort((a, b) => a.position.x - b.position.x).slice(0, 2).map((n) => ({ id: n.id })), ...extra }
     return { padding: 0.12, maxZoom: 1.1, minZoom: 0.2, ...extra }
   }
   const [moreOpen, setMoreOpen] = useState(false)
