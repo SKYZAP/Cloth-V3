@@ -383,7 +383,7 @@ function ProviderView({ provider }: { provider: Provider }) {
                         />
                       </td>
                       <td className="px-2 py-1.5">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
+                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 mobile:opacity-100">
                           {m.image && (
                             <Button size="sm" variant="ghost" onClick={() => setPlayground(m.id)}>
                               Generate

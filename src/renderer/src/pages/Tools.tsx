@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { Bot, BookOpen, ListChecks, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
+import { Bot, BookOpen, ListChecks, MessageCircleQuestion, Search, Code2, FolderSearch, Globe, Link2, Lock, MessageSquareText, Play, Plus, Save, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
 import type { BuiltinToolInfo, CustomTool, CustomToolInput, CustomToolKind, ModelRef, ToolOrigin, ToolParam, ToolParamType, ToolRunResult } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
@@ -18,6 +18,9 @@ const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: 
 }
 
 const GROUP_ICON: Record<BuiltinToolInfo['group'], typeof Globe> = { knowledge: BookOpen, web: Globe, skills: Sparkles, workspace: FolderSearch, planning: ListChecks, tools: Wrench }
+/** Tools that look wrong with their group's icon. */
+const TOOL_ICON: Partial<Record<string, typeof Globe>> = { ask_user: MessageCircleQuestion }
+const iconFor = (t: { name: string; group: BuiltinToolInfo['group'] }) => TOOL_ICON[t.name] ?? GROUP_ICON[t.group]
 
 const ORIGIN: Record<Exclude<ToolOrigin, 'user'>, string> = { chat: 'a chat', mcp: 'an MCP client' }
 
@@ -111,7 +114,10 @@ export function ToolsPage() {
                 New
               </Button>
             </div>
-            <Input placeholder="Filter tools" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-2.5 text-dim" />
+            <Input className="pl-7" placeholder="Filter tools" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          </div>
           </div>
         }
       >
@@ -140,7 +146,7 @@ export function ToolsPage() {
         {builtins
           .filter((b) => match(b.name + b.description))
           .map((b) => {
-            const Icon = GROUP_ICON[b.group]
+            const Icon = iconFor(b)
             return (
               <ListItem key={b.name} active={sel?.kind === 'builtin' && sel.name === b.name} onClick={() => (setSel({ kind: 'builtin', name: b.name }), setOpen(true))}>
                 <Icon size={14} className="shrink-0 text-dim" />
@@ -237,7 +243,7 @@ function NewToolModal({ open, onClose, onCreated, existing }: { open: boolean; o
 function BuiltinView({ tool }: { tool: BuiltinToolInfo }) {
   const schema = tool.schema as { properties?: Record<string, { type?: string; description?: string; anyOf?: { const?: string }[]; items?: { type?: string } }>; required?: string[] }
   const props = Object.entries(schema.properties ?? {})
-  const Icon = GROUP_ICON[tool.group]
+  const Icon = iconFor(tool)
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader

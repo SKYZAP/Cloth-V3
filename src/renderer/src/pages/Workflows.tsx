@@ -18,7 +18,7 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { ArrowLeft, Eye, RotateCcw, Wand2, Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { ArrowLeft, ListChecks, MoreHorizontal, Eye, RotateCcw, Wand2, Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -69,7 +69,7 @@ export function WorkflowsPage() {
         header={
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[13px] font-semibold">Workflows</div>
+              <div className="text-[13px] font-semibold">Flows</div>
               <div className="text-[11px] text-dim">{flows.filter((f) => f.cronEnabled).length} scheduled</div>
             </div>
             <div className="flex gap-1">
@@ -100,7 +100,7 @@ export function WorkflowsPage() {
             </div>
           </ListItem>
         ))}
-        {loaded && !flows.length && <div className="p-4 text-center text-[12px] text-dim">No workflows yet — tap New, or AI to describe one.</div>}
+        {loaded && !flows.length && <div className="p-4 text-center text-[12px] text-dim">No flows yet — tap New, or AI to describe one.</div>}
       </ListPane>
       <SplitDetail>
         {active ? (
@@ -218,8 +218,15 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const [savedSnapshot, setSavedSnapshot] = useState(() => snapshot(workflow.nodes, workflow.edges, workflow.name, workflow.cron ?? '', workflow.cronEnabled, workflow.workspace))
   const flow = useReactFlow()
   const nodesReady = useNodesInitialized()
+  // Phones: fitting a whole flow makes nodes unreadable, so frame its first two steps instead (pan for the rest).
+  const fitOptions = (extra: { duration?: number } = {}) => {
+    const all = flow.getNodes()
+    if (isMobile && all.length > 2) return { padding: 0.2, maxZoom: 1, nodes: [...all].sort((a, b) => a.position.x - b.position.x).slice(0, 2).map((n) => ({ id: n.id })), ...extra }
+    return { padding: 0.12, maxZoom: 1.1, minZoom: 0.2, ...extra }
+  }
+  const [moreOpen, setMoreOpen] = useState(false)
   useEffect(() => {
-    if (nodesReady) void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2 })
+    if (nodesReady) void flow.fitView(fitOptions())
     // Only on first measurement — later edits shouldn't yank the viewport.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesReady])
@@ -299,7 +306,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
       if (t < 1) requestAnimationFrame(step)
       else {
         setArranging(false)
-        void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2, duration: 380 })
+        void flow.fitView(fitOptions({ duration: 380 }))
       }
     }
     requestAnimationFrame(step)
@@ -312,7 +319,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     setEdges(graph.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
     if (graph.name) setName(graph.name)
     setSelected(null)
-    setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2 }), 80)
+    setTimeout(() => void flow.fitView(fitOptions()), 80)
   }
 
   const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge({ ...c, id: `e_${Date.now().toString(36)}` }, es)), [setEdges])
@@ -342,7 +349,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     setPendingSource(null)
     setSelected(null)
     onSaved(w)
-    setTimeout(() => void flow.fitView({ padding: 0.12, maxZoom: 1.1, minZoom: 0.2, duration: 300 }), 60)
+    setTimeout(() => void flow.fitView(fitOptions({ duration: 300 })), 60)
   }
 
   const restore = async (v: WorkflowVersion) => {
@@ -399,6 +406,16 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   const sel = nodes.find((n) => n.id === selected)
   const running = activeRun?.status === 'running'
 
+  const duplicate = async () => {
+    const w = await attempt(() => api.workflows.duplicate(workflow.id))
+    if (w) onDuplicated(w.id)
+  }
+  const remove = async () => {
+    if (!(await confirmAction(`“${workflow.name}”, its schedule and its run history will be deleted.`, { title: 'Delete flow?', confirmLabel: 'Delete', danger: true }))) return
+    await attempt(() => api.workflows.remove(workflow.id))
+    onDeleted()
+  }
+
   return (
     <div className="relative flex h-full flex-col">
       {/* Top bar */}
@@ -452,22 +469,20 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         >
           <History size={14} />
         </IconButton>
-        <IconButton title="Duplicate" onClick={async () => {
-          const w = await attempt(() => api.workflows.duplicate(workflow.id))
-          if (w) onDuplicated(w.id)
-        }}>
-          <Copy size={14} />
-        </IconButton>
-        <IconButton
-          title="Delete workflow"
-          onClick={async () => {
-            if (!(await confirmAction(`“${workflow.name}”, its schedule and its run history will be deleted.`, { title: 'Delete workflow?', confirmLabel: 'Delete', danger: true }))) return
-            await attempt(() => api.workflows.remove(workflow.id))
-            onDeleted()
-          }}
-        >
-          <Trash2 size={14} />
-        </IconButton>
+        {isMobile ? (
+          <IconButton title="More actions" aria-label="More actions" onClick={() => setMoreOpen(true)}>
+            <MoreHorizontal size={16} />
+          </IconButton>
+        ) : (
+          <>
+            <IconButton title="Duplicate" onClick={() => void duplicate()}>
+              <Copy size={14} />
+            </IconButton>
+            <IconButton title="Delete flow" onClick={() => void remove()}>
+              <Trash2 size={14} />
+            </IconButton>
+          </>
+        )}
         <Button icon={<Save size={13} />} disabled={!dirty} loading={saving} onClick={() => void save()}>
           <span className="mobile:hidden">Save</span>
         </Button>
@@ -567,7 +582,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             {isMobile && (
               <Panel position="bottom-right" className="!m-3 flex flex-col gap-2">
                 <button onClick={() => setRunsOpen(true)} aria-label="Runs" className="flex h-12 w-12 items-center justify-center rounded-2xl border border-line-strong bg-elev text-muted shadow-lg shadow-black/50">
-                  <History size={20} />
+                  <ListChecks size={20} />
                 </button>
                 <button onClick={() => setPaletteOpen(true)} aria-label="Add node" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-crimson text-white shadow-[0_8px_24px_-6px_rgb(220_38_69/0.7)]">
                   <Plus size={22} />
@@ -625,14 +640,14 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
                     addNode(m.type)
                     setPaletteOpen(false)
                   }}
-                  className="flex items-center gap-2.5 rounded-2xl border border-line bg-elev px-3 py-3 text-left active:border-line-strong"
+                  className="flex items-start gap-2.5 rounded-2xl border border-line bg-elev px-3 py-3 text-left active:border-line-strong"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `${m.color}22`, color: m.color }}>
                     <m.icon size={16} />
                   </span>
                   <span className="min-w-0">
                     <span className="block text-[13px] font-medium">{m.label}</span>
-                    <span className="block truncate text-[11px] text-dim">{m.description}</span>
+                    <span className="line-clamp-2 block text-[11px] leading-snug text-dim">{m.description}</span>
                   </span>
                 </button>
               ))}
@@ -659,6 +674,16 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           <BottomSheet open={runsOpen && !sel} onClose={() => setRunsOpen(false)} title="Runs" snapPoints={[0.6, 0.92]}>
             <div className="-mx-4 -mt-2 h-[70vh]">
               <RunPanel runs={runs} runId={runId} onSelect={setRunId} workflow={workflow} onFix={setFixRun} inSheet />
+            </div>
+          </BottomSheet>
+          <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={name || 'Flow'} snapPoints={[0.3]}>
+            <div className="space-y-2 pb-4">
+              <button onClick={() => (setMoreOpen(false), void duplicate())} className="flex h-12 w-full items-center gap-3 rounded-2xl border border-line bg-elev px-4 text-[13.5px] active:border-line-strong">
+                <Copy size={17} className="text-muted" /> Duplicate
+              </button>
+              <button onClick={() => (setMoreOpen(false), void remove())} className="flex h-12 w-full items-center gap-3 rounded-2xl border border-crimson-line bg-crimson-soft px-4 text-[13.5px] text-crimson-hi">
+                <Trash2 size={17} /> Delete flow
+              </button>
             </div>
           </BottomSheet>
         </>

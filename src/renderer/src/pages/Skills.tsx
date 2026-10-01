@@ -67,7 +67,7 @@ export function SkillsPage() {
               <div>
                 <div className="text-[13px] font-semibold">Skill hub</div>
                 <div className="text-[11px] text-dim">
-                  {skills.length} skills{counts.stale || counts.failing ? ` · ${(counts.stale ?? 0) + (counts.failing ?? 0)} need attention` : ''}
+                  {skills.length} skill{skills.length === 1 ? '' : 's'}{counts.stale || counts.failing ? ` · ${(counts.stale ?? 0) + (counts.failing ?? 0)} need attention` : ''}
                 </div>
               </div>
               <div className="flex gap-1">
@@ -76,9 +76,6 @@ export function SkillsPage() {
                 </IconButton>
                 <IconButton title="Import from local folders" onClick={() => setAdding({ open: true, tab: 'local' })}>
                   <FolderOpen size={14} />
-                </IconButton>
-                <IconButton title="Generate a skill with AI" onClick={() => setCreating('ai')}>
-                  <Wand2 size={14} />
                 </IconButton>
                 <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating('ai')}>
                   New
@@ -106,7 +103,22 @@ export function SkillsPage() {
             </ListItem>
           )
         })}
-        {loaded && !skills.length && <div className="p-4 text-center text-[12px] text-dim">No skills yet.</div>}
+        {loaded && !skills.length && (
+          <div className="space-y-2 p-4 text-center">
+            <div className="text-[12px] text-dim">No skills yet. Describe one and let AI write it, or bring in existing ones.</div>
+            <div className="flex flex-wrap justify-center gap-1.5">
+              <Button size="sm" variant="primary" icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
+                Generate with AI
+              </Button>
+              <Button size="sm" icon={<Store size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
+                Browse skills.sh
+              </Button>
+              <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => setAdding({ open: true, tab: 'local' })}>
+                Import
+              </Button>
+            </div>
+          </div>
+        )}
       </ListPane>
       <SplitDetail>
         {active ? (

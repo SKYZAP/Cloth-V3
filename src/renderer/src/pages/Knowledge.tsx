@@ -45,12 +45,12 @@ export function KnowledgePage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-[13px] font-semibold">Knowledge</div>
-              <div className="text-[11px] text-dim">{collections.length} collections</div>
+              <div className="text-[11px] text-dim">{collections.length} collection{collections.length === 1 ? '' : 's'}</div>
             </div>
             <div className="flex gap-1">
-              <IconButton title="Load example knowledge (bundled docs)" onClick={() => void loadExamples()} disabled={loadingExamples}>
-                <GraduationCap size={14} />
-              </IconButton>
+              <Button size="sm" title="Load example knowledge (bundled docs)" icon={<GraduationCap size={13} />} onClick={() => void loadExamples()} disabled={loadingExamples}>
+                Examples
+              </Button>
               <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
                 New
               </Button>
@@ -70,7 +70,7 @@ export function KnowledgePage() {
             {c.embeddingDim ? <Badge tone="crimson">vec</Badge> : <Badge tone="dim">bm25</Badge>}
           </ListItem>
         ))}
-        {loaded && !collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or the cap icon for example docs.</div>}
+        {loaded && !collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or Examples for sample docs.</div>}
       </ListPane>
       <SplitDetail>
         {active ? (
@@ -274,10 +274,10 @@ function DocumentsTable({ docs, reload, onAdd }: { docs: RagDocument[]; reload()
           <thead className="bg-panel text-left text-[10.5px] uppercase tracking-wider text-dim">
             <tr>
               <th className="px-3 py-2 font-medium">Document</th>
-              <th className="w-20 px-3 py-2 font-medium">Chunks</th>
-              <th className="w-20 px-3 py-2 font-medium">Size</th>
-              <th className="w-24 px-3 py-2 font-medium">Vectors</th>
-              <th className="w-24 px-3 py-2 font-medium">Updated</th>
+              <th className="w-20 px-3 py-2 font-medium mobile:hidden">Chunks</th>
+              <th className="w-20 px-3 py-2 font-medium mobile:hidden">Size</th>
+              <th className="w-24 px-3 py-2 font-medium mobile:hidden">Vectors</th>
+              <th className="w-24 px-3 py-2 font-medium mobile:hidden">Updated</th>
               <th className="w-20" />
             </tr>
           </thead>
@@ -295,14 +295,18 @@ function DocumentsTable({ docs, reload, onAdd }: { docs: RagDocument[]; reload()
                   <div className="truncate pl-[26px] font-mono text-[10.5px] text-dim" title={d.source}>
                     {d.source}
                   </div>
+                  {/* Phones: the columns don't fit, so the numbers go under the name. */}
+                  <div className="hidden pl-[26px] text-[11px] tabular-nums text-dim mobile:block">
+                    {d.chunkCount} chunks · {bytes(d.bytes)}{d.embedded ? ' · embedded' : ''} · {timeAgo(d.updatedAt)}
+                  </div>
                   {d.error && <div className="truncate pl-[26px] text-[11px] text-warn" title={d.error}>{d.error}</div>}
                 </td>
-                <td className="px-3 py-2 tabular-nums text-muted">{d.chunkCount}</td>
-                <td className="px-3 py-2 tabular-nums text-muted">{bytes(d.bytes)}</td>
-                <td className="px-3 py-2">{d.embedded ? <Badge tone="ok">embedded</Badge> : <Badge tone="dim">none</Badge>}</td>
-                <td className="px-3 py-2 text-dim">{timeAgo(d.updatedAt)}</td>
+                <td className="px-3 py-2 tabular-nums text-muted mobile:hidden">{d.chunkCount}</td>
+                <td className="px-3 py-2 tabular-nums text-muted mobile:hidden">{bytes(d.bytes)}</td>
+                <td className="px-3 py-2 mobile:hidden">{d.embedded ? <Badge tone="ok">embedded</Badge> : <Badge tone="dim">none</Badge>}</td>
+                <td className="px-3 py-2 text-dim mobile:hidden">{timeAgo(d.updatedAt)}</td>
                 <td className="px-2 py-2">
-                  <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100">
+                  <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 mobile:opacity-100">
                     <IconButton title="Re-index" onClick={() => void attempt(() => api.rag.reindexDocument(d.id)).then(reload)}>
                       <RefreshCw size={12} />
                     </IconButton>

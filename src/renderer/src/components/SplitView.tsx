@@ -1,4 +1,5 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { create } from 'zustand'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretLeft } from '@phosphor-icons/react'
@@ -9,6 +10,9 @@ import { EASE_DRAWER } from './BottomSheet'
 const SplitCtx = createContext<{ open: boolean; onBack(): void } | null>(null)
 const BackCtx = createContext<(() => void) | null>(null)
 
+/** How many phone detail screens are open: the tab bar steps aside while any is (more room for a chat or a flow). */
+export const useDetailOpen = create<{ count: number }>(() => ({ count: 0 }))
+
 /**
  * A list (ListPane) beside the selected item's detail (SplitDetail). On the desktop both show side by
  * side; on the phone the list fills the screen and the detail slides over it while `open`
@@ -16,6 +20,11 @@ const BackCtx = createContext<(() => void) | null>(null)
  */
 export function SplitRoot({ open, onBack, children }: { open: boolean; onBack(): void; children: ReactNode }) {
   useBackHandler(isMobile && open, onBack)
+  useEffect(() => {
+    if (!isMobile || !open) return
+    useDetailOpen.setState((s) => ({ count: s.count + 1 }))
+    return () => useDetailOpen.setState((s) => ({ count: s.count - 1 }))
+  }, [open])
   if (!isMobile) return <div className="flex h-full">{children}</div>
   return (
     <SplitCtx.Provider value={{ open, onBack }}>
