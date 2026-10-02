@@ -138,6 +138,12 @@ export function createApi(s: Services): ClothApi {
       compact: (id, instructions) => s.chat.compact(id, { instructions }),
       contextUsage: (id) => s.chat.contextUsage(id)
     },
+    projects: {
+      list: async () => s.projects.list(),
+      create: async (input) => s.projects.create(input),
+      update: async (id, patch) => s.projects.update(id, patch),
+      remove: async (id, opts) => s.projects.remove(id, opts ?? {})
+    },
     workflows: {
       list: async () => s.workflows.list(),
       get: async (id) => s.workflows.get(id),

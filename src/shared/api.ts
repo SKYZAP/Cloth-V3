@@ -9,6 +9,8 @@ import type {
   WebEngine,
   WorkflowGraph,
   ChatSession,
+  Project,
+  ProjectInput,
   GeneratedImage,
   ImageSize,
   ContextUsage,
@@ -157,6 +159,14 @@ export interface ClothApi {
     /** Write a new AI title now (also replaces a title the user typed). */
     retitle(id: string): Promise<string | null>
     contextUsage(id: string): Promise<ContextUsage>
+  }
+  projects: {
+    list(): Promise<Project[]>
+    create(input: ProjectInput): Promise<Project>
+    /** Changing the folder moves the chats that were working in the old one. */
+    update(id: string, patch: ProjectInput): Promise<Project>
+    /** Its chats are kept (taken out of the project) unless deleteChats. */
+    remove(id: string, opts?: { deleteChats?: boolean }): Promise<void>
   }
   workflows: {
     list(): Promise<Workflow[]>
