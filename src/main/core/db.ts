@@ -176,6 +176,22 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   ALTER TABLE projects ADD COLUMN design_id TEXT;
+  `,
+  /* 9 — component library of a design system */ `
+  CREATE TABLE design_components (
+    id TEXT PRIMARY KEY,
+    design_id TEXT NOT NULL REFERENCES design_systems(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    html TEXT NOT NULL,
+    css TEXT NOT NULL,
+    usage TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    history TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX design_components_design ON design_components(design_id, created_at);
   `
 ]
 

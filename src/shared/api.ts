@@ -1,4 +1,4 @@
-import type { DesignDraft, DesignInput, DesignSystem } from './design'
+import type { DesignComponent, DesignDraft, DesignInput, DesignSystem } from './design'
 import type {
   AppInfo,
   BuiltinToolInfo,
@@ -185,6 +185,13 @@ export interface ClothApi {
     generate(input: { prompt: string; model: ModelRef; current?: DesignInput }): Promise<DesignDraft>
     /** Writes DESIGN.md, tokens.css, tailwind.css and tokens.json into the folder. */
     export(id: string, folder: string): Promise<string[]>
+    components(designId: string): Promise<DesignComponent[]>
+    /** A new component from a description, or (componentId) a new version of one from a change request. */
+    generateComponent(input: { designId: string; prompt: string; model: ModelRef; componentId?: string }): Promise<DesignComponent>
+    updateComponent(id: string, patch: Partial<Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>>): Promise<DesignComponent>
+    /** Back to the previous version. */
+    undoComponent(id: string): Promise<DesignComponent>
+    removeComponent(id: string): Promise<void>
   }
   projects: {
     list(): Promise<Project[]>
