@@ -313,13 +313,51 @@ export interface ChatSession {
   titleTurns?: number
   /** The project this chat is filed under (null = not in a project). */
   projectId: string | null
+  /** Work in a Linux container on a private copy of the workspace (null = directly on this PC). */
+  container: ContainerSettings | null
   createdAt: number
   updatedAt: number
 }
 
+export interface ContainerSettings {
+  /** Docker image, e.g. node:22 or python:3.12. */
+  image: string
+  /** Let commands reach the internet (package installs). */
+  network: boolean
+}
+
+export const DEFAULT_CONTAINER: ContainerSettings = { image: 'node:22', network: true }
+
+/** Docker on this PC, as Cloth sees it. */
+export interface ContainerStatus {
+  available: boolean
+  /** Docker Engine version when it is running. */
+  version: string | null
+  /** Why containers can't run right now (not installed, not started, …). */
+  error: string | null
+}
+
+/** A file that differs between a chat's container copy and the real folder. */
+export interface ContainerChange {
+  path: string
+  kind: 'create' | 'modify' | 'delete'
+  diff: string
+  added: number
+  removed: number
+  /** The real folder's file also changed since the copy was made: applying would overwrite that. */
+  conflict: boolean
+  binary?: boolean
+}
+
+export interface ContainerChanges {
+  /** The real folder the copy came from (null = the chat has no folder; nothing to apply to). */
+  folder: string | null
+  changes: ContainerChange[]
+}
+
 /** Chat settings a project gives the chats started in it. */
 export type ProjectDefaults = Partial<
-  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking'>
+  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container'>
 >
 
 /** A group of chats that share a folder (optional), instructions and starting settings. */

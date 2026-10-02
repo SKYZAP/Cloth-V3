@@ -9,7 +9,7 @@ import { Button, Field, Input, Modal, Textarea, confirmAction } from '@/componen
 import { ModelPicker } from '@/components/ModelPicker'
 
 /** The chat settings a project can hand to new chats (everything but the workspace, which is its folder). */
-const DEFAULT_KEYS = ['model', 'collectionIds', 'knowledgeEnabled', 'skillsEnabled', 'webEnabled', 'customTools', 'fileAccess', 'shell', 'autoApprove', 'subagents', 'codeIntel', 'imagesEnabled', 'thinking'] as const
+const DEFAULT_KEYS = ['model', 'collectionIds', 'knowledgeEnabled', 'skillsEnabled', 'webEnabled', 'customTools', 'fileAccess', 'shell', 'autoApprove', 'subagents', 'codeIntel', 'imagesEnabled', 'thinking', 'container'] as const
 
 export function defaultsFrom(chat: ChatSession): ProjectDefaults {
   const out: ProjectDefaults = {}
@@ -21,6 +21,7 @@ export function defaultsFrom(chat: ChatSession): ProjectDefaults {
 function describeDefaults(d: ProjectDefaults, folder: string | null): string[] {
   const out: string[] = []
   if (d.model) out.push(d.model.modelId)
+  if (d.container) out.push(`Linux container (${d.container.image})`)
   if (folder) out.push(d.fileAccess === 'write' ? 'can edit files' : 'read-only files')
   if (folder && d.shell) out.push('shell')
   if (d.webEnabled) out.push('web')

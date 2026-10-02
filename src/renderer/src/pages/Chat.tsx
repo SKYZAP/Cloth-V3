@@ -10,6 +10,8 @@ import {
   Check,
   ChatCircleDots,
   Copy,
+  Cube,
+  Desktop,
   FolderDashed,
   FolderPlus,
   FolderSimple,
@@ -36,7 +38,8 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ApprovalDecision, AutoApprove, ChatSession, Collection, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import { DEFAULT_CONTAINER } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -53,6 +56,7 @@ import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { ProjectDialog, ProjectHeader } from './chat/Projects'
+import { ContainerPill } from './chat/ContainerChanges'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -523,6 +527,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             </button>
           </Tooltip>
         )}
+        {session.container && <ContainerPill session={session} running={running} />}
         <ModelPicker pill className="w-64 mobile:w-[46%] mobile:shrink-0" value={session.model} onChange={(model) => void update({ model })} />
         <Tooltip content="Chat context">
           <motion.button
@@ -981,9 +986,21 @@ function ContextSheet({
       </SheetSection>
 
       <SheetSection id="sheet-workspace" icon={FolderSimple} title="Workspace">
+        <div className="mb-3 space-y-3">
+          <OptionRow
+            label="Runs in"
+            value={session.container ? 'container' : 'local'}
+            onChange={(v) => void update(v === 'container' ? { container: session.container ?? DEFAULT_CONTAINER, fileAccess: 'write', shell: true } : { container: null })}
+            options={[
+              { value: 'local', icon: Desktop, title: 'This PC', sub: 'Works directly in the folder' },
+              { value: 'container', icon: Cube, title: 'Linux container', sub: 'A copy of the folder, in Docker' }
+            ]}
+          />
+          {session.container && <ContainerOptions session={session} update={update} />}
+        </div>
         <div className={clsx('flex items-center gap-2.5 rounded-[14px] border px-3 py-2.5', session.workspace ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
           {session.workspace ? <FolderSimple size={18} weight="fill" className="text-crimson-hi" /> : <FolderDashed size={18} className="text-dim" />}
-          <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', session.workspace ? 'text-fg' : 'text-dim')}>{session.workspace ?? "No folder — the agent can't read files"}</span>
+          <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', session.workspace ? 'text-fg' : 'text-dim')}>{session.workspace ?? (session.container ? 'No folder — the container starts empty' : "No folder — the agent can't read files")}</span>
           {session.workspace && (
             <Button size="sm" variant="ghost" onClick={() => void update({ workspace: null })}>
               Clear
@@ -999,7 +1016,7 @@ function ContextSheet({
             Choose…
           </Button>
         </div>
-        {session.workspace ? (
+        {session.workspace || session.container ? (
           <div className="mt-3 space-y-3">
             <OptionRow
               label="Files"
@@ -1016,7 +1033,7 @@ function ContextSheet({
               onChange={(v) => void update({ shell: v === 'on' })}
               options={[
                 { value: 'off', icon: X, title: 'No commands', sub: 'The agent cannot run programs' },
-                { value: 'on', icon: TerminalWindow, title: window.cloth.platform === 'win32' ? 'PowerShell' : 'bash', sub: 'Runs in the workspace folder' }
+                { value: 'on', icon: TerminalWindow, title: session.container || window.cloth.platform !== 'win32' ? 'bash' : 'PowerShell', sub: session.container ? 'Runs in the container' : 'Runs in the workspace folder' }
               ]}
             />
             <OptionRow
@@ -1055,6 +1072,62 @@ function ContextSheet({
         <div className="mt-1 text-[11px] text-dim">Appended to Cloth's system prompt for this chat. Saved when you click away.</div>
       </SheetSection>
     </div>
+  )
+}
+
+/** Image and network for a container chat, and a warning when Docker can't be reached. */
+function ContainerOptions({ session, update }: { session: ChatSession; update(p: Partial<ChatSession>): Promise<void> }) {
+  const settings = session.container ?? DEFAULT_CONTAINER
+  const [image, setImage] = useState(settings.image)
+  const [docker, setDocker] = useState<ContainerStatus | null>(null)
+  useEffect(() => setImage(settings.image), [settings.image])
+  useEffect(() => {
+    void api.containers.status(true).then(setDocker, () => undefined)
+  }, [])
+  const saveImage = () => {
+    const next = image.trim()
+    if (next && next !== settings.image) void update({ container: { ...settings, image: next } })
+    else setImage(settings.image)
+  }
+  return (
+    <>
+      {docker && !docker.available && (
+        <div className="flex items-center gap-2 rounded-[12px] border border-warn/40 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
+          <span className="min-w-0 flex-1">{docker.error}</span>
+          <Button size="sm" variant="ghost" onClick={() => void api.containers.status(true).then(setDocker)}>
+            Check again
+          </Button>
+        </div>
+      )}
+      <div className="grid grid-cols-[76px_1fr] items-center gap-3 mobile:grid-cols-1 mobile:gap-1.5">
+        <div className="text-[12px] text-muted">Image</div>
+        <div className="flex gap-1.5">
+          <input
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            onBlur={saveImage}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            spellCheck={false}
+            aria-label="Docker image"
+            className="h-9 min-w-0 flex-1 rounded-[12px] border border-line bg-bg px-3 font-mono text-[12.5px] outline-none focus:border-crimson-line"
+          />
+          {['node:22', 'python:3.12', 'ubuntu:24.04'].filter((i) => i !== settings.image).map((i) => (
+            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-9 shrink-0 rounded-[12px] border border-line px-2.5 font-mono text-[11.5px] text-muted hover:border-line-strong hover:text-fg mobile:hidden">
+              {i}
+            </button>
+          ))}
+        </div>
+      </div>
+      <OptionRow
+        label="Network"
+        value={settings.network ? 'on' : 'off'}
+        onChange={(v) => void update({ container: { ...settings, network: v === 'on' } })}
+        options={[
+          { value: 'on', icon: GlobeHemisphereWest, title: 'Online', sub: 'Can install packages' },
+          { value: 'off', icon: X, title: 'Offline', sub: 'No network access' }
+        ]}
+      />
+    </>
   )
 }
 

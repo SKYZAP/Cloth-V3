@@ -1,6 +1,6 @@
 import type { AutoApprove, FileAccess, FileChange } from '@shared/types'
 import type { LspManager } from './lsp'
-import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore } from './workspace'
+import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
 import type { JsonValue } from '@earendil-works/pi-ai'
 import type { UsageService } from '../core/usage'
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
@@ -61,6 +61,8 @@ export interface ToolScope {
   skillNames?: string[] | null
   /** A file was written in the workspace by a custom tool (absolute path). */
   onFile?: (abs: string) => void
+  /** The workspace is a container copy: commands run there with bash. */
+  container?: { image: string; folder: string | null; exec: NonNullable<WorkspaceOptions['shellExec']> }
 }
 
 /** Skills an agent with this scope may see and load. */
@@ -412,7 +414,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         checkpoints: deps.checkpoints ?? null,
         autoApprove: scope.autoApprove ?? (() => 'none'),
         onAlways: scope.onAlways,
-        lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null
+        lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null,
+        shellExec: scope.container?.exec
       })
     )
   }
