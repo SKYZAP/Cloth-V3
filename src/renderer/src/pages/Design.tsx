@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { Check, Copy, DownloadSimple, MagicWand, Moon, Palette, Plus, Sun, Trash, Warning } from '@phosphor-icons/react'
+import clsx from 'clsx'
+import { ArrowCounterClockwise, Check, Copy, DesktopTower, DeviceMobile, DownloadSimple, MagicWand, Moon, Palette, Plus, Sparkle, Sun, SwatchesIcon, Trash, Warning } from '@phosphor-icons/react'
 import type { ModelRef } from '@shared/types'
 import {
   buildDesign,
@@ -7,27 +8,35 @@ import {
   FONT_CHOICES,
   fontStack,
   isHex,
+  NEUTRALS,
   normalizeHex,
+  PRESETS,
   ROLE_INFO,
   SCALES,
   STEPS,
+  sanitizeDesign,
   type BuiltDesign,
   type DesignInput,
   type DesignSystem,
+  type NeutralFamily,
   type RoleName
 } from '@shared/design'
 import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Textarea, confirmAction } from '@/components/ui'
+import { BUNDLED_FONTS, loadDesignFont } from '@/lib/designFonts'
+import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
+
+type PresetChoice = { name: string; input: Partial<DesignInput> } | null
 
 export function DesignPage() {
   const [designs, setDesigns] = useState<DesignSystem[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [picking, setPicking] = useState(false)
 
   const load = async (select?: string) => {
     const list = await api.design.list()
@@ -40,8 +49,9 @@ export function DesignPage() {
     void load()
   }, [])
 
-  const create = async () => {
-    const d = await attempt(() => api.design.create())
+  const create = async (preset: PresetChoice) => {
+    setPicking(false)
+    const d = await attempt(() => api.design.create(preset ? { name: preset.name, input: sanitizeDesign(preset.input) } : {}))
     if (!d) return
     await load(d.id)
     setOpen(true)
@@ -59,7 +69,7 @@ export function DesignPage() {
                 {designs.length} design system{designs.length === 1 ? '' : 's'}
               </div>
             </div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => void create()}>
+            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
               New
             </Button>
           </div>
@@ -79,7 +89,7 @@ export function DesignPage() {
         {loaded && !designs.length && (
           <div className="space-y-2 p-4 text-center">
             <div className="text-[12px] text-dim">No design systems yet.</div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => void create()}>
+            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
               Create one
             </Button>
           </div>
@@ -89,25 +99,74 @@ export function DesignPage() {
         {active ? (
           <DesignEditor key={active.id} design={active} onSaved={(d) => setDesigns((ds) => ds.map((x) => (x.id === d.id ? d : x)))} onDeleted={() => (setOpen(false), void load())} onDuplicated={(id) => void load(id)} />
         ) : (
-          <Empty icon={<Palette size={20} />} title="Design systems" action={<Button variant="primary" onClick={() => void create()}>New design system</Button>}>
+          <Empty icon={<Palette size={20} />} title="Design systems" action={<Button variant="primary" onClick={() => setPicking(true)}>New design system</Button>}>
             Pick colours, type and shape, and export a DESIGN.md with tokens for your projects.
           </Empty>
         )}
       </SplitDetail>
+      <PresetModal open={picking} title="New design system" blank onClose={() => setPicking(false)} onPick={(p) => void create(p)} />
     </SplitRoot>
   )
 }
 
 function Swatches({ input }: { input: DesignInput }) {
   const d = useMemo(() => buildDesign(input), [input])
+  const theme = input.mode === 'light' ? d.roles.light : d.roles.dark
   return (
     <div className="flex shrink-0 -space-x-1.5">
-      {[d.roles.dark.primary, input.accent ?? d.scales.brand[300], d.scales.neutral[800]].map((c, i) => (
+      {[theme.primary, theme.accent, theme.surface].map((c, i) => (
         <span key={i} className="h-4 w-4 rounded-full border border-black/40" style={{ background: c }} />
       ))}
     </div>
   )
 }
+
+// ─── Presets ──────────────────────────────────────────────────────────────────
+
+function PresetModal({ open, title, blank, onClose, onPick }: { open: boolean; title: string; blank?: boolean; onClose(): void; onPick(p: PresetChoice): void }) {
+  useEffect(() => {
+    if (!open) return
+    for (const p of PRESETS) for (const f of [p.input.fontSans, p.input.fontHeading]) if (f) void loadDesignFont(f)
+  }, [open])
+  return (
+    <Modal open={open} onClose={onClose} title={title} width={760}>
+      <div className="grid grid-cols-2 gap-2.5 mobile:grid-cols-1">
+        {blank && (
+          <button onClick={() => onPick(null)} className="flex flex-col items-start justify-center gap-1 rounded-[14px] border border-dashed border-line-strong p-4 text-left hover:border-crimson-line">
+            <span className="flex items-center gap-2 text-[13px] font-semibold">
+              <Plus size={14} /> Blank
+            </span>
+            <span className="text-[12px] text-dim">Cloth's neutral defaults — shape it yourself or with Generate.</span>
+          </button>
+        )}
+        {PRESETS.map((p) => (
+          <PresetCard key={p.id} preset={p} onPick={() => onPick(p)} />
+        ))}
+      </div>
+    </Modal>
+  )
+}
+
+function PresetCard({ preset, onPick }: { preset: (typeof PRESETS)[number]; onPick(): void }) {
+  const input = useMemo(() => sanitizeDesign(preset.input), [preset])
+  const d = useMemo(() => buildDesign(input), [input])
+  const r = input.mode === 'light' ? d.roles.light : d.roles.dark
+  return (
+    <button onClick={onPick} className="group overflow-hidden rounded-[14px] border border-line text-left transition-colors hover:border-crimson-line">
+      <div className="flex items-center gap-3 p-3.5" style={{ background: r.background, color: r.text, fontFamily: fontStack(input, 'sans') }}>
+        <div className="min-w-0 flex-1">
+          <div style={{ fontFamily: fontStack(input, 'heading'), fontWeight: input.headingWeight, letterSpacing: `${input.headingTracking}em`, fontSize: 19, lineHeight: 1.2 }}>{preset.name}</div>
+          <div style={{ color: r.textMuted, fontSize: 12, marginTop: 2 }}>Aa Bb 123</div>
+        </div>
+        <span style={{ background: r.primary, color: r.onPrimary, borderRadius: Math.min(input.radius, 14), padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>Action</span>
+        {input.accent && <span style={{ width: 14, height: 14, borderRadius: 99, background: r.accent }} />}
+      </div>
+      <div className="border-t border-line bg-panel px-3.5 py-2.5 text-[12px] leading-snug text-dim">{preset.blurb}</div>
+    </button>
+  )
+}
+
+// ─── Editor ───────────────────────────────────────────────────────────────────
 
 type Tab = 'preview' | 'DESIGN.md' | 'tokens.css' | 'tailwind.css' | 'tokens.json'
 
@@ -118,7 +177,9 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
   const [tab, setTab] = useState<Tab>('preview')
   const [phoneTab, setPhoneTab] = useState<'edit' | 'view'>('edit')
   const [theme, setTheme] = useState<'light' | 'dark'>(design.input.mode === 'light' ? 'light' : 'dark')
+  const [width, setWidth] = useState<'wide' | 'phone'>('wide')
   const [aiOpen, setAiOpen] = useState(false)
+  const [presetsOpen, setPresetsOpen] = useState(false)
   const side = useSideBySide()
   const built = useMemo(() => buildDesign(input), [input])
   const files = useMemo(() => designFiles({ name, description, input }), [name, description, input])
@@ -139,6 +200,13 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
   }, [input.mode])
 
   const set = (patch: Partial<DesignInput>) => setInput((i) => ({ ...i, ...patch }))
+  const override = (role: RoleName, color: string | null) =>
+    setInput((i) => {
+      const picked = { ...i.overrides[theme] }
+      if (color) picked[role] = color
+      else delete picked[role]
+      return { ...i, overrides: { ...i.overrides, [theme]: picked } }
+    })
 
   const exportFiles = async () => {
     const [folder] = await api.app.pickPaths({ directory: true, title: 'Export DESIGN.md and tokens to…' })
@@ -154,24 +222,29 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
     const d = await attempt(() => api.design.duplicate(design.id))
     if (d) onDuplicated(d.id)
   }
+  const applyPreset = async (p: PresetChoice) => {
+    setPresetsOpen(false)
+    if (!p) return
+    if (!(await confirmAction(`Colours, type and shape are replaced by “${p.name}”. The name and description stay.`, { title: 'Start from this preset?', confirmLabel: 'Use preset' }))) return
+    setInput(sanitizeDesign(p.input))
+  }
 
-  const controls = (
-    <Controls
-      input={input}
-      set={set}
-      description={description}
-      setDescription={setDescription}
-    />
-  )
+  const controls = <Controls input={input} set={set} description={description} setDescription={setDescription} />
   const view = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          items={(['preview', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t }))}
-        />
+        <Segmented value={tab} onChange={setTab} items={(['preview', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t }))} />
         <div className="flex-1" />
+        {tab === 'preview' && !isMobile && (
+          <Segmented
+            value={width}
+            onChange={setWidth}
+            items={[
+              { value: 'wide', label: <DesktopTower size={13} />, title: 'Wide' },
+              { value: 'phone', label: <DeviceMobile size={13} />, title: 'Phone width' }
+            ]}
+          />
+        )}
         {tab === 'preview' && input.mode === 'both' && (
           <Segmented
             value={theme}
@@ -184,8 +257,14 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
         )}
         {tab !== 'preview' && <CopyButton text={files[tab]} />}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {tab === 'preview' ? <Preview name={name} input={input} built={built} theme={theme} /> : <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[tab]}</pre>}
+      <div className={clsx('min-h-0 flex-1 overflow-auto', width === 'phone' && tab === 'preview' && 'bg-elev/40 py-6')}>
+        {tab === 'preview' ? (
+          <div className={clsx(width === 'phone' && 'mx-auto w-[390px] overflow-hidden rounded-[28px] border border-line-strong shadow-2xl shadow-black/50')}>
+            <Preview name={name} input={input} built={built} theme={theme} onOverride={override} />
+          </div>
+        ) : (
+          <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[tab]}</pre>
+        )}
       </div>
     </div>
   )
@@ -195,6 +274,9 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5 mobile:px-3">
         <SplitBack />
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none" />
+        <Button icon={<SwatchesIcon size={14} />} onClick={() => setPresetsOpen(true)} title="Start over from a preset">
+          <span className="mobile:hidden">Presets</span>
+        </Button>
         <Button icon={<MagicWand size={14} />} onClick={() => setAiOpen(true)} title="Describe a look and let AI set the system up">
           <span className="mobile:hidden">Generate</span>
         </Button>
@@ -239,6 +321,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
           if (/^New design/.test(name) && d.name) setName(d.name)
         }}
       />
+      <PresetModal open={presetsOpen} title="Start from a preset" onClose={() => setPresetsOpen(false)} onPick={(p) => void applyPreset(p)} />
     </div>
   )
 }
@@ -254,20 +337,61 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
+const WEIGHTS: Record<number, string> = { 400: 'Regular', 450: 'Book', 500: 'Medium', 550: 'Medium+', 600: 'Semibold', 650: 'Semibold+', 700: 'Bold', 750: 'Bold+', 800: 'Extrabold', 850: 'Heavy', 900: 'Black' }
+
 function Controls({ input, set, description, setDescription }: { input: DesignInput; set(p: Partial<DesignInput>): void; description: string; setDescription(s: string): void }) {
   const [principles, setPrinciples] = useState(input.principles.join('\n'))
   useEffect(() => setPrinciples(input.principles.join('\n')), [input.principles])
+  const built = useMemo(() => buildDesign(input), [input])
+  const scale = SCALES.find((s) => s.value === input.scale)
   return (
     <div>
       <Section title="Colour">
         <ColorField label="Brand" value={input.brand} onChange={(v) => v && set({ brand: v })} />
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[12px] text-muted">{input.pinBrand ? 'Buttons use exactly this colour' : 'Cloth picks the most readable shade'}</span>
+          <Switch checked={input.pinBrand} onChange={(pinBrand) => set({ pinBrand })} label="Exact" />
+        </div>
         <ColorField label="Accent" value={input.accent} optional onChange={(accent) => set({ accent })} />
         <div className="grid grid-cols-3 gap-2">
           <ColorField compact label="Success" value={input.success} onChange={(v) => v && set({ success: v })} />
           <ColorField compact label="Warning" value={input.warning} onChange={(v) => v && set({ warning: v })} />
           <ColorField compact label="Danger" value={input.danger} onChange={(v) => v && set({ danger: v })} />
         </div>
-        <Slider label="Neutral tint" value={input.neutralTint} min={0} max={1} step={0.05} format={(v) => (v === 0 ? 'grey' : `${Math.round(v * 100)}%`)} onChange={(neutralTint) => set({ neutralTint })} />
+      </Section>
+      <Section title="Greys and themes">
+        <Field label="Grey family">
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(NEUTRALS) as NeutralFamily[]).map((k) => {
+              const sample = buildDesign({ ...input, neutral: k, neutralTint: k === 'gray' ? 0 : Math.max(input.neutralTint, 0.5) }).scales.neutral
+              return (
+                <button
+                  key={k}
+                  onClick={() => set({ neutral: k })}
+                  aria-pressed={input.neutral === k}
+                  className={clsx('flex h-8 items-center gap-1.5 rounded-md border px-2 text-[12px]', input.neutral === k ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line text-muted hover:border-line-strong')}
+                >
+                  <span className="flex">
+                    {([200, 500, 800] as const).map((s) => (
+                      <span key={s} className="h-3 w-2 first:rounded-l-sm last:rounded-r-sm" style={{ background: sample[s] }} />
+                    ))}
+                  </span>
+                  {NEUTRALS[k].label}
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+        <Slider
+          label="Grey tint"
+          value={input.neutralTint}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={input.neutral === 'gray'}
+          format={(v) => (input.neutral === 'gray' || v === 0 ? 'none' : v < 0.35 ? 'subtle' : v < 0.7 ? 'noticeable' : 'strong')}
+          onChange={(neutralTint) => set({ neutralTint })}
+        />
         <Field label="Themes">
           <Segmented
             value={input.mode}
@@ -279,24 +403,33 @@ function Controls({ input, set, description, setDescription }: { input: DesignIn
             ]}
           />
         </Field>
+        {input.mode !== 'light' && (
+          <Slider
+            label="Dark background"
+            value={input.darkDepth}
+            min={0}
+            max={1}
+            step={0.05}
+            format={(v) => (v < 0.2 ? 'near black' : v < 0.6 ? 'charcoal' : 'soft grey')}
+            swatch={built.roles.dark.background}
+            onChange={(darkDepth) => set({ darkDepth })}
+          />
+        )}
       </Section>
       <Section title="Type">
         <FontField label="Body" value={input.fontSans} options={FONT_CHOICES.sans} onChange={(fontSans) => set({ fontSans })} />
         <FontField label="Headings" value={input.fontHeading} options={FONT_CHOICES.heading} onChange={(fontHeading) => set({ fontHeading })} />
         <FontField label="Code" value={input.fontMono} options={FONT_CHOICES.mono} onChange={(fontMono) => set({ fontMono })} />
         <Slider label="Body size" value={input.baseSize} min={12} max={20} step={1} format={(v) => `${v}px`} onChange={(baseSize) => set({ baseSize })} />
-        <Field label="Scale">
-          <Select value={String(input.scale)} onChange={(e) => set({ scale: Number(e.target.value) })}>
-            {SCALES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </Select>
+        <Field label="Heading sizes" hint={scale ? `${scale.hint} — ${built.type.slice(1, 5).map((t) => t.size).join(' / ')}px` : undefined}>
+          <Segmented value={String(input.scale)} onChange={(v) => set({ scale: Number(v) })} items={SCALES.map((s) => ({ value: String(s.value), label: s.label }))} />
         </Field>
+        <Slider label="Heading weight" value={input.headingWeight} min={400} max={900} step={50} format={(v) => WEIGHTS[v] ?? String(v)} onChange={(headingWeight) => set({ headingWeight })} />
+        <Slider label="Heading spacing" value={input.headingTracking} min={-0.05} max={0.03} step={0.005} format={(v) => (v < -0.015 ? 'tight' : v > 0.005 ? 'loose' : 'normal')} onChange={(headingTracking) => set({ headingTracking })} />
+        <Slider label="Line height" value={input.bodyLeading} min={1.3} max={1.8} step={0.05} format={(v) => (v < 1.45 ? 'compact' : v > 1.65 ? 'airy' : 'normal')} onChange={(bodyLeading) => set({ bodyLeading })} />
       </Section>
       <Section title="Shape">
-        <Slider label="Corner radius" value={input.radius} min={0} max={24} step={1} format={(v) => `${v}px`} onChange={(radius) => set({ radius })} />
+        <Slider label="Corner radius" value={input.radius} min={0} max={24} step={1} format={(v) => (v === 0 ? 'sharp' : v < 6 ? 'subtle' : v < 12 ? 'rounded' : 'soft')} onChange={(radius) => set({ radius })} />
         <Field label="Density">
           <Segmented
             value={input.density}
@@ -392,7 +525,7 @@ function ColorField({ label, value, onChange, optional, compact }: { label: stri
 function FontField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange(v: string): void }) {
   const all = options.includes(value) ? options : [value, ...options]
   return (
-    <Field label={label}>
+    <Field label={label} hint={BUNDLED_FONTS.has(value) || value.startsWith('System') ? undefined : 'Shown only if installed on this computer.'}>
       <Select value={value} onChange={(e) => onChange(e.target.value)}>
         {all.map((f) => (
           <option key={f} value={f}>
@@ -404,14 +537,37 @@ function FontField({ label, value, options, onChange }: { label: string; value: 
   )
 }
 
-function Slider({ label, value, min, max, step, format, onChange }: { label: string; value: number; min: number; max: number; step: number; format(v: number): string; onChange(v: number): void }) {
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+  disabled,
+  swatch
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  format(v: number): string
+  onChange(v: number): void
+  disabled?: boolean
+  swatch?: string
+}) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <label className={clsx('flex flex-col gap-1.5', disabled && 'opacity-50')}>
       <span className="flex items-center justify-between text-[11.5px] font-medium text-muted">
         {label}
-        <span className="font-mono text-[11px] text-dim">{format(value)}</span>
+        <span className="flex items-center gap-1.5 text-[11px] text-dim">
+          {swatch && <span className="h-3 w-3 rounded-[3px] border border-line-strong" style={{ background: swatch }} />}
+          {format(value)}
+        </span>
       </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="accent-[#dc2645]" />
+      <input type="range" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="accent-[#dc2645]" />
     </label>
   )
 }
@@ -492,10 +648,15 @@ const kebab = (s: string) => s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 const PREVIEW_CSS = `
 .dsp { background: var(--color-background); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-body); line-height: var(--leading-body); }
 .dsp * { box-sizing: border-box; }
-.dsp h1, .dsp h2, .dsp h3, .dsp h4, .dsp .display { font-family: var(--font-heading); margin: 0; color: var(--color-text); }
+.dsp h1, .dsp h2, .dsp h3, .dsp h4 { font-family: var(--font-heading); margin: 0; color: var(--color-text); }
+.dsp h1 { font-size: var(--text-h1); line-height: var(--leading-h1); font-weight: var(--weight-h1); letter-spacing: var(--tracking-h1); }
+.dsp h3 { font-size: var(--text-h3); line-height: var(--leading-h3); font-weight: var(--weight-h3); letter-spacing: var(--tracking-h3); }
+.dsp h4 { font-size: var(--text-h4); line-height: var(--leading-h4); font-weight: var(--weight-h4); letter-spacing: var(--tracking-h4); }
+.dsp .big { font-family: var(--font-heading); font-size: var(--text-h2); font-weight: var(--weight-h2); letter-spacing: var(--tracking-h2); line-height: 1; }
 .dsp .muted { color: var(--color-text-muted); } .dsp .subtle { color: var(--color-text-subtle); }
+.dsp .small { font-size: var(--text-small); line-height: var(--leading-small); }
 .dsp .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-6); }
-.dsp .btn { height: var(--control-height); padding: 0 var(--pad-x); border-radius: var(--radius-md); font: inherit; font-size: var(--text-small); font-weight: 600; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s; }
+.dsp .btn { height: var(--control-height); padding: 0 var(--pad-x); border-radius: var(--radius-md); font: inherit; font-size: var(--text-small); font-weight: 600; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s; white-space: nowrap; }
 .dsp .btn-primary { background: var(--color-primary); color: var(--color-on-primary); } .dsp .btn-primary:hover { background: var(--color-primary-hover); }
 .dsp .btn-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); } .dsp .btn-secondary:hover { border-color: var(--color-border-strong); }
 .dsp .btn-ghost { background: transparent; color: var(--color-text-muted); } .dsp .btn-ghost:hover { background: var(--color-surface-raised); color: var(--color-text); }
@@ -506,17 +667,31 @@ const PREVIEW_CSS = `
 .dsp .input::placeholder { color: var(--color-text-subtle); }
 .dsp .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: var(--text-caption); font-weight: 600; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
 .dsp .badge-primary { background: var(--color-primary-soft); color: var(--color-primary); border-color: transparent; }
+.dsp .badge-accent { background: var(--color-accent-soft); color: var(--color-text); border-color: transparent; }
+.dsp .badge-accent::before { content: ''; width: 6px; height: 6px; border-radius: 99px; background: var(--color-accent); margin-right: 6px; }
 .dsp .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid; font-size: var(--text-small); }
-.dsp .nav { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.dsp .nav { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-wrap: wrap; }
 .dsp .nav a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-small); } .dsp .nav a.on { color: var(--color-text); font-weight: 600; }
+.dsp .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border); padding: 0 12px; }
+.dsp .tab { padding: 10px 12px; font-size: var(--text-small); color: var(--color-text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.dsp .tab.on { color: var(--color-text); border-color: var(--color-primary); font-weight: 600; }
+.dsp .menu { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 4px; font-size: var(--text-small); align-self: start; }
+.dsp .menu div { padding: 7px 10px; border-radius: var(--radius-sm); } .dsp .menu .on { background: var(--color-primary-soft); }
+.dsp .menu .sep { height: 1px; padding: 0; margin: 4px 0; background: var(--color-border); } .dsp .menu .bad { color: var(--color-danger); }
+.dsp .bar { height: 8px; border-radius: 99px; background: var(--color-surface-raised); overflow: hidden; } .dsp .bar span { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
 .dsp table { width: 100%; border-collapse: collapse; font-size: var(--text-small); } .dsp th { text-align: left; color: var(--color-text-subtle); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--color-border); }
 .dsp td { padding: 10px; border-bottom: 1px solid var(--color-border); } .dsp tr:last-child td { border-bottom: 0; }
-.dsp .toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--color-primary); position: relative; display: inline-block; } .dsp .toggle::after { content: ''; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 999px; background: var(--color-on-primary); }
+.dsp .toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--color-primary); position: relative; display: inline-block; flex-shrink: 0; } .dsp .toggle::after { content: ''; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 999px; background: var(--color-on-primary); }
 .dsp code { font-family: var(--font-mono); font-size: .9em; background: var(--color-surface-raised); padding: 1px 5px; border-radius: var(--radius-sm); }
+.dsp .grid { padding: var(--space-8); display: grid; gap: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.dsp .full { grid-column: 1 / -1; }
 `
 
-function Preview({ name, input, built, theme }: { name: string; input: DesignInput; built: BuiltDesign; theme: 'light' | 'dark' }) {
+function Preview({ name, input, built, theme, onOverride }: { name: string; input: DesignInput; built: BuiltDesign; theme: 'light' | 'dark'; onOverride(role: RoleName, color: string | null): void }) {
   const roles = built.roles[theme]
+  useEffect(() => {
+    for (const f of [input.fontSans, input.fontHeading, input.fontMono]) void loadDesignFont(f)
+  }, [input.fontSans, input.fontHeading, input.fontMono])
   const vars = useMemo(() => {
     const v: Record<string, string> = {}
     for (const k of Object.keys(roles) as RoleName[]) v[`--color-${kebab(k)}`] = roles[k]
@@ -526,6 +701,8 @@ function Preview({ name, input, built, theme }: { name: string; input: DesignInp
     for (const t of built.type) {
       v[`--text-${t.name}`] = `${t.size}px`
       v[`--leading-${t.name}`] = String(t.lineHeight)
+      v[`--tracking-${t.name}`] = `${t.tracking}em`
+      v[`--weight-${t.name}`] = String(t.weight)
     }
     for (const [k, r] of Object.entries(built.radii)) v[`--radius-${k}`] = `${r}px`
     built.space.forEach((s, i) => (v[`--space-${i}`] = `${s}px`))
@@ -535,35 +712,47 @@ function Preview({ name, input, built, theme }: { name: string; input: DesignInp
     return v as CSSProperties
   }, [roles, input, built])
   const tint = (c: string) => ({ background: `color-mix(in oklab, ${c} 12%, ${roles.surface})`, borderColor: `color-mix(in oklab, ${c} 35%, ${roles.surface})` })
+  const picked = input.overrides[theme] ?? {}
   return (
     <div className="dsp min-h-full" style={vars}>
       <style>{PREVIEW_CSS}</style>
       <div className="nav">
-        <strong style={{ fontFamily: 'var(--font-heading)' }}>{name}</strong>
+        <h4>{name}</h4>
         <a className="on">Overview</a>
         <a>Projects</a>
         <a>Reports</a>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-ghost">Docs</button>
         <button className="btn btn-primary">New project</button>
       </div>
-      <div style={{ padding: 'var(--space-8)', display: 'grid', gap: 'var(--space-6)', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-        <div className="card" style={{ display: 'grid', gap: 'var(--space-4)' }}>
-          <div>
-            <h3 style={{ fontSize: 'var(--text-h3)', lineHeight: 'var(--leading-h3)' }}>Create a project</h3>
-            <div className="muted" style={{ fontSize: 'var(--text-small)' }}>
-              It starts private; invite people later.
-            </div>
+      <div className="grid">
+        <div className="full" style={{ display: 'grid', gap: 6 }}>
+          <h1>Good morning, Sam</h1>
+          <div className="muted" style={{ maxWidth: 560 }}>
+            Three deploys went out overnight and one needs a look. Everything else is healthy.
           </div>
+        </div>
+        <div className="card" style={{ display: 'grid', gap: 'var(--space-3)', alignContent: 'start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span className="muted small">Monthly usage</span>
+            <span className="badge badge-accent">New</span>
+          </div>
+          <div className="big">68%</div>
+          <div className="bar">
+            <span style={{ width: '68%' }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'end', gap: 4, height: 44 }}>
+            {[40, 55, 35, 70, 60, 85, 50, 75, 90, 65, 80, 95].map((h, i) => (
+              <span key={i} style={{ flex: 1, height: `${h}%`, borderRadius: 'var(--radius-sm)', background: i === 11 ? roles.accent : `color-mix(in oklab, ${roles.accent} 35%, ${roles.surface})` }} />
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <h3>Create a project</h3>
           <div>
             <span className="label">Name</span>
             <input className="input" placeholder="e.g. Billing service" />
           </div>
-          <div>
-            <span className="label">Region</span>
-            <input className="input" defaultValue="Europe (Frankfurt)" />
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 'var(--text-small)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10 }} className="small">
             <span className="toggle" /> Enable backups
           </label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -571,7 +760,7 @@ function Preview({ name, input, built, theme }: { name: string; input: DesignInp
             <button className="btn btn-secondary">Cancel</button>
           </div>
         </div>
-        <div style={{ display: 'grid', gap: 'var(--space-4)', alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 'var(--space-3)', alignContent: 'start' }}>
           <div className="alert" style={tint(roles.success)}>
             <span style={{ color: roles.success, fontWeight: 700 }}>✓</span>
             <span>Deployed in 42 seconds.</span>
@@ -584,86 +773,102 @@ function Preview({ name, input, built, theme }: { name: string; input: DesignInp
             <span style={{ color: roles.danger, fontWeight: 700 }}>×</span>
             <span>The build failed — see the log.</span>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <span className="badge badge-primary">Active</span>
-            <span className="badge">Draft</span>
-            <span className="badge">v2.4.1</span>
-          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-ghost">Archive</button>
             <button className="btn btn-danger">Delete project</button>
           </div>
         </div>
-        <div className="card" style={{ padding: 0, gridColumn: '1 / -1', overflow: 'hidden' }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Status</th>
-                <th>Latency</th>
-                <th>Owner</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ['api-gateway', 'Healthy', '42 ms', 'Platform'],
-                ['billing', 'Degraded', '310 ms', 'Payments'],
-                ['search', 'Healthy', '88 ms', 'Discovery']
-              ].map((r) => (
-                <tr key={r[0]}>
-                  <td>
-                    <code>{r[0]}</code>
-                  </td>
-                  <td>
-                    <span className={r[1] === 'Healthy' ? 'badge badge-primary' : 'badge'} style={r[1] === 'Degraded' ? { color: roles.warning } : undefined}>
-                      {r[1]}
-                    </span>
-                  </td>
-                  <td className="muted">{r[2]}</td>
-                  <td className="muted">{r[3]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="menu">
+          <div>Rename</div>
+          <div className="on">Duplicate</div>
+          <div>Move to…</div>
+          <div className="sep" />
+          <div className="bad">Delete</div>
         </div>
-        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>
+        <div className="card full" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="tabs">
+            <span className="tab on">Services</span>
+            <span className="tab">Deploys</span>
+            <span className="tab">Settings</span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Status</th>
+                  <th>Latency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['api-gateway', 'Healthy', '42 ms'],
+                  ['billing', 'Degraded', '310 ms'],
+                  ['search', 'Healthy', '88 ms']
+                ].map((r) => (
+                  <tr key={r[0]}>
+                    <td>
+                      <code>{r[0]}</code>
+                    </td>
+                    <td>
+                      <span className={r[1] === 'Healthy' ? 'badge badge-primary' : 'badge'} style={r[1] === 'Degraded' ? { color: roles.warning } : undefined}>
+                        {r[1]}
+                      </span>
+                    </td>
+                    <td className="muted">{r[2]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="card full" style={{ textAlign: 'center', display: 'grid', justifyItems: 'center', gap: 8, padding: 'var(--space-10) var(--space-6)' }}>
+          <span style={{ width: 40, height: 40, borderRadius: 'var(--radius-lg)', background: roles.primarySoft, color: roles.primary, display: 'grid', placeItems: 'center' }}>
+            <Sparkle size={20} weight="fill" />
+          </span>
+          <h4>No reports yet</h4>
+          <div className="muted small" style={{ maxWidth: 320 }}>
+            Reports appear here once a project has a week of data.
+          </div>
+          <button className="btn btn-secondary">Learn about reports</button>
+        </div>
+        <div className="card full" style={{ display: 'grid', gap: 10 }}>
           {built.type.map((t) => (
-            <div key={t.name} style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
-              <span className="subtle" style={{ width: 92, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+            <div key={t.name} style={{ display: 'flex', alignItems: 'baseline', gap: 16, minWidth: 0 }}>
+              <span className="subtle" style={{ width: 84, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
                 {t.name} · {t.size}
               </span>
-              <span style={{ fontFamily: t.font === 'heading' ? 'var(--font-heading)' : 'var(--font-sans)', fontSize: t.size, lineHeight: t.lineHeight, fontWeight: t.weight, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ fontFamily: t.font === 'heading' ? 'var(--font-heading)' : 'var(--font-sans)', fontSize: t.size, lineHeight: t.lineHeight, fontWeight: t.weight, letterSpacing: `${t.tracking}em`, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                 {t.name === 'body' || t.name === 'small' || t.name === 'caption' ? 'The quick brown fox jumps over the lazy dog.' : 'Ship calm software'}
               </span>
             </div>
           ))}
-          <div className="muted" style={{ fontSize: 'var(--text-small)' }}>
-            {input.fontSans} / {input.fontHeading} / {input.fontMono} — shown if installed on this computer; the exports reference them by name.
-          </div>
         </div>
-        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 12 }}>
+        <div className="card full" style={{ display: 'grid', gap: 12 }}>
           {Object.entries(built.scales)
             .filter(([, s]) => s)
             .map(([scaleName, s]) => (
-              <div key={scaleName} style={{ display: 'grid', gridTemplateColumns: '72px repeat(11, 1fr)', gap: 4, alignItems: 'center' }}>
+              <div key={scaleName} style={{ display: 'grid', gridTemplateColumns: '64px repeat(11, 1fr)', gap: 4, alignItems: 'center' }}>
                 <span className="muted" style={{ fontSize: 'var(--text-caption)' }}>
                   {scaleName}
                 </span>
                 {STEPS.map((st) => (
-                  <div key={st} title={`${scaleName}-${st} ${s![st]}`} style={{ height: 28, borderRadius: 'var(--radius-sm)', background: s![st], border: '1px solid rgb(0 0 0 / .08)' }} />
+                  <div key={st} title={`${scaleName}-${st} ${s![st]}`} style={{ height: 26, borderRadius: 'var(--radius-sm)', background: s![st], border: '1px solid rgb(0 0 0 / .08)' }} />
                 ))}
               </div>
             ))}
         </div>
-        <div className="card" style={{ gridColumn: '1 / -1' }}>
-          <h4 style={{ fontSize: 'var(--text-h4)', marginBottom: 10 }}>Contrast ({theme})</h4>
+        <div className="card full">
+          <h4 style={{ marginBottom: 10 }}>Contrast ({theme})</h4>
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
             {built.checks
               .filter((c) => c.mode === theme)
               .map((c) => (
                 <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 34, height: 26, borderRadius: 6, background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 12, border: '1px solid var(--color-border)' }}>Aa</span>
-                  <span style={{ flex: 1, fontSize: 'var(--text-small)' }}>{c.label}</span>
+                  <span className="small" style={{ flex: 1 }}>
+                    {c.label}
+                  </span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: c.ratio >= c.need ? roles.success : roles.danger, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     {c.ratio >= c.need ? null : <Warning size={12} weight="fill" />}
                     {c.ratio.toFixed(1)}
@@ -672,16 +877,29 @@ function Preview({ name, input, built, theme }: { name: string; input: DesignInp
               ))}
           </div>
         </div>
-        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-          {(Object.keys(ROLE_INFO) as RoleName[]).map((k) => (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 20, height: 20, borderRadius: 5, background: roles[k], border: '1px solid var(--color-border)', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>{kebab(k)}</span>
-              <span className="subtle" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                {roles[k]}
-              </span>
-            </div>
-          ))}
+        <div className="card full">
+          <h4 style={{ marginBottom: 4 }}>Roles ({theme})</h4>
+          <div className="muted small" style={{ marginBottom: 12 }}>
+            Click a colour to set it yourself.
+          </div>
+          <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            {(Object.keys(ROLE_INFO) as RoleName[]).map((k) => (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }} title={ROLE_INFO[k]}>
+                <label style={{ position: 'relative', width: 22, height: 22, borderRadius: 6, background: roles[k], border: '1px solid var(--color-border-strong)', flexShrink: 0, cursor: 'pointer', overflow: 'hidden' }}>
+                  <input type="color" value={roles[k]} onChange={(e) => onOverride(k, e.target.value)} aria-label={`${kebab(k)} colour`} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }} />
+                </label>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{kebab(k)}</span>
+                <span className="subtle" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                  {roles[k]}
+                </span>
+                {picked[k] && (
+                  <button onClick={() => onOverride(k, null)} title={`Back to the generated ${built.generated[theme][k]}`} style={{ marginLeft: 'auto', color: 'var(--color-text-subtle)', background: 'none', border: 0, cursor: 'pointer', display: 'inline-flex' }}>
+                    <ArrowCounterClockwise size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

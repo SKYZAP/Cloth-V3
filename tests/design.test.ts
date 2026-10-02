@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
-import { buildDesign, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
+import { buildDesign, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, PRESETS, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
 
 describe('design systems', () => {
   it('converts colours through OKLCH and back', () => {
@@ -47,6 +47,42 @@ describe('design systems', () => {
     const light = designFiles({ name: 'L', description: '', input: { ...input, mode: 'light' } })
     expect(light['tokens.css']).toContain('color-scheme: light;')
     expect(light['tokens.css']).not.toContain('prefers-color-scheme')
+  })
+
+  it('pins the exact brand colour, picks grey families and dark depth, and honours hand-picked roles', () => {
+    const pinned = buildDesign({ ...DEFAULT_DESIGN, brand: '#7C3AED', pinBrand: true })
+    expect(pinned.roles.light.primary).toBe('#7c3aed')
+    expect(pinned.roles.dark.primary).toBe('#7c3aed')
+    expect(Object.values(pinned.scales.brand)).toContain('#7c3aed')
+
+    const grey = buildDesign({ ...DEFAULT_DESIGN, neutral: 'gray', neutralTint: 1 })
+    for (const s of STEPS) expect(hexToOklch(grey.scales.neutral[s]).c).toBeLessThan(0.005)
+    const slate = buildDesign({ ...DEFAULT_DESIGN, neutral: 'slate', neutralTint: 0.5 })
+    expect(Math.abs(hexToOklch(slate.scales.neutral[500]).h - 255)).toBeLessThan(8)
+
+    const deep = buildDesign({ ...DEFAULT_DESIGN, darkDepth: 0 }).roles.dark.background
+    const soft = buildDesign({ ...DEFAULT_DESIGN, darkDepth: 1 }).roles.dark.background
+    expect(hexToOklch(soft).l - hexToOklch(deep).l).toBeGreaterThan(0.08)
+
+    const picked = buildDesign({ ...DEFAULT_DESIGN, overrides: { light: { primary: '#ffcc00' }, dark: {} } })
+    expect(picked.roles.light.primary).toBe('#ffcc00')
+    // Text on a hand-picked yellow turns dark to stay readable; the generated value is kept for "reset".
+    expect(contrast(picked.roles.light.onPrimary, '#ffcc00')).toBeGreaterThan(4.5)
+    expect(picked.generated.light.primary).not.toBe('#ffcc00')
+    expect(picked.roles.dark.primary).toBe(picked.generated.dark.primary)
+  })
+
+  it('every preset builds readable text in its themes', () => {
+    for (const p of PRESETS) {
+      const input = sanitizeDesign(p.input)
+      const d = buildDesign(input)
+      const modes = input.mode === 'both' ? ['light', 'dark'] : [input.mode]
+      const bad = d.checks.filter((c) => modes.includes(c.mode) && /^(Text on background|Muted text on surface|Label on primary button)$/.test(c.label) && c.ratio < c.need)
+      expect(bad.map((c) => `${p.id} ${c.mode} ${c.label} ${c.ratio.toFixed(2)}`)).toEqual([])
+    }
+    const css = designFiles({ name: 'T', description: '', input: { ...DEFAULT_DESIGN, headingTracking: -0.03, headingWeight: 800 } })['tokens.css']
+    expect(css).toContain('--tracking-h1: -0.03em;')
+    expect(css).toContain('--weight-h1: 800;')
   })
 
   it('cleans up designs from a model', () => {
