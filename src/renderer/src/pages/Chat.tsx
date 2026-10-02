@@ -902,7 +902,7 @@ function ContextSheet({
                   aria-pressed={on}
                   className={clsx('flex h-8 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] transition-colors mobile:h-10', on ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:border-line-strong')}
                 >
-                  {p ? <span className="h-2.5 w-2.5 rounded-[4px]" style={{ background: p.color }} /> : <X size={12} />}
+                  {p ? <FolderSimple size={14} weight="fill" style={{ color: p.color }} /> : <X size={12} />}
                   {p?.name ?? 'No project'}
                 </button>
               )
