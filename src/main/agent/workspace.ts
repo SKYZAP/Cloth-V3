@@ -253,6 +253,8 @@ export interface WorkspaceOptions {
   onAlways?(scope: 'edits' | 'all'): void
   /** Language servers for the `lsp` tool and post-edit type checking; null = off. */
   lsp?: LspManager | null
+  /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
+  shellExec?: (command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]) => Promise<{ exitCode: number | null }>
 }
 
 export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit', 'lsp']
@@ -498,7 +500,17 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     )
   }
 
-  if (o.shell) {
+  if (o.shell && o.shellExec) {
+    const run = o.shellExec
+    const operations: BashOperations = {
+      exec: async (command, cwd, options) => {
+        const rel = relative(await realpath(o.root), await inside(cwd)).split(sep).join('/')
+        await ask({ kind: 'command', command, path: rel || '.' })
+        return run(command, rel, options)
+      }
+    }
+    tools.push(createBashTool(o.root, { operations }))
+  } else if (o.shell) {
     const local: BashOperations = process.platform === 'win32' ? createLocalPowerShellOperations() : createLocalBashOperations()
     const operations: BashOperations = {
       exec: async (command, cwd, options) => {

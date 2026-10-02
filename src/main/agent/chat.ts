@@ -6,6 +6,7 @@ import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
+import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import type { ImageService } from '../images'
@@ -94,7 +95,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   codeIntel: true,
   imagesEnabled: true,
   thinking: 'off',
-  projectId: null
+  projectId: null,
+  container: null
 }
 
 export interface AgentRunOptions {
@@ -192,17 +194,25 @@ export class AgentRuntime {
     }
     if (scope.workspace) {
       const writable = scope.fileAccess === 'write' && !!scope.sessionId
-      const shell = scope.shell && scope.sessionId ? (process.platform === 'win32' ? 'powershell' : 'bash') : null
+      const shell = scope.shell && scope.sessionId ? (scope.container || process.platform !== 'win32' ? 'bash' : 'powershell') : null
       lines.push(
         '',
         '## Workspace',
-        `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
+        scope.container
+          ? `You work in an isolated copy of ${scope.container.folder ? `the user's folder ${scope.container.folder}` : 'an empty workspace'}, inside a Linux container (image ${scope.container.image}) where it is mounted at /workspace. Tool paths are relative to the workspace root: write "src/app.ts", never an absolute path. Your file changes stay in the copy until the user reviews them and applies them to their folder, so work freely — but say what you changed when you finish. Dependencies (node_modules, .venv) are not copied: install them in the container when you need them.`
+          : `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
         'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`.',
         writable
           ? 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
           : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
         ...(scope.codeIntel !== false ? ['Use `lsp` for TypeScript/JavaScript/Python code intelligence: go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
-        ...(shell ? [`You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`] : [])
+        ...(shell
+          ? [
+              scope.container
+                ? `You can run commands with bash in the container (working directory /workspace). It is Linux: use its package manager or language tools to install what you need. Unless the user auto-approves commands, they approve each one, so explain why a command is needed.`
+                : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`
+            ]
+          : [])
       )
     }
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
@@ -364,7 +374,8 @@ export class ChatService {
     private usage?: UsageService,
     private approvals?: ApprovalService,
     private checkpoints?: CheckpointStore,
-    private projects?: ProjectService
+    private projects?: ProjectService,
+    private containers?: ContainerService
   ) {}
 
   list(): ChatSession[] {
@@ -410,6 +421,7 @@ export class ChatService {
       titleSource: cur.titleSource,
       titleTurns: cur.titleTurns,
       projectId: cur.projectId,
+      container: cur.container,
       ...config
     }
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -422,6 +434,7 @@ export class ChatService {
     this.abort(id)
     this.ctx.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
     void this.checkpoints?.removeSession(id)
+    void this.containers?.remove(id).catch(() => undefined)
   }
 
   pendingApprovals(id: string): PendingApproval[] {
@@ -621,6 +634,23 @@ export class ChatService {
     return [project, session.systemPrompt.trim()].filter(Boolean).join('\n\n')
   }
 
+  /**
+   * The scope a run uses: in container mode the workspace is the chat's private copy (made on first
+   * use) and commands run in its Linux container.
+   */
+  private async runScope(id: string): Promise<ToolScope> {
+    const scope = this.scope(id)
+    const session = this.get(id)
+    if (!session.container || !this.containers) return scope
+    const settings = session.container
+    const containers = this.containers
+    const docker = await containers.status()
+    if (!docker.available) throw new Error(docker.error ?? 'Docker is not available')
+    scope.workspace = await containers.prepare(id, session.workspace)
+    scope.container = { image: settings.image, folder: session.workspace, exec: (command, cwd, options) => containers.exec(id, settings, command, cwd, options) }
+    return scope
+  }
+
   private scope(id: string): ToolScope {
     const session = this.get(id)
     return {
@@ -649,7 +679,7 @@ export class ChatService {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
-    const scope = this.scope(id)
+    const scope = await this.runScope(id)
     // Summarise older turns first if the conversation is about to outgrow the model's context.
     if (this.settings.get().autoCompact) {
       const usage = await this.contextUsage(id)

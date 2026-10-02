@@ -10,6 +10,8 @@ import type {
   WorkflowGraph,
   ChatSession,
   Project,
+  ContainerChanges,
+  ContainerStatus,
   ProjectInput,
   GeneratedImage,
   ImageSize,
@@ -159,6 +161,17 @@ export interface ClothApi {
     /** Write a new AI title now (also replaces a title the user typed). */
     retitle(id: string): Promise<string | null>
     contextUsage(id: string): Promise<ContextUsage>
+  }
+  containers: {
+    status(force?: boolean): Promise<ContainerStatus>
+    /** What a container chat changed in its copy, against the real folder. */
+    changes(sessionId: string): Promise<ContainerChanges>
+    /** Copy changes (all, or these paths) into the real folder. */
+    apply(sessionId: string, paths?: string[]): Promise<ContainerChanges>
+    /** Revert changes in the copy (all, or these paths). */
+    discard(sessionId: string, paths?: string[]): Promise<ContainerChanges>
+    /** Throw away the container (the copy stays); the next command starts a fresh one. */
+    reset(sessionId: string): Promise<void>
   }
   projects: {
     list(): Promise<Project[]>
