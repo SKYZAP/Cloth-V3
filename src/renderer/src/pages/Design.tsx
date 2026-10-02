@@ -28,6 +28,7 @@ import { BUNDLED_FONTS, loadDesignFont } from '@/lib/designFonts'
 import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
+import { ComponentsPanel } from './design/Components'
 
 type PresetChoice = { name: string; input: Partial<DesignInput> } | null
 
@@ -168,7 +169,7 @@ function PresetCard({ preset, onPick }: { preset: (typeof PRESETS)[number]; onPi
 
 // ─── Editor ───────────────────────────────────────────────────────────────────
 
-type Tab = 'preview' | 'DESIGN.md' | 'tokens.css' | 'tailwind.css' | 'tokens.json'
+type Tab = 'preview' | 'components' | 'DESIGN.md' | 'tokens.css' | 'tailwind.css' | 'tokens.json'
 
 function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: DesignSystem; onSaved(d: DesignSystem): void; onDeleted(): void; onDuplicated(id: string): void }) {
   const [name, setName] = useState(design.name)
@@ -233,7 +234,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
   const view = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
-        <Segmented value={tab} onChange={setTab} items={(['preview', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t }))} />
+        <Segmented value={tab} onChange={setTab} items={(['preview', 'components', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t === 'components' ? 'Components' : t }))} />
         <div className="flex-1" />
         {tab === 'preview' && !isMobile && (
           <Segmented
@@ -255,8 +256,11 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
             ]}
           />
         )}
-        {tab !== 'preview' && <CopyButton text={files[tab]} />}
+        {tab !== 'preview' && tab !== 'components' && <CopyButton text={files[tab]} />}
       </div>
+      {tab === 'components' ? (
+        <ComponentsPanel designId={design.id} input={input} theme={theme} setTheme={setTheme} />
+      ) : (
       <div className={clsx('min-h-0 flex-1 overflow-auto', width === 'phone' && tab === 'preview' && 'bg-elev/40 py-6')}>
         {tab === 'preview' ? (
           <div className={clsx(width === 'phone' && 'mx-auto w-[390px] overflow-hidden rounded-[28px] border border-line-strong shadow-2xl shadow-black/50')}>
@@ -266,6 +270,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
           <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[tab]}</pre>
         )}
       </div>
+      )}
     </div>
   )
 

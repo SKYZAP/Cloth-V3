@@ -58,6 +58,19 @@ const FONTS: Record<string, Faces> = {
 /** Fonts the preview can show exactly; anything else shows only if installed on this computer. */
 export const BUNDLED_FONTS = new Set(Object.keys(FONTS))
 
+/** @font-face rules for bundled fonts, for documents that can't see this window's fonts (preview frames). */
+export function fontFaceCss(names: string[]): string {
+  const abs = (u: string) => new URL(u, window.location.href).href
+  return [...new Set(names)]
+    .flatMap((name) => {
+      const faces = FONTS[name]
+      if (!faces) return []
+      if (typeof faces === 'string') return [`@font-face{font-family:'${name}';src:url(${abs(faces)}) format('woff2');font-weight:100 900;font-display:swap}`]
+      return Object.entries(faces).map(([w, u]) => `@font-face{font-family:'${name}';src:url(${abs(u)}) format('woff2');font-weight:${w};font-display:swap}`)
+    })
+    .join('\n')
+}
+
 const loading = new Map<string, Promise<void>>()
 
 /** Register a bundled font under its own name (so `'Fraunces', serif` stacks pick it up). */

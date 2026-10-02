@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
-import { buildDesign, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, PRESETS, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
+import { buildDesign, componentLint, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, parseComponentAnswer, PRESETS, sanitizeComponentCss, sanitizeComponentHtml, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
 
 describe('design systems', () => {
   it('converts colours through OKLCH and back', () => {
@@ -135,5 +135,67 @@ describe('design service', () => {
     expect(draft).toMatchObject({ name: 'Tidepool', description: 'Calm ops tooling.', input: { brand: '#0e7490', accent: null, mode: 'dark', fontSans: 'IBM Plex Sans', baseSize: 20, radius: 4, density: 'compact' } })
     expect(draft.input.principles).toEqual(['Dense but calm', 'Keyboard first'])
     await expect(services.designs.generate({ prompt: ' ', model: { providerId: provider.id, modelId: 'faux-1' } })).rejects.toThrow(/Describe/)
+  })
+})
+describe('component library', () => {
+  afterEach(() => {
+    faux?.unregister()
+    faux = null
+  })
+
+  const answer = (name: string, color: string) =>
+    `Sure!\nNAME: ${name}\nDESCRIPTION: Buttons for actions.\n=== CSS ===\n\`\`\`css\n.c-button { background: var(--color-primary); color: ${color}; border-radius: var(--radius-md); }\n\`\`\`\n=== HTML ===\n<div class="specimen"><section class="specimen-section"><div class="specimen-label">Primary</div><div class="specimen-row"><button class="c-button" onclick="alert(1)">Save</button><script>alert(2)</script></div></section></div>\n=== USAGE ===\n<button class="c-button">Save</button>`
+
+  it('builds, refines, undoes and exports components that stay on the system', async () => {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    const model = { providerId: provider.id, modelId: 'faux-1' }
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    let refinePrompt = ''
+    faux.setResponses([
+      fauxAssistantMessage(answer('Button', '#ffffff')),
+      (ctx) => {
+        refinePrompt = JSON.stringify(ctx.messages)
+        return fauxAssistantMessage(answer('Button', 'var(--color-on-primary)'))
+      }
+    ])
+    const d = services.designs.create({ name: 'Harbor' })
+    const c = await services.designs.generateComponent({ designId: d.id, prompt: 'buttons', model })
+    expect(c).toMatchObject({ name: 'Button', description: 'Buttons for actions.', usage: '<button class="c-button">Save</button>' })
+    expect(c.css.startsWith('.c-button')).toBe(true)
+    expect(c.html).not.toMatch(/script|onclick/)
+    expect(componentLint(c.css, c.html)).toEqual(['#ffffff'])
+
+    const fixed = await services.designs.generateComponent({ designId: d.id, prompt: 'use tokens for the text colour', model, componentId: c.id })
+    expect(refinePrompt).toContain('Change the \\"Button\\" component: use tokens for the text colour')
+    expect(refinePrompt).toContain('color: #ffffff')
+    expect(componentLint(fixed.css, fixed.html)).toEqual([])
+    expect(fixed.history.map((h) => h.prompt)).toEqual(['buttons'])
+    expect(services.designs.undoComponent(c.id).css).toContain('#ffffff')
+
+    const edited = services.designs.updateComponent(c.id, { css: '.c-button { color: var(--color-text); } @import url(http://x.test/a.css);', name: 'Buttons' })
+    expect(edited.name).toBe('Buttons')
+    expect(edited.css).not.toContain('@import')
+    expect(edited.prompt).toBe('Edited by hand')
+
+    const folder = mkdtempSync(join(tmpdir(), 'cloth-components-'))
+    const written = (await services.designs.export(d.id, folder)).map((p) => p.slice(folder.length + 1).replace(/\\/g, '/'))
+    expect(written).toEqual(expect.arrayContaining(['components.css', 'components/buttons.html', 'DESIGN.md']))
+    expect(readFileSync(join(folder, 'components', 'buttons.html'), 'utf8')).toContain('href="../tokens.css"')
+    const md = readFileSync(join(folder, 'DESIGN.md'), 'utf8')
+    expect(md).toContain('## Component library')
+    expect(md).toContain('### Buttons')
+    // Projects that follow the design get the library in their chats' instructions.
+    const p = services.projects.create({ name: 'Site', designId: d.id })
+    expect(await services.projects.instructions(p.id)).toContain('### Buttons')
+    services.designs.remove(d.id)
+    expect(services.designs.components(d.id)).toEqual([])
+  })
+
+  it('reads answers and keeps model markup safe', () => {
+    expect(parseComponentAnswer('no sections here')).toBeNull()
+    expect(sanitizeComponentHtml('<a href="javascript:alert(1)" onmouseover="x()">x</a><iframe src="https://e.test"></iframe><img src=x onerror=alert(1)>')).toBe('<a href="#">x</a><img src=x>')
+    expect(sanitizeComponentCss('.a{background:url(https://e.test/p.png)} .b{background:url(data:image/png;base64,AAA)} </style><script>')).toBe('.a{background:none} .b{background:url(data:image/png;base64,AAA)} <script>')
+    expect(componentLint('.a{color:var(--color-text, #000);background:rgb(1 2 3)}', '<i style="color:#abc"></i>')).toEqual(['rgb(1 2 3)', '#abc'])
   })
 })
