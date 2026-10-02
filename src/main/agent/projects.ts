@@ -4,6 +4,7 @@ import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, t
 import { json } from '../core/db'
 import { newId, type Ctx } from '../core/context'
 import type { ChatService } from './chat'
+import type { DesignService } from '../design/designs'
 
 interface ProjectRow {
   id: string
@@ -12,6 +13,7 @@ interface ProjectRow {
   color: string
   instructions: string
   defaults: string
+  design_id: string | null
   created_at: number
   updated_at: number
 }
@@ -27,6 +29,7 @@ const toProject = (r: ProjectRow): Project => ({
   color: r.color,
   instructions: r.instructions,
   defaults: json<ProjectDefaults>(r.defaults, {}),
+  designId: r.design_id ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at
 })
@@ -35,7 +38,8 @@ const toProject = (r: ProjectRow): Project => ({
 export class ProjectService {
   constructor(
     private ctx: Ctx,
-    private chats: () => ChatService
+    private chats: () => ChatService,
+    private designs?: DesignService
   ) {}
 
   list(): Project[] {
@@ -64,8 +68,8 @@ export class ProjectService {
     const now = Date.now()
     const color = input.color ?? PROJECT_COLORS[this.list().length % PROJECT_COLORS.length]
     this.ctx.db
-      .prepare('INSERT INTO projects (id, name, folder, color, instructions, defaults, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, name, input.folder || null, color, input.instructions ?? '', JSON.stringify(input.defaults ?? {}), now, now)
+      .prepare('INSERT INTO projects (id, name, folder, color, instructions, defaults, design_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, input.folder || null, color, input.instructions ?? '', JSON.stringify(input.defaults ?? {}), input.designId ?? null, now, now)
     return this.get(id)
   }
 
@@ -75,8 +79,8 @@ export class ProjectService {
     if (!name) throw new Error('Give the project a name')
     const folder = patch.folder === undefined ? cur.folder : patch.folder || null
     this.ctx.db
-      .prepare('UPDATE projects SET name = ?, folder = ?, color = ?, instructions = ?, defaults = ?, updated_at = ? WHERE id = ?')
-      .run(name, folder, patch.color ?? cur.color, patch.instructions ?? cur.instructions, JSON.stringify(patch.defaults ?? cur.defaults), Date.now(), id)
+      .prepare('UPDATE projects SET name = ?, folder = ?, color = ?, instructions = ?, defaults = ?, design_id = ?, updated_at = ? WHERE id = ?')
+      .run(name, folder, patch.color ?? cur.color, patch.instructions ?? cur.instructions, JSON.stringify(patch.defaults ?? cur.defaults), patch.designId === undefined ? cur.designId : patch.designId, Date.now(), id)
     // Chats still working in the old folder follow the project to the new one.
     if (folder !== cur.folder) {
       for (const c of this.chatsIn(id)) if (c.workspace === cur.folder) this.chats().update(c.id, { workspace: folder })
@@ -115,6 +119,8 @@ export class ProjectService {
         break
       }
     }
+    const design = this.designs?.find(p.designId)
+    if (design) parts.push(`The project follows the design system below: build any UI with its tokens and rules.\n\n${this.designs!.markdown(design.id)}`)
     return parts.join('\n\n')
   }
 

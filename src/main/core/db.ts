@@ -165,6 +165,17 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  `,
+  /* 8 — design systems; a project can follow one */ `
+  CREATE TABLE design_systems (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    input TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  ALTER TABLE projects ADD COLUMN design_id TEXT;
   `
 ]
 

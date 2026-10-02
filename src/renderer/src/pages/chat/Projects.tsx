@@ -5,7 +5,8 @@ import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, t
 import { api } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
-import { Button, Field, Input, Modal, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, Input, Modal, Select, Textarea, confirmAction } from '@/components/ui'
+import type { DesignSystem } from '@shared/design'
 import { ModelPicker } from '@/components/ModelPicker'
 
 /** The chat settings a project can hand to new chats (everything but the workspace, which is its folder). */
@@ -53,6 +54,8 @@ export function ProjectDialog({
   const [color, setColor] = useState(PROJECT_COLORS[0])
   const [instructions, setInstructions] = useState('')
   const [defaults, setDefaults] = useState<ProjectDefaults>({})
+  const [designId, setDesignId] = useState<string | null>(null)
+  const [designs, setDesigns] = useState<DesignSystem[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -62,6 +65,8 @@ export function ProjectDialog({
     setColor(project?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
     setInstructions(project?.instructions ?? '')
     setDefaults(project?.defaults ?? {})
+    setDesignId(project?.designId ?? null)
+    if (open) void api.design.list().then(setDesigns, () => undefined)
   }, [open, project])
 
   const pickFolder = async () => {
@@ -73,7 +78,7 @@ export function ProjectDialog({
 
   const save = async () => {
     setSaving(true)
-    const input: ProjectInput = { name, folder, color, instructions, defaults }
+    const input: ProjectInput = { name, folder, color, instructions, defaults, designId }
     const saved = await attempt(() => (project ? api.projects.update(project.id, input) : api.projects.create(input)), project ? 'Project saved' : 'Project created')
     setSaving(false)
     if (saved) onSaved(saved)
@@ -142,6 +147,19 @@ export function ProjectDialog({
         <Field label="Instructions" hint="Added to every chat, with the folder's AGENTS.md or CLAUDE.md.">
           <Textarea rows={4} value={instructions} placeholder="e.g. TypeScript monorepo. Run tests with pnpm test. Keep changes small." onChange={(e) => setInstructions(e.target.value)} />
         </Field>
+
+        {!!designs.length && (
+          <Field label="Design system" hint="Its DESIGN.md is added to the project's chats.">
+            <Select value={designId ?? ''} onChange={(e) => setDesignId(e.target.value || null)}>
+              <option value="">None</option>
+              {designs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
 
         <div className="rounded-[14px] border border-line bg-elev p-3">
           <div className="text-[11.5px] font-medium text-muted">New chats start with</div>

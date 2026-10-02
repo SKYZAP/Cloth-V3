@@ -371,6 +371,8 @@ export interface Project {
   /** Added to every chat's system prompt (with the folder's AGENTS.md / CLAUDE.md, if any). */
   instructions: string
   defaults: ProjectDefaults
+  /** Design system the project's chats follow (its DESIGN.md joins their instructions). */
+  designId: string | null
   createdAt: number
   updatedAt: number
 }
@@ -378,7 +380,7 @@ export interface Project {
 /** Sidebar accents for projects (new ones take the next in turn). */
 export const PROJECT_COLORS = ['#dc2645', '#6b9cf0', '#3fb97a', '#e0a43a', '#c084fc', '#fb923c', '#22b8cf', '#f472b6']
 
-export type ProjectInput = Partial<Pick<Project, 'name' | 'folder' | 'color' | 'instructions' | 'defaults'>>
+export type ProjectInput = Partial<Pick<Project, 'name' | 'folder' | 'color' | 'instructions' | 'defaults' | 'designId'>>
 
 export type FileAccess = 'read' | 'write'
 export type AutoApprove = 'none' | 'edits' | 'all'
