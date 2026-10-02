@@ -20,6 +20,7 @@ import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import { parseJsonLoose } from '../core/llm-json'
 import type { ProviderService } from '../providers/providers'
+import { EVAL_HARNESS, lintExpectation } from '@shared/skillEvals'
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -229,13 +230,37 @@ export class SkillService {
     const skill = await this.get(name)
     const { text } = await this.providers.complete(model, {
       system: 'You write evaluation cases for AI agent skills. Reply with JSON only.',
-      prompt: `Skill "${skill.name}": ${skill.description}\n\n${skill.body.slice(0, 12_000)}\n\nWrite 3 realistic user prompts that should trigger this skill, each with 2-4 objectively checkable expectations about a correct response (things the skill teaches that a model without it would likely miss). JSON: {"cases": [{"prompt": "...", "expectations": ["..."]}]}`,
-      maxTokens: 3000,
-      temperature: 0.4
+      prompt: `Skill "${skill.name}": ${skill.description}
+
+${skill.body.slice(0, 12_000)}
+
+${EVAL_HARNESS}
+
+Write 4 cases:
+- 3 realistic user prompts that should make the model use this skill, covering different parts of it.
+- 1 prompt that sounds related but should NOT use the skill (to catch a skill that fires too eagerly), expecting the model to just answer it.
+
+Each case has 2-4 expectations. Every expectation must be:
+- one single check (no lists of several things),
+- unconditional (never "if …, then …" — one reply can't show which branch applies),
+- visible in the reply text (what it says, recommends, includes or avoids — never "searches", "runs" or "installs"; write "tells the user to run \`…\`" instead),
+- backed by a specific instruction in the skill, and something a model WITHOUT the skill would likely miss — not generic helpfulness,
+- concrete: name the exact command, flag, wording, step or format that must appear.
+
+JSON: {"cases": [{"prompt": "...", "expectations": ["..."], "basis": ["the skill sentence each expectation comes from, same order"]}]}`,
+      maxTokens: 3500,
+      temperature: 0.3
     })
     const parsed = parseJsonLoose<{ cases: { prompt: string; expectations: string[] }[] }>(text)
     if (!parsed?.cases?.length) throw new Error('Model did not return eval cases')
-    return parsed.cases.map((c) => ({ id: newId('case_'), prompt: String(c.prompt), expectations: (c.expectations ?? []).map(String) }))
+    return parsed.cases
+      .map((c) => ({
+        id: newId('case_'),
+        prompt: String(c.prompt ?? '').trim(),
+        // Drop the ones a single reply can't show (conditionals, actions); keep the rest for the user to review.
+        expectations: (c.expectations ?? []).map(String).map((e) => e.trim()).filter((e) => e && !lintExpectation(e).some((i) => i.kind === 'conditional' || i.kind === 'action'))
+      }))
+      .filter((c) => c.prompt && c.expectations.length)
   }
 
   // ─── External sources ─────────────────────────────────────────────────────
@@ -390,7 +415,7 @@ export class SkillService {
   private async grade(judge: ModelRef, c: SkillEvalCase, output: string) {
     if (!c.expectations.length) return []
     const { text } = await this.providers.complete(judge, {
-      system: 'You are a strict grader. Judge only what the response actually contains. Reply with JSON only.',
+      system: `You are a strict grader. Judge only what the response actually contains. ${EVAL_HARNESS} Treat an expectation about an action as met when the reply clearly tells the user to do it (or says it would) with the specifics the expectation asks for. Reply with JSON only.`,
       prompt: `User prompt:\n${c.prompt}\n\nResponse:\n${output.slice(0, 16_000)}\n\nExpectations:\n${c.expectations.map((e, i) => `${i + 1}. ${e}`).join('\n')}\n\nFor each expectation decide pass/fail with a one-sentence reason. JSON: {"results": [{"i": 1, "pass": true, "reason": "..."}]}`,
       maxTokens: 1200,
       temperature: 0
