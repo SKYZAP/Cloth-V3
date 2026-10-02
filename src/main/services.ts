@@ -9,6 +9,7 @@ import { SkillService } from './skills/skills'
 import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
 import { ProjectService } from './agent/projects'
+import { DesignService } from './design/designs'
 import { ContainerService, type DockerRun } from './agent/containers'
 import { ApprovalService, CheckpointStore } from './agent/workspace'
 import { LspManager } from './agent/lsp'
@@ -37,6 +38,7 @@ export interface Services {
   chat: ChatService
   projects: ProjectService
   containers: ContainerService
+  designs: DesignService
   workflows: WorkflowService
   mcp: McpHost
   dashboard: DashboardService
@@ -84,7 +86,8 @@ export function createServices(opts: {
   const lsp = new LspManager()
   const images = new ImageService(ctx, providers, settings)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings })
-  const projects: ProjectService = new ProjectService(ctx, () => chat)
+  const designs = new DesignService(ctx, providers)
+  const projects: ProjectService = new ProjectService(ctx, () => chat, designs)
   const containers = new ContainerService(ctx, opts.docker)
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
@@ -116,5 +119,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, projects, containers, workflows, mcp, dashboard, lsp, images, remote, exporter }
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, projects, containers, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
 }

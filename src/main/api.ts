@@ -145,6 +145,15 @@ export function createApi(s: Services): ClothApi {
       discard: (sessionId, paths) => s.containers.discard(sessionId, paths),
       reset: (sessionId) => s.containers.reset(sessionId)
     },
+    design: {
+      list: async () => s.designs.list(),
+      create: async (draft) => s.designs.create(draft ?? {}),
+      update: async (id, patch) => s.designs.update(id, patch),
+      duplicate: async (id) => s.designs.duplicate(id),
+      remove: async (id) => s.designs.remove(id),
+      generate: (input) => s.designs.generate(input),
+      export: (id, folder) => s.designs.export(id, folder)
+    },
     projects: {
       list: async () => s.projects.list(),
       create: async (input) => s.projects.create(input),

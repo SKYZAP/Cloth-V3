@@ -1,3 +1,4 @@
+import type { DesignDraft, DesignInput, DesignSystem } from './design'
 import type {
   AppInfo,
   BuiltinToolInfo,
@@ -172,6 +173,18 @@ export interface ClothApi {
     discard(sessionId: string, paths?: string[]): Promise<ContainerChanges>
     /** Throw away the container (the copy stays); the next command starts a fresh one. */
     reset(sessionId: string): Promise<void>
+  }
+  design: {
+    list(): Promise<DesignSystem[]>
+    create(draft?: Partial<DesignDraft>): Promise<DesignSystem>
+    update(id: string, patch: Partial<DesignDraft>): Promise<DesignSystem>
+    duplicate(id: string): Promise<DesignSystem>
+    /** Projects following it stop doing so. */
+    remove(id: string): Promise<void>
+    /** A design proposed by a model from a description; not saved. */
+    generate(input: { prompt: string; model: ModelRef; current?: DesignInput }): Promise<DesignDraft>
+    /** Writes DESIGN.md, tokens.css, tailwind.css and tokens.json into the folder. */
+    export(id: string, folder: string): Promise<string[]>
   }
   projects: {
     list(): Promise<Project[]>

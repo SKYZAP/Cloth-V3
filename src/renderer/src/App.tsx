@@ -14,6 +14,7 @@ import { ToolsPage } from './pages/Tools'
 import { WorkflowsPage } from './pages/Workflows'
 import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
+import { DesignPage } from './pages/Design'
 import { SettingsPage } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
 import { useState } from 'react'
@@ -49,6 +50,7 @@ export function PageContent({ page }: { page: Page }) {
       {page === 'workflows' && <WorkflowsPage />}
       {page === 'providers' && <ProvidersPage />}
       {page === 'mcp' && <McpPage />}
+      {page === 'design' && <DesignPage />}
       {page === 'settings' && <SettingsPage />}
     </ErrorBoundary>
   )

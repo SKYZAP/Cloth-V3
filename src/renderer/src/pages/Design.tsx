@@ -1,0 +1,689 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Check, Copy, DownloadSimple, MagicWand, Moon, Palette, Plus, Sun, Trash, Warning } from '@phosphor-icons/react'
+import type { ModelRef } from '@shared/types'
+import {
+  buildDesign,
+  designFiles,
+  FONT_CHOICES,
+  fontStack,
+  isHex,
+  normalizeHex,
+  ROLE_INFO,
+  SCALES,
+  STEPS,
+  type BuiltDesign,
+  type DesignInput,
+  type DesignSystem,
+  type RoleName
+} from '@shared/design'
+import { api } from '@/lib/api'
+import { attempt, useApp } from '@/lib/store'
+import { isMobile, useSideBySide } from '@/lib/platform'
+import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Textarea, confirmAction } from '@/components/ui'
+import { ModelPicker } from '@/components/ModelPicker'
+import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
+
+export function DesignPage() {
+  const [designs, setDesigns] = useState<DesignSystem[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  const load = async (select?: string) => {
+    const list = await api.design.list()
+    setDesigns(list)
+    setLoaded(true)
+    if (select) setActiveId(select)
+    else setActiveId((cur) => (cur && list.some((d) => d.id === cur) ? cur : (list[0]?.id ?? null)))
+  }
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const create = async () => {
+    const d = await attempt(() => api.design.create())
+    if (!d) return
+    await load(d.id)
+    setOpen(true)
+  }
+
+  const active = designs.find((d) => d.id === activeId) ?? null
+  return (
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
+      <ListPane
+        header={
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-semibold">Design</div>
+              <div className="text-[11px] text-dim">
+                {designs.length} design system{designs.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => void create()}>
+              New
+            </Button>
+          </div>
+        }
+      >
+        {designs.map((d) => (
+          <ListItem key={d.id} active={d.id === activeId} onClick={() => (setActiveId(d.id), setOpen(true))}>
+            <Swatches input={d.input} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12.5px] font-medium mobile:text-[14px]">{d.name}</div>
+              <div className="truncate text-[11px] text-dim">
+                {d.input.fontSans} · {d.input.mode === 'both' ? 'light & dark' : d.input.mode}
+              </div>
+            </div>
+          </ListItem>
+        ))}
+        {loaded && !designs.length && (
+          <div className="space-y-2 p-4 text-center">
+            <div className="text-[12px] text-dim">No design systems yet.</div>
+            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => void create()}>
+              Create one
+            </Button>
+          </div>
+        )}
+      </ListPane>
+      <SplitDetail>
+        {active ? (
+          <DesignEditor key={active.id} design={active} onSaved={(d) => setDesigns((ds) => ds.map((x) => (x.id === d.id ? d : x)))} onDeleted={() => (setOpen(false), void load())} onDuplicated={(id) => void load(id)} />
+        ) : (
+          <Empty icon={<Palette size={20} />} title="Design systems" action={<Button variant="primary" onClick={() => void create()}>New design system</Button>}>
+            Pick colours, type and shape, and export a DESIGN.md with tokens for your projects.
+          </Empty>
+        )}
+      </SplitDetail>
+    </SplitRoot>
+  )
+}
+
+function Swatches({ input }: { input: DesignInput }) {
+  const d = useMemo(() => buildDesign(input), [input])
+  return (
+    <div className="flex shrink-0 -space-x-1.5">
+      {[d.roles.dark.primary, input.accent ?? d.scales.brand[300], d.scales.neutral[800]].map((c, i) => (
+        <span key={i} className="h-4 w-4 rounded-full border border-black/40" style={{ background: c }} />
+      ))}
+    </div>
+  )
+}
+
+type Tab = 'preview' | 'DESIGN.md' | 'tokens.css' | 'tailwind.css' | 'tokens.json'
+
+function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: DesignSystem; onSaved(d: DesignSystem): void; onDeleted(): void; onDuplicated(id: string): void }) {
+  const [name, setName] = useState(design.name)
+  const [description, setDescription] = useState(design.description)
+  const [input, setInput] = useState<DesignInput>(design.input)
+  const [tab, setTab] = useState<Tab>('preview')
+  const [phoneTab, setPhoneTab] = useState<'edit' | 'view'>('edit')
+  const [theme, setTheme] = useState<'light' | 'dark'>(design.input.mode === 'light' ? 'light' : 'dark')
+  const [aiOpen, setAiOpen] = useState(false)
+  const side = useSideBySide()
+  const built = useMemo(() => buildDesign(input), [input])
+  const files = useMemo(() => designFiles({ name, description, input }), [name, description, input])
+
+  // Save shortly after the last change.
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const t = setTimeout(() => void api.design.update(design.id, { name, description, input }).then(onSaved, () => undefined), 400)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, description, input])
+  useEffect(() => {
+    if (input.mode !== 'both') setTheme(input.mode)
+  }, [input.mode])
+
+  const set = (patch: Partial<DesignInput>) => setInput((i) => ({ ...i, ...patch }))
+
+  const exportFiles = async () => {
+    const [folder] = await api.app.pickPaths({ directory: true, title: 'Export DESIGN.md and tokens to…' })
+    if (!folder) return
+    await attempt(() => api.design.export(design.id, folder), `Exported DESIGN.md and tokens to ${folder}`)
+  }
+  const remove = async () => {
+    if (!(await confirmAction(`“${design.name}” is deleted. Projects that follow it stop doing so.`, { title: 'Delete design system?', confirmLabel: 'Delete', danger: true }))) return
+    await attempt(() => api.design.remove(design.id))
+    onDeleted()
+  }
+  const duplicate = async () => {
+    const d = await attempt(() => api.design.duplicate(design.id))
+    if (d) onDuplicated(d.id)
+  }
+
+  const controls = (
+    <Controls
+      input={input}
+      set={set}
+      description={description}
+      setDescription={setDescription}
+    />
+  )
+  const view = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          items={(['preview', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t }))}
+        />
+        <div className="flex-1" />
+        {tab === 'preview' && input.mode === 'both' && (
+          <Segmented
+            value={theme}
+            onChange={setTheme}
+            items={[
+              { value: 'dark', label: <Moon size={13} />, title: 'Dark' },
+              { value: 'light', label: <Sun size={13} />, title: 'Light' }
+            ]}
+          />
+        )}
+        {tab !== 'preview' && <CopyButton text={files[tab]} />}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {tab === 'preview' ? <Preview name={name} input={input} built={built} theme={theme} /> : <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[tab]}</pre>}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5 mobile:px-3">
+        <SplitBack />
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none" />
+        <Button icon={<MagicWand size={14} />} onClick={() => setAiOpen(true)} title="Describe a look and let AI set the system up">
+          <span className="mobile:hidden">Generate</span>
+        </Button>
+        <Button icon={<DownloadSimple size={14} />} onClick={() => void exportFiles()} title="Write DESIGN.md and the token files into a folder">
+          <span className="mobile:hidden">Export</span>
+        </Button>
+        <IconButton title="Duplicate" onClick={() => void duplicate()}>
+          <Copy size={15} />
+        </IconButton>
+        <IconButton title="Delete" onClick={() => void remove()}>
+          <Trash size={15} />
+        </IconButton>
+      </div>
+      {side ? (
+        <div className="flex min-h-0 flex-1">
+          <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>
+          {view}
+        </div>
+      ) : (
+        <>
+          <div className="shrink-0 border-b border-line px-3 py-2">
+            <Segmented
+              value={phoneTab}
+              onChange={setPhoneTab}
+              items={[
+                { value: 'edit', label: 'Edit' },
+                { value: 'view', label: 'Preview & files' }
+              ]}
+            />
+          </div>
+          {phoneTab === 'edit' ? <div className="min-h-0 flex-1 overflow-y-auto">{controls}</div> : view}
+        </>
+      )}
+      <GenerateModal
+        open={aiOpen}
+        current={input}
+        onClose={() => setAiOpen(false)}
+        onDraft={(d) => {
+          setAiOpen(false)
+          setInput(d.input)
+          if (d.description) setDescription(d.description)
+          if (/^New design/.test(name) && d.name) setName(d.name)
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 border-b border-line px-4 py-4 last:border-b-0 mobile:px-3">
+      <div className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">{title}</div>
+      {children}
+    </section>
+  )
+}
+
+function Controls({ input, set, description, setDescription }: { input: DesignInput; set(p: Partial<DesignInput>): void; description: string; setDescription(s: string): void }) {
+  const [principles, setPrinciples] = useState(input.principles.join('\n'))
+  useEffect(() => setPrinciples(input.principles.join('\n')), [input.principles])
+  return (
+    <div>
+      <Section title="Colour">
+        <ColorField label="Brand" value={input.brand} onChange={(v) => v && set({ brand: v })} />
+        <ColorField label="Accent" value={input.accent} optional onChange={(accent) => set({ accent })} />
+        <div className="grid grid-cols-3 gap-2">
+          <ColorField compact label="Success" value={input.success} onChange={(v) => v && set({ success: v })} />
+          <ColorField compact label="Warning" value={input.warning} onChange={(v) => v && set({ warning: v })} />
+          <ColorField compact label="Danger" value={input.danger} onChange={(v) => v && set({ danger: v })} />
+        </div>
+        <Slider label="Neutral tint" value={input.neutralTint} min={0} max={1} step={0.05} format={(v) => (v === 0 ? 'grey' : `${Math.round(v * 100)}%`)} onChange={(neutralTint) => set({ neutralTint })} />
+        <Field label="Themes">
+          <Segmented
+            value={input.mode}
+            onChange={(mode) => set({ mode })}
+            items={[
+              { value: 'both', label: 'Light & dark' },
+              { value: 'dark', label: 'Dark' },
+              { value: 'light', label: 'Light' }
+            ]}
+          />
+        </Field>
+      </Section>
+      <Section title="Type">
+        <FontField label="Body" value={input.fontSans} options={FONT_CHOICES.sans} onChange={(fontSans) => set({ fontSans })} />
+        <FontField label="Headings" value={input.fontHeading} options={FONT_CHOICES.heading} onChange={(fontHeading) => set({ fontHeading })} />
+        <FontField label="Code" value={input.fontMono} options={FONT_CHOICES.mono} onChange={(fontMono) => set({ fontMono })} />
+        <Slider label="Body size" value={input.baseSize} min={12} max={20} step={1} format={(v) => `${v}px`} onChange={(baseSize) => set({ baseSize })} />
+        <Field label="Scale">
+          <Select value={String(input.scale)} onChange={(e) => set({ scale: Number(e.target.value) })}>
+            {SCALES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Section>
+      <Section title="Shape">
+        <Slider label="Corner radius" value={input.radius} min={0} max={24} step={1} format={(v) => `${v}px`} onChange={(radius) => set({ radius })} />
+        <Field label="Density">
+          <Segmented
+            value={input.density}
+            onChange={(density) => set({ density })}
+            items={[
+              { value: 'compact', label: 'Compact' },
+              { value: 'comfortable', label: 'Comfortable' },
+              { value: 'spacious', label: 'Spacious' }
+            ]}
+          />
+        </Field>
+        <Field label="Shadows">
+          <Segmented
+            value={input.shadow}
+            onChange={(shadow) => set({ shadow })}
+            items={[
+              { value: 'none', label: 'None' },
+              { value: 'soft', label: 'Soft' },
+              { value: 'strong', label: 'Strong' }
+            ]}
+          />
+        </Field>
+      </Section>
+      <Section title="Voice">
+        <Field label="Description">
+          <Textarea rows={2} value={description} placeholder="What the product is and how it should feel" onChange={(e) => setDescription(e.target.value)} />
+        </Field>
+        <Field label="Principles" hint="One per line.">
+          <Textarea
+            rows={4}
+            value={principles}
+            onChange={(e) => setPrinciples(e.target.value)}
+            onBlur={() =>
+              set({
+                principles: principles
+                  .split('\n')
+                  .map((p) => p.trim())
+                  .filter(Boolean)
+              })
+            }
+          />
+        </Field>
+      </Section>
+    </div>
+  )
+}
+
+function ColorField({ label, value, onChange, optional, compact }: { label: string; value: string | null; onChange(v: string | null): void; optional?: boolean; compact?: boolean }) {
+  const [text, setText] = useState(value ?? '')
+  useEffect(() => setText(value ?? ''), [value])
+  const commit = () => {
+    if (!text.trim() && optional) return onChange(null)
+    if (isHex(text)) onChange(normalizeHex(text))
+    else setText(value ?? '')
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex items-center justify-between text-[11.5px] font-medium text-muted">
+        {label}
+        {optional && value && (
+          <button onClick={() => onChange(null)} className="text-[11px] text-dim hover:text-fg">
+            Remove
+          </button>
+        )}
+      </span>
+      {optional && !value ? (
+        <button onClick={() => onChange('#e0a43a')} className="flex h-8 items-center gap-2 rounded-md border border-dashed border-line-strong px-2.5 text-[12px] text-dim hover:text-fg">
+          <Plus size={12} /> Add an accent
+        </button>
+      ) : (
+        <div className="flex h-8 items-center gap-2 rounded-md border border-line bg-panel pl-1 pr-2">
+          <label className="relative h-6 w-6 shrink-0 cursor-pointer overflow-hidden rounded-[5px] border border-black/30" style={{ background: value ?? 'transparent' }}>
+            <input type="color" value={value ?? '#000000'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={`${label} colour`} />
+          </label>
+          {!compact && (
+            <input
+              value={text}
+              spellCheck={false}
+              onChange={(e) => setText(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              aria-label={`${label} hex`}
+              className="min-w-0 flex-1 bg-transparent font-mono text-[12px] uppercase outline-none"
+            />
+          )}
+          {compact && <span className="font-mono text-[10.5px] uppercase text-dim">{value?.slice(1)}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FontField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange(v: string): void }) {
+  const all = options.includes(value) ? options : [value, ...options]
+  return (
+    <Field label={label}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        {all.map((f) => (
+          <option key={f} value={f}>
+            {f}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  )
+}
+
+function Slider({ label, value, min, max, step, format, onChange }: { label: string; value: number; min: number; max: number; step: number; format(v: number): string; onChange(v: number): void }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="flex items-center justify-between text-[11.5px] font-medium text-muted">
+        {label}
+        <span className="font-mono text-[11px] text-dim">{format(value)}</span>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="accent-[#dc2645]" />
+    </label>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <Button
+      size="sm"
+      icon={done ? <Check size={13} /> : <Copy size={13} />}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true)
+          setTimeout(() => setDone(false), 1500)
+        })
+      }}
+    >
+      {done ? 'Copied' : 'Copy'}
+    </Button>
+  )
+}
+
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+function GenerateModal({ open, current, onClose, onDraft }: { open: boolean; current: DesignInput; onClose(): void; onDraft(d: { name: string; description: string; input: DesignInput }): void }) {
+  const settings = useApp((s) => s.settings)
+  const [prompt, setPrompt] = useState('')
+  const [model, setModel] = useState<ModelRef | null>(null)
+  const [keep, setKeep] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (open) setModel((m) => m ?? settings?.defaultModel ?? null)
+  }, [open, settings?.defaultModel])
+  const run = async () => {
+    if (!model) return
+    setBusy(true)
+    const draft = await attempt(() => api.design.generate({ prompt, model, current: keep ? current : undefined }))
+    setBusy(false)
+    if (draft) onDraft(draft)
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Generate a design system"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" icon={<MagicWand size={14} />} loading={busy} disabled={!prompt.trim() || !model} onClick={() => void run()}>
+            Generate
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <Field label="Describe the product and the feel">
+          <Textarea rows={4} autoFocus={!isMobile} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. A calm, dense dashboard for on-call engineers. Dark first, teal brand, sharp corners, technical but friendly." />
+        </Field>
+        <Field label="Model">
+          <ModelPicker value={model} onChange={setModel} />
+        </Field>
+        <label className="flex items-center gap-2 text-[12.5px] text-muted">
+          <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} className="accent-[#dc2645]" />
+          Adjust the current system instead of starting over
+        </label>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Preview ──────────────────────────────────────────────────────────────────
+
+const kebab = (s: string) => s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
+
+/** The preview is styled only by the design's own variables, never by Cloth's theme. */
+const PREVIEW_CSS = `
+.dsp { background: var(--color-background); color: var(--color-text); font-family: var(--font-sans); font-size: var(--text-body); line-height: var(--leading-body); }
+.dsp * { box-sizing: border-box; }
+.dsp h1, .dsp h2, .dsp h3, .dsp h4, .dsp .display { font-family: var(--font-heading); margin: 0; color: var(--color-text); }
+.dsp .muted { color: var(--color-text-muted); } .dsp .subtle { color: var(--color-text-subtle); }
+.dsp .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-6); }
+.dsp .btn { height: var(--control-height); padding: 0 var(--pad-x); border-radius: var(--radius-md); font: inherit; font-size: var(--text-small); font-weight: 600; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s; }
+.dsp .btn-primary { background: var(--color-primary); color: var(--color-on-primary); } .dsp .btn-primary:hover { background: var(--color-primary-hover); }
+.dsp .btn-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); } .dsp .btn-secondary:hover { border-color: var(--color-border-strong); }
+.dsp .btn-ghost { background: transparent; color: var(--color-text-muted); } .dsp .btn-ghost:hover { background: var(--color-surface-raised); color: var(--color-text); }
+.dsp .btn-danger { background: var(--color-danger); color: var(--color-on-danger); }
+.dsp .btn:focus-visible, .dsp .input:focus { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.dsp .label { display: block; font-size: var(--text-small); font-weight: 500; color: var(--color-text-muted); margin-bottom: 6px; }
+.dsp .input { width: 100%; height: var(--control-height); padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); font: inherit; font-size: var(--text-small); }
+.dsp .input::placeholder { color: var(--color-text-subtle); }
+.dsp .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: var(--text-caption); font-weight: 600; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+.dsp .badge-primary { background: var(--color-primary-soft); color: var(--color-primary); border-color: transparent; }
+.dsp .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid; font-size: var(--text-small); }
+.dsp .nav { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.dsp .nav a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-small); } .dsp .nav a.on { color: var(--color-text); font-weight: 600; }
+.dsp table { width: 100%; border-collapse: collapse; font-size: var(--text-small); } .dsp th { text-align: left; color: var(--color-text-subtle); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--color-border); }
+.dsp td { padding: 10px; border-bottom: 1px solid var(--color-border); } .dsp tr:last-child td { border-bottom: 0; }
+.dsp .toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--color-primary); position: relative; display: inline-block; } .dsp .toggle::after { content: ''; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 999px; background: var(--color-on-primary); }
+.dsp code { font-family: var(--font-mono); font-size: .9em; background: var(--color-surface-raised); padding: 1px 5px; border-radius: var(--radius-sm); }
+`
+
+function Preview({ name, input, built, theme }: { name: string; input: DesignInput; built: BuiltDesign; theme: 'light' | 'dark' }) {
+  const roles = built.roles[theme]
+  const vars = useMemo(() => {
+    const v: Record<string, string> = {}
+    for (const k of Object.keys(roles) as RoleName[]) v[`--color-${kebab(k)}`] = roles[k]
+    v['--font-sans'] = fontStack(input, 'sans')
+    v['--font-heading'] = fontStack(input, 'heading')
+    v['--font-mono'] = fontStack(input, 'mono')
+    for (const t of built.type) {
+      v[`--text-${t.name}`] = `${t.size}px`
+      v[`--leading-${t.name}`] = String(t.lineHeight)
+    }
+    for (const [k, r] of Object.entries(built.radii)) v[`--radius-${k}`] = `${r}px`
+    built.space.forEach((s, i) => (v[`--space-${i}`] = `${s}px`))
+    v['--control-height'] = `${built.control.height}px`
+    v['--pad-x'] = `${built.control.paddingX}px`
+    for (const [k, s] of Object.entries(built.shadows)) v[`--shadow-${k}`] = s
+    return v as CSSProperties
+  }, [roles, input, built])
+  const tint = (c: string) => ({ background: `color-mix(in oklab, ${c} 12%, ${roles.surface})`, borderColor: `color-mix(in oklab, ${c} 35%, ${roles.surface})` })
+  return (
+    <div className="dsp min-h-full" style={vars}>
+      <style>{PREVIEW_CSS}</style>
+      <div className="nav">
+        <strong style={{ fontFamily: 'var(--font-heading)' }}>{name}</strong>
+        <a className="on">Overview</a>
+        <a>Projects</a>
+        <a>Reports</a>
+        <span style={{ flex: 1 }} />
+        <button className="btn btn-ghost">Docs</button>
+        <button className="btn btn-primary">New project</button>
+      </div>
+      <div style={{ padding: 'var(--space-8)', display: 'grid', gap: 'var(--space-6)', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        <div className="card" style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <div>
+            <h3 style={{ fontSize: 'var(--text-h3)', lineHeight: 'var(--leading-h3)' }}>Create a project</h3>
+            <div className="muted" style={{ fontSize: 'var(--text-small)' }}>
+              It starts private; invite people later.
+            </div>
+          </div>
+          <div>
+            <span className="label">Name</span>
+            <input className="input" placeholder="e.g. Billing service" />
+          </div>
+          <div>
+            <span className="label">Region</span>
+            <input className="input" defaultValue="Europe (Frankfurt)" />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 'var(--text-small)' }}>
+            <span className="toggle" /> Enable backups
+          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary">Create project</button>
+            <button className="btn btn-secondary">Cancel</button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gap: 'var(--space-4)', alignContent: 'start' }}>
+          <div className="alert" style={tint(roles.success)}>
+            <span style={{ color: roles.success, fontWeight: 700 }}>✓</span>
+            <span>Deployed in 42 seconds.</span>
+          </div>
+          <div className="alert" style={tint(roles.warning)}>
+            <span style={{ color: roles.warning, fontWeight: 700 }}>!</span>
+            <span>Usage is at 85% of the plan.</span>
+          </div>
+          <div className="alert" style={tint(roles.danger)}>
+            <span style={{ color: roles.danger, fontWeight: 700 }}>×</span>
+            <span>The build failed — see the log.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span className="badge badge-primary">Active</span>
+            <span className="badge">Draft</span>
+            <span className="badge">v2.4.1</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost">Archive</button>
+            <button className="btn btn-danger">Delete project</button>
+          </div>
+        </div>
+        <div className="card" style={{ padding: 0, gridColumn: '1 / -1', overflow: 'hidden' }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Status</th>
+                <th>Latency</th>
+                <th>Owner</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ['api-gateway', 'Healthy', '42 ms', 'Platform'],
+                ['billing', 'Degraded', '310 ms', 'Payments'],
+                ['search', 'Healthy', '88 ms', 'Discovery']
+              ].map((r) => (
+                <tr key={r[0]}>
+                  <td>
+                    <code>{r[0]}</code>
+                  </td>
+                  <td>
+                    <span className={r[1] === 'Healthy' ? 'badge badge-primary' : 'badge'} style={r[1] === 'Degraded' ? { color: roles.warning } : undefined}>
+                      {r[1]}
+                    </span>
+                  </td>
+                  <td className="muted">{r[2]}</td>
+                  <td className="muted">{r[3]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>
+          {built.type.map((t) => (
+            <div key={t.name} style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+              <span className="subtle" style={{ width: 92, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                {t.name} · {t.size}
+              </span>
+              <span style={{ fontFamily: t.font === 'heading' ? 'var(--font-heading)' : 'var(--font-sans)', fontSize: t.size, lineHeight: t.lineHeight, fontWeight: t.weight, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t.name === 'body' || t.name === 'small' || t.name === 'caption' ? 'The quick brown fox jumps over the lazy dog.' : 'Ship calm software'}
+              </span>
+            </div>
+          ))}
+          <div className="muted" style={{ fontSize: 'var(--text-small)' }}>
+            {input.fontSans} / {input.fontHeading} / {input.fontMono} — shown if installed on this computer; the exports reference them by name.
+          </div>
+        </div>
+        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 12 }}>
+          {Object.entries(built.scales)
+            .filter(([, s]) => s)
+            .map(([scaleName, s]) => (
+              <div key={scaleName} style={{ display: 'grid', gridTemplateColumns: '72px repeat(11, 1fr)', gap: 4, alignItems: 'center' }}>
+                <span className="muted" style={{ fontSize: 'var(--text-caption)' }}>
+                  {scaleName}
+                </span>
+                {STEPS.map((st) => (
+                  <div key={st} title={`${scaleName}-${st} ${s![st]}`} style={{ height: 28, borderRadius: 'var(--radius-sm)', background: s![st], border: '1px solid rgb(0 0 0 / .08)' }} />
+                ))}
+              </div>
+            ))}
+        </div>
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <h4 style={{ fontSize: 'var(--text-h4)', marginBottom: 10 }}>Contrast ({theme})</h4>
+          <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+            {built.checks
+              .filter((c) => c.mode === theme)
+              .map((c) => (
+                <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 34, height: 26, borderRadius: 6, background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 12, border: '1px solid var(--color-border)' }}>Aa</span>
+                  <span style={{ flex: 1, fontSize: 'var(--text-small)' }}>{c.label}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: c.ratio >= c.need ? roles.success : roles.danger, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {c.ratio >= c.need ? null : <Warning size={12} weight="fill" />}
+                    {c.ratio.toFixed(1)}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+        <div className="card" style={{ gridColumn: '1 / -1', display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          {(Object.keys(ROLE_INFO) as RoleName[]).map((k) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 20, height: 20, borderRadius: 5, background: roles[k], border: '1px solid var(--color-border)', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5 }}>{kebab(k)}</span>
+              <span className="subtle" style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                {roles[k]}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
