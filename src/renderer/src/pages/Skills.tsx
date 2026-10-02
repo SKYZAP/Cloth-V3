@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { CheckCircle2, ChevronRight, Download, ExternalLink, FileCode2, FlaskConical, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronRight, Download, ExternalLink, FileCode2, FlaskConical, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2, XCircle } from 'lucide-react'
 import type { ModelRef, RegistryPreview, RegistrySkill, Skill, SkillEvalCase, SkillRun, SkillVerdict } from '@shared/types'
 import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
@@ -11,6 +11,7 @@ import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
+import { lintExpectation } from '@shared/skillEvals'
 
 const VERDICT: Record<SkillVerdict, { tone: 'ok' | 'warn' | 'crimson' | 'info' | 'dim'; label: string; help: string }> = {
   fresh: { tone: 'ok', label: 'Fresh', help: 'Passes its evals and the audit found nothing outdated' },
@@ -859,7 +860,7 @@ function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
           </div>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-          {!cases.length && <div className="text-[12px] text-dim">No eval cases. Add prompts that should trigger this skill and objectively checkable expectations — or draft them with AI.</div>}
+          {!cases.length && <div className="text-[12px] text-dim">No eval cases yet. Each case is one prompt and a single reply (no tools), so expect things the reply itself can show — or draft them with AI.</div>}
           {cases.map((c, i) => (
             <Card key={c.id} className="p-3">
               <div className="mb-1.5 flex items-center justify-between">
@@ -876,6 +877,7 @@ function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
                 value={c.expectations.join('\n')}
                 onChange={(e) => setCases(cases.map((x) => (x.id === c.id ? { ...x, expectations: e.target.value.split('\n') } : x)))}
               />
+              <ExpectationWarnings expectations={c.expectations} />
             </Card>
           ))}
         </div>
@@ -978,5 +980,23 @@ function RunCard({ run, open, onToggle }: { run: SkillRun; open: boolean; onTogg
         </div>
       )}
     </Card>
+  )
+}
+
+/** Expectations that a single text reply can't show (or that graders would disagree on). */
+function ExpectationWarnings({ expectations }: { expectations: string[] }) {
+  const issues = expectations.map((e, i) => ({ i, e, issues: lintExpectation(e) })).filter((x) => x.issues.length)
+  if (!issues.length) return null
+  return (
+    <div className="mt-2 space-y-1">
+      {issues.map((x) => (
+        <div key={x.i} className="flex gap-1.5 text-[11px] leading-snug text-warn">
+          <AlertTriangle size={12} className="mt-px shrink-0" />
+          <span>
+            <span className="font-semibold">Line {x.i + 1}:</span> {x.issues[0].message}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
