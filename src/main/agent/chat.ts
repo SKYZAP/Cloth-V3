@@ -5,6 +5,7 @@ import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } fr
 import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ProjectService } from './projects'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import type { ImageService } from '../images'
@@ -92,7 +93,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   subagents: true,
   codeIntel: true,
   imagesEnabled: true,
-  thinking: 'off'
+  thinking: 'off',
+  projectId: null
 }
 
 export interface AgentRunOptions {
@@ -361,7 +363,8 @@ export class ChatService {
     private skills: SkillService,
     private usage?: UsageService,
     private approvals?: ApprovalService,
-    private checkpoints?: CheckpointStore
+    private checkpoints?: CheckpointStore,
+    private projects?: ProjectService
   ) {}
 
   list(): ChatSession[] {
@@ -377,7 +380,10 @@ export class ChatService {
     const id = newId('ses_')
     const now = Date.now()
     const s = this.settings.get()
-    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...config }
+    // A chat started in a project begins with the project's folder and settings.
+    const fromProject = config.projectId && this.projects ? this.projects.chatConfig(config.projectId) : {}
+    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...fromProject, ...config }
+    if (!full.model) full.model = s.defaultModel
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
   }
@@ -403,6 +409,7 @@ export class ChatService {
       thinking: cur.thinking,
       titleSource: cur.titleSource,
       titleTurns: cur.titleTurns,
+      projectId: cur.projectId,
       ...config
     }
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -465,7 +472,7 @@ export class ChatService {
     const scope = this.scope(id)
     const est = (s: string) => Math.ceil(s.length / 4)
     const parts: Record<ContextSliceKey, number> = { system: 0, tools: 0, skills: 0, summary: 0, user: 0, assistant: 0, toolResults: 0 }
-    parts.system = est(await this.runtime.systemPrompt(scope, session.systemPrompt))
+    parts.system = est(await this.runtime.systemPrompt(scope, await this.instructions(session)))
     parts.tools = est(this.runtime.toolDefinitions(scope))
     for (const m of raw) {
       if (m.role === 'user') {
@@ -608,6 +615,12 @@ export class ChatService {
     return { role: 'user', content: [...blocks, { type: 'text', text: prompt }], timestamp: Date.now() }
   }
 
+  /** The chat's own instructions, after its project's (instructions plus the folder's AGENTS.md). */
+  private async instructions(session: ChatSession): Promise<string> {
+    const project = (await this.projects?.instructions(session.projectId).catch(() => '')) ?? ''
+    return [project, session.systemPrompt.trim()].filter(Boolean).join('\n\n')
+  }
+
   private scope(id: string): ToolScope {
     const session = this.get(id)
     return {
@@ -646,7 +659,7 @@ export class ChatService {
       }
     }
     const history = this.rawMessages(id)
-    const systemPrompt = await this.runtime.systemPrompt(scope, session.systemPrompt)
+    const systemPrompt = await this.runtime.systemPrompt(scope, await this.instructions(session))
     const agent = this.runtime.createAgent({ model: session.model, scope, thinking: session.thinking, history, systemPrompt })
     this.active.set(id, agent)
 

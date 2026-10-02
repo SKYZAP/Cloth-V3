@@ -311,9 +311,36 @@ export interface ChatSession {
   titleSource?: 'first-message' | 'ai' | 'user'
   /** How many user messages the AI title was written from. */
   titleTurns?: number
+  /** The project this chat is filed under (null = not in a project). */
+  projectId: string | null
   createdAt: number
   updatedAt: number
 }
+
+/** Chat settings a project gives the chats started in it. */
+export type ProjectDefaults = Partial<
+  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking'>
+>
+
+/** A group of chats that share a folder (optional), instructions and starting settings. */
+export interface Project {
+  id: string
+  name: string
+  /** Workspace for the project's chats; null = the project only groups chats. */
+  folder: string | null
+  /** Accent for the sidebar, as a hex colour. */
+  color: string
+  /** Added to every chat's system prompt (with the folder's AGENTS.md / CLAUDE.md, if any). */
+  instructions: string
+  defaults: ProjectDefaults
+  createdAt: number
+  updatedAt: number
+}
+
+/** Sidebar accents for projects (new ones take the next in turn). */
+export const PROJECT_COLORS = ['#dc2645', '#6b9cf0', '#3fb97a', '#e0a43a', '#c084fc', '#fb923c', '#22b8cf', '#f472b6']
+
+export type ProjectInput = Partial<Pick<Project, 'name' | 'folder' | 'color' | 'instructions' | 'defaults'>>
 
 export type FileAccess = 'read' | 'write'
 export type AutoApprove = 'none' | 'edits' | 'all'

@@ -11,6 +11,7 @@ import {
   ChatCircleDots,
   Copy,
   FolderDashed,
+  FolderPlus,
   FolderSimple,
   GlobeHemisphereWest,
   GraduationCap,
@@ -35,7 +36,7 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, Collection, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -51,10 +52,29 @@ import { QuestionCard } from '@/components/QuestionCard'
 import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
+import { ProjectDialog, ProjectHeader } from './chat/Projects'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
+const COLLAPSED_KEY = 'cloth.projects.collapsed'
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeJson(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -96,12 +116,13 @@ export function ChatPage() {
     if (e.type === 'title') setSessions((ss) => ss.map((s) => (s.id === e.sessionId ? { ...s, title: e.title } : s)))
   })
 
-  const create = async () => {
-    const s = await attempt(() => api.chat.create())
+  const create = async (projectId: string | null = null) => {
+    const s = await attempt(() => api.chat.create(projectId ? { projectId } : {}))
     if (s) {
       setSessions((ss) => [s, ...ss])
       setActiveId(s.id)
       setOpen(true)
+      if (projectId) setCollapsed((c) => toggled(c, projectId, false))
     }
   }
 
@@ -112,8 +133,64 @@ export function ChatPage() {
     if (activeId === id) setActiveId(rest[0]?.id ?? null)
   }
 
+  // Projects: collapsible groups of chats, remembered per device.
+  const [projects, setProjects] = useState<Project[]>([])
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(readJson<string[]>(COLLAPSED_KEY, [])))
+  const [editing, setEditing] = useState<{ open: boolean; project: Project | null }>({ open: false, project: null })
+  const loadProjects = async () => setProjects(await api.projects.list())
+  useEffect(() => {
+    void loadProjects().catch(() => undefined)
+  }, [])
+  useEffect(() => writeJson(COLLAPSED_KEY, [...collapsed]), [collapsed])
+  const toggled = (set: Set<string>, id: string, value = !set.has(id)) => {
+    const next = new Set(set)
+    if (value) next.add(id)
+    else next.delete(id)
+    return next
+  }
+
   const active = sessions.find((s) => s.id === activeId) ?? null
   const shown = sessions.filter((s) => !filter || s.title.toLowerCase().includes(filter.toLowerCase()))
+  const known = new Set(projects.map((p) => p.id))
+  const loose = shown.filter((s) => !s.projectId || !known.has(s.projectId))
+
+  const row = (s: ChatSession, nested: boolean) => {
+    const on = s.id === activeId
+    return (
+      <div
+        key={s.id}
+        onClick={() => (setActiveId(s.id), setOpen(true))}
+        className={clsx(
+          'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pr-2 transition-colors duration-200 mobile:py-3.5',
+          nested ? 'pl-6' : 'pl-3.5',
+          on && side ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
+            <span className={clsx('truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
+          </div>
+          <div className="mt-px truncate text-[11px] text-dim mobile:text-[12px]">
+            {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
+          </div>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            void remove(s.id)
+          }}
+          title="Delete chat"
+          className={clsx(
+            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-all hover:bg-hover hover:text-crimson-hi',
+            on || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <Trash size={15} />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <SplitRoot open={open} onBack={() => setOpen(false)}>
@@ -127,8 +204,19 @@ export function ChatPage() {
             <motion.button
               whileTap={{ scale: 0.9 }}
               transition={SPRING_PRESS}
-              onClick={create}
+              onClick={() => setEditing({ open: true, project: null })}
+              title="New project"
+              aria-label="New project"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line text-muted hover:border-line-strong hover:text-fg"
+            >
+              <FolderPlus size={16} />
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              transition={SPRING_PRESS}
+              onClick={() => void create()}
               title="New chat"
+              aria-label="New chat"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-crimson text-white hover:bg-crimson-hi"
             >
               <Plus size={16} weight="bold" />
@@ -136,44 +224,60 @@ export function ChatPage() {
           </div>
         }
       >
-        {shown.map((s) => {
-          const on = s.id === activeId
+        {projects.map((p) => {
+          const chats = shown.filter((s) => s.projectId === p.id)
+          // While searching, only projects with matches show, opened up.
+          if (filter && !chats.length) return null
+          const isCollapsed = !filter && collapsed.has(p.id)
           return (
-            <div
-              key={s.id}
-              onClick={() => (setActiveId(s.id), setOpen(true))}
-              className={clsx(
-                'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pl-3.5 pr-2 transition-colors duration-200 mobile:py-3.5',
-                on && side ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
-                  <span className={clsx('truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
-                </div>
-                <div className="mt-px truncate text-[11px] text-dim mobile:text-[12px]">
-                  {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
-                </div>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void remove(s.id)
-                }}
-                title="Delete chat"
-                className={clsx(
-                  'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-all hover:bg-hover hover:text-crimson-hi',
-                  on || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            <div key={p.id}>
+              <ProjectHeader
+                project={p}
+                count={chats.length}
+                collapsed={isCollapsed}
+                running={chats.some((s) => running.has(s.id))}
+                onToggle={() => setCollapsed((c) => toggled(c, p.id))}
+                onNewChat={() => void create(p.id)}
+                onEdit={() => setEditing({ open: true, project: p })}
+              />
+              <AnimatePresence initial={false}>
+                {!isCollapsed && (
+                  <motion.div key="chats" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
+                    {chats.map((s) => row(s, true))}
+                    {!chats.length && (
+                      <button onClick={() => void create(p.id)} className="mx-0.5 my-1 w-[calc(100%-4px)] rounded-[10px] py-2 pl-6 text-left text-[12px] text-dim hover:bg-elev hover:text-muted">
+                        No chats yet — start one
+                      </button>
+                    )}
+                  </motion.div>
                 )}
-              >
-                <Trash size={15} />
-              </button>
+              </AnimatePresence>
             </div>
           )
         })}
-        {loaded && !sessions.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
+        {!!projects.length && !!loose.length && <div className="mx-2 mb-0.5 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">Chats</div>}
+        {loose.map((s) => row(s, false))}
+        {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
+
+      <ProjectDialog
+        open={editing.open}
+        project={editing.project}
+        from={active}
+        onClose={() => setEditing((e) => ({ ...e, open: false }))}
+        onSaved={(p) => {
+          setEditing({ open: false, project: null })
+          void loadProjects()
+          // A new folder may have moved chats with it.
+          void load()
+          setCollapsed((c) => toggled(c, p.id, false))
+        }}
+        onDeleted={() => {
+          setEditing({ open: false, project: null })
+          void loadProjects()
+          void load()
+        }}
+      />
 
       <SplitDetail>
         {active ? (
@@ -184,7 +288,7 @@ export function ChatPage() {
             onChange={(s) => setSessions((ss) => ss.map((x) => (x.id === s.id ? s : x)))}
           />
         ) : (
-          <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={create}>New chat</Button>}>
+          <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={() => void create()}>New chat</Button>}>
             Chat with any registered model. The agent can search your knowledge base and the web, load skills, call your tools, and read or edit files in a workspace folder — every tool call is traced.
           </Empty>
         )}
@@ -770,6 +874,13 @@ function ContextSheet({
 }) {
   const [instructions, setInstructions] = useState(session.systemPrompt)
   useEffect(() => setInstructions(session.systemPrompt), [session.systemPrompt])
+  const [projects, setProjects] = useState<Project[]>([])
+  useEffect(() => {
+    void api.projects.list().then(setProjects, () => undefined)
+  }, [])
+  // Moving into a project with a folder gives a folder-less chat that folder to work in.
+  const moveTo = (p: Project | null) =>
+    void update({ projectId: p?.id ?? null, ...(p?.folder && !session.workspace ? { workspace: p.folder } : {}) })
 
   const toggleCollection = (id: string) => {
     const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
@@ -779,6 +890,26 @@ function ContextSheet({
 
   return (
     <div className="space-y-[22px]">
+      {!!projects.length && (
+        <SheetSection id="sheet-project" icon={FolderSimple} title="Project">
+          <div className="flex flex-wrap gap-1.5">
+            {[null, ...projects].map((p) => {
+              const on = (p?.id ?? null) === session.projectId
+              return (
+                <button
+                  key={p?.id ?? 'none'}
+                  onClick={() => moveTo(p)}
+                  aria-pressed={on}
+                  className={clsx('flex h-8 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] transition-colors mobile:h-10', on ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:border-line-strong')}
+                >
+                  {p ? <span className="h-2.5 w-2.5 rounded-[4px]" style={{ background: p.color }} /> : <X size={12} />}
+                  {p?.name ?? 'No project'}
+                </button>
+              )
+            })}
+          </div>
+        </SheetSection>
+      )}
       <SheetSection id="sheet-knowledge" icon={Books} title="Knowledge">
         {collections.length ? (
           <div className="grid grid-cols-3 gap-2 mobile:grid-cols-2">
