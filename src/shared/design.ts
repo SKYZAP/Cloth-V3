@@ -8,6 +8,8 @@
 export type DesignMode = 'dark' | 'light' | 'both'
 export type Density = 'compact' | 'comfortable' | 'spacious'
 export type ShadowStyle = 'none' | 'soft' | 'strong'
+/** Which family the greys come from: the brand's hue, or a classic grey. */
+export type NeutralFamily = 'brand' | 'slate' | 'zinc' | 'gray' | 'stone' | 'sand' | 'olive'
 
 export interface DesignInput {
   brand: string
@@ -16,8 +18,14 @@ export interface DesignInput {
   success: string
   warning: string
   danger: string
-  /** 0 = pure grey neutrals, 1 = neutrals clearly tinted with the brand hue. */
+  /** Use the brand colour exactly for buttons and links (otherwise Cloth picks the most readable shade). */
+  pinBrand: boolean
+  /** Where the greys get their hue. */
+  neutral: NeutralFamily
+  /** How strongly the greys show that hue (0 = none, 1 = clearly tinted). */
   neutralTint: number
+  /** Dark theme background: 0 = near black, 1 = soft charcoal. */
+  darkDepth: number
   /** Which themes the system defines (the first listed is the default). */
   mode: DesignMode
   fontSans: string
@@ -27,12 +35,20 @@ export interface DesignInput {
   baseSize: number
   /** Type scale ratio (1.125 … 1.5). */
   scale: number
+  /** Weight of the largest headings (smaller ones step down). */
+  headingWeight: number
+  /** Letter-spacing of the largest headings, in em (negative = tighter). */
+  headingTracking: number
+  /** Line height of body text. */
+  bodyLeading: number
   /** Base corner radius in px. */
   radius: number
   density: Density
   shadow: ShadowStyle
   /** Short rules in the system's voice ("Calm, dense, keyboard-first"). */
   principles: string[]
+  /** Hand-picked colours for single roles, per theme; they win over the generated ones. */
+  overrides: { light: Partial<Roles>; dark: Partial<Roles> }
 }
 
 /** A design as edited or proposed, before it has an id. */
@@ -57,17 +73,35 @@ export const DEFAULT_DESIGN: DesignInput = {
   success: '#22a06b',
   warning: '#d9a21b',
   danger: '#d93a4a',
+  pinBrand: false,
+  neutral: 'brand',
   neutralTint: 0.3,
+  darkDepth: 0.35,
   mode: 'both',
   fontSans: 'Inter',
   fontHeading: 'Inter',
   fontMono: 'JetBrains Mono',
   baseSize: 15,
   scale: 1.25,
+  headingWeight: 700,
+  headingTracking: -0.02,
+  bodyLeading: 1.55,
   radius: 8,
   density: 'comfortable',
   shadow: 'soft',
-  principles: ['Clear hierarchy: one primary action per view', 'Content first; chrome stays quiet', 'Readable at a glance — generous line height, strong contrast']
+  principles: ['Clear hierarchy: one primary action per view', 'Content first; chrome stays quiet', 'Readable at a glance — generous line height, strong contrast'],
+  overrides: { light: {}, dark: {} }
+}
+
+/** Grey families: a hue and how much colour they carry at full tint (null hue = the brand's). */
+export const NEUTRALS: Record<NeutralFamily, { label: string; hue: number | null; chroma: number }> = {
+  brand: { label: 'Brand', hue: null, chroma: 0.014 },
+  slate: { label: 'Slate', hue: 255, chroma: 0.03 },
+  zinc: { label: 'Zinc', hue: 285, chroma: 0.012 },
+  gray: { label: 'Grey', hue: 0, chroma: 0 },
+  stone: { label: 'Stone', hue: 60, chroma: 0.014 },
+  sand: { label: 'Sand', hue: 80, chroma: 0.03 },
+  olive: { label: 'Olive', hue: 120, chroma: 0.02 }
 }
 
 export const FONT_CHOICES = {
@@ -76,13 +110,12 @@ export const FONT_CHOICES = {
   mono: ['JetBrains Mono', 'Geist Mono', 'IBM Plex Mono', 'Fira Code', 'Source Code Pro', 'System mono']
 }
 
-export const SCALES: { value: number; label: string }[] = [
-  { value: 1.125, label: 'Major second (1.125)' },
-  { value: 1.2, label: 'Minor third (1.2)' },
-  { value: 1.25, label: 'Major third (1.25)' },
-  { value: 1.333, label: 'Perfect fourth (1.333)' },
-  { value: 1.414, label: 'Augmented fourth (1.414)' },
-  { value: 1.5, label: 'Perfect fifth (1.5)' }
+export const SCALES: { value: number; label: string; hint: string }[] = [
+  { value: 1.125, label: 'Tight', hint: 'Dense apps; headings barely bigger than text' },
+  { value: 1.2, label: 'Balanced', hint: 'Most product UI' },
+  { value: 1.25, label: 'Roomy', hint: 'Clear steps between levels' },
+  { value: 1.333, label: 'Expressive', hint: 'Content sites, docs' },
+  { value: 1.5, label: 'Dramatic', hint: 'Marketing pages, big headlines' }
 ]
 
 // ─── Colour maths (OKLCH) ─────────────────────────────────────────────────────
@@ -180,14 +213,14 @@ export type Scale = Record<Step, string>
 const LIGHTNESS: Record<Step, number> = { 50: 0.975, 100: 0.94, 200: 0.885, 300: 0.81, 400: 0.72, 500: 0.635, 600: 0.555, 700: 0.475, 800: 0.395, 900: 0.31, 950: 0.225 }
 
 /** A tonal scale around a seed colour: hue kept, chroma eased off towards the light and dark ends. */
-export function scaleFrom(hex: string, chromaOverride?: number): Scale {
+export function scaleFrom(hex: string, chromaOverride?: number, hueOverride?: number): Scale {
   const seed = hexToOklch(hex)
   const out = {} as Scale
   for (const s of STEPS) {
     const l = LIGHTNESS[s]
     const ease = 1 - Math.min(0.85, Math.abs(l - 0.6) * 1.15)
     const c = chromaOverride ?? seed.c * ease
-    out[s] = oklchToHex({ l, c, h: seed.h })
+    out[s] = oklchToHex({ l, c, h: hueOverride ?? seed.h })
   }
   return out
 }
@@ -207,6 +240,7 @@ export type RoleName =
   | 'primarySoft'
   | 'accent'
   | 'onAccent'
+  | 'accentSoft'
   | 'success'
   | 'warning'
   | 'danger'
@@ -230,6 +264,7 @@ export const ROLE_INFO: Record<RoleName, string> = {
   primarySoft: 'Selected rows, soft badges',
   accent: 'Highlights that are not actions',
   onAccent: 'Text on accent',
+  accentSoft: 'Tinted highlight backgrounds (new, featured)',
   success: 'Success states',
   warning: 'Warnings',
   danger: 'Errors and destructive actions',
@@ -254,7 +289,9 @@ const onColor = (bg: string, light: string, dark: string) => (contrast(bg, light
 export interface BuiltDesign {
   scales: { brand: Scale; neutral: Scale; accent: Scale | null; success: Scale; warning: Scale; danger: Scale }
   roles: { light: Roles; dark: Roles }
-  type: { name: string; size: number; lineHeight: number; weight: number; font: 'heading' | 'sans' }[]
+  /** The roles before hand-picked overrides (what "reset" returns to). */
+  generated: { light: Roles; dark: Roles }
+  type: { name: string; size: number; lineHeight: number; weight: number; tracking: number; font: 'heading' | 'sans' }[]
   radii: Record<'sm' | 'md' | 'lg' | 'xl' | 'full', number>
   space: number[]
   control: { height: number; paddingX: number }
@@ -263,17 +300,31 @@ export interface BuiltDesign {
 }
 
 export function buildDesign(input: DesignInput): BuiltDesign {
-  const brandSeed = hexToOklch(input.brand)
-  const brand = scaleFrom(input.brand)
-  const neutral = scaleFrom(oklchToHex({ l: 0.6, c: 0.001, h: brandSeed.h }), clamp(input.neutralTint, 0, 1) * 0.028)
+  const brandHex = normalizeHex(input.brand)
+  const brandSeed = hexToOklch(brandHex)
+  const brand = scaleFrom(brandHex)
+  // A pinned brand colour is one of its own scale's steps (the one closest in lightness).
+  if (input.pinBrand) {
+    const nearest = STEPS.reduce((best, s) => (Math.abs(LIGHTNESS[s] - brandSeed.l) < Math.abs(LIGHTNESS[best] - brandSeed.l) ? s : best), 500 as Step)
+    brand[nearest] = brandHex
+  }
+  const family = NEUTRALS[input.neutral] ?? NEUTRALS.brand
+  const greyHue = family.hue ?? brandSeed.h
+  const greyChroma = family.chroma * clamp(input.neutralTint, 0, 1) * 2
+  // Hue passed directly: a near-grey seed colour would lose it to 8-bit rounding.
+  const neutral = scaleFrom(brandHex, greyChroma, greyHue)
   const accent = input.accent ? scaleFrom(input.accent) : null
+  // The accent marks highlights, not text: keep the shade closest to the chosen colour.
+  const accentL = input.accent ? hexToOklch(input.accent).l : 0
+  const accentTone = accent ? accent[STEPS.reduce((best, s) => (Math.abs(LIGHTNESS[s] - accentL) < Math.abs(LIGHTNESS[best] - accentL) ? s : best), 500 as Step)] : null
   const success = scaleFrom(input.success)
   const warning = scaleFrom(input.warning)
   const danger = scaleFrom(input.danger)
   const white = '#ffffff'
+  const pinnedShade = (dl: number) => oklchToHex({ ...brandSeed, l: clamp(brandSeed.l + dl, 0.05, 0.98) })
 
   const lightBg = white
-  const lightPrimary = legibleStep(brand, lightBg, 600, 4.5)
+  const lightPrimary = input.pinBrand ? brandHex : legibleStep(brand, lightBg, 600, 4.5)
   const light: Roles = {
     background: lightBg,
     surface: neutral[50],
@@ -284,11 +335,12 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     textMuted: neutral[700],
     textSubtle: neutral[500],
     primary: lightPrimary,
-    primaryHover: shifted(brand, lightPrimary, 1),
+    primaryHover: input.pinBrand ? pinnedShade(-0.07) : shifted(brand, lightPrimary, 1),
     onPrimary: onColor(lightPrimary, white, neutral[950]),
     primarySoft: brand[100],
-    accent: accent ? accent[500] : brand[400],
-    onAccent: onColor(accent ? accent[500] : brand[400], white, neutral[950]),
+    accent: accentTone ?? brand[400],
+    onAccent: onColor(accentTone ?? brand[400], white, neutral[950]),
+    accentSoft: (accent ?? brand)[100],
     success: legibleStep(success, lightBg, 600, 4.5),
     warning: legibleStep(warning, lightBg, 700, 4.5),
     danger: legibleStep(danger, lightBg, 600, 4.5),
@@ -296,23 +348,27 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     focus: brand[500]
   }
 
-  const darkBg = neutral[950]
-  const darkPrimary = legibleStep(brand, darkBg, 400, 4.5)
+  // Dark surfaces step up from a background whose depth is chosen (near black … soft charcoal).
+  const depth = 0.15 + clamp(input.darkDepth, 0, 1) * 0.11
+  const darkTone = (l: number) => oklchToHex({ l, c: greyChroma * 0.9, h: greyHue })
+  const darkBg = darkTone(depth)
+  const darkPrimary = input.pinBrand ? brandHex : legibleStep(brand, darkBg, 400, 4.5)
   const dark: Roles = {
     background: darkBg,
-    surface: neutral[900],
-    surfaceRaised: neutral[800],
-    border: neutral[800],
-    borderStrong: neutral[700],
+    surface: darkTone(depth + 0.035),
+    surfaceRaised: darkTone(depth + 0.07),
+    border: darkTone(depth + 0.09),
+    borderStrong: darkTone(depth + 0.17),
     text: neutral[50],
-    textMuted: neutral[300],
-    textSubtle: neutral[500],
+    textMuted: darkTone(0.8),
+    textSubtle: darkTone(0.64),
     primary: darkPrimary,
-    primaryHover: shifted(brand, darkPrimary, -1),
+    primaryHover: input.pinBrand ? pinnedShade(0.07) : shifted(brand, darkPrimary, -1),
     onPrimary: onColor(darkPrimary, white, neutral[950]),
     primarySoft: brand[900],
-    accent: accent ? accent[400] : brand[300],
-    onAccent: onColor(accent ? accent[400] : brand[300], white, neutral[950]),
+    accent: accentTone ?? brand[300],
+    onAccent: onColor(accentTone ?? brand[300], white, neutral[950]),
+    accentSoft: (accent ?? brand)[900],
     success: legibleStep(success, darkBg, 400, 4.5),
     warning: legibleStep(warning, darkBg, 400, 4.5),
     danger: legibleStep(danger, darkBg, 400, 4.5),
@@ -320,18 +376,35 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     focus: brand[400]
   }
 
+  // Hand-picked roles win; text on a hand-picked fill stays readable unless that was picked too.
+  const withOverrides = (roles: Roles, picked: Partial<Roles> = {}): Roles => {
+    const out = { ...roles }
+    for (const [k, v] of Object.entries(picked)) if (k in out && typeof v === 'string' && isHex(v)) out[k as RoleName] = normalizeHex(v)
+    if (picked.primary && !picked.onPrimary) out.onPrimary = onColor(out.primary, white, neutral[950])
+    if (picked.accent && !picked.onAccent) out.onAccent = onColor(out.accent, white, neutral[950])
+    if (picked.danger && !picked.onDanger) out.onDanger = onColor(out.danger, white, neutral[950])
+    return out
+  }
+  const lightRoles = withOverrides(light, input.overrides?.light)
+  const darkRoles = withOverrides(dark, input.overrides?.dark)
+
   const r = input.scale
   const b = input.baseSize
   const size = (n: number) => Math.round(b * r ** n)
+  const hw = clamp(Math.round(input.headingWeight / 50) * 50, 400, 900)
+  const step = (by: number) => Math.max(500, hw - by)
+  const ht = clamp(input.headingTracking, -0.06, 0.06)
+  const bl = clamp(input.bodyLeading, 1.25, 1.9)
+  const em = (v: number) => Math.round(v * 1000) / 1000
   const type: BuiltDesign['type'] = [
-    { name: 'display', size: size(5), lineHeight: 1.1, weight: 700, font: 'heading' },
-    { name: 'h1', size: size(4), lineHeight: 1.15, weight: 700, font: 'heading' },
-    { name: 'h2', size: size(3), lineHeight: 1.2, weight: 650, font: 'heading' },
-    { name: 'h3', size: size(2), lineHeight: 1.25, weight: 600, font: 'heading' },
-    { name: 'h4', size: size(1), lineHeight: 1.3, weight: 600, font: 'heading' },
-    { name: 'body', size: b, lineHeight: 1.55, weight: 400, font: 'sans' },
-    { name: 'small', size: Math.max(11, Math.round(b / r)), lineHeight: 1.45, weight: 400, font: 'sans' },
-    { name: 'caption', size: Math.max(10, Math.round(b / r ** 2)), lineHeight: 1.4, weight: 500, font: 'sans' }
+    { name: 'display', size: size(5), lineHeight: 1.1, weight: hw, tracking: em(ht), font: 'heading' },
+    { name: 'h1', size: size(4), lineHeight: 1.15, weight: hw, tracking: em(ht), font: 'heading' },
+    { name: 'h2', size: size(3), lineHeight: 1.2, weight: step(50), tracking: em(ht * 0.7), font: 'heading' },
+    { name: 'h3', size: size(2), lineHeight: 1.25, weight: step(100), tracking: em(ht * 0.4), font: 'heading' },
+    { name: 'h4', size: size(1), lineHeight: 1.3, weight: step(100), tracking: em(ht * 0.2), font: 'heading' },
+    { name: 'body', size: b, lineHeight: em(bl), weight: 400, tracking: 0, font: 'sans' },
+    { name: 'small', size: Math.max(11, Math.round(b / r)), lineHeight: em(bl - 0.1), weight: 400, tracking: 0, font: 'sans' },
+    { name: 'caption', size: Math.max(10, Math.round(b / r ** 2)), lineHeight: em(bl - 0.15), weight: 500, tracking: 0.01, font: 'sans' }
   ]
   const rad = clamp(input.radius, 0, 32)
   const unit = input.density === 'compact' ? 3.5 : input.density === 'spacious' ? 4.5 : 4
@@ -347,8 +420,8 @@ export function buildDesign(input: DesignInput): BuiltDesign {
 
   const checks: BuiltDesign['checks'] = []
   for (const [mode, roles] of [
-    ['light', light],
-    ['dark', dark]
+    ['light', lightRoles],
+    ['dark', darkRoles]
   ] as const) {
     checks.push(
       { label: 'Text on background', mode, fg: roles.text, bg: roles.background, ratio: contrast(roles.text, roles.background), need: 4.5 },
@@ -363,7 +436,8 @@ export function buildDesign(input: DesignInput): BuiltDesign {
 
   return {
     scales: { brand, neutral, accent, success, warning, danger },
-    roles: { light, dark },
+    roles: { light: lightRoles, dark: darkRoles },
+    generated: { light, dark },
     type,
     radii: { sm: Math.round(rad * 0.5), md: rad, lg: Math.round(rad * 1.5), xl: Math.round(rad * 2), full: 9999 },
     space: [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24].map((n) => Math.round(n * unit)),
@@ -397,7 +471,7 @@ export function toCss(input: DesignInput, d = buildDesign(input), selector = ':r
     for (const s of STEPS) lines.push(`  --${name}-${s}: ${scale[s]};`)
   }
   lines.push(`  --font-sans: ${fontStack(input, 'sans')};`, `  --font-heading: ${fontStack(input, 'heading')};`, `  --font-mono: ${fontStack(input, 'mono')};`)
-  for (const t of d.type) lines.push(`  --text-${t.name}: ${t.size}px;`, `  --leading-${t.name}: ${t.lineHeight};`)
+  for (const t of d.type) lines.push(`  --text-${t.name}: ${t.size}px;`, `  --leading-${t.name}: ${t.lineHeight};`, `  --tracking-${t.name}: ${t.tracking}em;`, `  --weight-${t.name}: ${t.weight};`)
   for (const [k, v] of Object.entries(d.radii)) lines.push(`  --radius-${k}: ${v}px;`)
   d.space.forEach((v, i) => lines.push(`  --space-${i}: ${v}px;`))
   lines.push(`  --control-height: ${d.control.height}px;`)
@@ -419,7 +493,8 @@ export function toTailwind(input: DesignInput, d = buildDesign(input)): string {
   for (const k of Object.keys(d.roles.dark) as RoleName[]) lines.push(`  --color-${kebab(k)}: var(--color-${kebab(k)});`)
   for (const [name, scale] of Object.entries(d.scales)) if (scale) for (const s of STEPS) lines.push(`  --color-${name}-${s}: var(--${name}-${s});`)
   lines.push('  --font-sans: var(--font-sans);', '  --font-heading: var(--font-heading);', '  --font-mono: var(--font-mono);')
-  for (const t of d.type) lines.push(`  --text-${t.name}: var(--text-${t.name});`, `  --text-${t.name}--line-height: var(--leading-${t.name});`)
+  for (const t of d.type)
+    lines.push(`  --text-${t.name}: var(--text-${t.name});`, `  --text-${t.name}--line-height: var(--leading-${t.name});`, `  --text-${t.name}--letter-spacing: var(--tracking-${t.name});`, `  --text-${t.name}--font-weight: var(--weight-${t.name});`)
   for (const k of Object.keys(d.radii)) lines.push(`  --radius-${k}: var(--radius-${k});`)
   for (const k of Object.keys(d.shadows)) lines.push(`  --shadow-${k}: var(--shadow-${k});`)
   lines.push('}')
@@ -437,7 +512,7 @@ export function toTokensJson(input: DesignInput, d = buildDesign(input)): string
       {
         color: { ...scales, light: roles(d.roles.light), dark: roles(d.roles.dark) },
         font: { sans: { $type: 'fontFamily', $value: fontStack(input, 'sans') }, heading: { $type: 'fontFamily', $value: fontStack(input, 'heading') }, mono: { $type: 'fontFamily', $value: fontStack(input, 'mono') } },
-        text: Object.fromEntries(d.type.map((t) => [t.name, { size: dim(t.size), lineHeight: { $type: 'number', $value: t.lineHeight }, weight: { $type: 'fontWeight', $value: t.weight } }])),
+        text: Object.fromEntries(d.type.map((t) => [t.name, { size: dim(t.size), lineHeight: { $type: 'number', $value: t.lineHeight }, weight: { $type: 'fontWeight', $value: t.weight }, letterSpacing: { $type: 'dimension', $value: `${t.tracking}em` } }])),
         radius: Object.fromEntries(Object.entries(d.radii).map(([k, v]) => [k, dim(v)])),
         space: Object.fromEntries(d.space.map((v, i) => [i, dim(v)])),
         shadow: Object.fromEntries(Object.entries(d.shadows).map(([k, v]) => [k, { $type: 'shadow', $value: v }]))
@@ -464,13 +539,14 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
     '- Keep text contrast at WCAG AA (4.5:1 for text, 3:1 for large text and icons). The checks below already pass or flag where they do not.',
     ''
   )
+  if (i.pinBrand) lines.push('The brand colour is used exactly for primary actions (`--color-primary`); check the contrast table if you change it.', '')
   lines.push('## Colour roles', '', `| Role | ${modes.map((m) => m[0].toUpperCase() + m.slice(1)).join(' | ')} | Use for |`, `|---|${modes.map(() => '---').join('|')}|---|`)
   for (const k of Object.keys(ROLE_INFO) as RoleName[]) lines.push(`| \`--color-${kebab(k)}\` | ${modes.map((m) => `\`${d.roles[m as 'light' | 'dark'][k]}\``).join(' | ')} | ${ROLE_INFO[k]} |`)
   lines.push('', '## Colour scales', '', `| Step | ${Object.entries(d.scales).filter(([, s]) => s).map(([n]) => n).join(' | ')} |`, `|---|${Object.entries(d.scales).filter(([, s]) => s).map(() => '---').join('|')}|`)
   for (const s of STEPS) lines.push(`| ${s} | ${Object.values(d.scales).filter(Boolean).map((sc) => `\`${sc![s]}\``).join(' | ')} |`)
   lines.push('', 'Use scale steps for illustrations, charts and tinted backgrounds; use roles for interface elements.', '')
-  lines.push('## Typography', '', `- Body: **${i.fontSans}** (\`--font-sans\`), ${i.baseSize}px, line height ${d.type.find((t) => t.name === 'body')!.lineHeight}`, `- Headings: **${i.fontHeading}** (\`--font-heading\`)`, `- Code: **${i.fontMono}** (\`--font-mono\`)`, `- Scale ratio ${i.scale}`, '', '| Style | Size | Line height | Weight | Font |', '|---|---|---|---|---|')
-  for (const t of d.type) lines.push(`| ${t.name} | ${t.size}px | ${t.lineHeight} | ${t.weight} | ${t.font} |`)
+  lines.push('## Typography', '', `- Body: **${i.fontSans}** (\`--font-sans\`), ${i.baseSize}px, line height ${d.type.find((t) => t.name === 'body')!.lineHeight}`, `- Headings: **${i.fontHeading}** (\`--font-heading\`)`, `- Code: **${i.fontMono}** (\`--font-mono\`)`, `- Scale ratio ${i.scale}`, '', '| Style | Size | Line height | Weight | Letter-spacing | Font |', '|---|---|---|---|---|---|')
+  for (const t of d.type) lines.push(`| ${t.name} | ${t.size}px | ${t.lineHeight} | ${t.weight} | ${t.tracking}em | ${t.font} |`)
   lines.push('', 'Limit a screen to three type sizes plus headings. Use weight and colour (text / muted / subtle) for hierarchy before size.', '')
   lines.push('## Space, shape and elevation', '', `- Spacing scale (\`--space-N\`): ${d.space.map((v) => `${v}`).join(', ')} px — ${i.density} density`, `- Controls (buttons, inputs): ${d.control.height}px tall, ${d.control.paddingX}px horizontal padding`, `- Radius: sm ${d.radii.sm}px · md ${d.radii.md}px (default) · lg ${d.radii.lg}px (cards, dialogs) · xl ${d.radii.xl}px · full for pills`, `- Shadows: ${i.shadow === 'none' ? 'none — separate layers with borders and surface colour' : `sm (\`${d.shadows.sm}\`) for raised controls, md for menus and popovers, lg for dialogs`}`, '')
   lines.push(
@@ -484,8 +560,25 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
     '- **Badge:** small text, radius full; neutral uses `--color-surface-raised`; selected/info uses `--color-primary-soft` with `--color-primary` text.',
     '- **Alert:** 1px border and soft tint of the status colour, text in `--color-text`, icon in the status colour.',
     '- **Menu / popover:** `--color-surface-raised`, radius md, shadow md; hovered item `--color-primary-soft`.',
+    i.accent
+      ? '- **Accent:** `--color-accent` (on it, `--color-on-accent`) and `--color-accent-soft` mark things worth noticing that are not actions — "new" badges, featured items, highlights in charts and progress, illustrations. Never use the accent for buttons or links.'
+      : '- **Accent:** this system has no separate accent; `--color-accent` is a lighter brand shade for highlights. Keep actions on `--color-primary`.',
     ''
   )
+  const families = [...new Set([i.fontSans, i.fontHeading, i.fontMono])].filter((f) => !f.startsWith('System'))
+  if (families.length)
+    lines.push(
+      '## Fonts',
+      '',
+      'Load the fonts before the tokens, e.g. from Google Fonts:',
+      '',
+      '```html',
+      `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?${families.map((f) => `family=${f.replace(/ /g, '+')}:wght@400;500;600;700`).join('&')}&display=swap" />`,
+      '```',
+      '',
+      'Or self-host them (for example with the @fontsource packages). The stacks fall back to system fonts until they load.',
+      ''
+    )
   lines.push('## Contrast checks', '', '| Pair | Theme | Ratio | Needs | |', '|---|---|---|---|---|')
   for (const c of d.checks.filter((x) => modes.includes(x.mode))) lines.push(`| ${c.label} | ${c.mode} | ${c.ratio.toFixed(2)} | ${c.need} | ${c.ratio >= c.need ? 'pass' : '**fails**'} |`)
   lines.push('', '## Files', '', '- `DESIGN.md` — this guide', '- `tokens.css` — CSS variables for both themes', '- `tailwind.css` — Tailwind v4 theme mapped to the tokens', '- `tokens.json` — the same tokens in the W3C design-tokens format', '')
@@ -510,16 +603,87 @@ export function sanitizeDesign(raw: Partial<Record<keyof DesignInput, unknown>>,
     success: hex(raw.success, base.success),
     warning: hex(raw.warning, base.warning),
     danger: hex(raw.danger, base.danger),
+    pinBrand: typeof raw.pinBrand === 'boolean' ? raw.pinBrand : (base.pinBrand ?? false),
+    neutral: pick(raw.neutral, Object.keys(NEUTRALS) as NeutralFamily[], base.neutral ?? 'brand'),
     neutralTint: num(raw.neutralTint, 0, 1, base.neutralTint),
+    darkDepth: num(raw.darkDepth, 0, 1, base.darkDepth ?? DEFAULT_DESIGN.darkDepth),
     mode: pick(raw.mode, ['dark', 'light', 'both'] as const, base.mode),
     fontSans: font(raw.fontSans, base.fontSans),
     fontHeading: font(raw.fontHeading, base.fontHeading),
     fontMono: font(raw.fontMono, base.fontMono),
     baseSize: Math.round(num(raw.baseSize, 12, 20, base.baseSize)),
     scale: num(raw.scale, 1.067, 1.618, base.scale),
+    headingWeight: Math.round(num(raw.headingWeight, 400, 900, base.headingWeight ?? DEFAULT_DESIGN.headingWeight) / 50) * 50,
+    headingTracking: num(raw.headingTracking, -0.06, 0.06, base.headingTracking ?? DEFAULT_DESIGN.headingTracking),
+    bodyLeading: num(raw.bodyLeading, 1.25, 1.9, base.bodyLeading ?? DEFAULT_DESIGN.bodyLeading),
     radius: Math.round(num(raw.radius, 0, 32, base.radius)),
     density: pick(raw.density, ['compact', 'comfortable', 'spacious'] as const, base.density),
     shadow: pick(raw.shadow, ['none', 'soft', 'strong'] as const, base.shadow),
-    principles: Array.isArray(raw.principles) ? raw.principles.filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim()).slice(0, 8) : base.principles
+    principles: Array.isArray(raw.principles) ? raw.principles.filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim()).slice(0, 8) : base.principles,
+    overrides: cleanOverrides(raw.overrides, base.overrides)
   }
 }
+
+function cleanOverrides(v: unknown, fallback: DesignInput['overrides'] | undefined): DesignInput['overrides'] {
+  if (!v || typeof v !== 'object') return fallback ?? { light: {}, dark: {} }
+  const side = (o: unknown): Partial<Roles> => {
+    if (!o || typeof o !== 'object') return {}
+    const out: Partial<Roles> = {}
+    for (const [k, c] of Object.entries(o as Record<string, unknown>)) if (k in ROLE_INFO && typeof c === 'string' && isHex(c)) out[k as RoleName] = normalizeHex(c)
+    return out
+  }
+  const o = v as { light?: unknown; dark?: unknown }
+  return { light: side(o.light), dark: side(o.dark) }
+}
+
+/** Starting points: each a complete look to adjust from. */
+export const PRESETS: { id: string; name: string; blurb: string; input: Partial<DesignInput> }[] = [
+  {
+    id: 'precise',
+    name: 'Precise',
+    blurb: 'Dense, dark-first tool for power users. Small type, tight corners, quiet greys.',
+    input: { brand: '#5e6ad2', neutral: 'zinc', neutralTint: 0.4, darkDepth: 0.15, mode: 'both', fontSans: 'Inter', fontHeading: 'Inter', fontMono: 'JetBrains Mono', baseSize: 14, scale: 1.2, headingWeight: 600, headingTracking: -0.02, bodyLeading: 1.5, radius: 6, density: 'compact', shadow: 'soft', principles: ['Keyboard first; every action has a shortcut', 'Dense but calm — spacing does the grouping, not boxes', 'Colour only for state and selection'] }
+  },
+  {
+    id: 'friendly',
+    name: 'Friendly',
+    blurb: 'Soft, rounded and light-first. Warm greys, generous spacing.',
+    input: { brand: '#ff6b4a', accent: '#7c5cff', neutral: 'sand', neutralTint: 0.5, darkDepth: 0.5, mode: 'light', fontSans: 'Nunito Sans', fontHeading: 'Outfit', fontMono: 'Fira Code', baseSize: 16, scale: 1.25, headingWeight: 700, headingTracking: -0.01, bodyLeading: 1.65, radius: 14, density: 'spacious', shadow: 'soft', principles: ['Talk like a person, never like a system', 'One idea per screen', 'Celebrate progress with colour and motion'] }
+  },
+  {
+    id: 'fintech',
+    name: 'Trusted',
+    blurb: 'Calm and credible for money and data. Deep navy, crisp type, restrained colour.',
+    input: { brand: '#1d4ed8', accent: '#0ea5a4', neutral: 'slate', neutralTint: 0.45, darkDepth: 0.3, mode: 'both', fontSans: 'IBM Plex Sans', fontHeading: 'IBM Plex Sans', fontMono: 'IBM Plex Mono', baseSize: 15, scale: 1.2, headingWeight: 600, headingTracking: -0.01, bodyLeading: 1.55, radius: 8, density: 'comfortable', shadow: 'soft', principles: ['Numbers first: tabular figures, right-aligned', 'Every state is explicit — pending, done, failed', 'Never surprise: confirm anything that moves money'] }
+  },
+  {
+    id: 'editorial',
+    name: 'Editorial',
+    blurb: 'Reading-first, with a serif voice for headlines and lots of white space.',
+    input: { brand: '#9f1239', neutral: 'stone', neutralTint: 0.4, darkDepth: 0.4, mode: 'light', fontSans: 'Source Sans 3', fontHeading: 'Fraunces', fontMono: 'IBM Plex Mono', baseSize: 17, scale: 1.333, headingWeight: 600, headingTracking: -0.015, bodyLeading: 1.7, radius: 4, density: 'spacious', shadow: 'none', principles: ['Typography carries the hierarchy', 'Measure under 72 characters', 'Ornament only where it helps reading'] }
+  },
+  {
+    id: 'brutalist',
+    name: 'Brutalist',
+    blurb: 'Raw and loud: hard edges, heavy type, no shadows, high contrast.',
+    input: { brand: '#111111', accent: '#ffe600', pinBrand: true, neutral: 'gray', neutralTint: 0, darkDepth: 0, mode: 'light', fontSans: 'Space Grotesk', fontHeading: 'Space Grotesk', fontMono: 'JetBrains Mono', baseSize: 16, scale: 1.5, headingWeight: 800, headingTracking: -0.04, bodyLeading: 1.45, radius: 0, density: 'comfortable', shadow: 'none', principles: ['Borders, not shadows', 'Big type, few words', 'One loud colour, used sparingly'] }
+  },
+  {
+    id: 'playful',
+    name: 'Playful',
+    blurb: 'Bright, bouncy colour and round shapes for consumer and education apps.',
+    input: { brand: '#8b5cf6', accent: '#f59e0b', neutral: 'brand', neutralTint: 0.6, darkDepth: 0.55, mode: 'both', fontSans: 'Plus Jakarta Sans', fontHeading: 'Sora', fontMono: 'Fira Code', baseSize: 16, scale: 1.25, headingWeight: 800, headingTracking: -0.02, bodyLeading: 1.6, radius: 16, density: 'spacious', shadow: 'strong', principles: ['Reward every action', 'Colour is information and delight', 'Big, thumb-friendly targets'] }
+  },
+  {
+    id: 'terminal',
+    name: 'Terminal',
+    blurb: 'Developer tool in the dark: mono accents, green signal, almost no radius.',
+    input: { brand: '#22c55e', accent: '#38bdf8', neutral: 'zinc', neutralTint: 0.2, darkDepth: 0.05, mode: 'dark', fontSans: 'Geist', fontHeading: 'Geist', fontMono: 'Geist Mono', baseSize: 14, scale: 1.2, headingWeight: 600, headingTracking: -0.01, bodyLeading: 1.5, radius: 3, density: 'compact', shadow: 'none', principles: ['Show the raw data; explain it beside', 'Logs and code are first-class content', 'Status colours mean something — never decorate with them'] }
+  },
+  {
+    id: 'luxe',
+    name: 'Luxe',
+    blurb: 'Quiet premium feel: dark charcoal, gold accent, elegant serif headings.',
+    input: { brand: '#c8a35b', accent: '#c8a35b', pinBrand: true, neutral: 'stone', neutralTint: 0.3, darkDepth: 0.6, mode: 'dark', fontSans: 'Manrope', fontHeading: 'Playfair Display', fontMono: 'IBM Plex Mono', baseSize: 15, scale: 1.333, headingWeight: 600, headingTracking: 0, bodyLeading: 1.65, radius: 2, density: 'spacious', shadow: 'soft', principles: ['Restraint: fewer elements, more space', 'Gold marks only what matters most', 'Photography and type do the selling'] }
+  }
+]
