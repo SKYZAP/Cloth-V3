@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import ignore, { type Ignore } from 'ignore'
 import { dirname, join, posix, sep } from 'node:path'
 import type { ContainerChange, ContainerChanges, ContainerSettings, ContainerStatus } from '@shared/types'
 import type { Ctx } from '../core/context'
@@ -43,13 +44,16 @@ export function dockerCli(bin = 'docker'): DockerRun {
     })
 }
 
-/** Not copied into the container (rebuilt there instead); the heavy ones get their own volume. */
+/** Not copied into the container (rebuilt there instead); the heavy ones get their own volume. Files the folder's .gitignore excludes aren't copied either. */
 const COPY_SKIP = new Set(['node_modules', '.venv', 'venv', '__pycache__', '.next', '.turbo', 'target', '.cache', '.pnpm-store'])
 /** Never offered back to the real folder. */
 const DIFF_SKIP = new Set([...COPY_SKIP, '.git'])
 const DEP_VOLUMES = ['/workspace/node_modules', '/workspace/.venv']
-const MAX_FILES = 25_000
+const MAX_FILES = 200_000
 const MAX_TEXT = 2_000_000
+
+/** Copy files as last seen: [size, mtimeMs, sha1]. */
+type StatCache = Record<string, [number, number, string]>
 
 interface Manifest {
   folder: string | null
@@ -61,13 +65,35 @@ const sha1 = (b: Buffer) => createHash('sha1').update(b).digest('hex')
 const safe = (s: string) => s.replace(/[^\w.-]/g, '_')
 const isBinary = (b: Buffer) => b.subarray(0, 8000).includes(0)
 
-async function walk(root: string, skip: Set<string>, rel = '', out: string[] = []): Promise<string[]> {
-  const entries = await readdir(join(root, rel), { withFileTypes: true }).catch(() => [])
+interface Walked {
+  rel: string
+  size: number
+  mtimeMs: number
+}
+
+/** A .gitignore and the folder (relative, '' = root) its patterns are relative to. */
+type Rules = { base: string; ig: Ignore }[]
+
+/** Files under `root` (posix relative paths), skipping `skip` folders and whatever the .gitignore files exclude. */
+async function walk(root: string, skip: Set<string>, rel = '', rules: Rules = [], out: Walked[] = []): Promise<Walked[]> {
+  const dir = join(root, ...rel.split('/').filter(Boolean))
+  const own = await readFile(join(dir, '.gitignore'), 'utf8').catch(() => null)
+  const here = own ? [...rules, { base: rel, ig: ignore().add(own) }] : rules
+  const ignored = (r: string, isDir: boolean) =>
+    here.some(({ base, ig }) => {
+      const sub = base ? r.slice(base.length + 1) : r
+      return !!sub && ig.ignores(isDir ? `${sub}/` : sub)
+    })
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
   for (const e of entries) {
     if (skip.has(e.name)) continue
     const r = rel ? `${rel}/${e.name}` : e.name
-    if (e.isDirectory()) await walk(root, skip, r, out)
-    else if (e.isFile()) out.push(r)
+    if (e.isDirectory()) {
+      if (!ignored(r, true)) await walk(root, skip, r, here, out)
+    } else if (e.isFile() && !ignored(r, false)) {
+      const s = await stat(join(dir, e.name)).catch(() => null)
+      if (s) out.push({ rel: r, size: s.size, mtimeMs: s.mtimeMs })
+    }
     if (out.length > MAX_FILES) throw new Error(`The folder has more than ${MAX_FILES.toLocaleString()} files — too many to copy into a container`)
   }
   return out
@@ -124,16 +150,22 @@ export class ContainerService {
     await rm(copy, { recursive: true, force: true })
     await mkdir(copy, { recursive: true })
     const files: Record<string, string> = {}
+    const cache: StatCache = {}
     if (folder) {
-      for (const rel of await walk(folder, COPY_SKIP)) {
+      for (const { rel } of await walk(folder, COPY_SKIP)) {
         const src = join(folder, ...rel.split('/'))
         const dest = join(copy, ...rel.split('/'))
         await mkdir(dirname(dest), { recursive: true })
         await copyFile(src, dest)
-        if (!rel.split('/').some((part) => DIFF_SKIP.has(part))) files[rel] = sha1(await readFile(dest))
+        if (rel.split('/').some((part) => DIFF_SKIP.has(part))) continue
+        const hash = sha1(await readFile(dest))
+        files[rel] = hash
+        const s = await stat(dest)
+        cache[rel] = [s.size, s.mtimeMs, hash]
       }
     }
     await this.saveManifest(sessionId, { folder, files })
+    await this.saveCache(sessionId, cache)
     return copy
   }
 
@@ -188,8 +220,17 @@ export class ContainerService {
     const m = await this.manifest(sessionId)
     if (!m) return { folder: null, changes: [] }
     const copy = this.copyDir(sessionId)
+    // Only files whose size or modified time changed since the last look are read and hashed again.
+    const cache = await this.cache(sessionId)
+    const fresh: StatCache = {}
     const now = new Map<string, string>()
-    for (const rel of await walk(copy, DIFF_SKIP)) now.set(rel, sha1(await readFile(join(copy, ...rel.split('/')))))
+    for (const f of await walk(copy, DIFF_SKIP)) {
+      const hit = cache[f.rel]
+      const hash = hit && hit[0] === f.size && hit[1] === f.mtimeMs ? hit[2] : sha1(await readFile(join(copy, ...f.rel.split('/'))))
+      fresh[f.rel] = [f.size, f.mtimeMs, hash]
+      now.set(f.rel, hash)
+    }
+    await this.saveCache(sessionId, fresh)
     const paths = [...new Set([...Object.keys(m.files), ...now.keys()])].sort()
     const out: ContainerChange[] = []
     for (const rel of paths) {
@@ -298,6 +339,19 @@ export class ContainerService {
     } catch {
       return null
     }
+  }
+
+  private async cache(sessionId: string): Promise<StatCache> {
+    try {
+      return JSON.parse(await readFile(join(this.root(sessionId), 'stat-cache.json'), 'utf8')) as StatCache
+    } catch {
+      return {}
+    }
+  }
+
+  private async saveCache(sessionId: string, c: StatCache): Promise<void> {
+    await mkdir(this.root(sessionId), { recursive: true })
+    await writeFile(join(this.root(sessionId), 'stat-cache.json'), JSON.stringify(c))
   }
 
   private async saveManifest(sessionId: string, m: Manifest): Promise<void> {

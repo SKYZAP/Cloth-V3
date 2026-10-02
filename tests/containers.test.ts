@@ -110,6 +110,41 @@ describe('container copies', () => {
     expect(readFileSync(join(copy, 'src', 'app.ts'), 'utf8')).toBe('export const a = 10\n')
   })
 
+  it('leaves out what .gitignore excludes, and only re-reads files whose size or time changed', async () => {
+    const { services } = makeServices({ docker: fakeDocker().run })
+    const c = services.containers
+    const folder = project()
+    writeFileSync(join(folder, '.gitignore'), 'dist/\n*.log\n')
+    writeFileSync(join(folder, 'debug.log'), 'noise')
+    mkdirSync(join(folder, 'dist'))
+    writeFileSync(join(folder, 'dist', 'bundle.js'), 'built')
+    writeFileSync(join(folder, 'src', '.gitignore'), 'secret.txt\n')
+    writeFileSync(join(folder, 'src', 'secret.txt'), 'token')
+    const copy = await c.prepare('ses_g', folder)
+    expect(existsSync(join(copy, 'debug.log'))).toBe(false)
+    expect(existsSync(join(copy, 'dist'))).toBe(false)
+    expect(existsSync(join(copy, 'src', 'secret.txt'))).toBe(false)
+    expect(existsSync(join(copy, 'src', 'app.ts'))).toBe(true)
+
+    // Build output the agent makes is ignored too; a real source change is not.
+    mkdirSync(join(copy, 'dist'))
+    writeFileSync(join(copy, 'dist', 'app.js'), 'console.log(1)')
+    writeFileSync(join(copy, 'build.log'), 'ok')
+    writeFileSync(join(copy, 'src', 'extra.ts'), 'export {}\n')
+    expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['src/extra.ts'])
+
+    // The cache is trusted while size and time match (a wrong hash in it shows up as a change)…
+    const cacheFile = join(copy, '..', 'stat-cache.json')
+    const cache = JSON.parse(readFileSync(cacheFile, 'utf8'))
+    cache['README.md'][2] = 'not-the-real-hash'
+    writeFileSync(cacheFile, JSON.stringify(cache))
+    expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['README.md', 'src/extra.ts'])
+    // …and a file whose time changed is read again.
+    const { utimesSync } = await import('node:fs')
+    utimesSync(join(copy, 'README.md'), new Date(), new Date(Date.now() + 5000))
+    expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['src/extra.ts'])
+  })
+
   it('starts the container on first use, recreates it when its settings change, and explains a missing Docker', async () => {
     const docker = fakeDocker()
     const { services } = makeServices({ docker: docker.run })
