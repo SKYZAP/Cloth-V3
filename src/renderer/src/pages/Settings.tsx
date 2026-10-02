@@ -157,13 +157,13 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'models':
       return (
         <Group>
-          <Row label="Chat" hint="Used by new chats, flows and skill tests unless they pick a model.">
+          <Row label="Chat" hint="Default for new chats, flows and skill tests.">
             <ModelPicker className="w-72 mobile:w-full" value={settings.defaultModel} onChange={(m) => void update({ defaultModel: m })} allowNone noneLabel="None" />
           </Row>
-          <Row label="Embeddings" hint="Adds vector search to knowledge. Without one, search is keyword-only (BM25).">
+          <Row label="Embeddings" hint="Adds vector search. None means keyword search only.">
             <ModelPicker className="w-72 mobile:w-full" kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
           </Row>
-          <Row label="Images" hint="Used by generate_image in chat. Mark models as Image on the Models page.">
+          <Row label="Images" hint="Used by generate_image.">
             <ModelPicker className="w-72 mobile:w-full" kind="image" value={settings.imageModel} onChange={(m) => void update({ imageModel: m })} allowNone noneLabel="First image model available" />
           </Row>
         </Group>
@@ -171,14 +171,14 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'chat':
       return (
         <Group>
-          <Row label="Summarise long conversations" hint="Near the model's context window, older turns are summarised into a checkpoint before the next message. The originals stay visible. You can also summarise any time from the context meter.">
+          <Row label="Summarise long conversations" hint="Summarises older turns near the context limit.">
             <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} />
           </Row>
-          <Row label="Name chats with AI" hint="After the first reply, and again once the chat has grown, a model writes a short title saying what the chat is about. Titles you type yourself are kept.">
+          <Row label="Name chats with AI" hint="Titles you type are kept.">
             <Switch checked={settings.aiTitles} onChange={(aiTitles) => void update({ aiTitles })} />
           </Row>
           {settings.aiTitles && (
-            <Row label="Title model" hint="A small, fast model is plenty. Uses the chat's own model unless you pick one.">
+            <Row label="Title model" hint="Defaults to the chat's model.">
               <ModelPicker className="w-72 mobile:w-full" value={settings.titleModel} onChange={(titleModel) => void update({ titleModel })} allowNone noneLabel="Same as the chat" />
             </Row>
           )}
@@ -190,11 +190,11 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       return <WebSearchSettings />
     case 'knowledge':
       return (
-        <Group title="Chunking" note="Applies to newly indexed documents. Re-index a document to re-chunk it.">
-          <Row label="Chunk size" hint="Characters per chunk. Larger chunks keep more context; smaller ones match more precisely.">
+        <Group title="Chunking" note="Applies to newly indexed documents.">
+          <Row label="Chunk size" hint="Characters per chunk.">
             <NumberInput value={settings.chunkSize} min={300} max={8000} step={100} suffix="chars" onCommit={(chunkSize) => void update({ chunkSize })} />
           </Row>
-          <Row label="Overlap" hint="Characters repeated between neighbouring chunks so sentences aren't cut off.">
+          <Row label="Overlap" hint="Characters shared between neighbouring chunks.">
             <NumberInput value={settings.chunkOverlap} min={0} max={2000} step={50} suffix="chars" onCommit={(chunkOverlap) => void update({ chunkOverlap })} />
           </Row>
         </Group>
@@ -202,14 +202,13 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'phone':
       return (
         <>
-          <Note>Your PC does all the work — models, files and keys stay here. Phones connect over your home Wi-Fi, or from anywhere through Tailscale, end-to-end encrypted with a key shared only through the QR code.</Note>
           <PhoneSettings />
         </>
       )
     case 'mcp':
       return (
-        <Group note="Status, tools and client setup snippets are on the MCP page.">
-          <Row label="Port" hint="The server restarts when the port changes.">
+        <Group>
+          <Row label="Port">
             <NumberInput value={settings.mcpPort} min={1024} max={65535} onCommit={(mcpPort) => void update({ mcpPort })} />
           </Row>
         </Group>
@@ -226,17 +225,14 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
   useEffect(() => setInstructions(value.instructions), [value.instructions])
   return (
     <>
-      <Note>
-        With subagents on, the chat agent can hand a self-contained job to a helper with a fresh context using the <code className="font-mono text-muted">task</code> tool — e.g. exploring a codebase or researching in parallel. Turn them on or off per chat in its context sheet.
-      </Note>
       <Group title="Defaults">
         <Row label="On for new chats" hint="Existing chats keep their own setting.">
           <Switch checked={value.enabledByDefault} onChange={(enabledByDefault) => set({ enabledByDefault })} />
         </Row>
-        <Row label="Model" hint="A faster or cheaper model for delegated jobs. By default subagents use the chat's model.">
+        <Row label="Model" hint="Defaults to the chat's model.">
           <ModelPicker className="w-72 mobile:w-full" value={value.model} onChange={(model) => set({ model })} allowNone noneLabel="Same as the chat" />
         </Row>
-        <Row label="Thinking" hint="Reasoning effort for subagents on models that support it.">
+        <Row label="Thinking" hint="On models that support it.">
           <select
             value={value.thinking}
             onChange={(e) => set({ thinking: e.target.value as SubagentSettings['thinking'] })}
@@ -251,19 +247,19 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Limits">
-        <Row label="Steps per subagent" hint="Agent turns a subagent may take before it has to report back.">
+        <Row label="Steps per subagent" hint="Turns before it must report back.">
           <NumberInput value={value.maxTurns} min={1} max={100} onCommit={(maxTurns) => set({ maxTurns })} />
         </Row>
-        <Row label="Running at once" hint="Across all chats. Extra jobs wait in a queue and show as Queued.">
+        <Row label="Running at once" hint="Across all chats; extra jobs queue.">
           <NumberInput value={value.maxParallel} min={1} max={16} onCommit={(maxParallel) => set({ maxParallel })} />
         </Row>
       </Group>
       <Group title="Permissions">
-        <Row label="Allow workers" hint="Workers can edit files in the chat's workspace (only when the chat allows writing, and still through its approvals). Off: every subagent is a read-only scout.">
+        <Row label="Allow workers" hint="Off: subagents are read-only.">
           <Switch checked={value.allowWorkers} onChange={(allowWorkers) => set({ allowWorkers })} />
         </Row>
       </Group>
-      <Group title="Instructions" note="Added to every subagent's system prompt — e.g. a report format or conventions to follow.">
+      <Group title="Instructions">
         <div className="p-4">
           <Textarea
             rows={4}
@@ -289,7 +285,7 @@ function AboutSection() {
   return (
     <>
       <Group title="Data">
-        <Row label="Data folder" hint="cloth.db (providers, knowledge, chats, workflows), skills/ and skills-trash/. API keys are encrypted with the OS keychain." stacked>
+        <Row label="Data folder" hint="API keys are encrypted with the OS keychain." stacked>
           <div className="flex items-center gap-2">
             <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-[12px] text-muted">{info.dataDir}</span>
             {!isMobile && (
@@ -335,10 +331,6 @@ function Row({ label, hint, children, stacked }: { label: string; hint?: ReactNo
       <div className={clsx(!stacked && 'shrink-0')}>{children}</div>
     </div>
   )
-}
-
-function Note({ children }: { children: ReactNode }) {
-  return <div className="mb-5 rounded-xl border border-line bg-elev/60 px-4 py-3 text-[12.5px] leading-relaxed text-muted">{children}</div>
 }
 
 /** Number field that saves a clamped value on blur or Enter. */

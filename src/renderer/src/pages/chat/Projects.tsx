@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { motion } from 'motion/react'
-import { CaretRight, Check, FolderSimple, FolderDashed, PencilSimple, Plus } from '@phosphor-icons/react'
+import { CaretRight, Check, FolderDashed, FolderOpen, FolderSimple, PencilSimple, Plus } from '@phosphor-icons/react'
 import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, type ProjectInput } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt } from '@/lib/store'
@@ -124,7 +123,7 @@ export function ProjectDialog({
           </div>
         </div>
 
-        <Field label="Folder" hint="Optional. Chats in the project work in this folder; without one the project just groups chats.">
+        <Field label="Folder" hint="Optional.">
           <div className={clsx('flex items-center gap-2.5 rounded-[12px] border px-3 py-2', folder ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
             {folder ? <FolderSimple size={17} weight="fill" style={{ color }} /> : <FolderDashed size={17} className="text-dim" />}
             <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', folder ? 'text-fg' : 'text-dim')}>{folder ?? 'No folder'}</span>
@@ -139,7 +138,7 @@ export function ProjectDialog({
           </div>
         </Field>
 
-        <Field label="Instructions" hint="Added to every chat in the project. An AGENTS.md or CLAUDE.md in the folder is included too.">
+        <Field label="Instructions" hint="Added to every chat, with the folder's AGENTS.md or CLAUDE.md.">
           <Textarea rows={4} value={instructions} placeholder="e.g. TypeScript monorepo. Run tests with pnpm test. Keep changes small." onChange={(e) => setInstructions(e.target.value)} />
         </Field>
 
@@ -187,10 +186,10 @@ export function ProjectHeader({
 }) {
   return (
     <div onClick={onToggle} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 hover:bg-elev mobile:h-11" role="button" aria-expanded={!collapsed}>
-      <motion.span animate={{ rotate: collapsed ? 0 : 90 }} transition={{ type: 'spring', stiffness: 500, damping: 34 }} className="flex text-dim">
+      <span className={clsx('flex text-dim transition-transform duration-200', !collapsed && 'rotate-90')}>
         <CaretRight size={11} weight="bold" />
-      </motion.span>
-      <span className="h-2.5 w-2.5 shrink-0 rounded-[4px]" style={{ background: project.color }} />
+      </span>
+      {collapsed ? <FolderSimple size={16} weight="fill" className="shrink-0" style={{ color: project.color }} /> : <FolderOpen size={16} weight="fill" className="shrink-0" style={{ color: project.color }} />}
       <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14px]" title={project.folder ?? undefined}>
         {project.name}
       </span>
