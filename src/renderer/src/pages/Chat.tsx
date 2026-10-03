@@ -27,6 +27,7 @@ import {
   TerminalWindow,
   MagnifyingGlass,
   NotePencil,
+  Paperclip,
   Plus,
   SlidersHorizontal,
   Sparkle,
@@ -57,6 +58,7 @@ import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
+import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -316,6 +318,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const [skills, setSkills] = useState<Skill[]>([])
   const [slash, setSlash] = useState<{ query: string; start: number; end: number } | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
+  const [attachments, setAttachments] = useState<Pending[]>([])
+  const [dragging, setDragging] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
   const scroller = useRef<HTMLDivElement>(null)
@@ -392,13 +397,40 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
 
   const send = async (text = draft, withSkills = invoked) => {
     const t = text.trim()
-    if ((!t && !withSkills.length) || running) return
+    const files = attachments
+    if ((!t && !withSkills.length && !files.length) || running) return
     stick.current = true
     setDraft('')
     setInvoked([])
     setSlash(null)
-    await attempt(() => api.chat.send(session.id, t, withSkills))
+    setAttachments([])
+    const sent = await attempt(async () => {
+      await api.chat.send(session.id, t, withSkills, files.map(({ name, mimeType, data }) => ({ name, mimeType, data })))
+      return true
+    })
+    // Keep what the user wrote and attached when the send is refused (an unreadable file, no model).
+    if (!sent) {
+      setDraft((d) => d || t)
+      setAttachments(files)
+    } else files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview))
   }
+
+  const attach = async (files: File[]) => {
+    if (!files.length) return
+    const room = MAX_ATTACHMENTS - attachments.length
+    if (room <= 0) return void useApp.getState().toast(`Attach up to ${MAX_ATTACHMENTS} files at a time`, 'error')
+    const { ok, errors } = await readAttachments(files.slice(0, room))
+    if (files.length > room) errors.push(`Only the first ${room} file${room > 1 ? 's were' : ' was'} added (${MAX_ATTACHMENTS} at most)`)
+    setAttachments((cur) => [...cur, ...ok])
+    if (errors.length) useApp.getState().toast(errors.join(' · '), 'error')
+    textarea.current?.focus()
+  }
+  const unattach = (key: string) =>
+    setAttachments((cur) => {
+      const gone = cur.find((a) => a.key === key)
+      if (gone?.preview) URL.revokeObjectURL(gone.preview)
+      return cur.filter((a) => a.key !== key)
+    })
 
   // Slash commands: "/name" at the start of a word opens the skill picker.
   const matches = useMemo(() => {
@@ -489,8 +521,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     const idx = messages.findIndex((m) => m.id === assistantId)
     const user = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')
     if (!user) return
-    setMessages(await api.chat.rewind(session.id, user.id))
-    await attempt(() => api.chat.send(session.id, user.blocks.map((b) => (b.type === 'text' ? b.text : '')).join(''), user.skills ?? []))
+    setMessages((ms) => ms.slice(0, ms.indexOf(user)))
+    await attempt(() => api.chat.resend(session.id, user.id))
+    void api.chat.messages(session.id).then(setMessages)
   }
 
   const provider = providers.find((p) => p.id === session.model?.providerId)
@@ -498,9 +531,42 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const selected = session.knowledgeEnabled ? (session.collectionIds.length ? session.collectionIds.filter((id) => collections.some((c) => c.id === id)) : collections.map((c) => c.id)) : []
   const openSheet = (section: SheetSection) => setSheet({ open: true, section })
   const waiting = running && messages.at(-1)?.role === 'user'
+  const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden">
+    <div
+      className="relative flex h-full flex-col overflow-hidden"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setDragging(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return
+        e.preventDefault()
+        setDragging(false)
+        void attach([...e.dataTransfer.files])
+      }}
+    >
+      <AnimatePresence>
+        {dragging && (
+          <motion.div
+            key="drop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[22px] border-2 border-dashed border-crimson-line bg-bg/85 text-[14px] text-fg backdrop-blur-sm"
+          >
+            <Paperclip size={26} className="text-crimson-hi" />
+            Drop files or images to attach
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header floats over the conversation and fades into it */}
       <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
         <SplitBack />
@@ -544,6 +610,11 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       <div
         ref={scroller}
         className="min-h-0 flex-1 overflow-y-auto"
+        // Attached images load after the scroll to the bottom and push the latest message down.
+        onLoadCapture={(e) => {
+          const el = e.currentTarget
+          if (stick.current && e.target instanceof HTMLImageElement) el.scrollTo({ top: el.scrollHeight })
+        }}
         onScroll={(e) => {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
@@ -645,9 +716,16 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               </motion.div>
             )}
           </AnimatePresence>
+          <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
           <textarea
             ref={textarea}
             value={draft}
+            onPaste={(e) => {
+              const files = [...e.clipboardData.files]
+              if (!files.length) return
+              e.preventDefault()
+              void attach(files)
+            }}
             onChange={(e) => {
               setDraft(e.target.value)
               detectSlash(e.target.value, e.target.selectionStart)
@@ -690,6 +768,17 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             className="block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus-visible:outline-none"
           />
           <div className="flex items-center gap-0.5 pb-2 pl-2.5 pr-2 pt-1.5">
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                void attach([...(e.target.files ?? [])])
+                e.target.value = ''
+              }}
+            />
+            <ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />
             <ComposerToggle
               icon={Books}
               label="Knowledge"
@@ -721,7 +810,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
             </span>
             <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
-            <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
+            <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
         </div>
       </div>
@@ -1248,6 +1337,7 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
           ))}
         </div>
       ) : null}
+      {message.attachments?.length ? <SentAttachments items={message.attachments} /> : null}
       {text.trim() && <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>}
     </motion.div>
   )

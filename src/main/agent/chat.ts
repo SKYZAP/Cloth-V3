@@ -1,11 +1,12 @@
 import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
+import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
-import type { ApprovalDecision, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
+import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
@@ -604,10 +605,11 @@ export class ChatService {
     return this.messages(id)
   }
 
-  /** Build the user message; skills invoked with /name ride along as tagged text blocks. */
-  private async userMessage(text: string, skillNames: string[]): Promise<UserMessage> {
-    if (!skillNames.length) return { role: 'user', content: text, timestamp: Date.now() }
-    const blocks: TextContent[] = []
+  /** Build the user message; skills invoked with /name and attached files ride along as tagged blocks. */
+  private async userMessage(text: string, skillNames: string[], attachments: ChatAttachment[] = []): Promise<UserMessage> {
+    const attached = await attachmentContent(attachments)
+    if (!skillNames.length && !attached.length) return { role: 'user', content: text, timestamp: Date.now() }
+    const blocks: (TextContent | ImageContent)[] = []
     for (const name of [...new Set(skillNames)]) {
       const skill = await this.skills.get(name)
       const extra = skill.files.filter((f) => f !== 'SKILL.md' && f !== 'evals.json')
@@ -624,7 +626,12 @@ export class ChatService {
       ]
       blocks.push({ type: 'text', text: lines.join('\n') })
     }
-    const prompt = text.trim() || `Apply the ${skillNames.map((n) => `/${n}`).join(', ')} skill${skillNames.length > 1 ? 's' : ''}.`
+    blocks.push(...attached)
+    const prompt =
+      text.trim() ||
+      (skillNames.length
+        ? `Apply the ${skillNames.map((n) => `/${n}`).join(', ')} skill${skillNames.length > 1 ? 's' : ''}.`
+        : `Have a look at the attached ${attached.length > 1 ? 'files' : attached[0].type === 'image' ? 'image' : 'file'}.`)
     return { role: 'user', content: [...blocks, { type: 'text', text: prompt }], timestamp: Date.now() }
   }
 
@@ -675,15 +682,33 @@ export class ChatService {
     }
   }
 
-  async send(id: string, text: string, skillNames: string[] = []): Promise<void> {
+  async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = []): Promise<void> {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const message = await this.userMessage(text, skillNames, attachments)
+    const names = attachments.map((a) => a.name).join(', ')
+    const title = (text.trim() ? text : skillNames.length ? skillNames.map((n) => `/${n}`).join(' ') : names).replace(/\s+/g, ' ').trim().slice(0, 60)
+    await this.run(id, message, title)
+    for (const name of new Set(skillNames)) this.usage?.skill(name, 'slash')
+  }
+
+  /** Send a user message again: drop it and everything after it, then run the same content. */
+  async resend(id: string, uiMessageId: string): Promise<void> {
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const original = this.rawMessages(id).find((m) => m.role === 'user' && `m${m.timestamp}` === uiMessageId) as UserMessage | undefined
+    if (!original) throw new Error('That message is no longer in this chat')
+    this.rewind(id, uiMessageId)
+    // rewind() carries a summary forward and run() re-attaches it; don't send the old copy twice.
+    await this.run(id, { ...splitSummary(original).message, timestamp: Date.now() }, '')
+  }
+
+  private async run(id: string, prepared: UserMessage, title: string): Promise<void> {
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
     const scope = await this.runScope(id)
     // Summarise older turns first if the conversation is about to outgrow the model's context.
     if (this.settings.get().autoCompact) {
       const usage = await this.contextUsage(id)
-      const incoming = Math.ceil(text.length / 4) + 2000
+      const incoming = Math.ceil(contentChars(prepared) / 4) + 2000
       if (usage.threshold && usage.tokens + incoming > usage.threshold) {
         await this.compact(id).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
       }
@@ -728,12 +753,11 @@ export class ChatService {
       }
     })
 
-    let message = await this.userMessage(text, skillNames)
+    let message = prepared
     const carried = this.carry.get(id)
     if (carried && !history.some((m) => m.role === 'user')) message = withSummary(message, carried)
     this.carry.delete(id)
-    if (session.title === 'New chat') {
-      const title = (text.trim() ? text : skillNames.map((n) => `/${n}`).join(' ')).replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat'
+    if (session.title === 'New chat' && title) {
       this.update(id, { title, titleSource: 'first-message' })
       emit({ sessionId: id, type: 'title', title })
     }
@@ -743,7 +767,6 @@ export class ChatService {
 
     const attributed = <T>(fn: () => T): T => (this.usage ? this.usage.run({ source: 'chat', ref: id }, fn) : fn())
     void attributed(async () => {
-      for (const name of new Set(skillNames)) this.usage?.skill(name, 'slash')
       let error: string | undefined
       try {
         await agent.prompt(message)
@@ -779,7 +802,7 @@ export class ChatService {
     const raw = this.rawMessages(id)
     const said = (m: AgentMessage) => {
       const c = (m as { content?: unknown }).content
-      const parts = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN)).map((b) => String(b.text)) : []
+      const parts = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN) && !String(b.text).startsWith(FILE_OPEN)).map((b) => String(b.text)) : []
       return parts.join('\n').replace(/\s+/g, ' ').trim()
     }
     const users = raw.filter((m) => m.role === 'user').map(said).filter(Boolean)
@@ -852,14 +875,16 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
       // Skill blocks from /name invocations become chips; only the user's own text is shown.
       const skills: string[] = []
       const parts: string[] = []
+      const attachments: UiAttachment[] = []
       let summary: string | undefined
       for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
-        if (c.type !== 'text') parts.push('[image]')
+        if (c.type === 'image') attachments.push({ kind: 'image', mimeType: c.mimeType, data: c.data })
+        else if (c.text.startsWith(FILE_OPEN)) attachments.push(parseFileBlock(c.text)!)
         else if (c.text.startsWith(SUMMARY_OPEN)) summary = splitSummary({ role: 'user', content: [c], timestamp: 0 }).summary ?? ''
         else if (c.text.startsWith(SKILL_OPEN)) skills.push(c.text.slice(SKILL_OPEN.length, c.text.indexOf('"', SKILL_OPEN.length)))
         else parts.push(c.text)
       }
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(summary !== undefined ? { summary } : {}) })
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue
@@ -909,6 +934,11 @@ function imageTrace(args: unknown, r: ToolResultMessage<ToolDetails> | undefined
   if (done) return done
   if (r?.isError) return { status: 'error', prompt: a.prompt ?? '', size: a.size ?? 'auto', error: r.content.map((c) => (c.type === 'text' ? c.text : '')).join(' ') }
   return (partial?.image as unknown as GeneratedImage | undefined) ?? { status: 'queued', prompt: a.prompt ?? '', size: a.size ?? 'auto' }
+}
+
+function contentChars(m: UserMessage): number {
+  if (typeof m.content === 'string') return m.content.length
+  return m.content.reduce((n, c) => n + (c.type === 'text' ? c.text.length : 4800), 0)
 }
 
 function pushText(blocks: UiBlock[], type: 'text' | 'thinking', text: string): void {

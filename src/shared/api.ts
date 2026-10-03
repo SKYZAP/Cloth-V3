@@ -10,6 +10,7 @@ import type {
   WebEngine,
   WorkflowGraph,
   ChatSession,
+  ChatAttachment,
   Project,
   ContainerChanges,
   ContainerStatus,
@@ -148,7 +149,9 @@ export interface ClothApi {
     update(id: string, patch: SessionPatch): Promise<ChatSession>
     remove(id: string): Promise<void>
     messages(id: string): Promise<UiMessage[]>
-    send(id: string, text: string, skills?: string[]): Promise<void>
+    send(id: string, text: string, skills?: string[], attachments?: ChatAttachment[]): Promise<void>
+    /** Run a user message again: drops it and everything after, then sends the same content (skills and attachments included). */
+    resend(id: string, messageId: string): Promise<void>
     abort(id: string): Promise<void>
     rewind(id: string, messageId: string): Promise<UiMessage[]>
     running(): Promise<string[]>
