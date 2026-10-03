@@ -25,6 +25,7 @@ import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { BUNDLED_FONTS, loadDesignFont } from '@/lib/designFonts'
+import { kitCss } from '@shared/kit'
 import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
@@ -260,7 +261,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
         {tab !== 'preview' && tab !== 'components' && <CopyButton text={files[tab]} />}
       </div>
       {tab === 'components' ? (
-        <ComponentsPanel designId={design.id} input={input} theme={theme} setTheme={setTheme} />
+        <ComponentsPanel designId={design.id} input={input} setKit={(kit) => set({ kit })} theme={theme} setTheme={setTheme} />
       ) : (
       <div className={clsx('min-h-0 flex-1 overflow-auto', width === 'phone' && tab === 'preview' && 'bg-elev/40 py-6')}>
         {tab === 'preview' ? (
@@ -663,29 +664,8 @@ const PREVIEW_CSS = `
 .dsp .big { font-family: var(--font-heading); font-size: var(--text-h2); font-weight: var(--weight-h2); letter-spacing: var(--tracking-h2); line-height: 1; }
 .dsp .muted { color: var(--color-text-muted); } .dsp .subtle { color: var(--color-text-subtle); }
 .dsp .small { font-size: var(--text-small); line-height: var(--leading-small); }
-.dsp .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-6); }
-.dsp .btn { height: var(--control-height); padding: 0 var(--pad-x); border-radius: var(--radius-md); font: inherit; font-size: var(--text-small); font-weight: 600; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s; white-space: nowrap; }
-.dsp .btn-primary { background: var(--color-primary); color: var(--color-on-primary); } .dsp .btn-primary:hover { background: var(--color-primary-hover); }
-.dsp .btn-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); } .dsp .btn-secondary:hover { border-color: var(--color-border-strong); }
-.dsp .btn-ghost { background: transparent; color: var(--color-text-muted); } .dsp .btn-ghost:hover { background: var(--color-surface-raised); color: var(--color-text); }
-.dsp .btn-danger { background: var(--color-danger); color: var(--color-on-danger); }
-.dsp .btn:focus-visible, .dsp .input:focus { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.dsp .label { display: block; font-size: var(--text-small); font-weight: 500; color: var(--color-text-muted); margin-bottom: 6px; }
-.dsp .input { width: 100%; height: var(--control-height); padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); font: inherit; font-size: var(--text-small); }
-.dsp .input::placeholder { color: var(--color-text-subtle); }
-.dsp .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: var(--text-caption); font-weight: 600; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
-.dsp .badge-primary { background: var(--color-primary-soft); color: var(--color-on-primary-soft); border-color: transparent; }
-.dsp .badge-accent { background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-color: transparent; }
-.dsp .badge-accent::before { content: ''; width: 6px; height: 6px; border-radius: 99px; background: var(--color-accent); margin-right: 6px; }
-.dsp .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid; font-size: var(--text-small); }
 .dsp .nav { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-wrap: wrap; }
 .dsp .nav a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-small); } .dsp .nav a.on { color: var(--color-text); font-weight: 600; }
-.dsp .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border); padding: 0 12px; }
-.dsp .tab { padding: 10px 12px; font-size: var(--text-small); color: var(--color-text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.dsp .tab.on { color: var(--color-text); border-color: var(--color-primary); font-weight: 600; }
-.dsp .menu { background: var(--color-surface-raised); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 4px; font-size: var(--text-small); align-self: start; }
-.dsp .menu div { padding: 7px 10px; border-radius: var(--radius-sm); } .dsp .menu .on { background: var(--color-primary-soft); }
-.dsp .menu .sep { height: 1px; padding: 0; margin: 4px 0; background: var(--color-border); } .dsp .menu .bad { color: var(--color-danger); }
 .dsp .bar { height: 8px; border-radius: 99px; background: var(--color-surface-raised); overflow: hidden; } .dsp .bar span { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
 .dsp table { width: 100%; border-collapse: collapse; font-size: var(--text-small); } .dsp th { text-align: left; color: var(--color-text-subtle); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--color-border); }
 .dsp td { padding: 10px; border-bottom: 1px solid var(--color-border); } .dsp tr:last-child td { border-bottom: 0; }
@@ -719,18 +699,18 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
     for (const [k, s] of Object.entries(built.shadows)) v[`--shadow-${k}`] = s
     return v as CSSProperties
   }, [roles, input, built])
-  const tint = (c: string) => ({ background: `color-mix(in oklab, ${c} 12%, ${roles.surface})`, borderColor: `color-mix(in oklab, ${c} 35%, ${roles.surface})` })
   const picked = input.overrides[theme] ?? {}
   return (
     <div className="dsp min-h-full" style={vars}>
       <style>{PREVIEW_CSS}</style>
+      <style>{kitCss(input.kit)}</style>
       <div className="nav">
         <h4>{name}</h4>
         <a className="on">Overview</a>
         <a>Projects</a>
         <a>Reports</a>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-primary">New project</button>
+        <button className="ds-button ds-button--primary">New project</button>
       </div>
       <div className="grid">
         <div className="full" style={{ display: 'grid', gap: 6 }}>
@@ -739,10 +719,10 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
             Three deploys went out overnight and one needs a look. Everything else is healthy.
           </div>
         </div>
-        <div className="card" style={{ display: 'grid', gap: 'var(--space-3)', alignContent: 'start' }}>
+        <div className="ds-card" style={{ alignContent: 'start' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span className="muted small">Monthly usage</span>
-            <span className="badge badge-accent">New</span>
+            <span className="ds-badge ds-badge--accent ds-badge--dot">New</span>
           </div>
           <div className="big">68%</div>
           <div className="bar">
@@ -754,50 +734,50 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
             ))}
           </div>
         </div>
-        <div className="card" style={{ display: 'grid', gap: 'var(--space-4)' }}>
+        <div className="ds-card" style={{ gap: 'var(--space-4)' }}>
           <h3>Create a project</h3>
-          <div>
-            <span className="label">Name</span>
-            <input className="input" placeholder="e.g. Billing service" />
-          </div>
+          <label className="ds-field">
+            <span className="ds-label">Name</span>
+            <input className="ds-input" placeholder="e.g. Billing service" />
+          </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 10 }} className="small">
             <span className="toggle" /> Enable backups
           </label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary">Create project</button>
-            <button className="btn btn-secondary">Cancel</button>
+            <button className="ds-button ds-button--primary">Create project</button>
+            <button className="ds-button ds-button--secondary">Cancel</button>
           </div>
         </div>
         <div style={{ display: 'grid', gap: 'var(--space-3)', alignContent: 'start' }}>
-          <div className="alert" style={tint(roles.success)}>
-            <span style={{ color: roles.success, fontWeight: 700 }}>✓</span>
+          <div className="ds-alert ds-alert--success">
+            <span className="ds-alert__icon" style={{ fontWeight: 700 }}>✓</span>
             <span>Deployed in 42 seconds.</span>
           </div>
-          <div className="alert" style={tint(roles.warning)}>
-            <span style={{ color: roles.warning, fontWeight: 700 }}>!</span>
+          <div className="ds-alert ds-alert--warning">
+            <span className="ds-alert__icon" style={{ fontWeight: 700 }}>!</span>
             <span>Usage is at 85% of the plan.</span>
           </div>
-          <div className="alert" style={tint(roles.danger)}>
-            <span style={{ color: roles.danger, fontWeight: 700 }}>×</span>
+          <div className="ds-alert ds-alert--danger">
+            <span className="ds-alert__icon" style={{ fontWeight: 700 }}>×</span>
             <span>The build failed — see the log.</span>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost">Archive</button>
-            <button className="btn btn-danger">Delete project</button>
+            <button className="ds-button ds-button--ghost">Archive</button>
+            <button className="ds-button ds-button--danger">Delete project</button>
           </div>
         </div>
-        <div className="menu">
-          <div>Rename</div>
-          <div className="on">Duplicate</div>
-          <div>Move to…</div>
-          <div className="sep" />
-          <div className="bad">Delete</div>
+        <div className="ds-menu" style={{ alignSelf: 'start' }}>
+          <div className="ds-menu__item">Rename</div>
+          <div className="ds-menu__item is-active">Duplicate</div>
+          <div className="ds-menu__item">Move to…</div>
+          <div className="ds-menu__sep" />
+          <div className="ds-menu__item ds-menu__item--danger">Delete</div>
         </div>
-        <div className="card full" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="tabs">
-            <span className="tab on">Services</span>
-            <span className="tab">Deploys</span>
-            <span className="tab">Settings</span>
+        <div className="ds-card ds-card--flush full">
+          <div className="ds-tabs" style={{ padding: '0 12px' }}>
+            <span className="ds-tab is-active">Services</span>
+            <span className="ds-tab">Deploys</span>
+            <span className="ds-tab">Settings</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -819,7 +799,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
                       <code>{r[0]}</code>
                     </td>
                     <td>
-                      <span className={r[1] === 'Healthy' ? 'badge badge-primary' : 'badge'} style={r[1] === 'Degraded' ? { color: roles.warning } : undefined}>
+                      <span className={r[1] === 'Healthy' ? 'ds-badge ds-badge--success' : 'ds-badge ds-badge--warning'}>
                         {r[1]}
                       </span>
                     </td>
@@ -830,7 +810,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
             </table>
           </div>
         </div>
-        <div className="card full" style={{ textAlign: 'center', display: 'grid', justifyItems: 'center', gap: 8, padding: 'var(--space-10) var(--space-6)' }}>
+        <div className="ds-card full" style={{ textAlign: 'center', justifyItems: 'center', gap: 8, padding: 'var(--space-10) var(--space-6)' }}>
           <span style={{ width: 40, height: 40, borderRadius: 'var(--radius-lg)', background: roles.primarySoft, color: roles.primary, display: 'grid', placeItems: 'center' }}>
             <Sparkle size={20} weight="fill" />
           </span>
@@ -838,9 +818,9 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
           <div className="muted small" style={{ maxWidth: 320 }}>
             Reports appear here once a project has a week of data.
           </div>
-          <button className="btn btn-secondary">Learn about reports</button>
+          <button className="ds-button ds-button--secondary">Learn about reports</button>
         </div>
-        <div className="card full" style={{ display: 'grid', gap: 10 }}>
+        <div className="ds-card full" style={{ gap: 10 }}>
           {built.type.map((t) => (
             <div key={t.name} style={{ display: 'flex', alignItems: 'baseline', gap: 16, minWidth: 0 }}>
               <span className="subtle" style={{ width: 84, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 11 }}>
@@ -852,7 +832,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
             </div>
           ))}
         </div>
-        <div className="card full" style={{ display: 'grid', gap: 12 }}>
+        <div className="ds-card full" style={{ gap: 12 }}>
           {Object.entries(built.scales)
             .filter(([, s]) => s)
             .map(([scaleName, s]) => (
@@ -866,7 +846,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
               </div>
             ))}
         </div>
-        <div className="card full">
+        <div className="ds-card full" style={{ display: 'block' }}>
           <h4 style={{ marginBottom: 10 }}>Contrast ({theme})</h4>
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
             {built.checks
@@ -885,7 +865,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
               ))}
           </div>
         </div>
-        <div className="card full">
+        <div className="ds-card full" style={{ display: 'block' }}>
           <h4 style={{ marginBottom: 4 }}>Roles ({theme})</h4>
           <div className="muted small" style={{ marginBottom: 12 }}>
             Click a colour to set it yourself.

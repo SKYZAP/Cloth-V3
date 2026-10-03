@@ -156,7 +156,7 @@ export function createApi(s: Services): ClothApi {
       export: (id, folder) => s.designs.export(id, folder),
       components: async (designId) => s.designs.components(designId),
       generateComponent: (input) => s.designs.generateComponent(input),
-      updateComponent: async (id, patch) => s.designs.updateComponent(id, patch),
+      updateComponent: async (id, patch, opts) => s.designs.updateComponent(id, patch, opts ?? {}),
       undoComponent: async (id) => s.designs.undoComponent(id),
       removeComponent: async (id) => s.designs.removeComponent(id)
     },

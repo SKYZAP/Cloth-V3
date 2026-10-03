@@ -1,4 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import { parseHTML } from 'linkedom'
+import { mergeRules } from '@shared/cssEdit'
 import { dirname, join } from 'node:path'
 import type { ModelRef } from '@shared/types'
 import {
@@ -10,6 +12,7 @@ import {
   sanitizeComponentCss,
   sanitizeComponentHtml,
   sanitizeDesign,
+  repairTokens,
   parsePalette,
   toDesignMd,
   type ComponentVersion,
@@ -143,7 +146,11 @@ export class DesignService {
 
   duplicate(id: string): DesignSystem {
     const d = this.get(id)
-    return this.create({ name: `${d.name} copy`, description: d.description, input: d.input })
+    const copy = this.create({ name: `${d.name} copy`, description: d.description, input: d.input })
+    // The component library comes along (current versions; the copy starts its own history).
+    const insert = this.ctx.db.prepare('INSERT INTO design_components (id, design_id, name, description, html, css, usage, prompt, history, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    for (const c of this.components(id)) insert.run(newId('cmp_'), copy.id, c.name, c.description, c.html, c.css, c.usage, c.prompt, '[]', c.createdAt, c.updatedAt)
+    return copy
   }
 
   /** Projects that followed it stop doing so. */
@@ -213,23 +220,30 @@ export class DesignService {
    * Builds a new component from a description, or (with componentId) a new version of an existing
    * one from a change request. The model sees the system's tokens and rules, and the current code.
    */
-  async generateComponent(input: { designId: string; prompt: string; model: ModelRef; componentId?: string }): Promise<DesignComponent> {
+  async generateComponent(input: { designId: string; prompt: string; model: ModelRef; componentId?: string; scope?: number[] }): Promise<DesignComponent> {
     const request = input.prompt.trim()
     if (!request) throw new Error('Describe the component')
     const design = this.get(input.designId)
     const current = input.componentId ? this.component(input.componentId) : null
-    const prompt = current
-      ? `Change the "${current.name}" component: ${request}\n\nKeep everything else as it is. Its current code:\n=== CSS ===\n${current.css}\n=== HTML ===\n${current.html}\n=== USAGE ===\n${current.usage}`
-      : `Build this component: ${request}`
+    // A change to one element: the model writes only that element and the rules it touches, and the
+    // rest of the component is spliced back around it untouched.
+    const part = current && input.scope?.length ? elementHtml(current.html, input.scope) : null
+    if (current && input.scope?.length && !part) throw new Error('That element is no longer in the component')
+    const prompt = part
+      ? `Change one part of the "${current!.name}" component: ${request}\n\nThe part (an element of the component's specimen page):\n${part}\n\nAnswer in the usual format, except: === HTML === holds ONLY the new markup that replaces this one element, and === CSS === holds ONLY the complete rules you add or change (a rule with the same selector replaces the old one; leave it empty if no CSS changes). Leave === USAGE === empty unless the usage snippet must change. Keep the component's class names.\n\nThe component's current CSS, for reference:\n${current!.css}`
+      : current
+        ? `Change the "${current.name}" component: ${request}\n\nKeep everything else as it is. Its current code:\n=== CSS ===\n${current.css}\n=== HTML ===\n${current.html}\n=== USAGE ===\n${current.usage}`
+        : `Build this component: ${request}`
     const { text } = await this.providers.complete(input.model, { system: componentPrompt(design), prompt, maxTokens: 8000, temperature: 0.4 })
-    const answer = parseComponentAnswer(text)
+    const answer = parseComponentAnswer(text, { partial: !!part })
     if (!answer) throw new Error('The model did not return a component — try again, or a different model')
-    const version: ComponentVersion = { html: sanitizeComponentHtml(answer.html), css: sanitizeComponentCss(answer.css), usage: sanitizeComponentHtml(answer.usage), prompt: request, createdAt: Date.now() }
+    const merged = part && current ? { html: replaceElement(current.html, input.scope!, sanitizeComponentHtml(answer.html)), css: mergeRules(current.css, repairTokens(sanitizeComponentCss(answer.css))), usage: answer.usage.trim() ? answer.usage : current.usage } : answer
+    const version: ComponentVersion = { html: sanitizeComponentHtml(merged.html), css: repairTokens(sanitizeComponentCss(merged.css)), usage: sanitizeComponentHtml(merged.usage), prompt: request, createdAt: Date.now() }
     if (current) {
       const history = [{ html: current.html, css: current.css, usage: current.usage, prompt: current.prompt, createdAt: current.updatedAt }, ...current.history].slice(0, HISTORY_LIMIT)
       this.ctx.db
         .prepare('UPDATE design_components SET description = ?, html = ?, css = ?, usage = ?, prompt = ?, history = ?, updated_at = ? WHERE id = ?')
-        .run(answer.description || current.description, version.html, version.css, version.usage, version.prompt, JSON.stringify(history), version.createdAt, current.id)
+        .run((!part && answer.description) || current.description, version.html, version.css, version.usage, version.prompt, JSON.stringify(history), version.createdAt, current.id)
       return this.component(current.id)
     }
     const id = newId('cmp_')
@@ -239,11 +253,16 @@ export class DesignService {
     return this.component(id)
   }
 
-  /** Hand edits (name, description or code); the previous code goes into the history. */
-  updateComponent(id: string, patch: Partial<Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>>): DesignComponent {
+  /**
+   * Hand edits (name, description or code); the previous code goes into the history. Edits with the
+   * same `label` within a minute of each other (the inspector's) share one history step.
+   */
+  updateComponent(id: string, patch: Partial<Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>>, opts: { label?: string } = {}): DesignComponent {
     const cur = this.component(id)
+    const label = opts.label?.trim().slice(0, 80) || 'Edited by hand'
     const codeChanged = (patch.html !== undefined && patch.html !== cur.html) || (patch.css !== undefined && patch.css !== cur.css) || (patch.usage !== undefined && patch.usage !== cur.usage)
-    const history = codeChanged ? [{ html: cur.html, css: cur.css, usage: cur.usage, prompt: cur.prompt, createdAt: cur.updatedAt }, ...cur.history].slice(0, HISTORY_LIMIT) : cur.history
+    const sameStep = codeChanged && cur.prompt === label && Date.now() - cur.updatedAt < 60_000
+    const history = codeChanged && !sameStep ? [{ html: cur.html, css: cur.css, usage: cur.usage, prompt: cur.prompt, createdAt: cur.updatedAt }, ...cur.history].slice(0, HISTORY_LIMIT) : cur.history
     this.ctx.db
       .prepare('UPDATE design_components SET name = ?, description = ?, html = ?, css = ?, usage = ?, prompt = ?, history = ?, updated_at = ? WHERE id = ?')
       .run(
@@ -252,7 +271,7 @@ export class DesignService {
         patch.html === undefined ? cur.html : sanitizeComponentHtml(patch.html),
         patch.css === undefined ? cur.css : sanitizeComponentCss(patch.css),
         patch.usage === undefined ? cur.usage : sanitizeComponentHtml(patch.usage),
-        codeChanged ? 'Edited by hand' : cur.prompt,
+        codeChanged ? label : cur.prompt,
         JSON.stringify(history),
         Date.now(),
         id
@@ -294,4 +313,33 @@ export function parseJsonObject(text: string): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+// ─── Markup by element path (child-element indices from <body>, as the editor addresses them) ──
+
+// linkedom's DOM is untyped for a Node tsconfig (no DOM lib); keep the `any` contained here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dom = any
+
+function walk(html: string, path: number[]): { body: Dom; el: Dom | null } {
+  const { document } = parseHTML(`<!doctype html><html><head></head><body>${html}</body></html>`) as Dom
+  let el: Dom = document.body
+  for (const i of path) {
+    el = el?.children?.[i] ?? null
+    if (!el) break
+  }
+  return { body: document.body, el: el === document.body ? null : el }
+}
+
+function elementHtml(html: string, path: number[]): string | null {
+  return walk(html, path).el?.outerHTML ?? null
+}
+
+function replaceElement(html: string, path: number[], replacement: string): string {
+  const { body, el } = walk(html, path)
+  if (!el) throw new Error('That element is no longer in the component')
+  const holder = el.ownerDocument.createElement('div')
+  holder.innerHTML = replacement
+  el.replaceWith(...holder.childNodes)
+  return body.innerHTML
 }

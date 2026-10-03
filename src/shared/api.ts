@@ -190,8 +190,8 @@ export interface ClothApi {
     export(id: string, folder: string): Promise<string[]>
     components(designId: string): Promise<DesignComponent[]>
     /** A new component from a description, or (componentId) a new version of one from a change request. */
-    generateComponent(input: { designId: string; prompt: string; model: ModelRef; componentId?: string }): Promise<DesignComponent>
-    updateComponent(id: string, patch: Partial<Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>>): Promise<DesignComponent>
+    generateComponent(input: { designId: string; prompt: string; model: ModelRef; componentId?: string; /** Change only the element at this path. */ scope?: number[] }): Promise<DesignComponent>
+    updateComponent(id: string, patch: Partial<Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>>, opts?: { label?: string }): Promise<DesignComponent>
     /** Back to the previous version. */
     undoComponent(id: string): Promise<DesignComponent>
     removeComponent(id: string): Promise<void>
