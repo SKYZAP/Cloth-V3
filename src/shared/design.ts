@@ -1,3 +1,4 @@
+import { DEFAULT_KIT, KIT, KIT_NAMES, KIT_USAGE, kitCss, kitMarkdown, kitSpecimen, sanitizeKit, type KitSettings } from './kit'
 /**
  * Design systems: a handful of choices (seed colours, fonts, shape) expanded into full colour
  * scales, light/dark roles, a type scale and spacing — and written out as DESIGN.md (for people and
@@ -53,6 +54,8 @@ export interface DesignInput {
   principles: string[]
   /** Hand-picked colours for single roles, per theme; they win over the generated ones. */
   overrides: { light: Partial<Roles>; dark: Partial<Roles> }
+  /** Settings of the built-in components (button, input, card …). */
+  kit: KitSettings
 }
 
 /** One version of a component: specimen markup, its styles, and a minimal usage snippet. */
@@ -117,7 +120,8 @@ export const DEFAULT_DESIGN: DesignInput = {
   density: 'comfortable',
   shadow: 'soft',
   principles: ['Clear hierarchy: one primary action per view', 'Content first; chrome stays quiet', 'Readable at a glance — generous line height, strong contrast'],
-  overrides: { light: {}, dark: {} }
+  overrides: { light: {}, dark: {} },
+  kit: DEFAULT_KIT
 }
 
 /** Grey families: a hue and how much colour they carry at full tint (null hue = the brand's). */
@@ -595,15 +599,8 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
   lines.push(
     '## Components',
     '',
-    `- **Button (primary):** background \`--color-primary\`, text \`--color-on-primary\`, radius md, height ${d.control.height}px; hover \`--color-primary-hover\`; focus ring 2px \`--color-focus\` with 2px offset.`,
-    '- **Button (secondary):** background `--color-surface`, 1px `--color-border`, text `--color-text`; hover border `--color-border-strong`.',
-    '- **Button (danger):** background `--color-danger`, text `--color-on-danger`. Only for destructive actions, and always name what is destroyed.',
-    '- **Input:** background `--color-surface`, 1px `--color-border`, radius md; placeholder `--color-text-subtle`; focus border `--color-primary` plus the focus ring. Labels above the field in `--color-text-muted`, small size.',
-    `- **Card / panel:** background \`--color-surface\`, 1px \`--color-border\`, radius lg, padding ${d.space[5]}–${d.space[6]}px${i.shadow === 'none' ? '' : ', shadow sm'}.`,
-    '- **Badge:** small text, radius full; neutral uses `--color-surface-raised`; selected/info uses `--color-primary-soft` with `--color-on-primary-soft` text.',
+    ...kitMarkdown(i.kit),
     '- **Colour pairs:** text on a fill uses that fill’s own on- role — `--color-on-primary` only on `--color-primary`, `--color-on-primary-soft` on `--color-primary-soft`, `--color-on-accent` only on `--color-accent`, `--color-on-accent-soft` on `--color-accent-soft`. Mixing them (e.g. on-accent on accent-soft) can be unreadable in one of the themes.',
-    '- **Alert:** 1px border and soft tint of the status colour, text in `--color-text`, icon in the status colour.',
-    '- **Menu / popover:** `--color-surface-raised`, radius md, shadow md; hovered item `--color-primary-soft`.',
     i.accent
       ? '- **Accent:** `--color-accent` (on it, `--color-on-accent`) and `--color-accent-soft` mark things worth noticing that are not actions — "new" badges, featured items, highlights in charts and progress, illustrations. Never use the accent for buttons or links.'
       : '- **Accent:** this system has no separate accent; `--color-accent` is a lighter brand shade for highlights. Keep actions on `--color-primary`.',
@@ -627,9 +624,10 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
   for (const c of d.checks.filter((x) => modes.includes(x.mode))) lines.push(`| ${c.label} | ${c.mode} | ${c.ratio.toFixed(2)} | ${c.need} | ${c.ratio >= c.need ? 'pass' : '**fails**'} |`)
   if (components.length) {
     lines.push(
+      '',
       '## Component library',
       '',
-      'Ready-made components built from these tokens. Their styles are in `components.css` (load it after `tokens.css`); each has a page with every variant in `components/`. Reuse them instead of restyling the same thing.',
+      'Ready-made components built from these tokens and the built-in ones. Their styles are in `components.css` (load it after `tokens.css`); each has a page with every variant in `components/`. Reuse them instead of restyling the same thing.',
       ''
     )
     for (const c of components) {
@@ -639,7 +637,7 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
     }
   }
   lines.push('', '## Files', '', '- `DESIGN.md` — this guide', '- `tokens.css` — CSS variables for both themes', '- `tailwind.css` — Tailwind v4 theme mapped to the tokens', '- `tokens.json` — the same tokens in the W3C design-tokens format')
-  if (components.length) lines.push('- `components.css` — styles for the component library', '- `components/*.html` — every component with its variants')
+  lines.push('- `components.css` — styles for the built-in components' + (components.length ? ' and the component library' : ''), '- `components/*.html` — every component with its variants')
   lines.push('')
   return lines.join('\n')
 }
@@ -648,10 +646,10 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
 export function designFiles(system: Pick<DesignSystem, 'name' | 'description' | 'input'>, components: Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>[] = []): Record<string, string> {
   const d = buildDesign(system.input)
   const files: Record<string, string> = { 'DESIGN.md': toDesignMd(system, d, components), 'tokens.css': toCss(system.input, d), 'tailwind.css': toTailwind(system.input, d), 'tokens.json': toTokensJson(system.input, d) }
-  if (components.length) {
-    files['components.css'] = components.map((c) => `/* ── ${c.name} ── */\n${c.css.trim()}\n`).join('\n')
-    for (const c of components) files[`components/${componentSlug(c.name)}.html`] = componentDocument(system.input, c, { tokens: '../tokens.css', components: '../components.css', title: `${system.name} — ${c.name}` })
-  }
+  files['components.css'] = [kitCss(system.input.kit), ...components.map((c) => `/* ── ${c.name} ── */\n${c.css.trim()}\n`)].join('\n')
+  const page = { tokens: '../tokens.css', components: '../components.css' }
+  for (const n of KIT_NAMES) files[`components/ds-${n}.html`] = componentDocument(system.input, { html: kitSpecimen(n), css: '' }, { ...page, title: `${system.name} — ${KIT[n].label}` })
+  for (const c of components) files[`components/${componentSlug(c.name)}.html`] = componentDocument(system.input, c, { ...page, title: `${system.name} — ${c.name}` })
   return files
 }
 
@@ -682,6 +680,27 @@ export function sanitizeComponentCss(css: string): string {
     .trim()
 }
 
+/**
+ * CSS variables a component uses that the system doesn't define (and the component doesn't set itself).
+ * A missing variable silently drops the whole declaration — e.g. an unknown weight in a `font:` shorthand.
+ */
+export function unknownTokens(css: string, html: string, input: DesignInput): string[] {
+  const defined = new Set([...toCss(input).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]))
+  const styles = [css, ...[...html.matchAll(/style\s*=\s*("([^"]*)"|'([^']*)')/gi)].map((m) => m[2] ?? m[3] ?? '')]
+  for (const text of styles) for (const m of text.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1])
+  const out = new Set<string>()
+  // Only uses without a fallback: var(--x, 4px) still works when --x is missing.
+  for (const text of styles) for (const m of text.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)) if (!defined.has(m[1])) out.add(m[1])
+  return [...out]
+}
+
+const WEIGHT_NAMES: Record<string, number> = { thin: 100, light: 300, regular: 400, normal: 400, book: 400, medium: 500, semibold: 600, 'semi-bold': 600, bold: 700, extrabold: 800, 'extra-bold': 800, black: 900, heavy: 900 }
+
+/** Models often invent named weight tokens (--weight-bold); the system has per-style weights, so use the number. */
+export function repairTokens(css: string): string {
+  return css.replace(/var\(\s*--(?:font-)?weight-([a-z-]+)\s*\)/g, (m, name: string) => (WEIGHT_NAMES[name] ? String(WEIGHT_NAMES[name]) : m))
+}
+
 /** Colours written as literals instead of tokens (the component would ignore theme and system changes). */
 export function componentLint(css: string, html: string): string[] {
   const found = new Set<string>()
@@ -695,7 +714,7 @@ export function componentLint(css: string, html: string): string[] {
   return [...found]
 }
 
-const SPECIMEN_CSS = `*,*::before,*::after{box-sizing:border-box}
+export const SPECIMEN_CSS = `*,*::before,*::after{box-sizing:border-box}
 html,body{margin:0}
 body{padding:28px;background:var(--color-background);color:var(--color-text);font-family:var(--font-sans);font-size:var(--text-body);line-height:var(--leading-body);-webkit-font-smoothing:antialiased}
 .specimen{display:grid;gap:28px}
@@ -720,13 +739,13 @@ export function componentDocument(
     opts.fontCss ? `<style>${opts.fontCss}</style>` : '',
     opts.tokens ? `<link rel="stylesheet" href="${opts.tokens}">` : `<style>${toCss(input)}</style>`,
     `<style>${SPECIMEN_CSS}</style>`,
-    opts.components ? `<link rel="stylesheet" href="${opts.components}">` : `<style>${sanitizeComponentCss(comp.css)}</style>`
+    opts.components ? `<link rel="stylesheet" href="${opts.components}">` : `<style data-kit>${kitCss(input.kit)}</style>\n<style data-component>${sanitizeComponentCss(comp.css)}</style>`
   ]
   return `<!doctype html>\n<html data-theme="${theme}">\n<head>\n${head.filter(Boolean).join('\n')}\n</head>\n<body>\n${sanitizeComponentHtml(comp.html)}\n</body>\n</html>\n`
 }
 
 /** Reads a model's component answer (the NAME / DESCRIPTION / === CSS === … format; code fences tolerated). */
-export function parseComponentAnswer(text: string): { name: string; description: string; css: string; html: string; usage: string } | null {
+export function parseComponentAnswer(text: string, opts: { partial?: boolean } = {}): { name: string; description: string; css: string; html: string; usage: string } | null {
   const section = (label: string) => {
     const m = new RegExp(`===\\s*${label}\\s*===\\s*\\n([\\s\\S]*?)(?=\\n\\s*===\\s*[A-Z]+\\s*===|$)`, 'i').exec(text)
     return m ? m[1].replace(/^\s*```[a-z]*\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '').trim() : ''
@@ -734,7 +753,8 @@ export function parseComponentAnswer(text: string): { name: string; description:
   const line = (label: string) => new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, 'im').exec(text)?.[1].trim() ?? ''
   const html = section('HTML')
   const css = section('CSS')
-  if (!html || !css) return null
+  // A change to one part may touch only markup (no CSS).
+  if (!html || (!css && !opts.partial)) return null
   return { name: line('NAME').replace(/^["'*]+|["'*]+$/g, '').slice(0, 60), description: line('DESCRIPTION').slice(0, 300), css, html, usage: section('USAGE') }
 }
 
@@ -759,8 +779,10 @@ Rules:
 - Use ONLY these CSS variables for colour, type, spacing, radius and shadow — never hex, rgb or named colours (transparent and currentColor are fine; color-mix() of variables is fine):
 ${roles}
 --font-sans, --font-heading, --font-mono
---text-{display,h1,h2,h3,h4,body,small,caption} with --leading-*, --weight-*, --tracking-* of the same names
+--text-{display,h1,h2,h3,h4,body,small,caption} with --leading-*, --weight-*, --tracking-* of the same names (e.g. --weight-h1, --weight-body; there are no --weight-bold-style tokens — use 400-800 for other weights)
 --space-0 … --space-12 (${d.space.slice(1, 13).join(', ')} px), --radius-{sm,md,lg,xl,full}, --shadow-{sm,md,lg}, --control-height (${d.control.height}px)
+- Built-in components already exist (their CSS is loaded on every page). Reuse them inside your component instead of styling your own buttons, fields, cards, badges, tabs, alerts or menus, and never redefine their ds- classes:
+${KIT_NAMES.map((n) => `  ${KIT[n].label}: ${KIT_USAGE[n]}`).join('\n')}
 - Prefix every class with c- and the component name (e.g. .c-button, .c-button--primary, .c-button__icon). Variants are modifier classes; states use :hover, :focus-visible, :disabled / [aria-*] and also static classes (.is-hover, .is-focus, .is-disabled, .is-loading) so they can be shown side by side.
 - Text on a fill uses that fill's own on- role: --color-on-primary only on --color-primary, --color-on-primary-soft on --color-primary-soft, --color-on-accent only on --color-accent, --color-on-accent-soft on --color-accent-soft, --color-on-danger on --color-danger. Never mix them — e.g. on-accent on accent-soft is unreadable in dark mode.
 - Focus states are visible: 2px outline in --color-focus with 2px offset.
@@ -802,7 +824,8 @@ export function sanitizeDesign(raw: Partial<Record<keyof DesignInput, unknown>>,
     density: pick(raw.density, ['compact', 'comfortable', 'spacious'] as const, base.density),
     shadow: pick(raw.shadow, ['none', 'soft', 'strong'] as const, base.shadow),
     principles: Array.isArray(raw.principles) ? raw.principles.filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim()).slice(0, 8) : base.principles,
-    overrides: cleanOverrides(raw.overrides, base.overrides)
+    overrides: cleanOverrides(raw.overrides, base.overrides),
+    kit: sanitizeKit(raw.kit, base.kit ?? DEFAULT_KIT)
   }
 }
 

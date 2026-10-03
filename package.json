@@ -44,6 +44,7 @@
     "ignore": "^7.0.8",
     "linkedom": "^0.18.13",
     "mammoth": "^1.12.3",
+    "postcss": "^8.5.28",
     "pptxgenjs": "^4.0.1",
     "pyright": "^1.1.414",
     "turndown": "^7.2.4",
