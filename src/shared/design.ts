@@ -9,7 +9,7 @@ export type DesignMode = 'dark' | 'light' | 'both'
 export type Density = 'compact' | 'comfortable' | 'spacious'
 export type ShadowStyle = 'none' | 'soft' | 'strong'
 /** Which family the greys come from: the brand's hue, or a classic grey. */
-export type NeutralFamily = 'brand' | 'slate' | 'zinc' | 'gray' | 'stone' | 'sand' | 'olive'
+export type NeutralFamily = 'brand' | 'slate' | 'zinc' | 'gray' | 'stone' | 'sand' | 'olive' | 'custom'
 
 export interface DesignInput {
   brand: string
@@ -24,6 +24,10 @@ export interface DesignInput {
   neutral: NeutralFamily
   /** How strongly the greys show that hue (0 = none, 1 = clearly tinted). */
   neutralTint: number
+  /** For the "custom" grey family: the colour whose hue the greys take (usually a near-grey from a palette). */
+  neutralSeed: string | null
+  /** The palette this system was built from (e.g. imported from Coolors), kept for reference and re-assigning. */
+  palette: string[]
   /** Dark theme background: 0 = near black, 1 = soft charcoal. */
   darkDepth: number
   /** Which themes the system defines (the first listed is the default). */
@@ -97,6 +101,8 @@ export const DEFAULT_DESIGN: DesignInput = {
   pinBrand: false,
   neutral: 'brand',
   neutralTint: 0.3,
+  neutralSeed: null,
+  palette: [],
   darkDepth: 0.35,
   mode: 'both',
   fontSans: 'Inter',
@@ -122,7 +128,8 @@ export const NEUTRALS: Record<NeutralFamily, { label: string; hue: number | null
   gray: { label: 'Grey', hue: 0, chroma: 0 },
   stone: { label: 'Stone', hue: 60, chroma: 0.014 },
   sand: { label: 'Sand', hue: 80, chroma: 0.03 },
-  olive: { label: 'Olive', hue: 120, chroma: 0.02 }
+  olive: { label: 'Olive', hue: 120, chroma: 0.02 },
+  custom: { label: 'Palette', hue: null, chroma: 0.03 }
 }
 
 export const FONT_CHOICES = {
@@ -334,7 +341,9 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     brand[nearest] = brandHex
   }
   const family = NEUTRALS[input.neutral] ?? NEUTRALS.brand
-  const greyHue = family.hue ?? brandSeed.h
+  const seed = input.neutral === 'custom' && input.neutralSeed ? hexToOklch(input.neutralSeed) : null
+  // A seed with no measurable hue (pure grey) falls back to the brand's.
+  const greyHue = family.hue ?? (seed && seed.c > 0.002 ? seed.h : brandSeed.h)
   const greyChroma = family.chroma * clamp(input.neutralTint, 0, 1) * 2
   // Hue passed directly: a near-grey seed colour would lose it to 8-bit rounding.
   const neutral = scaleFrom(brandHex, greyChroma, greyHue)
@@ -578,6 +587,7 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
   lines.push('', '## Colour scales', '', `| Step | ${Object.entries(d.scales).filter(([, s]) => s).map(([n]) => n).join(' | ')} |`, `|---|${Object.entries(d.scales).filter(([, s]) => s).map(() => '---').join('|')}|`)
   for (const s of STEPS) lines.push(`| ${s} | ${Object.values(d.scales).filter(Boolean).map((sc) => `\`${sc![s]}\``).join(' | ')} |`)
   lines.push('', 'Use scale steps for illustrations, charts and tinted backgrounds; use roles for interface elements.', '')
+  if (i.palette.length) lines.push(`Source palette: ${i.palette.map((c) => `\`${c}\``).join(' ')} — the roles above are derived from it. Use palette colours directly only for illustration and decoration.`, '')
   lines.push('## Typography', '', `- Body: **${i.fontSans}** (\`--font-sans\`), ${i.baseSize}px, line height ${d.type.find((t) => t.name === 'body')!.lineHeight}`, `- Headings: **${i.fontHeading}** (\`--font-heading\`)`, `- Code: **${i.fontMono}** (\`--font-mono\`)`, `- Scale ratio ${i.scale}`, '', '| Style | Size | Line height | Weight | Letter-spacing | Font |', '|---|---|---|---|---|---|')
   for (const t of d.type) lines.push(`| ${t.name} | ${t.size}px | ${t.lineHeight} | ${t.weight} | ${t.tracking}em | ${t.font} |`)
   lines.push('', 'Limit a screen to three type sizes plus headings. Use weight and colour (text / muted / subtle) for hierarchy before size.', '')
@@ -776,6 +786,8 @@ export function sanitizeDesign(raw: Partial<Record<keyof DesignInput, unknown>>,
     pinBrand: typeof raw.pinBrand === 'boolean' ? raw.pinBrand : (base.pinBrand ?? false),
     neutral: pick(raw.neutral, Object.keys(NEUTRALS) as NeutralFamily[], base.neutral ?? 'brand'),
     neutralTint: num(raw.neutralTint, 0, 1, base.neutralTint),
+    neutralSeed: raw.neutralSeed === null ? null : typeof raw.neutralSeed === 'string' && isHex(raw.neutralSeed) ? normalizeHex(raw.neutralSeed) : (base.neutralSeed ?? null),
+    palette: Array.isArray(raw.palette) ? [...new Set(raw.palette.filter((c): c is string => typeof c === 'string' && isHex(c)).map(normalizeHex))].slice(0, MAX_PALETTE) : (base.palette ?? []),
     darkDepth: num(raw.darkDepth, 0, 1, base.darkDepth ?? DEFAULT_DESIGN.darkDepth),
     mode: pick(raw.mode, ['dark', 'light', 'both'] as const, base.mode),
     fontSans: font(raw.fontSans, base.fontSans),
@@ -857,3 +869,108 @@ export const PRESETS: { id: string; name: string; blurb: string; input: Partial<
     input: { brand: '#c8a35b', accent: '#c8a35b', pinBrand: true, neutral: 'stone', neutralTint: 0.3, darkDepth: 0.6, mode: 'dark', fontSans: 'Manrope', fontHeading: 'Playfair Display', fontMono: 'IBM Plex Mono', baseSize: 15, scale: 1.333, headingWeight: 600, headingTracking: 0, bodyLeading: 1.65, radius: 2, density: 'spacious', shadow: 'soft', principles: ['Restraint: fewer elements, more space', 'Gold marks only what matters most', 'Photography and type do the selling'] }
   }
 ]
+
+// ─── Palettes (Coolors and friends) ───────────────────────────────────────────
+
+export const MAX_PALETTE = 10
+
+/**
+ * Colours from pasted text: a Coolors link (coolors.co/54494b-f1f7ed-b33951), a Coolors export
+ * (CSS variables, JSON, arrays, SCSS) or any list of hex / rgb() colours. Order kept, duplicates dropped.
+ */
+export function parsePalette(text: string): string[] {
+  const out: string[] = []
+  const add = (hex: string) => {
+    const h = normalizeHex(hex.slice(0, hex.startsWith('#') ? 7 : 6))
+    if (!out.includes(h)) out.push(h)
+  }
+  // Coolors links carry the palette in the path: /54494b-f1f7ed-b33951 or /palette/54494b-…
+  const link = /coolors\.co\/(?:palette\/)?([0-9a-f]{6}(?:-[0-9a-f]{6})+)/i.exec(text)
+  if (link) {
+    link[1].split('-').forEach(add)
+    return out.slice(0, MAX_PALETTE)
+  }
+  const re = /(?:#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-z])|(?<![0-9a-z#])([0-9a-f]{6})(?![0-9a-z])|rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})[^)]*\))/gi
+  for (const m of text.matchAll(re)) {
+    if (m[1]) add(m[1].length === 3 ? normalizeHex(m[1]) : `#${m[1]}`)
+    else if (m[2]) {
+      // A bare six-letter word could be English ("decade", "facade"); only count it with a digit in it.
+      if (/\d/.test(m[2])) add(m[2])
+    } else add(rgbToHex([Number(m[3]) / 255, Number(m[4]) / 255, Number(m[5]) / 255]))
+  }
+  return out.slice(0, MAX_PALETTE)
+}
+
+/** A Coolors link for a palette, to keep generating there. */
+export function coolorsUrl(colors: string[]): string {
+  return `https://coolors.co/${colors.map((c) => normalizeHex(c).slice(1)).join('-')}`
+}
+
+/** The palette to send to Coolors: the imported one, or the system's own key colours. */
+export function systemPalette(input: DesignInput, d = buildDesign(input)): string[] {
+  if (input.palette.length) return input.palette
+  return [d.scales.neutral[900], input.brand, ...(input.accent ? [input.accent] : []), d.scales.neutral[100], input.success]
+}
+
+/** What a palette colour can be used as in the system. */
+export type PaletteUse = 'brand' | 'accent' | 'greys' | 'lightBackground' | 'darkBackground' | 'lightText'
+
+/** Apply one palette colour to a role (keeping the rest of the system). */
+export function applyPaletteColor(input: DesignInput, color: string, use: PaletteUse): Partial<DesignInput> {
+  const hex = normalizeHex(color)
+  switch (use) {
+    case 'brand':
+      return { brand: hex, pinBrand: true }
+    case 'accent':
+      return { accent: hex }
+    case 'greys': {
+      const { c } = hexToOklch(hex)
+      return { neutral: 'custom', neutralSeed: hex, neutralTint: c < 0.002 ? 0 : clamp(Math.round((c / 0.06) * 20) / 20, 0.15, 1) }
+    }
+    case 'lightBackground':
+      return { overrides: { ...input.overrides, light: { ...input.overrides.light, background: hex } } }
+    case 'darkBackground':
+      return { overrides: { ...input.overrides, dark: { ...input.overrides.dark, background: hex } } }
+    case 'lightText':
+      return { overrides: { ...input.overrides, light: { ...input.overrides.light, text: hex } } }
+  }
+}
+
+/**
+ * Turn a palette into colour settings: the most vivid colour becomes the brand, a second vivid colour
+ * with a different hue the accent. Near-whites and near-blacks become the theme backgrounds, and the
+ * greys take their hue from the light background (else the most tinted near-grey), so surfaces match it.
+ * Hand-picked role colours are cleared, since they were chosen for the old colours.
+ */
+export function paletteToDesign(colors: string[], input: DesignInput): Partial<DesignInput> {
+  const palette = [...new Set(colors.map(normalizeHex))].slice(0, MAX_PALETTE)
+  if (!palette.length) return {}
+  const info = palette.map((hex) => ({ hex, ...hexToOklch(hex) }))
+  // Vivid colours, best first: chroma, nudged towards a usable mid lightness.
+  const score = (c: (typeof info)[number]) => c.c - Math.abs(c.l - 0.55) * 0.08
+  const vivid = info.filter((c) => c.c >= 0.05).sort((a, b) => score(b) - score(a))
+  const brand = vivid[0] ?? [...info].sort((a, b) => b.c - a.c || Math.abs(a.l - 0.5) - Math.abs(b.l - 0.5))[0]
+  const hueGap = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b))
+  const accent = vivid.find((c) => c !== brand && hueGap(c.h, brand.h) >= 25) ?? null
+  const rest = info.filter((c) => c !== brand && c !== accent && c.c < 0.06)
+  const lightBg = rest.filter((c) => c.l >= 0.93).sort((a, b) => b.l - a.l)[0]
+  const darkBg = rest.filter((c) => c.l <= 0.28).sort((a, b) => a.l - b.l)[0]
+  const greySeed = lightBg ?? [...rest].sort((a, b) => b.c - a.c)[0]
+
+  let out: Partial<DesignInput> = { palette, brand: brand.hex, accent: accent?.hex ?? null, overrides: { light: {}, dark: {} } }
+  if (greySeed) out = { ...out, ...applyPaletteColor(input, greySeed.hex, 'greys') }
+  const next = { ...input, ...out } as DesignInput
+  if (lightBg) next.overrides = { ...next.overrides, light: { background: lightBg.hex } }
+  if (darkBg) next.overrides = { ...next.overrides, dark: { background: darkBg.hex } }
+  out.overrides = next.overrides
+  // Use the brand colour exactly wherever it stays readable as a link; elsewhere Cloth picks the shade.
+  const pinned = buildDesign({ ...next, pinBrand: true })
+  out.pinBrand = !pinned.checks.some((c) => c.fg === brand.hex && c.ratio < c.need)
+  if (!out.pinBrand) {
+    for (const mode of ['light', 'dark'] as const) {
+      if (contrast(brand.hex, pinned.roles[mode].background) >= 4.5) next.overrides = { ...next.overrides, [mode]: { ...next.overrides[mode], primary: brand.hex } }
+    }
+    out.overrides = next.overrides
+  }
+  return out
+}

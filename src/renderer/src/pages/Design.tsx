@@ -29,6 +29,7 @@ import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented,
 import { ModelPicker } from '@/components/ModelPicker'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ComponentsPanel } from './design/Components'
+import { PaletteField } from './design/Palette'
 
 type PresetChoice = { name: string; input: Partial<DesignInput> } | null
 
@@ -353,6 +354,7 @@ function Controls({ input, set, description, setDescription }: { input: DesignIn
   return (
     <div>
       <Section title="Colour">
+        <PaletteField input={input} set={set} />
         <ColorField label="Brand" value={input.brand} onChange={(v) => v && set({ brand: v })} />
         <div className="flex items-center justify-between gap-3">
           <span className="text-[12px] text-muted">{input.pinBrand ? 'Buttons use exactly this colour' : 'Cloth picks the most readable shade'}</span>
@@ -368,7 +370,7 @@ function Controls({ input, set, description, setDescription }: { input: DesignIn
       <Section title="Greys and themes">
         <Field label="Grey family">
           <div className="flex flex-wrap gap-1.5">
-            {(Object.keys(NEUTRALS) as NeutralFamily[]).map((k) => {
+            {(Object.keys(NEUTRALS) as NeutralFamily[]).filter((k) => k !== 'custom' || input.neutralSeed).map((k) => {
               const sample = buildDesign({ ...input, neutral: k, neutralTint: k === 'gray' ? 0 : Math.max(input.neutralTint, 0.5) }).scales.neutral
               return (
                 <button
@@ -632,7 +634,7 @@ function GenerateModal({ open, current, onClose, onDraft }: { open: boolean; cur
     >
       <div className="space-y-3">
         <Field label="Describe the product and the feel">
-          <Textarea rows={4} autoFocus={!isMobile} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. A calm, dense dashboard for on-call engineers. Dark first, teal brand, sharp corners, technical but friendly." />
+          <Textarea rows={4} autoFocus={!isMobile} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="e.g. A calm, dense dashboard for on-call engineers. Dark first, sharp corners, technical but friendly. Paste a Coolors link to build from its palette." />
         </Field>
         <Field label="Model">
           <ModelPicker value={model} onChange={setModel} />

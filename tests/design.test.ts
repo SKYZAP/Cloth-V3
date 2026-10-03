@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
-import { buildDesign, componentLint, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, parseComponentAnswer, PRESETS, sanitizeComponentCss, sanitizeComponentHtml, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
+import { applyPaletteColor, buildDesign, componentLint, coolorsUrl, paletteToDesign, parsePalette, toDesignMd, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, parseComponentAnswer, PRESETS, sanitizeComponentCss, sanitizeComponentHtml, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
 
 describe('design systems', () => {
   it('converts colours through OKLCH and back', () => {
@@ -197,5 +197,41 @@ describe('component library', () => {
     expect(sanitizeComponentHtml('<a href="javascript:alert(1)" onmouseover="x()">x</a><iframe src="https://e.test"></iframe><img src=x onerror=alert(1)>')).toBe('<a href="#">x</a><img src=x>')
     expect(sanitizeComponentCss('.a{background:url(https://e.test/p.png)} .b{background:url(data:image/png;base64,AAA)} </style><script>')).toBe('.a{background:none} .b{background:url(data:image/png;base64,AAA)} <script>')
     expect(componentLint('.a{color:var(--color-text, #000);background:rgb(1 2 3)}', '<i style="color:#abc"></i>')).toEqual(['rgb(1 2 3)', '#abc'])
+  })
+})
+describe('palettes', () => {
+  it('reads Coolors links, Coolors exports and colour lists', () => {
+    expect(parsePalette('https://coolors.co/54494b-f1f7ed-b33951')).toEqual(['#54494b', '#f1f7ed', '#b33951'])
+    expect(parsePalette('coolors.co/palette/264653-2a9d8f-e9c46a')).toEqual(['#264653', '#2a9d8f', '#e9c46a'])
+    expect(parsePalette(':root { --taupe: #54494bff; --honeydew: #f1f7edff; --red: #B33951; }')).toEqual(['#54494b', '#f1f7ed', '#b33951'])
+    expect(parsePalette('["54494b","f1f7ed"]')).toEqual(['#54494b', '#f1f7ed'])
+    expect(parsePalette('rgba(84, 73, 75, 1), #abc')).toEqual(['#54494b', '#aabbcc'])
+    // Six-letter words are not colours.
+    expect(parsePalette('a decade of facade')).toEqual([])
+    expect(coolorsUrl(['#54494B', '#f1f7ed'])).toBe('https://coolors.co/54494b-f1f7ed')
+  })
+
+  it('maps a palette onto the system and keeps it readable', () => {
+    const colors = parsePalette('https://coolors.co/54494b-f1f7ed-b33951')
+    const input = { ...DEFAULT_DESIGN, ...paletteToDesign(colors, DEFAULT_DESIGN) }
+    expect(input).toMatchObject({ palette: colors, brand: '#b33951', accent: null, neutral: 'custom', neutralSeed: '#f1f7ed' })
+    const d = buildDesign(input)
+    expect(d.roles.light.background).toBe('#f1f7ed')
+    // Exact where it is readable (light), a legible shade where it is not (dark).
+    expect(d.roles.light.primary).toBe('#b33951')
+    expect(d.roles.dark.primary).not.toBe('#b33951')
+    expect(d.checks.filter((c) => c.ratio < c.need)).toEqual([])
+    expect(toDesignMd({ name: 'P', description: '', input }, d)).toContain('Source palette: `#54494b` `#f1f7ed` `#b33951`')
+  })
+
+  it('picks a contrasting accent and re-assigns single colours', () => {
+    const colors = parsePalette('coolors.co/264653-2a9d8f-e9c46a-f4a261-e76f51')
+    const mapped = paletteToDesign(colors, DEFAULT_DESIGN)
+    expect(mapped.brand).toBe('#e76f51')
+    expect(mapped.accent).toBe('#2a9d8f')
+    const input = { ...DEFAULT_DESIGN, ...mapped }
+    expect(applyPaletteColor(input, '#264653', 'darkBackground').overrides?.dark.background).toBe('#264653')
+    expect(applyPaletteColor(input, '#e9c46a', 'accent')).toEqual({ accent: '#e9c46a' })
+    expect(sanitizeDesign({ ...input, palette: ['#fff', 'nope', '#FFFFFF'] }).palette).toEqual(['#ffffff'])
   })
 })
