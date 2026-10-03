@@ -259,9 +259,11 @@ export type RoleName =
   | 'primaryHover'
   | 'onPrimary'
   | 'primarySoft'
+  | 'onPrimarySoft'
   | 'accent'
   | 'onAccent'
   | 'accentSoft'
+  | 'onAccentSoft'
   | 'success'
   | 'warning'
   | 'danger'
@@ -283,9 +285,11 @@ export const ROLE_INFO: Record<RoleName, string> = {
   primaryHover: 'Primary hover / pressed',
   onPrimary: 'Text and icons on primary',
   primarySoft: 'Selected rows, soft badges',
+  onPrimarySoft: 'Text and icons on primary-soft (never on-primary there)',
   accent: 'Highlights that are not actions',
-  onAccent: 'Text on accent',
+  onAccent: 'Text on a solid accent fill only',
   accentSoft: 'Tinted highlight backgrounds (new, featured)',
+  onAccentSoft: 'Text and icons on accent-soft (never on-accent there)',
   success: 'Success states',
   warning: 'Warnings',
   danger: 'Errors and destructive actions',
@@ -359,9 +363,11 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     primaryHover: input.pinBrand ? pinnedShade(-0.07) : shifted(brand, lightPrimary, 1),
     onPrimary: onColor(lightPrimary, white, neutral[950]),
     primarySoft: brand[100],
+    onPrimarySoft: legibleStep(brand, brand[100], 700, 4.5),
     accent: accentTone ?? brand[400],
     onAccent: onColor(accentTone ?? brand[400], white, neutral[950]),
     accentSoft: (accent ?? brand)[100],
+    onAccentSoft: legibleStep(accent ?? brand, (accent ?? brand)[100], 800, 4.5),
     success: legibleStep(success, lightBg, 600, 4.5),
     warning: legibleStep(warning, lightBg, 700, 4.5),
     danger: legibleStep(danger, lightBg, 600, 4.5),
@@ -387,9 +393,11 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     primaryHover: input.pinBrand ? pinnedShade(0.07) : shifted(brand, darkPrimary, -1),
     onPrimary: onColor(darkPrimary, white, neutral[950]),
     primarySoft: brand[900],
+    onPrimarySoft: legibleStep(brand, brand[900], 200, 4.5),
     accent: accentTone ?? brand[300],
     onAccent: onColor(accentTone ?? brand[300], white, neutral[950]),
     accentSoft: (accent ?? brand)[900],
+    onAccentSoft: legibleStep(accent ?? brand, (accent ?? brand)[900], 200, 4.5),
     success: legibleStep(success, darkBg, 400, 4.5),
     warning: legibleStep(warning, darkBg, 400, 4.5),
     danger: legibleStep(danger, darkBg, 400, 4.5),
@@ -404,6 +412,8 @@ export function buildDesign(input: DesignInput): BuiltDesign {
     if (picked.primary && !picked.onPrimary) out.onPrimary = onColor(out.primary, white, neutral[950])
     if (picked.accent && !picked.onAccent) out.onAccent = onColor(out.accent, white, neutral[950])
     if (picked.danger && !picked.onDanger) out.onDanger = onColor(out.danger, white, neutral[950])
+    if (picked.primarySoft && !picked.onPrimarySoft) out.onPrimarySoft = onColor(out.primarySoft, white, neutral[950])
+    if (picked.accentSoft && !picked.onAccentSoft) out.onAccentSoft = onColor(out.accentSoft, white, neutral[950])
     return out
   }
   const lightRoles = withOverrides(light, input.overrides?.light)
@@ -449,6 +459,8 @@ export function buildDesign(input: DesignInput): BuiltDesign {
       { label: 'Muted text on surface', mode, fg: roles.textMuted, bg: roles.surface, ratio: contrast(roles.textMuted, roles.surface), need: 4.5 },
       { label: 'Label on primary button', mode, fg: roles.onPrimary, bg: roles.primary, ratio: contrast(roles.onPrimary, roles.primary), need: 4.5 },
       { label: 'Primary link on background', mode, fg: roles.primary, bg: roles.background, ratio: contrast(roles.primary, roles.background), need: 4.5 },
+      { label: 'Label on primary-soft', mode, fg: roles.onPrimarySoft, bg: roles.primarySoft, ratio: contrast(roles.onPrimarySoft, roles.primarySoft), need: 4.5 },
+      { label: 'Label on accent-soft', mode, fg: roles.onAccentSoft, bg: roles.accentSoft, ratio: contrast(roles.onAccentSoft, roles.accentSoft), need: 4.5 },
       { label: 'Danger on background', mode, fg: roles.danger, bg: roles.background, ratio: contrast(roles.danger, roles.background), need: 4.5 },
       { label: 'Label on danger button', mode, fg: roles.onDanger, bg: roles.danger, ratio: contrast(roles.onDanger, roles.danger), need: 4.5 },
       { label: 'Input border on surface', mode, fg: roles.borderStrong, bg: roles.surface, ratio: contrast(roles.borderStrong, roles.surface), need: 1.5 }
@@ -578,7 +590,8 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
     '- **Button (danger):** background `--color-danger`, text `--color-on-danger`. Only for destructive actions, and always name what is destroyed.',
     '- **Input:** background `--color-surface`, 1px `--color-border`, radius md; placeholder `--color-text-subtle`; focus border `--color-primary` plus the focus ring. Labels above the field in `--color-text-muted`, small size.',
     `- **Card / panel:** background \`--color-surface\`, 1px \`--color-border\`, radius lg, padding ${d.space[5]}–${d.space[6]}px${i.shadow === 'none' ? '' : ', shadow sm'}.`,
-    '- **Badge:** small text, radius full; neutral uses `--color-surface-raised`; selected/info uses `--color-primary-soft` with `--color-primary` text.',
+    '- **Badge:** small text, radius full; neutral uses `--color-surface-raised`; selected/info uses `--color-primary-soft` with `--color-on-primary-soft` text.',
+    '- **Colour pairs:** text on a fill uses that fill’s own on- role — `--color-on-primary` only on `--color-primary`, `--color-on-primary-soft` on `--color-primary-soft`, `--color-on-accent` only on `--color-accent`, `--color-on-accent-soft` on `--color-accent-soft`. Mixing them (e.g. on-accent on accent-soft) can be unreadable in one of the themes.',
     '- **Alert:** 1px border and soft tint of the status colour, text in `--color-text`, icon in the status colour.',
     '- **Menu / popover:** `--color-surface-raised`, radius md, shadow md; hovered item `--color-primary-soft`.',
     i.accent
@@ -739,6 +752,7 @@ ${roles}
 --text-{display,h1,h2,h3,h4,body,small,caption} with --leading-*, --weight-*, --tracking-* of the same names
 --space-0 … --space-12 (${d.space.slice(1, 13).join(', ')} px), --radius-{sm,md,lg,xl,full}, --shadow-{sm,md,lg}, --control-height (${d.control.height}px)
 - Prefix every class with c- and the component name (e.g. .c-button, .c-button--primary, .c-button__icon). Variants are modifier classes; states use :hover, :focus-visible, :disabled / [aria-*] and also static classes (.is-hover, .is-focus, .is-disabled, .is-loading) so they can be shown side by side.
+- Text on a fill uses that fill's own on- role: --color-on-primary only on --color-primary, --color-on-primary-soft on --color-primary-soft, --color-on-accent only on --color-accent, --color-on-accent-soft on --color-accent-soft, --color-on-danger on --color-danger. Never mix them — e.g. on-accent on accent-soft is unreadable in dark mode.
 - Focus states are visible: 2px outline in --color-focus with 2px offset.
 - Accessible markup: real buttons and labels, aria attributes where needed, text contrast from the role pairs above.
 - "html" is a specimen page: wrap everything in <div class="specimen">, and group variants in <section class="specimen-section"> each starting with <div class="specimen-label">Variant name</div> and the examples in <div class="specimen-row">. Show every variant, size and state, with realistic content.

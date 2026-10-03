@@ -297,7 +297,8 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
       </div>
       {side ? (
         <div className="flex min-h-0 flex-1">
-          <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>
+          {/* The component playground needs the room; the system's controls come back on the other tabs. */}
+          {tab !== 'components' && <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>}
           {view}
         </div>
       ) : (
@@ -671,8 +672,8 @@ const PREVIEW_CSS = `
 .dsp .input { width: 100%; height: var(--control-height); padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-background); color: var(--color-text); font: inherit; font-size: var(--text-small); }
 .dsp .input::placeholder { color: var(--color-text-subtle); }
 .dsp .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: var(--text-caption); font-weight: 600; background: var(--color-surface-raised); color: var(--color-text-muted); border: 1px solid var(--color-border); }
-.dsp .badge-primary { background: var(--color-primary-soft); color: var(--color-primary); border-color: transparent; }
-.dsp .badge-accent { background: var(--color-accent-soft); color: var(--color-text); border-color: transparent; }
+.dsp .badge-primary { background: var(--color-primary-soft); color: var(--color-on-primary-soft); border-color: transparent; }
+.dsp .badge-accent { background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-color: transparent; }
 .dsp .badge-accent::before { content: ''; width: 6px; height: 6px; border-radius: 99px; background: var(--color-accent); margin-right: 6px; }
 .dsp .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid; font-size: var(--text-small); }
 .dsp .nav { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); flex-wrap: wrap; }
