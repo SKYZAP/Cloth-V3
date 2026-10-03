@@ -491,10 +491,22 @@ export interface UiMessage {
   error?: string
   /** Skills the user invoked with /name for this message. */
   skills?: string[]
+  /** Files and images the user attached to this message. */
+  attachments?: UiAttachment[]
   /** Set on the first message after a compaction: the summary of everything before it. */
   summary?: string
   /** Turns that were summarised away — shown for reference, no longer sent to the model. */
   archived?: boolean
+}
+
+/** An attachment as the chat shows it: images carry their bytes, files only what was read from them. */
+export type UiAttachment = { kind: 'image'; mimeType: string; data: string } | { kind: 'file'; name: string; chars: number; truncated?: boolean }
+
+/** A file or image the user attaches to a message (bytes as base64). */
+export interface ChatAttachment {
+  name: string
+  mimeType: string
+  data: string
 }
 
 export interface TodoItem {
