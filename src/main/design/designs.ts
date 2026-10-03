@@ -10,6 +10,7 @@ import {
   sanitizeComponentCss,
   sanitizeComponentHtml,
   sanitizeDesign,
+  parsePalette,
   toDesignMd,
   type ComponentVersion,
   type DesignComponent,
@@ -77,7 +78,8 @@ const GENERATE_SYSTEM = `You are a senior product designer. From the user's desc
   "accent": second highlight colour as #rrggbb, or null for brand-only systems,
   "success": "#rrggbb", "warning": "#rrggbb", "danger": "#rrggbb" (harmonised with the brand, still clearly green / amber / red),
   "pinBrand": true to use the brand colour exactly for buttons (for a signature colour), false to let Cloth pick the most readable shade,
-  "neutral": grey family — "brand" (greys lean to the brand hue), "slate" (cool blue-grey), "zinc" (cool, faint), "gray" (pure), "stone" (warm), "sand" (warmer), "olive",
+  "neutral": grey family — "brand" (greys lean to the brand hue), "slate" (cool blue-grey), "zinc" (cool, faint), "gray" (pure), "stone" (warm), "sand" (warmer), "olive", or "custom" (greys take the hue of neutralSeed),
+  "neutralSeed": with "custom" only: a #rrggbb whose hue the greys take (e.g. an off-white or deep grey from the user's palette), else null,
   "neutralTint": 0..1 (how strongly the greys show that family's hue),
   "mode": "dark" | "light" | "both",
   "darkDepth": 0..1 (dark background: 0 near black, 0.5 charcoal, 1 soft grey),
@@ -153,14 +155,22 @@ export class DesignService {
   /** A design proposed by a model from a description (not saved — the editor applies it). */
   async generate(input: { prompt: string; model: ModelRef; current?: DesignInput }): Promise<DesignDraft> {
     if (!input.prompt.trim()) throw new Error('Describe the look you want')
-    const prompt = input.current ? `${input.prompt.trim()}\n\nCurrent system (change what the description asks for, keep the rest):\n${JSON.stringify(input.current)}` : input.prompt.trim()
+    // A pasted palette (a Coolors link or a list of colours) is the colour brief.
+    const palette = parsePalette(input.prompt)
+    const brief =
+      palette.length >= 2
+        ? `\n\nBuild the colours from this palette: ${palette.join(', ')}. Brand and accent must be palette colours exactly; take the greys' hue from its near-greys (neutral "custom" with neutralSeed) when it has them. Keep success/warning/danger recognisable but in harmony with it.`
+        : ''
+    const prompt = input.current
+      ? `${input.prompt.trim()}${brief}\n\nCurrent system (change what the description asks for, keep the rest):\n${JSON.stringify(input.current)}`
+      : `${input.prompt.trim()}${brief}`
     const { text } = await this.providers.complete(input.model, { system: GENERATE_SYSTEM, prompt, maxTokens: 2000, temperature: 0.7 })
     const raw = parseJsonObject(text)
     if (!raw) throw new Error('The model did not return a design — try again, or a different model')
     return {
       name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 40) : 'Untitled',
       description: typeof raw.description === 'string' ? raw.description.trim().slice(0, 300) : '',
-      input: sanitizeDesign(raw, input.current ?? DEFAULT_DESIGN)
+      input: sanitizeDesign({ ...raw, ...(palette.length >= 2 ? { palette } : {}) }, input.current ?? DEFAULT_DESIGN)
     }
   }
 
