@@ -24,6 +24,7 @@ import {
   Code,
   ShieldCheck,
   ShieldWarning,
+  SidebarSimple,
   TerminalWindow,
   MagnifyingGlass,
   NotePencil,
@@ -40,7 +41,7 @@ import {
   type Icon
 } from '@phosphor-icons/react'
 import { DEFAULT_CONTAINER } from '@shared/types'
-import type { ApprovalDecision, AutoApprove, ChatSession, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, WorkspaceFile, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -59,6 +60,7 @@ import { isMobile, useSideBySide } from '@/lib/platform'
 import { ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
+import { SidePanel, usePanelState } from './chat/SidePanel'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -425,6 +427,33 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     if (errors.length) useApp.getState().toast(errors.join(' · '), 'error')
     textarea.current?.focus()
   }
+  // ─── Side panel (terminal, files, git) ──────────────────────────────────────
+  const [panel, setPanel] = usePanelState()
+  useEffect(() => {
+    // Ctrl+` opens the terminal (or closes the panel when it's already showing it).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '`' || !(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      setPanel(panel.open && panel.tab === 'terminal' ? { open: false } : { open: true, tab: 'terminal' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+  const attachWorkspaceFile = async (f: WorkspaceFile) => {
+    const bytes = f.kind === 'image' && f.data ? Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0)) : new TextEncoder().encode(f.text ?? '')
+    await attach([new File([bytes], f.path.split('/').pop() || 'file', { type: f.mimeType ?? 'text/plain' })])
+    if (isMobile) setPanel({ open: false })
+  }
+  const insertPath = (path: string) => {
+    setDraft((d) => `${d}${d && !/\s$/.test(d) ? ' ' : ''}\`${path}\` `)
+    if (isMobile) setPanel({ open: false })
+    textarea.current?.focus()
+  }
+  const pickFolder = async () => {
+    const [folder] = await api.app.pickPaths({ directory: true, title: 'Choose a folder for this chat' })
+    if (folder) await update({ workspace: folder })
+  }
+
   const unattach = (key: string) =>
     setAttachments((cur) => {
       const gone = cur.find((a) => a.key === key)
@@ -534,8 +563,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
 
   return (
+    <div className="flex h-full min-w-0">
     <div
-      className="relative flex h-full flex-col overflow-hidden"
+      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden"
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
@@ -595,6 +625,18 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
         )}
         {session.container && <ContainerPill session={session} running={running} />}
         <ModelPicker pill className="w-64 mobile:w-[46%] mobile:shrink-0" value={session.model} onChange={(model) => void update({ model })} />
+        <Tooltip content={panel.open ? 'Hide terminal, files and git' : 'Terminal, files and git (Ctrl+`)'}>
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            transition={SPRING_PRESS}
+            onClick={() => setPanel({ open: !panel.open })}
+            aria-pressed={panel.open}
+            aria-label="Toggle side panel"
+            className={clsx('flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-elev-2', panel.open ? 'text-crimson-hi' : 'text-dim hover:text-fg')}
+          >
+            <SidebarSimple size={17} weight={panel.open ? 'fill' : 'regular'} className="-scale-x-100" />
+          </motion.button>
+        </Tooltip>
         <Tooltip content="Chat context">
           <motion.button
             whileTap={{ scale: 0.88 }}
@@ -824,6 +866,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
       >
         <ContextSheet session={session} collections={collections} selected={selected} reasoning={reasoning} update={update} />
       </BottomSheet>
+    </div>
+    {panel.open && <SidePanel session={session} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
     </div>
   )
 }

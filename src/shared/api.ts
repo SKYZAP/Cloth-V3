@@ -11,6 +11,12 @@ import type {
   WorkflowGraph,
   ChatSession,
   ChatAttachment,
+  GitCommit,
+  GitStatus,
+  TerminalInfo,
+  WorkspaceEntry,
+  WorkspaceFile,
+  WorkspaceRoot,
   Project,
   ContainerChanges,
   ContainerStatus,
@@ -143,6 +149,32 @@ export interface ClothApi {
     registryCheckUpdate(name: string): Promise<{ updateAvailable: boolean; current: string | null; latest: string | null }>
     dir(): Promise<string>
   }
+  /** The chat side panel: the chat's files, terminals and git. */
+  panel: {
+    root(sessionId: string): Promise<WorkspaceRoot>
+    list(sessionId: string, dir: string): Promise<WorkspaceEntry[]>
+    read(sessionId: string, path: string): Promise<WorkspaceFile>
+    /** Desktop only: open with the default app / show in Explorer. */
+    open(sessionId: string, path: string): Promise<void>
+    reveal(sessionId: string, path: string): Promise<void>
+    terminals(sessionId: string): Promise<TerminalInfo[]>
+    openTerminal(sessionId: string, size: { cols: number; rows: number }): Promise<TerminalInfo>
+    terminalBuffer(id: string): Promise<string>
+    writeTerminal(id: string, data: string): Promise<void>
+    resizeTerminal(id: string, cols: number, rows: number): Promise<void>
+    closeTerminal(id: string): Promise<void>
+    gitStatus(sessionId: string): Promise<GitStatus>
+    gitDiff(sessionId: string, path: string, staged: boolean): Promise<string>
+    gitStage(sessionId: string, paths: string[]): Promise<GitStatus>
+    gitUnstage(sessionId: string, paths: string[]): Promise<GitStatus>
+    /** Tracked files go back to the last commit's version; untracked ones are deleted. */
+    gitDiscard(sessionId: string, paths: string[]): Promise<GitStatus>
+    gitCommit(sessionId: string, message: string, all: boolean): Promise<{ hash: string; status: GitStatus }>
+    gitLog(sessionId: string): Promise<GitCommit[]>
+    gitPush(sessionId: string): Promise<string>
+    gitPull(sessionId: string): Promise<string>
+    commitMessage(sessionId: string, all: boolean): Promise<string>
+  }
   chat: {
     list(): Promise<ChatSession[]>
     create(config?: SessionPatch): Promise<ChatSession>
@@ -274,4 +306,5 @@ export type EventMap = {
   export: import('./flow-bundle').ExportEvent
   web: { type: 'status' }
   remote: RemoteStatus
+  terminal: import('./types').TerminalEvent
 }
