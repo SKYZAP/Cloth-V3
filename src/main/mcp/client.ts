@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Type } from 'typebox'
@@ -107,9 +109,13 @@ export class McpClientService {
     c.stderr = ''
     this.changed()
     c.starting = (async () => {
+      // Each server works in its own folder under Cloth's data (screenshots, logs and caches land there).
+      const cwd = join(this.ctx.dataDir, 'mcp-servers', config.name.replace(/[^a-zA-Z0-9_-]+/g, '_'))
+      await mkdir(cwd, { recursive: true })
       const transport = new StdioClientTransport({
         command: config.command,
         args: config.args,
+        cwd,
         env: { ...(process.env as Record<string, string>), ...config.env },
         stderr: 'pipe'
       })
