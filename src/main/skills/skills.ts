@@ -98,6 +98,24 @@ export class SkillService {
     private providers: ProviderService
   ) {}
 
+  /** Where a skill's files live (scripts it bundles run from here). */
+  folder(name: string): string {
+    return this.dir(name)
+  }
+
+  /**
+   * A skill's instructions as an agent should see them: ${CLAUDE_SKILL_DIR} (and ${SKILL_DIR}) point at
+   * its folder, so skills written for Claude Code can run their bundled scripts.
+   */
+  instructions(skill: Pick<Skill, 'name' | 'body' | 'files'>): string {
+    const folder = this.dir(skill.name).replace(/\\/g, '/')
+    const body = skill.body.replace(/\$\{(CLAUDE_SKILL_DIR|SKILL_DIR)\}/g, folder)
+    const scripts = skill.files.filter((f) => /\.(py|js|mjs|cjs|sh|ps1|ts)$/i.test(f))
+    if (!scripts.length) return body
+    const list = `${scripts.slice(0, 4).join(', ')}${scripts.length > 4 ? ', …' : ''}`
+    return `${body}\n\nThis skill's folder is ${folder} — run its scripts (${list}) from there with the shell when shell access is on.`
+  }
+
   private dir(name: string): string {
     if (!NAME_RE.test(name)) throw new Error(`Invalid skill name "${name}" — use lowercase letters, digits and dashes`)
     return join(this.ctx.skillsDir, name)

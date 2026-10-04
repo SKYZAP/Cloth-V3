@@ -6,6 +6,7 @@ import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import type { ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
+import type { McpClientService } from '../mcp/client'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
@@ -97,7 +98,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   imagesEnabled: true,
   thinking: 'off',
   projectId: null,
-  container: null
+  container: null,
+  mcpServers: null
 }
 
 export interface AgentRunOptions {
@@ -119,8 +121,12 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService } = {}
   ) {}
+
+  get mcpClients(): McpClientService | undefined {
+    return this.ws.mcp
+  }
 
   private subagentSettings(): SubagentSettings {
     return this.ws.settings?.get().subagents ?? DEFAULT_SUBAGENTS
@@ -188,6 +194,11 @@ export class AgentRuntime {
         'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
     }
+    const external = this.ws.mcp?.tools(scope) ?? []
+    if (external.length) {
+      const servers = [...new Set(external.map((t) => t.name.split('__')[1]))]
+      lines.push('', '## External tools', `Tools from these MCP servers are available (named mcp__<server>__<tool>): ${servers.join(', ')}.${servers.includes('playwright') ? ' With Playwright you can open pages in a real browser, interact with them and take screenshots — use it to check UI you build (open the page, look at the screenshot or snapshot, fix what is off).' : ''}`)
+    }
     if (this.imagesAvailable(scope)) lines.push('', '## Images', 'You can create images with `generate_image` when the user asks for a picture, illustration, logo, mockup or similar. The image appears inline for the user.')
     if (scope.sessionId && !scope.depth) {
       lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
@@ -225,7 +236,8 @@ export class AgentRuntime {
     const tools = [
       ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...this.ws }, scope),
       ...(scope.subagents && !scope.depth ? [this.taskTool({ model: { providerId: '', modelId: '' }, scope })] : []),
-      ...(this.imagesAvailable(scope) ? [this.imageTool()] : [])
+      ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
+      ...(this.ws.mcp?.tools(scope) ?? [])
     ]
     return JSON.stringify(tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))
   }
@@ -240,7 +252,8 @@ export class AgentRuntime {
         tools: [
           ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
           ...(opts.scope.subagents && !opts.scope.depth ? [this.taskTool(opts)] : []),
-          ...(this.imagesAvailable(opts.scope) ? [this.imageTool()] : [])
+          ...(this.imagesAvailable(opts.scope) ? [this.imageTool()] : []),
+          ...(this.ws.mcp?.tools(opts.scope) ?? [])
         ],
         messages: opts.history ?? []
       },
@@ -423,6 +436,7 @@ export class ChatService {
       titleTurns: cur.titleTurns,
       projectId: cur.projectId,
       container: cur.container,
+      mcpServers: cur.mcpServers,
       ...config
     }
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -620,7 +634,7 @@ export class ChatService {
         `# ${skill.name}`,
         skill.description,
         '',
-        skill.body,
+        this.skills.instructions(skill),
         ...(extra.length ? ['', `Bundled files (load with skill_use + file): ${extra.join(', ')}`] : []),
         SKILL_CLOSE
       ]
@@ -705,6 +719,12 @@ export class ChatService {
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
     const scope = await this.runScope(id)
+    // External MCP servers this chat uses: started on demand so their tools are there for the agent.
+    const mcp = this.runtime.mcpClients
+    if (mcp) {
+      scope.mcpServers = mcp.chatServers(session.mcpServers)
+      await mcp.ensure(scope.mcpServers)
+    }
     // Summarise older turns first if the conversation is about to outgrow the model's context.
     if (this.settings.get().autoCompact) {
       const usage = await this.contextUsage(id)

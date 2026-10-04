@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mcpEnabled: true,
   mcpPort: 7811,
   mcpRequireToken: false,
+  mcpClients: [],
   chunkSize: 1600,
   chunkOverlap: 200,
   autoCompact: true,

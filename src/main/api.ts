@@ -1,4 +1,5 @@
 import { app, dialog, shell, BrowserWindow } from 'electron'
+import { MCP_PRESETS } from './mcp/client'
 import type { ClothApi } from '@shared/api'
 import { copyFile } from 'node:fs/promises'
 import type { Services } from './services'
@@ -248,7 +249,11 @@ export function createApi(s: Services): ClothApi {
     mcp: {
       status: async () => s.mcp.status(),
       restart: () => s.mcp.restart(),
-      rotateToken: async () => s.mcp.rotateToken()
+      rotateToken: async () => s.mcp.rotateToken(),
+      clients: async () => s.mcpClients.status(),
+      clientPresets: async () => MCP_PRESETS,
+      startClient: (id) => s.mcpClients.start(id),
+      stopClient: (id) => s.mcpClients.stop(id)
     },
     remote: {
       status: async () => s.remote.status(),
