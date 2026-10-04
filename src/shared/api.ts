@@ -24,6 +24,9 @@ import type {
   GeneratedImage,
   ImageSize,
   ChatSetup,
+  ThinkingLevel,
+  Agent,
+  AgentInput,
   ContextUsage,
   ApprovalDecision,
   PendingApproval,
@@ -200,6 +203,23 @@ export interface ClothApi {
     contextUsage(id: string): Promise<ContextUsage>
     /** The chat's tools and skills with what each adds to a request. */
     setup(id: string): Promise<ChatSetup>
+    /** Set the chat up from a saved agent (its model, effort and capabilities); null = the default assistant. */
+    useAgent(id: string, agentId: string | null): Promise<ChatSession>
+  }
+  agents: {
+    list(): Promise<Agent[]>
+    create(input?: AgentInput & { template?: string }): Promise<Agent>
+    update(id: string, patch: AgentInput): Promise<Agent>
+    duplicate(id: string): Promise<Agent>
+    remove(id: string): Promise<void>
+    /** Its tools and skills with what each adds to a request (as if it had full access to a folder). */
+    setup(id: string): Promise<ChatSetup>
+    /** A name and purpose from a description, to check before generating. */
+    draft(description: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<{ name: string; purpose: string }>
+    /** Write the instructions and save the agent. */
+    generate(input: { description: string; name: string; purpose: string; model?: ModelRef | null; thinking?: ThinkingLevel }): Promise<Agent>
+    /** The instructions with a change applied (not saved). */
+    rewrite(instructions: string, request: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<string>
   }
   containers: {
     status(force?: boolean): Promise<ContainerStatus>
@@ -316,4 +336,5 @@ export type EventMap = {
   remote: RemoteStatus
   terminal: import('./types').TerminalEvent
   mcpClients: { type: 'changed' }
+  agents: { type: 'changed' }
 }

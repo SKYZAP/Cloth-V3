@@ -9,6 +9,7 @@ import { SkillService } from './skills/skills'
 import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
 import { ProjectService } from './agent/projects'
+import { AgentService } from './agent/agents'
 import { DesignService } from './design/designs'
 import { ContainerService, type DockerRun } from './agent/containers'
 import { PanelService } from './panel/panel'
@@ -39,6 +40,7 @@ export interface Services {
   custom: CustomToolService
   runtime: AgentRuntime
   chat: ChatService
+  agents: AgentService
   projects: ProjectService
   containers: ContainerService
   mcpClients: McpClientService
@@ -91,11 +93,12 @@ export function createServices(opts: {
   const lsp = new LspManager()
   const images = new ImageService(ctx, providers, settings)
   const mcpClients = new McpClientService(ctx, settings, approvals)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings, mcp: mcpClients })
+  const agents = new AgentService(ctx, providers, settings)
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings, mcp: mcpClients, agents })
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs)
   const containers = new ContainerService(ctx, opts.docker)
-  const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers)
+  const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
@@ -126,5 +129,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
+  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, agents, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
 }

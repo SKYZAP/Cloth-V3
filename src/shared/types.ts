@@ -323,6 +323,8 @@ export interface ChatSession {
   skillsOff: string[]
   /** Skills whose instructions go with every request. */
   skillsAlways: string[]
+  /** The saved agent this chat was set up from (its instructions apply); null = Cloth's default assistant. */
+  agentId: string | null
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
   preview?: string
   createdAt: number
@@ -330,6 +332,150 @@ export interface ChatSession {
 }
 
 export type SkillMode = 'off' | 'auto' | 'always'
+
+/** What an agent may use: the same switches a chat has. */
+export interface AgentSetup {
+  skillsEnabled: boolean
+  skillsOff: string[]
+  skillsAlways: string[]
+  webEnabled: boolean
+  customTools: boolean
+  subagents: boolean
+  codeIntel: boolean
+  imagesEnabled: boolean
+  knowledgeEnabled: boolean
+  /** Empty = every collection. */
+  collectionIds: string[]
+  /** null = the servers that are on by default. */
+  mcpServers: string[] | null
+  disabledTools: string[]
+  /** The most it may do in the chat's folder (a chat with less access keeps its own). */
+  fileAccess: FileAccess
+  shell: boolean
+  autoApprove: AutoApprove
+}
+
+export const DEFAULT_AGENT_SETUP: AgentSetup = {
+  skillsEnabled: true,
+  skillsOff: [],
+  skillsAlways: [],
+  webEnabled: false,
+  customTools: true,
+  subagents: true,
+  codeIntel: true,
+  imagesEnabled: true,
+  knowledgeEnabled: true,
+  collectionIds: [],
+  mcpServers: null,
+  disabledTools: [],
+  fileAccess: 'read',
+  shell: false,
+  autoApprove: 'none'
+}
+
+/** Scout and worker: the built-in subagent roles, editable as agents. */
+export type AgentBuiltin = 'scout' | 'worker'
+
+/** A saved agent: who it is, what it's for, and what it may use. */
+export interface Agent extends AgentSetup {
+  id: string
+  name: string
+  /** How other agents decide to hand it work, and what the user sees in pickers. */
+  purpose: string
+  /** Its system prompt (added after Cloth's own). */
+  instructions: string
+  /** null = the model of the chat it works in. */
+  model: ModelRef | null
+  /** null = the chat's effort. */
+  thinking: ThinkingLevel | null
+  builtin: AgentBuiltin | null
+  /** Can be picked as a chat's agent. */
+  asChat: boolean
+  /** Other agents can delegate to it by name. */
+  asSubagent: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type AgentInput = Partial<Omit<Agent, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>>
+
+/** Starting points for a new agent. */
+export const AGENT_TEMPLATES: { id: string; name: string; summary: string; agent: AgentInput }[] = [
+  {
+    id: 'ui-reviewer',
+    name: 'UI reviewer',
+    summary: 'Design skills, a real browser, read and edit',
+    agent: {
+      name: 'UI reviewer',
+      purpose: "Reviews and fixes interfaces against the project's design system, and checks the result in a real browser.",
+      instructions:
+        `You review and fix user interfaces.
+
+- Start from the project's design system (DESIGN.md or its tokens) and use its colours, type and spacing; never hard-code new values.
+- Check contrast, focus states, keyboard use and small screens as well as looks.
+- When a browser tool is available, open the page at phone and desktop widths, in light and dark themes, and fix what is off before reporting.
+- Keep changes small and say what you changed and why.`,
+      fileAccess: 'write',
+      shell: false
+    }
+  },
+  {
+    id: 'researcher',
+    name: 'Researcher',
+    summary: 'Web and knowledge, read-only',
+    agent: {
+      name: 'Researcher',
+      purpose: 'Finds and cites sources on the web and in the knowledge base; never changes files.',
+      instructions:
+        `You research questions and report what you find.
+
+- Search the knowledge base first for anything project-specific, then the web.
+- Read the sources rather than trusting snippets, and cite each claim.
+- Say plainly when sources disagree or when you found nothing reliable.
+- Finish with a short answer, then the evidence.`,
+      webEnabled: true,
+      knowledgeEnabled: true,
+      fileAccess: 'read'
+    }
+  },
+  {
+    id: 'release-helper',
+    name: 'Release helper',
+    summary: 'Git and shell, asks before every command',
+    agent: {
+      name: 'Release helper',
+      purpose: 'Prepares releases: changelogs, version bumps, tags and checks, asking before each command.',
+      instructions:
+        `You help prepare releases.
+
+- Read the git history and the changelog before writing anything.
+- Explain each command before running it; never push, publish or delete without the user saying so.
+- Run the tests and build before calling a release ready.
+- Report the version, what changed and anything that blocks the release.`,
+      fileAccess: 'write',
+      shell: true,
+      autoApprove: 'none'
+    }
+  },
+  {
+    id: 'code-tour',
+    name: 'Code tour guide',
+    summary: 'Read-only, code intelligence',
+    agent: {
+      name: 'Code tour guide',
+      purpose: 'Explains how a codebase is organised and how a feature works, with file references; read-only.',
+      instructions:
+        `You explain codebases.
+
+- Start with the big picture (what it does, how it is laid out), then go as deep as asked.
+- Use definitions and references to follow the code rather than guessing.
+- Refer to files with paths and line numbers.
+- Do not change anything.`,
+      fileAccess: 'read',
+      codeIntel: true
+    }
+  }
+]
 
 /** What a chat's setup adds to every request, item by item (token counts are estimates). */
 export interface ChatSetup {
@@ -486,6 +632,8 @@ export type ImageSize = 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
 
 export interface SubagentRun {
   role: 'scout' | 'worker'
+  /** The saved agent that ran, when the main agent delegated to one by name. */
+  agent?: string
   description: string
   blocks: UiBlock[]
   running: boolean

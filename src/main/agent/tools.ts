@@ -65,6 +65,8 @@ export interface ToolScope {
   skillsAlways?: string[]
   /** Tools switched off by name. */
   disabledTools?: string[]
+  /** The saved agent this agent is (it doesn't delegate to itself). */
+  agentId?: string | null
   /** A file was written in the workspace by a custom tool (absolute path). */
   onFile?: (abs: string) => void
   /** External MCP servers (by id) whose tools this agent gets. */

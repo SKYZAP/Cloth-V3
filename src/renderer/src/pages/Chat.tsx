@@ -23,7 +23,7 @@ import {
   Trash,
   type Icon
 } from '@phosphor-icons/react'
-import type { ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage } from '@shared/types'
+import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
@@ -362,6 +362,11 @@ function ChatView({
   useEffect(() => {
     void api.skills.list().then(setSkills).catch(() => undefined)
   }, [])
+  const [agent, setAgent] = useState<Agent | null>(null)
+  useEffect(() => {
+    if (!session.agentId) return setAgent(null)
+    void api.agents.list().then((list) => setAgent(list.find((a) => a.id === session.agentId) ?? null), () => undefined)
+  }, [session.agentId])
 
   useEffect(() => {
     void api.chat.messages(session.id).then((ms) => {
@@ -714,7 +719,7 @@ function ChatView({
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
         <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[250px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
-          {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
+          {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
               <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[11.5px] text-dim transition-colors hover:border-line-strong hover:text-muted">
@@ -1016,7 +1021,7 @@ function SendButton({ running, disabled, onSend, onStop }: { running: boolean; d
   )
 }
 
-function Welcome({ onPick, session, project, hasKnowledge }: { onPick(t: string): void; session: ChatSession; project: Project | null; hasKnowledge: boolean }) {
+function Welcome({ onPick, session, project, agent, hasKnowledge }: { onPick(t: string): void; session: ChatSession; project: Project | null; agent: Agent | null; hasKnowledge: boolean }) {
   const folder = session.workspace?.split(/[\\/]/).pop()
   const writes = session.fileAccess === 'write' || !!session.container
   const prompts = folder
@@ -1033,7 +1038,8 @@ function Welcome({ onPick, session, project, hasKnowledge }: { onPick(t: string)
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={ENTER} className="flex flex-col items-center pt-16 text-center">
       <Logo size={40} />
-      <div className="mt-5 text-[20px] font-semibold tracking-tight [text-wrap:balance]">{project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
+      <div className="mt-5 text-[20px] font-semibold tracking-tight [text-wrap:balance]">{agent ? agent.name : project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
+      {agent?.purpose && <div className="mt-1 max-w-md text-[13px] text-muted [text-wrap:balance]">{agent.purpose}</div>}
       <div className="mt-1 text-[13px] text-dim">{folder ? `The agent can ${writes ? 'read and change' : 'read'} files in this folder${session.shell ? ' and run commands' : ''}.` : 'A local agent with traced tools, grounded in your knowledge, skills and the web.'}</div>
       <div className="mt-8 grid w-full max-w-xl gap-2">
         {prompts.map((p, i) => (

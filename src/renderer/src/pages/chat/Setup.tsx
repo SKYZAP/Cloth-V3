@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { CaretLeft, CaretRight, FolderSimple, MagnifyingGlass, X } from '@phosphor-icons/react'
-import type { ChatSession, ChatSetup, McpClientStatus, Project, SkillMode } from '@shared/types'
+import { ArrowSquareOut, CaretLeft, CaretRight, Check, FolderSimple, MagnifyingGlass, X } from '@phosphor-icons/react'
+import type { Agent, AgentSetup, ChatSession, ChatSetup, McpClientStatus, Project, SkillMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
-import { useApp } from '@/lib/store'
+import { attempt, useApp } from '@/lib/store'
 import { Segmented } from './StatusLine'
 
-type Update = (p: Partial<ChatSession>) => Promise<void>
-type View = 'overview' | 'skills' | 'servers' | 'tools' | 'knowledge' | 'instructions'
+/** What the capability lists edit: a chat, or a saved agent. */
+export type Target = Pick<AgentSetup, 'skillsEnabled' | 'skillsOff' | 'skillsAlways' | 'webEnabled' | 'customTools' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'knowledgeEnabled' | 'collectionIds' | 'mcpServers' | 'disabledTools'>
+export type Update = (p: Partial<AgentSetup>) => Promise<void>
+type View = 'overview' | 'agent' | 'skills' | 'servers' | 'tools' | 'knowledge' | 'instructions'
+
+/** The switches a chat takes from its agent; any difference means the chat was changed since. */
+export const AGENT_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools']
 
 /** Colours of the four parts of the request budget, shared by the bar and the legend. */
 const PART = { servers: '#6b9cf0', builtin: '#a3a3ad', skills: '#c084fc', knowledge: '#3fb97a' }
@@ -37,28 +42,15 @@ const KNOWLEDGE_TOOLS = ['rag_search', 'rag_index']
 const SKILL_TOOLS = ['skill_list', 'skill_use']
 const KNOWN = new Set(GROUPS.flatMap((g) => g.names ?? []))
 const groupOf = (name: string) => GROUPS.find((g) => g.names?.includes(name)) ?? GROUPS.find((g) => g.id === 'custom')!
-const k = (n: number) => (n >= 100 ? `${(n / 1000).toFixed(1)}k` : String(n))
+export const k = (n: number) => (n >= 100 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
-/** The Setup tab: what this chat can use, each part with what it adds to every request. */
-export function SetupPanel({ session, update }: { session: ChatSession; update: Update }) {
-  const [view, setView] = useState<View>('overview')
-  const [setup, setSetup] = useState<ChatSetup | null>(null)
-  const [servers, setServers] = useState<McpClientStatus[]>([])
+/** Which tools and skills are on for a chat or agent, what each part costs, and how to switch them. */
+export function useCapabilities(target: Target, update: Update, setup: ChatSetup | null) {
   const settings = useApp((s) => s.settings)
   const collections = useApp((s) => s.collections)
-
-  const load = () => {
-    void api.chat.setup(session.id).then(setSetup, () => undefined)
-    void api.mcp.clients().then(setServers, () => undefined)
-  }
-  // Reload whenever the chat's settings change (any update bumps updatedAt).
-  useEffect(load, [session.id, session.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEvent('mcpClients', load)
-  useEffect(() => setView('overview'), [session.id])
-
   const configs = (settings?.mcpClients ?? []).filter((c) => c.enabled)
-  const chosen = session.mcpServers ?? configs.filter((c) => c.defaultOn).map((c) => c.id)
-  const off = new Set(session.disabledTools)
+  const chosen = target.mcpServers ?? configs.filter((c) => c.defaultOn).map((c) => c.id)
+  const off = new Set(target.disabledTools)
   const tools = setup?.tools ?? []
   const serverOf = (name: string) => configs.find((c) => name.startsWith(`mcp__${c.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}__`))
 
@@ -68,19 +60,19 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
       const c = serverOf(name)
       return !!c && chosen.includes(c.id)
     }
-    if (KNOWLEDGE_TOOLS.includes(name)) return session.knowledgeEnabled
-    if (SKILL_TOOLS.includes(name)) return session.skillsEnabled
+    if (KNOWLEDGE_TOOLS.includes(name)) return target.knowledgeEnabled
+    if (SKILL_TOOLS.includes(name)) return target.skillsEnabled
     const g = groupOf(name)
-    return g.flag ? session[g.flag] : true
+    return g.flag ? target[g.flag] : true
   }
 
   const builtin = tools.filter((t) => !t.name.startsWith('mcp__') && !KNOWLEDGE_TOOLS.includes(t.name) && !SKILL_TOOLS.includes(t.name))
   const external = tools.filter((t) => t.name.startsWith('mcp__'))
   const sum = (ts: { tokens: number }[]) => ts.reduce((n, t) => n + t.tokens, 0)
   const skills = setup?.skills ?? []
-  const skillCost = (s: ChatSetup['skills'][number]) => (s.mode === 'always' ? s.fullTokens : s.mode === 'auto' && session.skillsEnabled ? s.listedTokens : 0)
-  const skillsOn = skills.filter((s) => s.mode === 'always' || (s.mode === 'auto' && session.skillsEnabled))
-  const selected = session.knowledgeEnabled ? (session.collectionIds.length ? collections.filter((c) => session.collectionIds.includes(c.id)) : collections) : []
+  const skillCost = (s: ChatSetup['skills'][number]) => (s.mode === 'always' ? s.fullTokens : s.mode === 'auto' && target.skillsEnabled ? s.listedTokens : 0)
+  const skillsOn = skills.filter((s) => s.mode === 'always' || (s.mode === 'auto' && target.skillsEnabled))
+  const selected = target.knowledgeEnabled ? (target.collectionIds.length ? collections.filter((c) => target.collectionIds.includes(c.id)) : collections) : []
 
   const parts = {
     servers: sum(external.filter((t) => isOn(t.name))),
@@ -94,10 +86,10 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
     const nextOff = new Set(off)
     if (isOn(name)) return void update({ disabledTools: [...nextOff.add(name)] })
     nextOff.delete(name)
-    const patch: Partial<ChatSession> = {}
+    const patch: Partial<AgentSetup> = {}
     // Switching on one tool of a switched-off group turns the group on with just that tool.
     const g = name.startsWith('mcp__') ? null : groupOf(name)
-    if (g?.flag && !session[g.flag]) {
+    if (g?.flag && !target[g.flag]) {
       patch[g.flag] = true
       for (const t of builtin) if (t.name !== name && groupOf(t.name) === g) nextOff.add(t.name)
     }
@@ -108,14 +100,57 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
     }
     void update({ ...patch, disabledTools: [...nextOff] })
   }
+  return { configs, chosen, serverOf, isOn, builtin, external, skills, skillCost, skillsOn, selected, parts, total, toggleTool, setup }
+}
+export type Capabilities = ReturnType<typeof useCapabilities>
+
+/** The Setup tab: what this chat can use, each part with what it adds to every request. */
+export function SetupPanel({ session, update }: { session: ChatSession; update: (p: Partial<ChatSession>) => Promise<void> }) {
+  const [view, setView] = useState<View>('overview')
+  const [setup, setSetup] = useState<ChatSetup | null>(null)
+  const [servers, setServers] = useState<McpClientStatus[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
+  const setPage = useApp((s) => s.setPage)
+
+  const load = () => {
+    void api.chat.setup(session.id).then(setSetup, () => undefined)
+    void api.mcp.clients().then(setServers, () => undefined)
+  }
+  // Reload whenever the chat's settings change (any update bumps updatedAt).
+  useEffect(load, [session.id, session.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEvent('mcpClients', load)
+  useEffect(() => setView('overview'), [session.id])
+  const loadAgents = () => void api.agents.list().then(setAgents, () => undefined)
+  useEffect(loadAgents, [])
+  useEvent('agents', loadAgents)
+
+  const m = useCapabilities(session, update, setup)
+  const { configs, chosen, isOn, builtin, external, skillsOn, selected, parts, total } = m
+  const agent = agents.find((a) => a.id === session.agentId) ?? null
+  const changed = !!agent && AGENT_KEYS.some((key) => JSON.stringify(agent[key]) !== JSON.stringify(session[key]))
 
   if (view !== 'overview') {
     const back = () => setView('overview')
-    if (view === 'skills') return <SkillsView back={back} session={session} update={update} skills={skills} cost={skillCost} total={parts.skills} />
-    if (view === 'servers')
-      return <ServersView back={back} session={session} update={update} configs={configs} chosen={chosen} status={servers} tools={external} serverOf={serverOf} isOn={isOn} toggleTool={toggleTool} total={parts.servers} />
-    if (view === 'tools') return <ToolsView back={back} session={session} update={update} tools={builtin} isOn={isOn} toggleTool={toggleTool} total={parts.builtin} />
-    if (view === 'knowledge') return <KnowledgeView back={back} session={session} update={update} total={parts.knowledge} />
+    if (view === 'agent')
+      return (
+        <AgentPicker
+          back={back}
+          agents={agents.filter((a) => a.asChat)}
+          current={session.agentId}
+          changed={changed}
+          onPick={async (id) => {
+            const s = await attempt(() => api.chat.useAgent(session.id, id))
+            // useAgent saves the chat itself: hand the new state to the page through a no-op update.
+            if (s) await update({})
+            back()
+          }}
+          onManage={() => setPage('agents')}
+        />
+      )
+    if (view === 'skills') return <SkillsView back={back} target={session} update={update} m={m} />
+    if (view === 'servers') return <ServersView back={back} target={session} update={update} m={m} status={servers} />
+    if (view === 'tools') return <ToolsView back={back} target={session} update={update} m={m} />
+    if (view === 'knowledge') return <KnowledgeView back={back} target={session} update={update} total={parts.knowledge} />
     return <InstructionsView back={back} session={session} update={update} />
   }
 
@@ -146,6 +181,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         </div>
       </div>
       <div className="grid gap-0.5 p-2">
+        <SummaryLine label="Agent" onOpen={() => setView('agent')} value={agent ? `${agent.name}${changed ? ' (changed)' : ''}` : 'Default'} />
         <SummaryLine label="Skills" count={skillsOn.length} tokens={parts.skills} onOpen={() => setView('skills')} hint={!session.skillsEnabled ? 'picked by you only' : undefined} />
         {!configs.length ? (
           <SummaryLine label="External servers" onOpen={() => setView('servers')} hint="none set up" />
@@ -156,7 +192,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         )}
         <SummaryLine label="Built-in tools" count={builtinOn} tokens={parts.builtin} onOpen={() => setView('tools')} />
         <SummaryLine label="Knowledge" count={selected.length} tokens={parts.knowledge} onOpen={() => setView('knowledge')} />
-        <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'this chat has its own' : session.projectId ? "from the project" : 'none'} />
+        <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'this chat has its own' : session.projectId ? 'from the project' : agent ? 'from the agent' : 'none'} />
       </div>
     </div>
   )
@@ -174,7 +210,7 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
   )
 }
 
-function SummaryLine({ label, count, tokens, hint, onOpen }: { label: string; count?: number; tokens?: number; hint?: string; onOpen(): void }) {
+function SummaryLine({ label, count, tokens, hint, value, onOpen }: { label: string; count?: number; tokens?: number; hint?: string; value?: string; onOpen(): void }) {
   return (
     <button
       onClick={onOpen}
@@ -184,6 +220,7 @@ function SummaryLine({ label, count, tokens, hint, onOpen }: { label: string; co
       <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{label}</span>
       <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums text-dim">
         {hint && <span className="font-sans text-[11.5px]">{hint}</span>}
+        {value && <span className="max-w-[180px] truncate font-sans text-[12px] text-fg">{value}</span>}
         {count !== undefined && <span className="text-fg">{count}</span>}
         {count !== undefined && tokens !== undefined && <span>· +{k(tokens)}</span>}
       </span>
@@ -193,7 +230,16 @@ function SummaryLine({ label, count, tokens, hint, onOpen }: { label: string; co
 }
 
 /** A drill-in tab: a back link, the section's title and cost, a search box, and its list. */
-function Drill({ title, back, total, search, onSearch, filters, children, head }: { title: string; back(): void; total?: number; search?: string; onSearch?(q: string): void; filters?: ReactNode; head?: ReactNode; children: ReactNode }) {
+function Drill({ title, back, total, search, onSearch, filters, children, head }: { title: string; back?: () => void; total?: number; search?: string; onSearch?(q: string): void; filters?: ReactNode; head?: ReactNode; children: ReactNode }) {
+  if (!back)
+    return (
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
+        {head}
+        {onSearch && <SearchBox title={title} search={search ?? ''} onSearch={onSearch} />}
+        {filters}
+        <div>{children}</div>
+      </div>
+    )
   return (
     <div className="flex h-full flex-col">
       <div className="grid shrink-0 gap-2 border-b border-line px-2.5 pb-2.5 pt-2">
@@ -205,21 +251,54 @@ function Drill({ title, back, total, search, onSearch, filters, children, head }
           {total !== undefined && <span className="font-mono text-[11px] tabular-nums text-dim">+{k(total)} tokens</span>}
         </div>
         {head}
-        {onSearch && (
-          <div className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-bg px-2.5 focus-within:border-crimson-line">
-            <MagnifyingGlass size={13} className="shrink-0 text-dim" />
-            <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder={`Filter ${title.toLowerCase()}`} aria-label={`Filter ${title.toLowerCase()}`} spellCheck={false} className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-dim focus-visible:outline-none" />
-            {search && (
-              <button onClick={() => onSearch('')} aria-label="Clear the filter" className="text-dim hover:text-fg">
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        )}
+        {onSearch && <SearchBox title={title} search={search ?? ''} onSearch={onSearch} />}
         {filters}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
     </div>
+  )
+}
+
+function SearchBox({ title, search, onSearch }: { title: string; search: string; onSearch(q: string): void }) {
+  return (
+    <div className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-bg px-2.5 focus-within:border-crimson-line">
+      <MagnifyingGlass size={13} className="shrink-0 text-dim" />
+      <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder={`Filter ${title.toLowerCase()}`} aria-label={`Filter ${title.toLowerCase()}`} spellCheck={false} className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-dim focus-visible:outline-none" />
+      {search && (
+        <button onClick={() => onSearch('')} aria-label="Clear the filter" className="text-dim hover:text-fg">
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Pick the chat's agent: its setup is applied to the chat, and its instructions come with every request. */
+function AgentPicker({ back, agents, current, changed, onPick, onManage }: { back(): void; agents: Agent[]; current: string | null; changed: boolean; onPick(id: string | null): void; onManage(): void }) {
+  const [q, setQ] = useState('')
+  const shown = agents.filter((a) => matches(q, a.name, a.purpose))
+  const option = (id: string | null, name: string, sub: string) => {
+    const on = id === current
+    return (
+      <button key={id ?? 'default'} onClick={() => onPick(id)} aria-pressed={on} className={clsx('flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2 text-left transition-colors', on ? 'bg-elev-2' : 'hover:bg-elev')}>
+        <span className="mt-0.5 w-3.5 shrink-0 text-crimson-hi">{on && <Check size={13} weight="bold" />}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12.5px] font-medium text-fg">{name}</span>
+          <span className="line-clamp-2 text-[11.5px] text-dim">{sub}</span>
+        </span>
+      </button>
+    )
+  }
+  return (
+    <Drill title="Agent" back={back} search={agents.length > 6 ? q : undefined} onSearch={agents.length > 6 ? setQ : undefined}>
+      {option(null, 'Default', "Cloth's assistant with this chat's own setup")}
+      {shown.map((a) => option(a.id, a.name, a.purpose || 'No purpose yet'))}
+      {changed && <p className="px-2.5 pt-2 text-[11px] text-dim">This chat's setup was changed after the agent was picked. Pick the agent again to go back to its setup.</p>}
+      <p className="px-2.5 pb-2 pt-3 text-[11px] leading-relaxed text-dim">Picking an agent sets this chat up with its skills, tools and knowledge, and its model if it has one. Its instructions come with every message.</p>
+      <button onClick={onManage} className="mx-2.5 flex items-center gap-1.5 text-[12px] text-muted hover:text-fg">
+        Manage agents <ArrowSquareOut size={12} />
+      </button>
+    </Drill>
   )
 }
 
@@ -273,7 +352,9 @@ function Row({ title, sub, tokens, dim, children, mono }: { title: ReactNode; su
 
 const matches = (q: string, ...texts: string[]) => !q.trim() || texts.some((t) => t.toLowerCase().includes(q.trim().toLowerCase()))
 
-function SkillsView({ back, session, update, skills, cost, total }: { back(): void; session: ChatSession; update: Update; skills: ChatSetup['skills']; cost(s: ChatSetup['skills'][number]): number; total: number }) {
+export function SkillsView({ back, target: session, update, m }: { back?: () => void; target: Target; update: Update; m: Capabilities }) {
+  const { skills, skillCost: cost } = m
+  const total = m.parts.skills
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<'all' | SkillMode>('all')
   const setMode = (name: string, mode: SkillMode) =>
@@ -332,31 +413,9 @@ function SkillsView({ back, session, update, skills, cost, total }: { back(): vo
   )
 }
 
-function ServersView({
-  back,
-  session,
-  update,
-  configs,
-  chosen,
-  status,
-  tools,
-  serverOf,
-  isOn,
-  toggleTool,
-  total
-}: {
-  back(): void
-  session: ChatSession
-  update: Update
-  configs: { id: string; name: string; approval: string }[]
-  chosen: string[]
-  status: McpClientStatus[]
-  tools: ChatSetup['tools']
-  serverOf(name: string): { id: string } | undefined
-  isOn(name: string): boolean
-  toggleTool(name: string): void
-  total: number
-}) {
+export function ServersView({ back, target: session, update, m, status }: { back?: () => void; target: Target; update: Update; m: Capabilities; status: McpClientStatus[] }) {
+  const { configs, chosen, external: tools, serverOf, isOn, toggleTool } = m
+  const total = m.parts.servers
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<Set<string>>(new Set())
   const toggleServer = (id: string) => {
@@ -422,7 +481,9 @@ function ServersView({
   )
 }
 
-function ToolsView({ back, session, update, tools, isOn, toggleTool, total }: { back(): void; session: ChatSession; update: Update; tools: ChatSetup['tools']; isOn(name: string): boolean; toggleTool(name: string): void; total: number }) {
+export function ToolsView({ back, target: session, update, m, access }: { back?: () => void; target: Target; update: Update; m: Capabilities; /** Shown under Files instead of the note (the agent editor's access controls). */ access?: ReactNode }) {
+  const { builtin: tools, isOn, toggleTool } = m
+  const total = m.parts.builtin
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<'all' | 'on' | 'off'>('all')
   const groups = useMemo(() => GROUPS.map((g) => ({ g, items: tools.filter((t) => (g.names ? g.names.includes(t.name) : !KNOWN.has(t.name))) })).filter((x) => x.items.length), [tools])
@@ -456,7 +517,7 @@ function ToolsView({ back, session, update, tools, isOn, toggleTool, total }: { 
               <span className="min-w-0 flex-1 text-[11.5px] font-medium text-dim">{g.label}</span>
               {g.flag && <Toggle on={groupOn} onChange={() => void update({ [g.flag!]: !groupOn, ...(!groupOn ? { disabledTools: session.disabledTools.filter((n) => !items.some((t) => t.name === n)) } : {}) })} label={`${g.label} for this chat`} />}
             </div>
-            {g.note && <div className="px-2 pb-1 text-[11px] text-dim">{g.note}</div>}
+            {g.id === 'files' && access ? <div className="px-2 pb-1.5">{access}</div> : g.note && <div className="px-2 pb-1 text-[11px] text-dim">{g.note}</div>}
             {shown.map((t) => (
               <Row key={t.name} mono title={t.name} sub={t.description.split(/(?<=\.)\s/)[0]} tokens={t.tokens} dim={!isOn(t.name)}>
                 <Toggle on={isOn(t.name)} onChange={() => toggleTool(t.name)} label={t.name} />
@@ -470,7 +531,7 @@ function ToolsView({ back, session, update, tools, isOn, toggleTool, total }: { 
   )
 }
 
-function KnowledgeView({ back, session, update, total }: { back(): void; session: ChatSession; update: Update; total: number }) {
+export function KnowledgeView({ back, target: session, update, total }: { back?: () => void; target: Target; update: Update; total: number }) {
   const collections = useApp((s) => s.collections)
   const [q, setQ] = useState('')
   const selected = session.knowledgeEnabled ? (session.collectionIds.length ? session.collectionIds.filter((id) => collections.some((c) => c.id === id)) : collections.map((c) => c.id)) : []
@@ -493,7 +554,7 @@ function KnowledgeView({ back, session, update, total }: { back(): void; session
   )
 }
 
-function InstructionsView({ back, session, update }: { back(): void; session: ChatSession; update: Update }) {
+function InstructionsView({ back, session, update }: { back(): void; session: ChatSession; update: (p: Partial<ChatSession>) => Promise<void> }) {
   const [text, setText] = useState(session.systemPrompt)
   useEffect(() => setText(session.systemPrompt), [session.systemPrompt])
   const [projects, setProjects] = useState<Project[]>([])

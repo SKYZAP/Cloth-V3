@@ -20,7 +20,7 @@ import type { AppInfo, Settings, SubagentSettings, ThinkingLevel } from '@shared
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { Button, Card, Input, ListPane, Switch, Textarea } from '@/components/ui'
+import { Button, Card, Input, ListPane, Switch } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
@@ -221,8 +221,6 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
 function SubagentSection({ value }: { value: SubagentSettings }) {
   const update = useApp((s) => s.updateSettings)
   const set = (patch: Partial<SubagentSettings>) => void update({ subagents: { ...value, ...patch } })
-  const [instructions, setInstructions] = useState(value.instructions)
-  useEffect(() => setInstructions(value.instructions), [value.instructions])
   return (
     <>
       <Group title="Defaults">
@@ -260,16 +258,11 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Instructions">
-        <div className="p-4">
-          <Textarea
-            rows={4}
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            onBlur={() => instructions !== value.instructions && set({ instructions })}
-            placeholder="e.g. Cite files as path:line. Keep reports under 200 words."
-            className="w-full"
-          />
-          <div className="mt-1 text-[11px] text-dim">Saved when you click away.</div>
+        <div className="flex items-center gap-3 p-4 text-[12.5px] text-muted">
+          <span className="flex-1">Scout and Worker are agents now: edit their instructions, model and effort on the Agents page. Your own agents can take delegated work too.</span>
+          <Button size="sm" onClick={() => useApp.getState().setPage('agents')}>
+            Open Agents
+          </Button>
         </div>
       </Group>
     </>
