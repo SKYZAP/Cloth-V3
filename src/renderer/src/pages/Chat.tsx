@@ -21,6 +21,7 @@ import {
   PencilSimpleLine,
   Robot,
   ImageSquare,
+  Plugs,
   Code,
   ShieldCheck,
   ShieldWarning,
@@ -41,7 +42,7 @@ import {
   type Icon
 } from '@phosphor-icons/react'
 import { DEFAULT_CONTAINER } from '@shared/types'
-import type { ApprovalDecision, AutoApprove, ChatSession, WorkspaceFile, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, AutoApprove, ChatSession, McpClientStatus, WorkspaceFile, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { compact, timeAgo } from '@/lib/format'
@@ -1099,6 +1100,8 @@ function ContextSheet({
         </div>
       </SheetSection>
 
+      <ExternalTools session={session} update={update} />
+
       <SheetSection id="sheet-thinking" icon={Brain} title="Thinking">
         {reasoning ? (
           <LayoutGroup id={`thinking-${session.id}`}>
@@ -1314,6 +1317,30 @@ function SheetSection({ id, icon: I, title, children }: { id?: string; icon: Ico
       </div>
       {children}
     </section>
+  )
+}
+
+/** External MCP servers this chat may use (set up on the MCP page). */
+function ExternalTools({ session, update }: { session: ChatSession; update(p: Partial<ChatSession>): Promise<void> }) {
+  const settings = useApp((s) => s.settings)
+  const [status, setStatus] = useState<McpClientStatus[]>([])
+  const load = () => void api.mcp.clients().then(setStatus).catch(() => undefined)
+  useEffect(load, [])
+  useEvent('mcpClients', load)
+  const servers = (settings?.mcpClients ?? []).filter((c) => c.enabled)
+  if (!servers.length) return null
+  const chosen = session.mcpServers ?? servers.filter((c) => c.defaultOn).map((c) => c.id)
+  const toggle = (id: string) => void update({ mcpServers: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] })
+  return (
+    <SheetSection icon={Plugs} title="External tools">
+      <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
+        {servers.map((c) => {
+          const st = status.find((x) => x.id === c.id)
+          const sub = st?.state === 'ready' ? `${st.tools.length} tools · ${c.approval === 'ask' ? 'asks first' : 'runs freely'}` : st?.state === 'error' ? 'failed to start — see MCP page' : 'starts when the chat runs'
+          return <Capability key={c.id} icon={Plugs} title={c.name} sub={sub} on={chosen.includes(c.id)} onToggle={() => toggle(c.id)} />
+        })}
+      </div>
+    </SheetSection>
   )
 }
 

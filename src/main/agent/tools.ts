@@ -61,6 +61,8 @@ export interface ToolScope {
   skillNames?: string[] | null
   /** A file was written in the workspace by a custom tool (absolute path). */
   onFile?: (abs: string) => void
+  /** External MCP servers (by id) whose tools this agent gets. */
+  mcpServers?: string[]
   /** The workspace is a container copy: commands run there with bash. */
   container?: { image: string; folder: string | null; exec: NonNullable<WorkspaceOptions['shellExec']> }
 }
@@ -272,7 +274,7 @@ export const BUILTINS: BuiltinSpec[] = [
       const s = await ctx.deps.skills.get(p.name)
       const extra = s.files.filter((f) => f !== 'SKILL.md' && f !== 'evals.json')
       return {
-        text: `# Skill: ${s.name}\n${s.description}\n\n${s.body}${extra.length ? `\n\nBundled files (read with skill_use + file): ${extra.join(', ')}` : ''}`,
+        text: `# Skill: ${s.name}\n${s.description}\n\n${ctx.deps.skills.instructions(s)}${extra.length ? `\n\nBundled files (read with skill_use + file): ${extra.join(', ')}` : ''}`,
         details: { skill: s.name }
       }
     }

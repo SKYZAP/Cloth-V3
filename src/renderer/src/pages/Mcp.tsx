@@ -6,6 +6,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, timeAgo } from '@/lib/format'
 import { Badge, Button, Card, Dot, PageHeader, Segmented, Switch } from '@/components/ui'
+import { ExternalServers } from './mcp/ExternalServers'
 
 type Client = 'claude-code' | 'cursor' | 'claude-desktop' | 'curl'
 
@@ -47,6 +48,7 @@ export function McpPage() {
         }
       />
       <div className="grid gap-4 p-5 xl:grid-cols-[1fr_1fr] mobile:gap-3 mobile:p-3">
+        <ExternalServers />
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className={clsx('flex h-10 w-10 items-center justify-center rounded-xl border', status.running ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>

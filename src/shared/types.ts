@@ -315,6 +315,8 @@ export interface ChatSession {
   projectId: string | null
   /** Work in a Linux container on a private copy of the workspace (null = directly on this PC). */
   container: ContainerSettings | null
+  /** External MCP servers whose tools this chat may use (by id); null = the ones on by default. */
+  mcpServers: string[] | null
   createdAt: number
   updatedAt: number
 }
@@ -357,7 +359,7 @@ export interface ContainerChanges {
 
 /** Chat settings a project gives the chats started in it. */
 export type ProjectDefaults = Partial<
-  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container'>
+  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container' | 'mcpServers'>
 >
 
 /** A group of chats that share a folder (optional), instructions and starting settings. */
@@ -401,7 +403,9 @@ export interface PendingApproval {
   id: string
   sessionId: string
   toolCallId: string | null
-  kind: 'write' | 'edit' | 'command'
+  kind: 'write' | 'edit' | 'command' | 'tool'
+  /** For external tools: which one (server and tool), with its arguments in `command`. */
+  tool?: { server: string; name: string }
   path?: string
   command?: string
   diff?: string
@@ -649,6 +653,8 @@ export interface Settings {
   mcpEnabled: boolean
   mcpPort: number
   mcpRequireToken: boolean
+  /** External MCP servers Cloth connects to as a client (their tools go to chats). */
+  mcpClients: McpClientConfig[]
   chunkSize: number
   chunkOverlap: number
   /** Summarise older chat turns automatically when a conversation nears the model's context window. */
@@ -1009,4 +1015,28 @@ export interface GitCommit {
   subject: string
   author: string
   when: string
+}
+
+// ─── External MCP servers (Cloth as a client) ─────────────────────────────────
+
+export interface McpClientConfig {
+  id: string
+  /** Short name; also the prefix of its tools (mcp__name__tool). */
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+  /** Connect at all. */
+  enabled: boolean
+  /** Available in chats that haven't chosen their servers. */
+  defaultOn: boolean
+  /** Ask before each tool call, or let calls run. */
+  approval: 'ask' | 'auto'
+}
+
+export interface McpClientStatus {
+  id: string
+  state: 'off' | 'starting' | 'ready' | 'error'
+  error: string | null
+  tools: { name: string; description: string }[]
 }

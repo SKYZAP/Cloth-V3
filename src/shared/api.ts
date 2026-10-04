@@ -281,6 +281,11 @@ export interface ClothApi {
     status(): Promise<McpStatus>
     restart(): Promise<McpStatus>
     rotateToken(): Promise<McpStatus>
+    /** External servers Cloth connects to (configs live in settings.mcpClients). */
+    clients(): Promise<import('./types').McpClientStatus[]>
+    clientPresets(): Promise<Omit<import('./types').McpClientConfig, 'id'>[]>
+    startClient(id: string): Promise<import('./types').McpClientStatus>
+    stopClient(id: string): Promise<void>
   }
   /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
   remote: {
@@ -307,4 +312,5 @@ export type EventMap = {
   web: { type: 'status' }
   remote: RemoteStatus
   terminal: import('./types').TerminalEvent
+  mcpClients: { type: 'changed' }
 }
