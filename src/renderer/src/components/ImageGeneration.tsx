@@ -217,7 +217,7 @@ export function ImageGeneration({
   return (
     <div data-slot="image-generation" data-state={status} aria-busy={active} className={clsx('w-full', className)}>
       <div className={clsx('w-full', size === 'compact' && 'mx-auto max-w-52')}>
-        <div role="img" aria-label={resolvedLabel} style={{ aspectRatio }} className="relative isolate w-full overflow-hidden rounded-xl border border-line bg-elev-2">
+        <div role="img" aria-label={resolvedLabel} style={{ aspectRatio }} className="relative isolate w-full overflow-hidden rounded-[10px] border border-line bg-elev-2">
           <motion.div
             aria-hidden={children ? undefined : true}
             initial={false}

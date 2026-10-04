@@ -61,7 +61,7 @@ export function SplitBack({ className }: { className?: string }) {
   const back = useContext(BackCtx)
   if (!back) return null
   return (
-    <button onClick={back} aria-label="Back" className={clsx('-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted active:bg-elev-2', className)}>
+    <button onClick={back} aria-label="Back" className={clsx('-ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-muted active:bg-elev-2', className)}>
       <CaretLeft size={20} weight="bold" />
     </button>
   )

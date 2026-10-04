@@ -338,7 +338,7 @@ function ProviderView({ provider }: { provider: Provider }) {
             <div className="p-6 text-center text-[12px] text-dim">No models yet — click Fetch (the server must be running) or add an id manually.</div>
           ) : (
             <table className="w-full table-fixed text-[12px]">
-              <thead className="text-left text-[10.5px] uppercase tracking-wider text-dim">
+              <thead className="text-left text-[11.5px] font-medium text-dim">
                 <tr>
                   <th className="px-3 py-2 font-medium">Model</th>
                   <th className="w-20 px-2 py-2 font-medium">Context</th>
@@ -520,7 +520,7 @@ function ImagePlayground({ model, onClose }: { model: ModelRef | null; onClose()
           </Button>
         </div>
         {image && <GeneratedImageCard image={image} onRetry={() => void run()} className="mx-auto max-w-[400px] pt-1" />}
-        {!image && <div className="rounded-xl border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Generated images are saved in Cloth's data folder. Ctrl+Enter to generate.</div>}
+        {!image && <div className="rounded-[10px] border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Generated images are saved in Cloth's data folder. Ctrl+Enter to generate.</div>}
       </div>
     </Modal>
   )

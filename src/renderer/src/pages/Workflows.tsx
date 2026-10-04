@@ -501,7 +501,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
         {/* Palette */}
         {!isMobile && (
         <div className="w-44 shrink-0 space-y-1 overflow-y-auto border-r border-line bg-panel p-2">
-          <div className="px-1 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Nodes</div>
+          <div className="px-1 pb-1 text-[12px] font-medium text-dim">Nodes</div>
           {NODE_TYPES.map((m) => (
             <div
               key={m.type}
@@ -560,7 +560,7 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             <Controls showInteractive={false} />
             {preview && (
               <Panel position="top-center" className="!mt-3">
-                <div className="flex items-center gap-2 rounded-xl border border-crimson-line bg-panel/95 py-1.5 pl-3 pr-1.5 shadow-lg shadow-black/40 backdrop-blur">
+                <div className="flex items-center gap-2 rounded-[10px] border border-crimson-line bg-panel/95 py-1.5 pl-3 pr-1.5 shadow-lg shadow-black/40 backdrop-blur">
                   <Eye size={13} className="shrink-0 text-crimson-hi" />
                   <span className="text-[12px]">
                     Previewing the version from <b className="font-semibold">{timeAgo(preview.createdAt)}</b>
@@ -581,10 +581,10 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
             </Panel>
             {isMobile && (
               <Panel position="bottom-right" className="!m-3 flex flex-col gap-2">
-                <button onClick={() => setRunsOpen(true)} aria-label="Runs" className="flex h-12 w-12 items-center justify-center rounded-2xl border border-line-strong bg-elev text-muted shadow-lg shadow-black/50">
+                <button onClick={() => setRunsOpen(true)} aria-label="Runs" className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-line-strong bg-elev text-muted shadow-lg shadow-black/50">
                   <ListChecks size={20} />
                 </button>
-                <button onClick={() => setPaletteOpen(true)} aria-label="Add node" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-crimson text-white shadow-[0_8px_24px_-6px_rgb(220_38_69/0.7)]">
+                <button onClick={() => setPaletteOpen(true)} aria-label="Add node" className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-crimson text-white shadow-[0_8px_24px_-6px_rgb(220_38_69/0.7)]">
                   <Plus size={22} />
                 </button>
               </Panel>
@@ -640,9 +640,9 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
                     addNode(m.type)
                     setPaletteOpen(false)
                   }}
-                  className="flex items-start gap-2.5 rounded-2xl border border-line bg-elev px-3 py-3 text-left active:border-line-strong"
+                  className="flex items-start gap-2.5 rounded-[14px] border border-line bg-elev px-3 py-3 text-left active:border-line-strong"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `${m.color}22`, color: m.color }}>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${m.color}22`, color: m.color }}>
                     <m.icon size={16} />
                   </span>
                   <span className="min-w-0">
@@ -678,10 +678,10 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
           </BottomSheet>
           <BottomSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={name || 'Flow'} snapPoints={[0.3]}>
             <div className="space-y-2 pb-4">
-              <button onClick={() => (setMoreOpen(false), void duplicate())} className="flex h-12 w-full items-center gap-3 rounded-2xl border border-line bg-elev px-4 text-[13.5px] active:border-line-strong">
+              <button onClick={() => (setMoreOpen(false), void duplicate())} className="flex h-12 w-full items-center gap-3 rounded-[14px] border border-line bg-elev px-4 text-[13.5px] active:border-line-strong">
                 <Copy size={17} className="text-muted" /> Duplicate
               </button>
-              <button onClick={() => (setMoreOpen(false), void remove())} className="flex h-12 w-full items-center gap-3 rounded-2xl border border-crimson-line bg-crimson-soft px-4 text-[13.5px] text-crimson-hi">
+              <button onClick={() => (setMoreOpen(false), void remove())} className="flex h-12 w-full items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 text-[13.5px] text-crimson-hi">
                 <Trash2 size={17} /> Delete flow
               </button>
             </div>
@@ -807,7 +807,7 @@ function RunPanel({ runs, runId, onSelect, workflow, onFix, inSheet }: { runs: W
           )}
           {!!run.files?.length && (
             <div>
-              <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Files ({run.files.length})</div>
+              <div className="mb-1 text-[12px] font-medium text-dim">Files ({run.files.length})</div>
               <div className="space-y-1">
                 {run.files.map((f) => (
                   <div key={f} className="flex items-center gap-2 rounded-md border border-line bg-bg px-2.5 py-1.5" title={f}>
@@ -825,7 +825,7 @@ function RunPanel({ runs, runId, onSelect, workflow, onFix, inSheet }: { runs: W
           )}
           {run.status === 'ok' && (
             <div>
-              <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Output</div>
+              <div className="mb-1 text-[12px] font-medium text-dim">Output</div>
               <button
                 onClick={() => setViewing({ title: `${workflow.name} · output`, value: run.output })}
                 className="group flex w-full items-center gap-2.5 rounded-md border border-line bg-bg px-2.5 py-2 text-left transition-colors hover:border-crimson-line hover:bg-crimson-soft"
@@ -839,7 +839,7 @@ function RunPanel({ runs, runId, onSelect, workflow, onFix, inSheet }: { runs: W
               </button>
             </div>
           )}
-          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-dim">Node trace</div>
+          <div className="text-[12px] font-medium text-dim">Node trace</div>
           {run.nodes.map((t) => {
             const label = workflow.nodes.find((n) => n.id === t.nodeId)?.data.label ?? t.key
             const open = openNode === t.nodeId

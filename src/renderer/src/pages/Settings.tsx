@@ -313,8 +313,8 @@ function AboutSection() {
 function Group({ title, note, children }: { title?: string; note?: ReactNode; children: ReactNode }) {
   return (
     <section className="mb-6">
-      {title && <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-dim">{title}</div>}
-      <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-panel">{children}</div>
+      {title && <div className="mb-2 px-1 text-[12px] font-medium text-dim">{title}</div>}
+      <div className="divide-y divide-line overflow-hidden rounded-[10px] border border-line bg-panel">{children}</div>
       {note && <div className="mt-1.5 px-1 text-[11.5px] text-dim">{note}</div>}
     </section>
   )

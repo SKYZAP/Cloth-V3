@@ -109,7 +109,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
       className="fixed inset-0 z-[70] flex flex-col bg-bg pb-[var(--safe-bottom)] pt-[var(--safe-top)]"
     >
       <div className="flex items-center gap-2 border-b border-line px-2 py-2">
-        <button onClick={() => onDone([])} className="flex h-10 w-10 items-center justify-center rounded-xl text-muted active:bg-elev-2" aria-label="Cancel">
+        <button onClick={() => onDone([])} className="flex h-10 w-10 items-center justify-center rounded-[10px] text-muted active:bg-elev-2" aria-label="Cancel">
           <X size={20} />
         </button>
         <div className="min-w-0 flex-1">
@@ -121,7 +121,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!listing ? (
           <div className="p-2">
-            {error && <div className="m-2 rounded-xl border border-crimson-line bg-crimson-soft px-3 py-2 text-[12.5px] text-crimson-hi">{error}</div>}
+            {error && <div className="m-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12.5px] text-crimson-hi">{error}</div>}
             {roots.map((r) => (
               <Row key={r.path} icon={r.name === 'Home' ? <House size={20} className="text-crimson-hi" /> : <HardDrives size={20} className="text-muted" />} label={r.name} sub={r.path} onClick={() => go(r.path)} />
             ))}
@@ -160,7 +160,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
           <button
             disabled={!listing}
             onClick={() => listing && onDone([listing.path])}
-            className="h-12 flex-1 rounded-2xl bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+            className="h-12 flex-1 rounded-[14px] bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
           >
             {listing ? `Use “${listing.path.split(/[\\/]/).filter(Boolean).pop() ?? listing.path}”` : 'Open a folder first'}
           </button>
@@ -168,7 +168,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
           <button
             disabled={!chosen.length}
             onClick={() => onDone(chosen)}
-            className="h-12 flex-1 rounded-2xl bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+            className="h-12 flex-1 rounded-[14px] bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
           >
             {chosen.length ? `Add ${chosen.length} item${chosen.length > 1 ? 's' : ''}` : 'Tap files to choose'}
           </button>
@@ -180,7 +180,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
 
 function Row({ icon, label, sub, onClick, trailing }: { icon: React.ReactNode; label: string; sub?: string; onClick(): void; trailing?: React.ReactNode }) {
   return (
-    <div role="button" onClick={onClick} className="flex min-h-[52px] items-center gap-3 rounded-xl px-3 py-2 active:bg-elev-2">
+    <div role="button" onClick={onClick} className="flex min-h-[52px] items-center gap-3 rounded-[10px] px-3 py-2 active:bg-elev-2">
       <span className="flex w-6 justify-center">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px]">{label}</span>

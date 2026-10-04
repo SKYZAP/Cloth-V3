@@ -196,7 +196,7 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] mobile:items-end" onMouseDown={onClose}>
       <div
-        className="flex max-h-[85vh] flex-col rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60 mobile:max-h-[92vh] mobile:w-full mobile:rounded-b-none mobile:rounded-t-[22px] mobile:border-x-0 mobile:border-b-0 mobile:pb-[var(--safe-bottom)]"
+        className="flex max-h-[85vh] flex-col rounded-[10px] border border-line-strong bg-panel shadow-2xl shadow-black/60 mobile:max-h-[92vh] mobile:w-full mobile:rounded-b-none mobile:rounded-t-[22px] mobile:border-x-0 mobile:border-b-0 mobile:pb-[var(--safe-bottom)]"
         style={isMobile ? undefined : { width }}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
@@ -218,7 +218,7 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
 export function Empty({ icon, title, children, action }: { icon?: ReactNode; title: ReactNode; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      {icon && <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-elev text-crimson">{icon}</div>}
+      {icon && <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-line bg-elev text-crimson">{icon}</div>}
       <div className="text-[14px] font-semibold">{title}</div>
       {children && <div className="max-w-sm text-[12.5px] text-dim">{children}</div>}
       {action}
@@ -259,13 +259,18 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
   const side = useSideBySide()
   return (
     <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-current={active && side ? 'true' : undefined}
       onClick={onClick}
+      onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onClick())}
       className={clsx(
-        'group relative mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-2.5 pl-3 pr-2 transition-colors duration-200 mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
-        active && side ? 'border-crimson bg-elev-2 text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
+        'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pl-3 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
+        active && side ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
         className
       )}
     >
+      {active && side && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-crimson" />}
       {children}
     </div>
   )

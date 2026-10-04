@@ -52,10 +52,10 @@ export function Connect() {
       </motion.div>
 
       {unpaired && (
-        <div className="mt-8 rounded-2xl border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
+        <div className="mt-8 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...ENTER, delay: 0.08 }} className="mt-10 space-y-3 rounded-3xl border border-line bg-panel p-5">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...ENTER, delay: 0.08 }} className="mt-10 space-y-3 rounded-[20px] border border-line bg-panel p-5">
         <Step n={1} icon={<Desktop size={18} />}>
           On your PC, open Cloth → <b className="text-fg">Settings</b> → <b className="text-fg">Phone</b> → <b className="text-fg">Pair a phone</b>.
         </Step>
@@ -71,7 +71,7 @@ export function Connect() {
 
       <AnimatePresence>
         {error && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-2xl border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">
             {error}
           </motion.div>
         )}
@@ -86,7 +86,7 @@ export function Connect() {
                 onChange={(e) => setCode(e.target.value)}
                 rows={3}
                 placeholder="Paste the pairing code (cloth://pair?d=…)"
-                className="mb-2.5 block w-full resize-none rounded-2xl border border-line-strong bg-panel px-4 py-3 font-mono text-[12px] text-fg outline-none placeholder:text-dim focus:border-crimson-line"
+                className="mb-2.5 block w-full resize-none rounded-[14px] border border-line-strong bg-panel px-4 py-3 font-mono text-[12px] text-fg outline-none placeholder:text-dim focus:border-crimson-line"
               />
             </motion.div>
           )}
@@ -116,7 +116,7 @@ export function Connect() {
 function Step({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3.5">
-      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-elev-2 text-crimson-hi">
+      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-elev-2 text-crimson-hi">
         {icon}
         <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[9px] font-bold text-white">{n}</span>
       </div>
@@ -133,8 +133,8 @@ function BigButton({ primary, disabled, onClick, children }: { primary?: boolean
       onClick={onClick}
       className={
         primary
-          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-crimson text-[15px] font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:opacity-50'
-          : 'flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-line-strong text-[14px] font-medium text-muted'
+          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-crimson text-[15px] font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:opacity-50'
+          : 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-line-strong text-[14px] font-medium text-muted'
       }
     >
       {children}

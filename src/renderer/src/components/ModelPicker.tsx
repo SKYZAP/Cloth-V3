@@ -145,7 +145,7 @@ export function ModelPicker({
           'absolute top-0 flex h-full items-center gap-2 border transition-[width,border-radius,background-color,border-color] duration-300 ease-[cubic-bezier(0.22,1.2,0.36,1)]',
           growLeft ? 'right-0' : 'left-0',
           pill ? 'rounded-full pl-3 pr-2.5 text-[12px]' : 'rounded-md pl-2.5 pr-2 text-[12.5px]',
-          morph ? 'z-40 !rounded-xl border-crimson-line bg-elev shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]' : open ? 'border-crimson-line bg-bg' : pill ? 'border-line bg-panel hover:border-line-strong' : 'border-line bg-bg hover:border-line-strong'
+          morph ? 'z-40 !rounded-[10px] border-crimson-line bg-elev shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]' : open ? 'border-crimson-line bg-bg' : pill ? 'border-line bg-panel hover:border-line-strong' : 'border-line bg-bg hover:border-line-strong'
         )}
         style={{ width: morph ? 'min(420px, calc(100vw - 24px))' : '100%' }}
         onClick={() => (isMobile ? setOpen(true) : input.current?.focus())}
@@ -191,7 +191,7 @@ export function ModelPicker({
       {isMobile && (
         <BottomSheet open={open} onClose={close} title="Choose a model" snapPoints={[0.8]} portal>
           <div className="-mx-4">
-            <div className="mx-4 mb-1 flex h-10 items-center gap-2 rounded-xl border border-line bg-bg px-3">
+            <div className="mx-4 mb-1 flex h-10 items-center gap-2 rounded-[10px] border border-line bg-bg px-3">
               <MagnifyingGlass size={15} className="text-dim" />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" aria-label="Search models" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-dim" />
             </div>
@@ -232,7 +232,7 @@ function Popover({ anchor, panelRef, width, growLeft, children }: { anchor: Reac
     <div
       ref={panelRef}
       style={pos}
-      className="fixed z-[60] flex origin-top flex-col overflow-hidden rounded-2xl border border-line-strong bg-elev/95 shadow-[0_24px_60px_-18px_rgb(0_0_0/0.85)] backdrop-blur-xl animate-[picker-in_.22s_cubic-bezier(0.22,1.2,0.36,1)]"
+      className="fixed z-[60] flex origin-top flex-col overflow-hidden rounded-[14px] border border-line-strong bg-elev/95 shadow-[0_24px_60px_-18px_rgb(0_0_0/0.85)] backdrop-blur-xl animate-[picker-in_.22s_cubic-bezier(0.22,1.2,0.36,1)]"
       onMouseDown={(e) => e.preventDefault() /* keep focus in the search field */}
     >
       {children}

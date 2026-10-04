@@ -12,7 +12,7 @@ const kebab = (s: string) => s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 export function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
     <section className="space-y-2.5 border-b border-line px-4 py-3.5 last:border-b-0">
-      <div className="flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">
+      <div className="flex items-center justify-between text-[12px] font-medium text-dim">
         {title}
         {right}
       </div>

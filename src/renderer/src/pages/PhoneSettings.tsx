@@ -157,7 +157,7 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
         </motion.div>
       ) : (
         <div className="grid grid-cols-[220px_1fr] gap-5">
-          <div className={clsx('relative aspect-square overflow-hidden rounded-xl bg-white p-2 transition-opacity', expired && 'opacity-20')}>
+          <div className={clsx('relative aspect-square overflow-hidden rounded-[10px] bg-white p-2 transition-opacity', expired && 'opacity-20')}>
             {qr && <img src={qr} alt="Pairing QR code" className="h-full w-full [image-rendering:pixelated]" />}
           </div>
           <div className="space-y-3 text-[12.5px]">
