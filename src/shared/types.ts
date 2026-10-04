@@ -222,6 +222,56 @@ export interface Skill {
   source: SkillSource | null
 }
 
+/** How a skill has been used: from the usage log. */
+export interface SkillUsage {
+  total: number
+  /** auto (the agent loaded it), slash, mcp, workflow. */
+  byVia: Record<string, number>
+  /** Loads per week, oldest first (last six weeks). */
+  weeks: number[]
+  /** Chats it was used in. */
+  chats: number
+  lastUsedAt: number | null
+}
+
+export interface SkillCheck {
+  id: string
+  level: 'ok' | 'note' | 'warn'
+  title: string
+  detail?: string
+}
+
+/** A line worth reading before trusting an imported skill. */
+export interface SkillSafetyFinding {
+  kind: 'network' | 'shell' | 'files' | 'injection'
+  file: string
+  line: number
+  text: string
+}
+
+/** A request and whether the skill should load for it. */
+export interface SkillTrigger {
+  prompt: string
+  should: boolean
+}
+
+export interface SkillTriggerRun {
+  model: string
+  at: number
+  ms: number
+  results: (SkillTrigger & { picked: string | null; ok: boolean; error?: string })[]
+}
+
+export interface SkillInsight {
+  usage: SkillUsage
+  checks: SkillCheck[]
+  safety: { findings: SkillSafetyFinding[]; reviewed: boolean; reviewedAt: number | null }
+  triggers: SkillTrigger[]
+  lastTrigger: SkillTriggerRun | null
+  /** Skills whose descriptions compete with this one's. */
+  overlaps: string[]
+}
+
 export interface SkillInput {
   name: string
   description: string

@@ -113,6 +113,17 @@ export function createApi(s: Services): ClothApi {
       registryPreview: (id) => s.registry.preview(id),
       registryInstall: (id, overwrite) => s.registry.install(id, { overwrite }),
       registryCheckUpdate: (name) => s.registry.checkUpdate(name),
+      insight: (name) => s.skillInsights.insight(name),
+      usageAll: async () => s.skillInsights.usageAll(),
+      saveTriggers: async (name, triggers) => s.skillInsights.saveTriggers(name, triggers),
+      draftTriggers: (name, model) => s.skillInsights.draftTriggers(name, model),
+      runTriggers: (name, model) => s.skillInsights.runTriggers(name, model),
+      markReviewed: (name, reviewed) => s.skillInsights.markReviewed(name, reviewed),
+      tryInChat: async (name) => {
+        await s.skills.get(name)
+        const chat = s.chat.create({})
+        return s.chat.update(chat.id, { title: `Try ${name}`, skillsAlways: [name] })
+      },
       dir: async () => s.ctx.skillsDir
     },
     panel: {

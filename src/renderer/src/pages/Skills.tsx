@@ -6,12 +6,13 @@ import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, compact, duration, timeAgo } from '@/lib/format'
-import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { Badge, Button, Card, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
 import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
 import { lintExpectation } from '@shared/skillEvals'
+import { SkillOverview } from './skills/Overview'
 
 const VERDICT: Record<SkillVerdict, { tone: 'ok' | 'warn' | 'crimson' | 'info' | 'dim'; label: string; help: string }> = {
   fresh: { tone: 'ok', label: 'Fresh', help: 'Passes its evals and the audit found nothing outdated' },
@@ -21,7 +22,7 @@ const VERDICT: Record<SkillVerdict, { tone: 'ok' | 'warn' | 'crimson' | 'info' |
   untested: { tone: 'dim', label: 'Untested', help: 'No completed test run yet' }
 }
 
-type Tab = 'instructions' | 'files' | 'tests'
+type Tab = 'overview' | 'instructions' | 'files' | 'tests'
 
 export function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
@@ -31,8 +32,10 @@ export function SkillsPage() {
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState<NewMode | null>(null)
   const [adding, setAdding] = useState<{ open: boolean; tab: AddTab }>({ open: false, tab: 'registry' })
+  const [used, setUsed] = useState<Record<string, { total: number; lastUsedAt: number }>>({})
 
   const load = async (select?: string) => {
+    void api.skills.usageAll().then(setUsed, () => undefined)
     const list = await api.skills.list()
     setSkills(list)
     setLoaded(true)
@@ -52,11 +55,7 @@ export function SkillsPage() {
 
   const active = skills.find((s) => s.name === activeName)
   const shown = skills.filter((s) => !filter || `${s.name} ${s.description}`.toLowerCase().includes(filter.toLowerCase()))
-  const counts = useMemo(() => {
-    const c: Partial<Record<SkillVerdict, number>> = {}
-    for (const s of skills) c[s.health?.verdict ?? 'untested'] = (c[s.health?.verdict ?? 'untested'] ?? 0) + 1
-    return c
-  }, [skills])
+  const unused = useMemo(() => skills.filter((s) => !used[s.name]).length, [skills, used])
 
   return (
     <SplitRoot open={open} onBack={() => setOpen(false)}>
@@ -68,7 +67,7 @@ export function SkillsPage() {
               <div>
                 <div className="text-[13px] font-semibold">Skill hub</div>
                 <div className="text-[11px] text-dim">
-                  {skills.length} skill{skills.length === 1 ? '' : 's'}{counts.stale || counts.failing ? ` · ${(counts.stale ?? 0) + (counts.failing ?? 0)} need attention` : ''}
+                  {skills.length} skill{skills.length === 1 ? '' : 's'}{unused && skills.length ? ` · ${unused} never used` : ''}
                 </div>
               </div>
               <div className="flex gap-1">
@@ -91,14 +90,16 @@ export function SkillsPage() {
         }
       >
         {shown.map((s) => {
-          const v = VERDICT[s.health?.verdict ?? 'untested']
+          const u = used[s.name]
           return (
             <ListItem key={s.name} active={s.name === activeName} onClick={() => (setActiveName(s.name), setOpen(true))}>
-              <span title={v.label}>
-                <Dot tone={v.tone === 'dim' ? 'dim' : v.tone} />
-              </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-[12px]">{s.name}</div>
+                <div className="flex items-baseline gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{s.name}</span>
+                  <span className="shrink-0 font-mono text-[10.5px] text-dim" title={u ? `Last used ${timeAgo(u.lastUsedAt)}` : 'Not used yet'}>
+                    {u ? `${u.total} used` : 'never'}
+                  </span>
+                </div>
                 <div className="truncate text-[11px] text-dim">{s.description || 'No description'}</div>
               </div>
             </ListItem>
@@ -140,7 +141,7 @@ export function SkillsPage() {
               </div>
             }
           >
-            Skills are folders with a SKILL.md (Claude/Agent-Skills compatible). Cloth serves them to its own agent and over MCP, and tests them against models to catch staleness.
+            Skills are folders with a SKILL.md (Claude/Agent-Skills compatible). Cloth serves them to its own agent and over MCP, checks that they load when they should, and shows how much each one is used.
           </Empty>
         )}
       </SplitDetail>
@@ -538,7 +539,7 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
 }
 
 function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string): void }) {
-  const [tab, setTab] = useState<Tab>('instructions')
+  const [tab, setTab] = useState<Tab>('overview')
   const [name, setName] = useState(skill.name)
   const [description, setDescription] = useState(skill.description)
   const [body, setBody] = useState(skill.body)
@@ -546,7 +547,6 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
   const [installOpen, setInstallOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const dirty = name !== skill.name || description !== skill.description || body !== skill.body
-  const v = VERDICT[skill.health?.verdict ?? 'untested']
 
   const checkUpdate = async () => {
     if (!skill.source) return
@@ -586,10 +586,6 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         title={
           <span className="flex items-center gap-2">
             <span className="font-mono">{skill.name}</span>
-            <Badge tone={v.tone} title={v.help}>
-              {v.label}
-              {skill.health?.lastScore !== null && skill.health?.lastScore !== undefined ? ` · ${Math.round(skill.health.lastScore * 100)}%` : ''}
-            </Badge>
           </span>
         }
         subtitle={
@@ -600,7 +596,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
                 <span className="text-line-strong">|</span>
               </button>
             )}
-            {skill.health ? `Last tested ${timeAgo(skill.health.lastRunAt)} with ${skill.health.model.modelId}` : `Updated ${timeAgo(skill.updatedAt)}`}
+            {`Updated ${timeAgo(skill.updatedAt)}`}
           </span>
         }
         actions={
@@ -637,12 +633,14 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         value={tab}
         onChange={setTab}
         items={[
+          { value: 'overview', label: 'Overview' },
           { value: 'instructions', label: 'SKILL.md' },
           { value: 'files', label: `Files (${skill.files.length})` },
-          { value: 'tests', label: `Tests (${skill.evals.length})` }
+          { value: 'tests', label: `Examples${skill.evals.length ? ` (${skill.evals.length})` : ''}` }
         ]}
       />
       <div className="min-h-0 flex-1">
+        {tab === 'overview' && <SkillOverview skill={skill} onOpenTab={setTab} />}
         {tab === 'instructions' && (
           <div className="flex h-full flex-col">
             <div className="grid grid-cols-[240px_1fr] gap-3 border-b border-line px-5 py-3">
@@ -833,7 +831,10 @@ function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
       {/* Cases */}
       <div className="flex min-h-0 flex-col border-r border-line">
         <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <div className="text-[12.5px] font-semibold">Eval cases</div>
+          <div>
+            <div className="text-[12.5px] font-semibold">Examples</div>
+            <div className="text-[11px] text-dim">Optional: prompts with what a good answer must do, graded by a model. Useful as regression checks after editing.</div>
+          </div>
           <div className="flex gap-1.5">
             <Button
               size="sm"
