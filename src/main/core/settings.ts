@@ -3,6 +3,7 @@ import type { Ctx } from './context'
 
 export const DEFAULT_SETTINGS: Settings = {
   defaultModel: null,
+  defaultDesignId: null,
   embeddingModel: null,
   webEngine: 'obscura',
   searxngUrl: '',

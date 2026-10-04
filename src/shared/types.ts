@@ -855,6 +855,8 @@ export type WorkflowEvent =
 
 export interface Settings {
   defaultModel: ModelRef | null
+  /** The design system new projects follow (null = none). */
+  defaultDesignId: string | null
   embeddingModel: ModelRef | null
   webEngine: WebEngine
   /** External SearXNG base URL; empty = use the bundled sidecar. */

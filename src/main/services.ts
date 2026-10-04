@@ -99,7 +99,7 @@ export function createServices(opts: {
   const agents = new AgentService(ctx, providers, settings)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings, mcp: mcpClients, agents })
   const designs = new DesignService(ctx, providers)
-  const projects: ProjectService = new ProjectService(ctx, () => chat, designs)
+  const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)

@@ -5,6 +5,7 @@ import { DEFAULT_KIT, KIT, KIT_NAMES, KIT_USAGE, kitCss, kitMarkdown, kitSpecime
  * coding agents), tokens.css, a Tailwind v4 theme and W3C-style tokens.json. Pure functions, used by
  * the editor's live preview and by the exporter.
  */
+import { shadcnFiles, shadcnMarkdown } from './shadcn'
 
 export type DesignMode = 'dark' | 'light' | 'both'
 export type Density = 'compact' | 'comfortable' | 'spacious'
@@ -84,6 +85,20 @@ export interface DesignDraft {
   name: string
   description: string
   input: DesignInput
+}
+
+/** A file of the system in a project's design/ folder, compared with what the system would write now. */
+export type DesignFileState = 'missing' | 'current' | 'outdated' | 'edited'
+
+/** A project's copy of a design system's files. */
+export interface DesignProjectSync {
+  projectId: string
+  name: string
+  color: string
+  folder: string | null
+  /** The project follows this system (its chats get DESIGN.md). */
+  linked: boolean
+  files: { path: string; state: DesignFileState }[]
 }
 
 export interface DesignSystem {
@@ -636,8 +651,9 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
       lines.push('```html', c.usage.trim() || c.html.trim().slice(0, 1200), '```', '')
     }
   }
-  lines.push('', '## Files', '', '- `DESIGN.md` — this guide', '- `tokens.css` — CSS variables for both themes', '- `tailwind.css` — Tailwind v4 theme mapped to the tokens', '- `tokens.json` — the same tokens in the W3C design-tokens format')
-  lines.push('- `components.css` — styles for the built-in components' + (components.length ? ' and the component library' : ''), '- `components/*.html` — every component with its variants')
+  lines.push('', ...shadcnMarkdown())
+  lines.push('## Files', '', '- `DESIGN.md` — this guide', '- `tokens.css` — CSS variables for both themes', '- `tailwind.css` — Tailwind v4 theme mapped to the tokens', '- `tokens.json` — the same tokens in the W3C design-tokens format')
+  lines.push('- `components.css` — styles for the built-in components' + (components.length ? ' and the component library' : ''), '- `components/*.html` — every component with its variants', '- `shadcn/` — the theme and starter components for shadcn/ui projects')
   lines.push('')
   return lines.join('\n')
 }
@@ -650,6 +666,7 @@ export function designFiles(system: Pick<DesignSystem, 'name' | 'description' | 
   const page = { tokens: '../tokens.css', components: '../components.css' }
   for (const n of KIT_NAMES) files[`components/ds-${n}.html`] = componentDocument(system.input, { html: kitSpecimen(n), css: '' }, { ...page, title: `${system.name} — ${KIT[n].label}` })
   for (const c of components) files[`components/${componentSlug(c.name)}.html`] = componentDocument(system.input, c, { ...page, title: `${system.name} — ${c.name}` })
+  for (const [path, content] of Object.entries(shadcnFiles(system.input, d))) files[`shadcn/${path}`] = content
   return files
 }
 

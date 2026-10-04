@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ArrowCounterClockwise, Check, Copy, DesktopTower, DeviceMobile, DownloadSimple, MagicWand, Moon, Palette, Plus, Sparkle, Sun, SwatchesIcon, Trash, Warning } from '@phosphor-icons/react'
-import type { ModelRef } from '@shared/types'
+import { ArrowCounterClockwise, CaretLeft, Check, Copy, DesktopTower, DeviceMobile, DownloadSimple, FileCode, MagicWand, Moon, Plus, Sparkle, Star, Sun, SwatchesIcon, Trash, Warning } from '@phosphor-icons/react'
+import type { ModelRef, Project } from '@shared/types'
 import {
   buildDesign,
   designFiles,
@@ -15,6 +15,7 @@ import {
   SCALES,
   STEPS,
   sanitizeDesign,
+  systemPalette,
   type BuiltDesign,
   type DesignInput,
   type DesignSystem,
@@ -26,31 +27,42 @@ import { attempt, useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { BUNDLED_FONTS, loadDesignFont } from '@/lib/designFonts'
 import { kitCss } from '@shared/kit'
-import { Button, Empty, Field, IconButton, ListItem, ListPane, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, IconButton, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
-import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ComponentsPanel } from './design/Components'
 import { PaletteField } from './design/Palette'
+import { ShadcnPreview } from './design/Shadcn'
+import { ProjectsSync } from './design/ProjectsSync'
 
 type PresetChoice = { name: string; input: Partial<DesignInput> } | null
 
 export function DesignPage() {
   const [designs, setDesigns] = useState<DesignSystem[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.design'))
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [picking, setPicking] = useState(false)
+  const [projects, setProjects] = useState<Project[]>([])
+  const settings = useApp((s) => s.settings)
+  const defaultId = settings?.defaultDesignId ?? null
 
   const load = async (select?: string) => {
     const list = await api.design.list()
     setDesigns(list)
     setLoaded(true)
+    void api.projects.list().then(setProjects, () => undefined)
     if (select) setActiveId(select)
-    else setActiveId((cur) => (cur && list.some((d) => d.id === cur) ? cur : (list[0]?.id ?? null)))
   }
   useEffect(() => {
     void load()
   }, [])
+  useEffect(() => {
+    try {
+      if (activeId) localStorage.setItem('cloth.design', activeId)
+    } catch {
+      /* storage unavailable */
+    }
+  }, [activeId])
 
   const create = async (preset: PresetChoice) => {
     setPicking(false)
@@ -59,68 +71,88 @@ export function DesignPage() {
     await load(d.id)
     setOpen(true)
   }
+  const openDesign = (id: string) => (setActiveId(id), setOpen(true))
+  const setDefault = (id: string | null) => void useApp.getState().updateSettings({ defaultDesignId: id })
 
-  const active = designs.find((d) => d.id === activeId) ?? null
+  const active = open ? (designs.find((d) => d.id === activeId) ?? null) : null
+  if (active)
+    return (
+      <DesignEditor
+        key={active.id}
+        design={active}
+        isDefault={active.id === defaultId}
+        onDefault={(on) => setDefault(on ? active.id : null)}
+        onBack={() => (setOpen(false), void load())}
+        onSaved={(d) => setDesigns((ds) => ds.map((x) => (x.id === d.id ? d : x)))}
+        onDeleted={() => (setOpen(false), void load())}
+        onDuplicated={(id) => void load(id)}
+      />
+    )
+  // The default first, then the most recently changed.
+  const ordered = [...designs].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId))
   return (
-    <SplitRoot open={open} onBack={() => setOpen(false)}>
-      <ListPane
-        header={
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[13px] font-semibold">Design</div>
-              <div className="text-[11px] text-dim">
-                {designs.length} design system{designs.length === 1 ? '' : 's'}
-              </div>
-            </div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
-              New
-            </Button>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-5 py-6 mobile:py-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[18px] font-semibold tracking-tight">Design systems</h1>
+            <p className="mt-0.5 max-w-xl text-[12.5px] text-dim">Your palette, type and shape, set once and used in every project that follows it: chats get its DESIGN.md, and the token and shadcn files can be written into the project.</p>
           </div>
-        }
-      >
-        {designs.map((d) => (
-          <ListItem key={d.id} active={d.id === activeId} onClick={() => (setActiveId(d.id), setOpen(true))}>
-            <Swatches input={d.input} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12.5px] font-medium mobile:text-[14px]">{d.name}</div>
-              <div className="truncate text-[11px] text-dim">
-                {d.input.fontSans} · {d.input.mode === 'both' ? 'light & dark' : d.input.mode}
-              </div>
-            </div>
-          </ListItem>
-        ))}
-        {loaded && !designs.length && (
-          <div className="space-y-2 p-4 text-center">
-            <div className="text-[12px] text-dim">No design systems yet.</div>
-            <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
-              Create one
-            </Button>
-          </div>
-        )}
-      </ListPane>
-      <SplitDetail>
-        {active ? (
-          <DesignEditor key={active.id} design={active} onSaved={(d) => setDesigns((ds) => ds.map((x) => (x.id === d.id ? d : x)))} onDeleted={() => (setOpen(false), void load())} onDuplicated={(id) => void load(id)} />
-        ) : (
-          <Empty icon={<Palette size={20} />} title="Design systems" action={<Button variant="primary" onClick={() => setPicking(true)}>New design system</Button>}>
-            Pick colours, type and shape, and export a DESIGN.md with tokens for your projects.
-          </Empty>
-        )}
-      </SplitDetail>
+          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
+            New
+          </Button>
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+          {ordered.map((d) => (
+            <DesignCard key={d.id} design={d} isDefault={d.id === defaultId} projects={projects.filter((p) => p.designId === d.id).length} onOpen={() => openDesign(d.id)} />
+          ))}
+          <button onClick={() => setPicking(true)} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-[12.5px] text-dim transition-colors hover:border-crimson-line hover:text-fg">
+            <Plus size={18} />
+            New design system
+            <span className="text-[11.5px] text-dim">From a preset, a Coolors palette or a description</span>
+          </button>
+        </div>
+        {loaded && !designs.length && <p className="text-[12.5px] text-dim">No design systems yet. Start from a preset; you can import a palette or describe the look once it's open.</p>}
+      </div>
       <PresetModal open={picking} title="New design system" blank onClose={() => setPicking(false)} onPick={(p) => void create(p)} />
-    </SplitRoot>
+    </div>
   )
 }
 
-function Swatches({ input }: { input: DesignInput }) {
+/** A system at a glance: its palette, its type, and how many projects follow it. */
+function DesignCard({ design, isDefault, projects, onOpen }: { design: DesignSystem; isDefault: boolean; projects: number; onOpen(): void }) {
+  const input = design.input
   const d = useMemo(() => buildDesign(input), [input])
-  const theme = input.mode === 'light' ? d.roles.light : d.roles.dark
+  useEffect(() => {
+    void loadDesignFont(input.fontHeading)
+  }, [input.fontHeading])
+  const r = input.mode === 'light' ? d.roles.light : d.roles.dark
+  const strip = input.palette.length ? input.palette : systemPalette(input, d)
   return (
-    <div className="flex shrink-0 -space-x-1.5">
-      {[theme.primary, theme.accent, theme.surface].map((c, i) => (
-        <span key={i} className="h-4 w-4 rounded-full border border-black/40" style={{ background: c }} />
-      ))}
-    </div>
+    <button onClick={onOpen} className="group overflow-hidden rounded-[14px] border border-line bg-panel text-left transition-colors hover:border-line-strong">
+      <div className="flex h-9">
+        {strip.slice(0, 6).map((c, i) => (
+          <span key={i} className="flex-1" style={{ background: c }} />
+        ))}
+      </div>
+      <div className="flex items-center gap-3 px-3.5 py-3" style={{ background: r.background, color: r.text }}>
+        <span style={{ fontFamily: fontStack(input, 'heading'), fontWeight: input.headingWeight, letterSpacing: `${input.headingTracking}em`, fontSize: 26, lineHeight: 1 }}>Aa</span>
+        <span className="min-w-0 flex-1 truncate" style={{ fontFamily: fontStack(input, 'sans'), fontSize: 12, color: r.textMuted }}>
+          {input.fontHeading}
+          {input.fontSans !== input.fontHeading ? ` · ${input.fontSans}` : ''}
+        </span>
+        <span style={{ background: r.primary, color: r.onPrimary, borderRadius: Math.min(input.radius, 12), padding: '4px 10px', fontSize: 11.5, fontWeight: 600 }}>Action</span>
+      </div>
+      <div className="flex items-center gap-2 border-t border-line px-3.5 py-2.5">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{design.name}</span>
+        {isDefault && (
+          <span className="flex shrink-0 items-center gap-1 text-[11px] text-warn" title="New projects follow this system">
+            <Star size={11} weight="fill" /> Default
+          </span>
+        )}
+        <span className="shrink-0 text-[11px] text-dim">{projects ? `${projects} project${projects === 1 ? '' : 's'}` : 'no projects'}</span>
+      </div>
+    </button>
   )
 }
 
@@ -171,13 +203,31 @@ function PresetCard({ preset, onPick }: { preset: (typeof PRESETS)[number]; onPi
 
 // ─── Editor ───────────────────────────────────────────────────────────────────
 
-type Tab = 'preview' | 'components' | 'DESIGN.md' | 'tokens.css' | 'tailwind.css' | 'tokens.json'
+type Tab = 'preview' | 'shadcn' | 'components' | 'code' | 'projects'
 
-function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: DesignSystem; onSaved(d: DesignSystem): void; onDeleted(): void; onDuplicated(id: string): void }) {
+function DesignEditor({
+  design,
+  isDefault,
+  onDefault,
+  onBack,
+  onSaved,
+  onDeleted,
+  onDuplicated
+}: {
+  design: DesignSystem
+  isDefault: boolean
+  onDefault(on: boolean): void
+  onBack(): void
+  onSaved(d: DesignSystem): void
+  onDeleted(): void
+  onDuplicated(id: string): void
+}) {
   const [name, setName] = useState(design.name)
   const [description, setDescription] = useState(design.description)
   const [input, setInput] = useState<DesignInput>(design.input)
-  const [tab, setTab] = useState<Tab>('preview')
+  const [tab, setTab] = useState<Tab>('shadcn')
+  const [file, setFile] = useState('DESIGN.md')
+  const [saves, setSaves] = useState(0)
   const [phoneTab, setPhoneTab] = useState<'edit' | 'view'>('edit')
   const [theme, setTheme] = useState<'light' | 'dark'>(design.input.mode === 'light' ? 'light' : 'dark')
   const [width, setWidth] = useState<'wide' | 'phone'>('wide')
@@ -194,7 +244,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
       first.current = false
       return
     }
-    const t = setTimeout(() => void api.design.update(design.id, { name, description, input }).then(onSaved, () => undefined), 400)
+    const t = setTimeout(() => void api.design.update(design.id, { name, description, input }).then((d) => (onSaved(d), setSaves((n) => n + 1)), () => undefined), 400)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, description, input])
@@ -236,9 +286,19 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
   const view = (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
-        <Segmented value={tab} onChange={setTab} items={(['preview', 'components', 'DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json'] as Tab[]).map((t) => ({ value: t, label: t === 'preview' ? 'Preview' : t === 'components' ? 'Components' : t }))} />
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'shadcn', label: 'Preview' },
+            { value: 'preview', label: 'Roles' },
+            { value: 'components', label: 'Playground' },
+            { value: 'code', label: 'Code' },
+            { value: 'projects', label: 'Projects' }
+          ]}
+        />
         <div className="flex-1" />
-        {tab === 'preview' && !isMobile && (
+        {(tab === 'preview' || tab === 'shadcn') && !isMobile && (
           <Segmented
             value={width}
             onChange={setWidth}
@@ -248,7 +308,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
             ]}
           />
         )}
-        {tab === 'preview' && input.mode === 'both' && (
+        {(tab === 'preview' || tab === 'shadcn') && input.mode === 'both' && (
           <Segmented
             value={theme}
             onChange={setTheme}
@@ -258,19 +318,21 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
             ]}
           />
         )}
-        {tab !== 'preview' && tab !== 'components' && <CopyButton text={files[tab]} />}
+        {tab === 'code' && <CopyButton text={files[file] ?? ''} />}
       </div>
       {tab === 'components' ? (
         <ComponentsPanel designId={design.id} input={input} setKit={(kit) => set({ kit })} theme={theme} setTheme={setTheme} />
+      ) : tab === 'projects' ? (
+        <div className="min-h-0 flex-1">
+          <ProjectsSync designId={design.id} version={saves} />
+        </div>
+      ) : tab === 'code' ? (
+        <CodeFiles files={files} file={file} onFile={setFile} />
       ) : (
-      <div className={clsx('min-h-0 flex-1 overflow-auto', width === 'phone' && tab === 'preview' && 'bg-elev/40 py-6')}>
-        {tab === 'preview' ? (
-          <div className={clsx(width === 'phone' && 'mx-auto w-[390px] overflow-hidden rounded-[28px] border border-line-strong shadow-2xl shadow-black/50')}>
-            <Preview name={name} input={input} built={built} theme={theme} onOverride={override} />
-          </div>
-        ) : (
-          <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[tab]}</pre>
-        )}
+      <div key={tab} className={clsx('min-h-0 flex-1 overflow-auto', width === 'phone' && 'bg-elev/40 py-6')}>
+        <div className={clsx(width === 'phone' && 'mx-auto w-[390px] overflow-hidden rounded-[28px] border border-line-strong shadow-2xl shadow-black/50')}>
+          {tab === 'shadcn' ? <ShadcnPreview input={input} built={built} theme={theme} /> : <Preview name={name} input={input} built={built} theme={theme} onOverride={override} />}
+        </div>
       </div>
       )}
     </div>
@@ -279,8 +341,13 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5 mobile:px-3">
-        <SplitBack />
+        <button onClick={onBack} className="-ml-1.5 flex h-8 items-center gap-1 rounded-lg pl-1 pr-2 text-[12.5px] text-dim hover:bg-elev-2 hover:text-fg" aria-label="All design systems">
+          <CaretLeft size={14} /> <span className="mobile:hidden">Designs</span>
+        </button>
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none" />
+        <Button icon={<Star size={14} weight={isDefault ? 'fill' : 'regular'} className={isDefault ? 'text-warn' : undefined} />} onClick={() => onDefault(!isDefault)} aria-pressed={isDefault} title={isDefault ? 'New projects follow this system. Click to stop.' : 'Make new projects follow this system'}>
+          <span className="mobile:hidden">{isDefault ? 'Default' : 'Make default'}</span>
+        </Button>
         <Button icon={<SwatchesIcon size={14} />} onClick={() => setPresetsOpen(true)} title="Start over from a preset">
           <span className="mobile:hidden">Presets</span>
         </Button>
@@ -300,7 +367,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
       {side ? (
         <div className="flex min-h-0 flex-1">
           {/* The component playground needs the room; the system's controls come back on the other tabs. */}
-          {tab !== 'components' && <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>}
+          {tab !== 'components' && tab !== 'projects' && <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>}
           {view}
         </div>
       ) : (
@@ -578,6 +645,33 @@ function Slider({
       </span>
       <input type="range" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} className="accent-[#dc2645]" />
     </label>
+  )
+}
+
+function CodeFiles({ files, file, onFile }: { files: Record<string, string>; file: string; onFile(f: string): void }) {
+  const names = Object.keys(files)
+  const groups = [
+    { label: 'Design system', items: names.filter((n) => !n.includes('/')) },
+    { label: 'shadcn/ui', items: names.filter((n) => n.startsWith('shadcn/')) },
+    { label: 'Component pages', items: names.filter((n) => n.startsWith('components/')) }
+  ]
+  return (
+    <div className="flex min-h-0 flex-1">
+      <div className="w-60 shrink-0 overflow-y-auto border-r border-line p-1.5 mobile:w-40">
+        {groups.map((g) => (
+          <div key={g.label} className="mb-2">
+            <div className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-dim">{g.label}</div>
+            {g.items.map((n) => (
+              <button key={n} onClick={() => onFile(n)} aria-pressed={n === file} className={clsx('flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left font-mono text-[11.5px]', n === file ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg')}>
+                <FileCode size={12} className="shrink-0 text-dim" />
+                <span className="truncate">{n.replace(/^shadcn\//, '')}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <pre className="min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-[12px] leading-relaxed text-muted">{files[file] ?? ''}</pre>
+    </div>
   )
 }
 

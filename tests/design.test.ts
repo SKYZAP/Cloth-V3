@@ -35,7 +35,7 @@ describe('design systems', () => {
   it('writes DESIGN.md and token files that agree with each other', () => {
     const input: DesignInput = { ...DEFAULT_DESIGN, mode: 'both', accent: '#e0a43a', fontHeading: 'Fraunces' }
     const files = designFiles({ name: 'Harbor', description: 'Calm tools for ops teams.', input })
-    expect(Object.keys(files)).toEqual(['DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json', 'components.css', 'components/ds-button.html', 'components/ds-input.html', 'components/ds-card.html', 'components/ds-badge.html', 'components/ds-tabs.html', 'components/ds-alert.html', 'components/ds-menu.html'])
+    expect(Object.keys(files)).toEqual(['DESIGN.md', 'tokens.css', 'tailwind.css', 'tokens.json', 'components.css', 'components/ds-button.html', 'components/ds-input.html', 'components/ds-card.html', 'components/ds-badge.html', 'components/ds-tabs.html', 'components/ds-alert.html', 'components/ds-menu.html', 'shadcn/app/globals.css', 'shadcn/components.json', 'shadcn/lib/utils.ts', 'shadcn/components/ui/button.tsx', 'shadcn/components/ui/badge.tsx', 'shadcn/components/ui/card.tsx', 'shadcn/components/ui/input.tsx'])
     expect(files['components.css']).toContain('.ds-button--primary {')
     expect(files['DESIGN.md']).toContain('**Button** `.ds-button`')
     const d = buildDesign(input)

@@ -39,7 +39,8 @@ export class ProjectService {
   constructor(
     private ctx: Ctx,
     private chats: () => ChatService,
-    private designs?: DesignService
+    private designs?: DesignService,
+    private defaultDesign: () => string | null = () => null
   ) {}
 
   list(): Project[] {
@@ -69,7 +70,7 @@ export class ProjectService {
     const color = input.color ?? PROJECT_COLORS[this.list().length % PROJECT_COLORS.length]
     this.ctx.db
       .prepare('INSERT INTO projects (id, name, folder, color, instructions, defaults, design_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, name, input.folder || null, color, input.instructions ?? '', JSON.stringify(input.defaults ?? {}), input.designId ?? null, now, now)
+      .run(id, name, input.folder || null, color, input.instructions ?? '', JSON.stringify(input.defaults ?? {}), input.designId === undefined ? (this.designs?.find(this.defaultDesign())?.id ?? null) : input.designId, now, now)
     return this.get(id)
   }
 
