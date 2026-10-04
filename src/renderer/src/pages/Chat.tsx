@@ -49,7 +49,7 @@ import { compact, timeAgo } from '@/lib/format'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
-import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
+import { ReferenceCard, ToolGroup, ToolTraceCard } from '@/components/ToolTrace'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
@@ -191,7 +191,7 @@ export function ChatPage() {
           }}
           title="Delete chat"
           className={clsx(
-            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-all hover:bg-hover hover:text-crimson-hi',
+            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
             on || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
           )}
         >
@@ -306,7 +306,7 @@ export function ChatPage() {
   )
 }
 
-type SheetSection = 'knowledge' | 'workspace' | 'thinking' | null
+type SheetSection = 'knowledge' | 'workspace' | 'thinking' | 'capabilities' | 'external' | null
 
 function ChatView({ session, running, onChange }: { session: ChatSession; running: boolean; onChange(s: ChatSession): void }) {
   const [messages, setMessages] = useState<UiMessage[]>([])
@@ -638,16 +638,6 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             <SidebarSimple size={17} weight={panel.open ? 'fill' : 'regular'} className="-scale-x-100" />
           </motion.button>
         </Tooltip>
-        <Tooltip content="Chat context">
-          <motion.button
-            whileTap={{ scale: 0.88 }}
-            transition={SPRING_PRESS}
-            onClick={() => openSheet(null)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
-          >
-            <SlidersHorizontal size={17} />
-          </motion.button>
-        </Tooltip>
       </header>
 
       <div
@@ -663,7 +653,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
         }}
       >
-        <div className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
+        {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
           {!messages.length && <Welcome onPick={(t) => void send(t)} hasKnowledge={collections.length > 0} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -822,36 +813,14 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
               }}
             />
             <ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />
-            <ComposerToggle
-              icon={Books}
-              label="Knowledge"
-              active={selected.length > 0}
-              state={!collections.length ? 'No collections' : !selected.length ? 'Off' : selected.length === collections.length ? 'All collections' : `${selected.length} collection${selected.length > 1 ? 's' : ''}`}
-              count={selected.length || undefined}
-              onClick={() => openSheet('knowledge')}
-            />
-            <ComposerToggle icon={Sparkle} label="Skills" active={session.skillsEnabled} state={session.skillsEnabled ? 'On · type / to invoke' : 'Off · / still invokes'} onClick={() => void update({ skillsEnabled: !session.skillsEnabled })} />
-            <ComposerToggle icon={GlobeHemisphereWest} label="Web search" active={session.webEnabled} onClick={() => void update({ webEnabled: !session.webEnabled })} />
-            {!isMobile && <ComposerToggle icon={Wrench} label="Custom tools" active={session.customTools} onClick={() => void update({ customTools: !session.customTools })} />}
-            <ComposerToggle
-              icon={FolderSimple}
-              label="Workspace"
-              active={!!session.workspace}
-              state={session.workspace ? `${session.workspace.split(/[\\/]/).pop()} · ${session.fileAccess === 'write' ? 'read & write' : 'read-only'}${session.shell ? ' · shell' : ''}` : 'None'}
-              onClick={() => openSheet('workspace')}
-            />
-            <div className="mx-1.5 h-[18px] w-px bg-line-strong mobile:mx-0.5" />
-            <ComposerToggle
-              icon={Brain}
-              label="Thinking"
-              active={reasoning && session.thinking !== 'off'}
-              state={reasoning ? session.thinking : 'Not supported by this model'}
-              onClick={() => openSheet('thinking')}
-            />
+            <Tooltip content="Knowledge, folder, tools and instructions for this chat">
+              <button onClick={() => openSheet(null)} className="ml-0.5 flex h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] px-2 text-[12.5px] text-muted transition-colors hover:bg-elev-2 hover:text-fg">
+                <SlidersHorizontal size={16} />
+                <span className="mobile:hidden">Context</span>
+              </button>
+            </Tooltip>
+            <ComposerChips session={session} selected={selected} collections={collections.length} reasoning={reasoning} onOpen={openSheet} />
             <div className="flex-1" />
-            <span className="mr-2.5 text-[11px] text-dim opacity-0 transition-opacity duration-300 group-focus-within/composer:opacity-100 mobile:hidden">
-              <Key>Enter</Key> send · <Key>⇧ Enter</Key> newline
-            </span>
             <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
             <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
@@ -926,6 +895,39 @@ function Key({ children }: { children: React.ReactNode }) {
   return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
 }
 
+/** What this chat has switched on, as readable chips; each opens its part of the context sheet. */
+function ComposerChips({ session, selected, collections, reasoning, onOpen }: { session: ChatSession; selected: string[]; collections: number; reasoning: boolean; onOpen(s: SheetSection): void }) {
+  const settings = useApp((s) => s.settings)
+  const servers = (settings?.mcpClients ?? []).filter((c) => c.enabled)
+  const chosen = session.mcpServers ?? servers.filter((c) => c.defaultOn).map((c) => c.id)
+  const folder = session.workspace?.split(/[\\/]/).pop()
+  const chips: { key: string; icon: Icon; label: string; detail?: string; title: string; section: SheetSection }[] = []
+  if (session.container) chips.push({ key: 'container', icon: Cube, label: folder ?? 'Container', detail: 'container', title: `Works in a ${session.container.image} container`, section: 'workspace' })
+  else if (folder) chips.push({ key: 'folder', icon: FolderSimple, label: folder, detail: session.fileAccess === 'write' ? (session.shell ? 'edits + shell' : 'edits') : session.shell ? 'read + shell' : 'read-only', title: session.workspace ?? '', section: 'workspace' })
+  if (selected.length) chips.push({ key: 'knowledge', icon: Books, label: 'Knowledge', detail: selected.length === collections ? undefined : String(selected.length), title: `${selected.length} collection${selected.length > 1 ? 's' : ''}`, section: 'knowledge' })
+  if (session.webEnabled) chips.push({ key: 'web', icon: GlobeHemisphereWest, label: 'Web', title: 'Web search and pages', section: 'capabilities' })
+  if (reasoning && session.thinking !== 'off') chips.push({ key: 'thinking', icon: Brain, label: 'Thinking', detail: session.thinking, title: 'Reasoning effort', section: 'thinking' })
+  for (const c of servers) if (chosen.includes(c.id)) chips.push({ key: c.id, icon: Plugs, label: c.name, title: `Tools from the ${c.name} MCP server`, section: 'external' })
+  if (!session.skillsEnabled) chips.push({ key: 'skills', icon: Sparkle, label: 'Skills off', title: 'Skills are off (/name still invokes one)', section: 'capabilities' })
+  if (!chips.length) return null
+  return (
+    <div className="ml-1 flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
+      {chips.map((c) => (
+        <button
+          key={c.key}
+          onClick={() => onOpen(c.section)}
+          title={c.title}
+          className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border border-line bg-elev px-2 text-[11.5px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+        >
+          <c.icon size={12} />
+          <span className="max-w-[160px] truncate">{c.label}</span>
+          {c.detail && <span className="text-dim">{c.detail}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function ComposerToggle({ icon: I, label, active, state, count, onClick }: { icon: Icon; label: string; active: boolean; state?: string; count?: number; onClick(): void }) {
   return (
     <Tooltip
@@ -979,15 +981,16 @@ function SendButton({ running, disabled, onSend, onStop }: { running: boolean; d
       whileTap={{ scale: 0.92 }}
       onClick={running ? onStop : onSend}
       disabled={disabled}
-      title={running ? 'Stop' : 'Send'}
+      title={running ? 'Stop' : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
+      aria-label={running ? 'Stop the reply' : 'Send message'}
       className="relative h-9 w-9 overflow-hidden rounded-xl bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
     >
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
           key={running ? 'stop' : 'send'}
-          initial={{ opacity: 0, scale: 0.6, y: running ? 8 : -8, filter: 'blur(6px)' }}
-          animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, scale: 0.6, y: running ? -8 : 8, filter: 'blur(6px)' }}
+          initial={{ opacity: 0, scale: 0.6, y: running ? 8 : -8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.6, y: running ? -8 : 8 }}
           transition={{ type: 'spring', stiffness: 500, damping: 26 }}
           className="absolute inset-0 flex items-center justify-center"
         >
@@ -1090,7 +1093,7 @@ function ContextSheet({
         )}
       </SheetSection>
 
-      <SheetSection icon={ToggleRight} title="Capabilities">
+      <SheetSection id="sheet-capabilities" icon={ToggleRight} title="Capabilities">
         <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
           <Capability icon={Sparkle} title="Skills" sub="skill_list · skill_use" on={session.skillsEnabled} onToggle={() => void update({ skillsEnabled: !session.skillsEnabled })} />
           <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
@@ -1332,7 +1335,7 @@ function ExternalTools({ session, update }: { session: ChatSession; update(p: Pa
   const chosen = session.mcpServers ?? servers.filter((c) => c.defaultOn).map((c) => c.id)
   const toggle = (id: string) => void update({ mcpServers: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] })
   return (
-    <SheetSection icon={Plugs} title="External tools">
+    <SheetSection id="sheet-external" icon={Plugs} title="External tools">
       <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
         {servers.map((c) => {
           const st = status.find((x) => x.id === c.id)
@@ -1347,7 +1350,7 @@ function ExternalTools({ session, update }: { session: ChatSession; update(p: Pa
 function Capability({ icon: I, title, sub, on, onToggle }: { icon: Icon; title: string; sub: string; on: boolean; onToggle(): void }) {
   return (
     <motion.button whileTap={{ scale: 0.98 }} onClick={onToggle} aria-pressed={on} className="flex items-center gap-3 rounded-[14px] border border-line bg-elev p-3 text-left">
-      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] transition-all duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
+      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] transition-[background-color,color,box-shadow] duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
         <I size={18} weight={on ? 'fill' : 'regular'} />
       </div>
       <div className="min-w-0 flex-1">
@@ -1447,6 +1450,32 @@ function AssistantTurn({
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n\n')
   const lastTextIdx = message.blocks.map((b) => b.type).lastIndexOf('text')
   const lastTodoIdx = message.blocks.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
+  // Consecutive tool calls fold into one line. Plan updates other than the latest are dropped (the plan
+  // panel shows the plan); images, questions and subagents keep their own cards.
+  const items = useMemo(() => {
+    const out: ({ kind: 'block'; i: number } | { kind: 'group'; indices: number[] })[] = []
+    let run: number[] = []
+    const flush = () => {
+      if (run.length >= 2) out.push({ kind: 'group', indices: run })
+      else for (const i of run) out.push({ kind: 'block', i })
+      run = []
+    }
+    message.blocks.forEach((b, i) => {
+      if (b.type === 'tool') {
+        const t = b.trace
+        if (t.name === 'todo_write' && i !== lastTodoIdx) return
+        if (t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || t.subagent) {
+          flush()
+          out.push({ kind: 'block', i })
+        } else run.push(i)
+        return
+      }
+      flush()
+      out.push({ kind: 'block', i })
+    })
+    flush()
+    return out
+  }, [message.blocks, lastTodoIdx])
 
   return (
     <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4 mobile:mb-7 mobile:grid-cols-1">
@@ -1454,7 +1483,13 @@ function AssistantTurn({
         <Logo size={28} />
       </div>
       <div className="min-w-0">
-        {blocks.map(({ block, refs }, i) => {
+        {items.map((item) => {
+          if (item.kind === 'group') {
+            const traces = item.indices.map((j) => (message.blocks[j] as Extract<UiMessage['blocks'][number], { type: 'tool' }>).trace)
+            return <ToolGroup key={traces[0].id} traces={traces} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
+          }
+          const i = item.i
+          const { block, refs } = blocks[i]
           if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === message.blocks.length - 1} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
@@ -1476,7 +1511,7 @@ function AssistantTurn({
                 </motion.span>
               </button>
             )}
-            <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 mobile:opacity-100">
+            <div className="ml-auto flex gap-0.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 mobile:opacity-100">
               <Tooltip content={copied ? 'Copied' : 'Copy'}>
                 <button
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"

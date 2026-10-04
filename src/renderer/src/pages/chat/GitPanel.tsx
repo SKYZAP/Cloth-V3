@@ -240,10 +240,10 @@ function FileList({ title, files, staged, onOpen, onAll, allLabel, actions, empt
         const { name, dir } = split(f.path)
         const l = letter(f, staged)
         return (
-          <div key={f.path} onClick={() => onOpen(f)} className="group/row flex h-7 cursor-pointer items-center gap-2 pl-3 pr-1.5 text-[12.5px] hover:bg-elev" title={f.from ? `${f.from} → ${f.path}` : f.path}>
+          <div key={f.path} role="button" tabIndex={0} onClick={() => onOpen(f)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onOpen(f))} className="group/row flex h-7 cursor-pointer items-center gap-2 pl-3 pr-1.5 text-[12.5px] outline-none hover:bg-elev focus-visible:bg-elev focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-crimson-line" title={f.from ? `${f.from} → ${f.path}` : f.path}>
             <span className={clsx('min-w-0 truncate', l === 'D' ? 'text-dim line-through' : 'text-fg/90')}>{name}</span>
             <span className="min-w-0 flex-1 truncate text-[11px] text-dim">{dir}</span>
-            <span className="hidden shrink-0 items-center group-hover/row:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
+            <span className="hidden shrink-0 items-center group-focus-within/row:flex group-hover/row:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
               {actions(f)}
             </span>
             <span className={clsx('w-3.5 shrink-0 text-center font-mono text-[11px] font-semibold', LETTER_COLOR[l] ?? 'text-muted')} title={f.untracked ? 'New file' : f.conflicted ? 'Conflict' : undefined}>
