@@ -30,6 +30,11 @@
   --color-ok: #3fb97a;
   --color-warn: #e0a43a;
   --color-info: #6b9cf0;
+
+  /* Skills: the slash command in the message box, sent messages and the setup sidebar. */
+  --color-skill: #dcb6ff;
+  --color-skill-dot: #c084fc;
+  --color-skill-soft: rgb(192 132 252 / 0.15);
 }
 
 /* Base rules live in the base layer so Tailwind utilities (outline-none, [scrollbar-width:none], …)

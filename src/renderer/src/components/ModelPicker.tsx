@@ -52,28 +52,8 @@ export function ModelPicker({
   className?: string
   pill?: boolean
 }) {
-  const providers = useApp((s) => s.providers)
-  const loadProviders = useApp((s) => s.loadProviders)
-  const settings = useApp((s) => s.settings)
-  const loadSettings = useApp((s) => s.loadSettings)
-  useEffect(() => {
-    if (!providers.length) void loadProviders()
-  }, [providers.length, loadProviders])
-  useEffect(() => {
-    if (!settings) void loadSettings()
-  }, [settings, loadSettings])
-
-  const fits = (m: ModelInfo) => (kind === 'embedding' ? m.embedding : kind === 'image' ? !!m.image : !m.embedding && !m.image)
-  const options = useMemo<Option[]>(
-    () =>
-      providers
-        .filter((p) => p.enabled)
-        .flatMap((p) => p.models.filter(fits).map((m) => ({ key: `${p.id}${SEP}${m.id}`, ref: { providerId: p.id, modelId: m.id }, model: m, provider: p, local: isLocal(p) }))),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [providers, kind]
-  )
+  const { options, starred, toggleStar } = useModelOptions(kind)
   const current = value ? options.find((o) => o.key === keyOf(value)) : undefined
-  const starred = settings?.starredModels ?? []
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -100,11 +80,6 @@ export function ModelPicker({
     onChange(ref)
     close()
   }
-  const toggleStar = (key: string) => {
-    const next = starred.includes(key) ? starred.filter((k) => k !== key) : [...starred, key]
-    void useApp.getState().updateSettings({ starredModels: next })
-  }
-
   // Outside clicks close it (the panel lives in a portal, so check both).
   useEffect(() => {
     if (!open || isMobile) return
@@ -199,6 +174,74 @@ export function ModelPicker({
           </div>
         </BottomSheet>
       )}
+    </div>
+  )
+}
+
+/** The models a picker offers, the starred ones, and starring (shared through Settings). */
+function useModelOptions(kind: 'chat' | 'embedding' | 'image') {
+  const providers = useApp((s) => s.providers)
+  const loadProviders = useApp((s) => s.loadProviders)
+  const settings = useApp((s) => s.settings)
+  const loadSettings = useApp((s) => s.loadSettings)
+  useEffect(() => {
+    if (!providers.length) void loadProviders()
+  }, [providers.length, loadProviders])
+  useEffect(() => {
+    if (!settings) void loadSettings()
+  }, [settings, loadSettings])
+  const options = useMemo<Option[]>(() => {
+    const fits = (m: ModelInfo) => (kind === 'embedding' ? m.embedding : kind === 'image' ? !!m.image : !m.embedding && !m.image)
+    return providers
+      .filter((p) => p.enabled)
+      .flatMap((p) => p.models.filter(fits).map((m) => ({ key: `${p.id}${SEP}${m.id}`, ref: { providerId: p.id, modelId: m.id }, model: m, provider: p, local: isLocal(p) })))
+  }, [providers, kind])
+  const starred = settings?.starredModels ?? []
+  const toggleStar = (key: string) => {
+    const next = starred.includes(key) ? starred.filter((k) => k !== key) : [...starred, key]
+    void useApp.getState().updateSettings({ starredModels: next })
+  }
+  return { options, starred, toggleStar }
+}
+
+/**
+ * The chat model list on its own, for a popover that also holds other choices (the status line's
+ * model and effort): a search field, filters, starred models and the ranked list.
+ */
+export function ModelMenu({ value, onChange, autoFocus }: { value: ModelRef | null | undefined; onChange(ref: ModelRef): void; autoFocus?: boolean }) {
+  const { options, starred, toggleStar } = useModelOptions('chat')
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState<Set<FilterId>>(new Set())
+  const current = value ? options.find((o) => o.key === keyOf(value)) : undefined
+  const keyHandler = useRef<((e: React.KeyboardEvent) => void) | null>(null)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-3 mt-3 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-line bg-bg px-2.5 focus-within:border-crimson-line">
+        <MagnifyingGlass size={13} className="shrink-0 text-dim" />
+        <input
+          autoFocus={autoFocus}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => keyHandler.current?.(e)}
+          placeholder="Search models…"
+          aria-label="Search models"
+          spellCheck={false}
+          className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-dim focus-visible:outline-none"
+        />
+      </div>
+      <PickerList
+        options={options}
+        query={query}
+        filters={filters}
+        onFilters={setFilters}
+        starred={starred}
+        onStar={toggleStar}
+        currentKey={value ? keyOf(value) : null}
+        unavailable={value && !current ? value : null}
+        none={null}
+        onPick={(ref) => ref && onChange(ref)}
+        bind={(handler) => (keyHandler.current = handler)}
+      />
     </div>
   )
 }

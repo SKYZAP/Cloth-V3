@@ -167,7 +167,8 @@ export function createApi(s: Services): ClothApi {
       undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force),
       retitle: (id) => s.chat.retitle(id, { force: true }),
       compact: (id, instructions) => s.chat.compact(id, { instructions }),
-      contextUsage: (id) => s.chat.contextUsage(id)
+      contextUsage: (id) => s.chat.contextUsage(id),
+      setup: (id) => s.chat.setup(id)
     },
     containers: {
       status: (force) => s.containers.status(force),

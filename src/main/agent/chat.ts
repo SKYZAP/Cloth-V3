@@ -4,7 +4,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
-import type { ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
 import type { McpClientService } from '../mcp/client'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
@@ -100,7 +100,10 @@ const DEFAULT_CONFIG: SessionConfig = {
   thinking: 'off',
   projectId: null,
   container: null,
-  mcpServers: null
+  mcpServers: null,
+  disabledTools: [],
+  skillsOff: [],
+  skillsAlways: []
 }
 
 export interface AgentRunOptions {
@@ -179,11 +182,15 @@ export class AgentRuntime {
         ...collections.map((c) => `- ${c.name}${c.description ? ` — ${c.description}` : ''} (${c.docCount} docs)`)
       )
     }
+    const installed = scope.skillsEnabled || scope.skillsAlways?.length ? await this.skills.list().catch(() => []) : []
     if (scope.skillsEnabled) {
-      const skills = (await this.skills.list().catch(() => [])).filter((s) => allowedSkill(scope, s.name))
+      const skills = installed.filter((s) => allowedSkill(scope, s.name) && !scope.skillsAlways?.includes(s.name))
       if (skills.length) {
         lines.push('', '## Skills', 'Load a skill with `skill_use` before doing a task it covers.', ...skills.map((s) => `- ${s.name}: ${s.description}`))
       }
+    }
+    for (const s of installed.filter((x) => scope.skillsAlways?.includes(x.name))) {
+      lines.push('', `## Skill: ${s.name} (always on)`, 'Follow this skill whenever it applies.', '', this.skills.instructions(s))
     }
     if (scope.webEnabled) {
       lines.push('', '## Web', 'You can search the public web with `web_search` and read pages with `web_fetch`. Prefer the local knowledge base for project-specific questions; use the web for current or external information, and cite web results as [n].')
@@ -232,15 +239,51 @@ export class AgentRuntime {
     return lines.join('\n')
   }
 
-  /** The tool declarations an agent with this scope is given, as the model sees them. */
-  toolDefinitions(scope: ToolScope): string {
-    const tools = [
-      ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...this.ws }, scope),
-      ...(scope.subagents && !scope.depth ? [this.taskTool({ model: { providerId: '', modelId: '' }, scope })] : []),
+  /** The tools an agent with this scope gets, without the ones switched off by name. */
+  private toolset(parent: Omit<AgentRunOptions, 'prompt'>, usage = false): AgentTool<any, ToolDetails>[] {
+    const scope = parent.scope
+    const off = new Set(scope.disabledTools ?? [])
+    return [
+      ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...(usage ? { usage: this.providers.usage } : {}), ...this.ws }, scope),
+      ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
-    ]
+    ].filter((t) => !off.has(t.name))
+  }
+
+  /** The tool declarations an agent with this scope is given, as the model sees them. */
+  toolDefinitions(scope: ToolScope): string {
+    const tools = this.toolset({ model: { providerId: '', modelId: '' }, scope })
     return JSON.stringify(tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })))
+  }
+
+  /**
+   * Everything a chat's setup could add to a request, item by item: every tool it could have with its
+   * folder settings (switched on or not), its skills, and the knowledge section.
+   */
+  async setup(scope: ToolScope, servers: string[]): Promise<ChatSetup> {
+    const est = (s: string) => Math.ceil(s.length / 4)
+    const model = { providerId: '', modelId: '' }
+    const live = new Set(this.toolset({ model, scope }).map((t) => t.name))
+    const full: ToolScope = { ...scope, webEnabled: true, customTools: true, subagents: true, images: true, skillsEnabled: true, knowledgeEnabled: true, codeIntel: true, disabledTools: [], skillsOff: [], mcpServers: servers }
+    const tools = this.toolset({ model, scope: full }).map((t) => ({
+      name: t.name,
+      description: t.description,
+      tokens: est(JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters })),
+      on: live.has(t.name)
+    }))
+    const skills = (await this.skills.list().catch(() => []))
+      .filter((s) => !scope.skillNames || scope.skillNames.includes(s.name))
+      .map((s) => ({
+        name: s.name,
+        description: s.description,
+        mode: (scope.skillsOff?.includes(s.name) ? 'off' : scope.skillsAlways?.includes(s.name) ? 'always' : 'auto') as ChatSetup['skills'][number]['mode'],
+        listedTokens: est(`- ${s.name}: ${s.description}\n`),
+        fullTokens: est(this.skills.instructions(s))
+      }))
+    const collections = scope.knowledgeEnabled === false ? [] : this.rag.listCollections().filter((c) => !scope.collectionIds.length || scope.collectionIds.includes(c.id))
+    const knowledgeTokens = collections.length ? est('## Knowledge base\nUse `rag_search` whenever the question may be answered by the local knowledge base. Search iteratively: refine queries if results are weak. Ground claims in results and cite them inline as [n] using the numbers from the most recent search. If the knowledge base has nothing relevant, say so.') + collections.reduce((n, c) => n + est(`- ${c.name}${c.description ? ` — ${c.description}` : ''} (${c.docCount} docs)\n`), 0) : 0
+    return { tools, skills, knowledgeTokens }
   }
 
   createAgent(opts: Omit<AgentRunOptions, 'prompt'> & { systemPrompt: string }): Agent {
@@ -250,12 +293,7 @@ export class AgentRuntime {
         systemPrompt: opts.systemPrompt,
         model,
         thinkingLevel: model.reasoning ? (opts.thinking ?? 'off') : 'off',
-        tools: [
-          ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, usage: this.providers.usage, ...this.ws }, opts.scope),
-          ...(opts.scope.subagents && !opts.scope.depth ? [this.taskTool(opts)] : []),
-          ...(this.imagesAvailable(opts.scope) ? [this.imageTool()] : []),
-          ...(this.ws.mcp?.tools(opts.scope) ?? [])
-        ],
+        tools: this.toolset(opts, true),
         messages: opts.history ?? []
       },
       streamFn: streamSimple,
@@ -445,6 +483,9 @@ export class ChatService {
       projectId: cur.projectId,
       container: cur.container,
       mcpServers: cur.mcpServers,
+      disabledTools: cur.disabledTools,
+      skillsOff: cur.skillsOff,
+      skillsAlways: cur.skillsAlways,
       ...config
     }
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -583,6 +624,15 @@ export class ChatService {
     }
   }
 
+  /** The chat's tools and skills with what each adds to a request (servers that aren't running list no tools). */
+  async setup(id: string): Promise<ChatSetup> {
+    const session = this.get(id)
+    const scope = this.scope(id)
+    const mcp = this.runtime.mcpClients
+    scope.mcpServers = mcp?.chatServers(session.mcpServers) ?? []
+    return this.runtime.setup(scope, mcp?.chatServers(mcp.status().map((s) => s.id)) ?? [])
+  }
+
   private contextEstimated(ref: ModelRef): boolean {
     try {
       const info = this.runtime.providers.get(ref.providerId).models.find((m) => m.id === ref.modelId)
@@ -649,8 +699,10 @@ export class ChatService {
       blocks.push({ type: 'text', text: lines.join('\n') })
     }
     blocks.push(...attached)
+    // "/name" on its own (the skill named inline, nothing else) asks for the skill to be applied.
+    const rest = skillNames.reduce((t, n) => t.replace(new RegExp(`(^|\\s)/${n}(?=\\s|$)`, 'gi'), ' '), text).trim()
     const prompt =
-      text.trim() ||
+      (rest && text.trim()) ||
       (skillNames.length
         ? `Apply the ${skillNames.map((n) => `/${n}`).join(', ')} skill${skillNames.length > 1 ? 's' : ''}.`
         : `Have a look at the attached ${attached.length > 1 ? 'files' : attached[0].type === 'image' ? 'image' : 'file'}.`)
@@ -695,6 +747,9 @@ export class ChatService {
       subagents: session.subagents,
       codeIntel: session.codeIntel,
       images: session.imagesEnabled,
+      disabledTools: session.disabledTools,
+      skillsOff: session.skillsOff,
+      skillsAlways: session.skillsAlways,
       depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {

@@ -11,63 +11,42 @@ import {
   Check,
   ChatCircleDots,
   Copy,
-  Cube,
-  Desktop,
-  FolderDashed,
   FolderPlus,
   FolderSimple,
-  GlobeHemisphereWest,
-  GraduationCap,
-  LockSimple,
-  PencilSimpleLine,
-  Robot,
-  ImageSquare,
-  Plugs,
-  Code,
-  ShieldCheck,
-  ShieldWarning,
   SidebarSimple,
-  TerminalWindow,
   MagnifyingGlass,
   NotePencil,
   Paperclip,
   Plus,
-  SlidersHorizontal,
   Sparkle,
-  Stack,
   Stop,
-  ToggleRight,
   Trash,
-  Wrench,
-  X,
   type Icon
 } from '@phosphor-icons/react'
-import { DEFAULT_CONTAINER } from '@shared/types'
-import type { ApprovalDecision, AutoApprove, ChatSession, McpClientStatus, WorkspaceFile, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
+import type { ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { timeAgo } from '@/lib/format'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
-import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolGroup, ToolTraceCard } from '@/components/ToolTrace'
-import { BottomSheet } from '@/components/BottomSheet'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
 import { QuestionCard } from '@/components/QuestionCard'
-import { ContextMeter, latestTodos, PlanPanel } from '@/components/Planning'
+import { latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { SidePanel, usePanelState } from './chat/SidePanel'
+import { StatusLine } from './chat/StatusLine'
+import { invokedSkills, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
 const COLLAPSED_KEY = 'cloth.projects.collapsed'
+const LIST_HIDDEN_KEY = 'cloth.chat.listHidden'
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -95,6 +74,9 @@ export function ChatPage() {
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
   const side = useSideBySide()
+  // The chat list folds away (Ctrl+B) so the conversation can take the room; remembered per device.
+  const [listHidden, setListHidden] = useState(() => readJson<boolean>(LIST_HIDDEN_KEY, false))
+  useEffect(() => writeJson(LIST_HIDDEN_KEY, listHidden), [listHidden])
 
   const load = async () => {
     const list = await api.chat.list()
@@ -178,7 +160,11 @@ export function ChatPage() {
       } else if (k === 'k') {
         e.preventDefault()
         setOpen(false)
+        setListHidden(false)
         requestAnimationFrame(() => search.current?.focus())
+      } else if (k === 'b' && side) {
+        e.preventDefault()
+        setListHidden((h) => !h)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -194,24 +180,18 @@ export function ChatPage() {
         key={s.id}
         role="button"
         tabIndex={0}
-        aria-current={on ? 'true' : undefined}
+        aria-current={on && side ? 'true' : undefined}
+        title={s.title}
         onClick={() => (setActiveId(s.id), setOpen(true))}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), setActiveId(s.id), setOpen(true))}
         className={clsx(
-          'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:py-3.5',
-          nested ? 'pl-6' : 'pl-3.5',
-          on && side ? 'bg-elev-2' : 'hover:bg-elev'
+          'group relative mx-0.5 my-px flex h-8 cursor-default items-center gap-2 rounded-[8px] pr-1 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-12',
+          nested ? 'pl-[30px]' : 'pl-3',
+          on && side ? 'bg-elev-2 text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg'
         )}
       >
-        {on && side && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-crimson" />}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 self-center rounded-full bg-crimson" />}
-            <span className={clsx('min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
-            <span className="shrink-0 text-[10.5px] text-dim group-hover:hidden group-focus-within:hidden mobile:text-[11.5px]">{timeAgo(s.updatedAt)}</span>
-          </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-dim mobile:text-[12.5px]">{s.preview || (s.workspace ? s.workspace.split(/[\\/]/).pop() : 'No messages yet')}</div>
-        </div>
+        {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" title="Working" />}
+        <span className={clsx('min-w-0 flex-1 truncate text-[12.5px] mobile:text-[14.5px]', on && side && 'font-medium')}>{s.title}</span>
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -219,11 +199,11 @@ export function ChatPage() {
           }}
           title="Delete chat"
           className={clsx(
-            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
             isMobile ? 'opacity-100' : 'hidden group-focus-within:flex group-hover:flex'
           )}
         >
-          <Trash size={15} />
+          <Trash size={14} />
         </button>
       </div>
     )
@@ -231,6 +211,7 @@ export function ChatPage() {
 
   return (
     <SplitRoot open={open} onBack={() => setOpen(false)}>
+      {!(side && listHidden) && (
       <ListPane
         header={
           <div className="flex gap-2">
@@ -296,6 +277,7 @@ export function ChatPage() {
         {loose.map((s) => row(s, false))}
         {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
+      )}
 
       <ProjectDialog
         open={editing.open}
@@ -323,6 +305,8 @@ export function ChatPage() {
             session={active}
             project={projects.find((p) => p.id === active.projectId) ?? null}
             running={running.has(active.id)}
+            listHidden={side && listHidden}
+            onToggleList={() => setListHidden((h) => !h)}
             onChange={(s) => setSessions((ss) => ss.map((x) => (x.id === s.id ? s : x)))}
           />
         ) : (
@@ -335,13 +319,24 @@ export function ChatPage() {
   )
 }
 
-type SheetSection = 'knowledge' | 'workspace' | 'thinking' | 'capabilities' | 'external' | null
-
-function ChatView({ session, project, running, onChange }: { session: ChatSession; project: Project | null; running: boolean; onChange(s: ChatSession): void }) {
+function ChatView({
+  session,
+  project,
+  running,
+  listHidden,
+  onToggleList,
+  onChange
+}: {
+  session: ChatSession
+  project: Project | null
+  running: boolean
+  listHidden: boolean
+  onToggleList(): void
+  onChange(s: ChatSession): void
+}) {
+  const side = useSideBySide()
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
-  const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
-  const [invoked, setInvoked] = useState<string[]>([])
   const [approvals, setApprovals] = useState<PendingApproval[]>([])
   const [questions, setQuestions] = useState<PendingQuestion[]>([])
   const [usage, setUsage] = useState<ContextUsage | null>(null)
@@ -357,6 +352,7 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
   const providers = useApp((s) => s.providers)
   const scroller = useRef<HTMLDivElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const mirror = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
@@ -419,6 +415,11 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
     if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: initialIds.current && initialIds.current.size !== messages.length ? 'smooth' : 'auto' })
   }, [messages])
 
+  // Opening a chat puts the cursor in its message box (not on the phone: that would pop the keyboard).
+  useEffect(() => {
+    if (!isMobile) textarea.current?.focus()
+  }, [session.id])
+
   useLayoutEffect(() => {
     const el = textarea.current
     if (!el) return
@@ -432,13 +433,17 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
     if (s) onChange(s)
   }
 
-  const send = async (text = draft, withSkills = invoked) => {
+  // Skills are invoked inline: every "/name" in the message that names an installed skill.
+  const known = useMemo(() => new Set(skills.map((sk) => sk.name)), [skills])
+  const inline = useMemo(() => invokedSkills(draft, known), [draft, known])
+
+  const send = async (text = draft) => {
     const t = text.trim()
     const files = attachments
-    if ((!t && !withSkills.length && !files.length) || running) return
+    const withSkills = invokedSkills(t, known)
+    if ((!t && !files.length) || running) return
     stick.current = true
     setDraft('')
-    setInvoked([])
     setSlash(null)
     setAttachments([])
     const sent = await attempt(async () => {
@@ -501,30 +506,31 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
     if (!slash) return []
     const q = slash.query.toLowerCase()
     return skills
-      .filter((sk) => !invoked.includes(sk.name) && (!q || sk.name.includes(q) || sk.description.toLowerCase().includes(q)))
+      .filter((sk) => (sk.name === q || !inline.includes(sk.name)) && (!q || sk.name.includes(q) || sk.description.toLowerCase().includes(q)))
       .sort((a, b) => Number(b.name.startsWith(q)) - Number(a.name.startsWith(q)) || a.name.localeCompare(b.name))
       .slice(0, 8)
-  }, [slash, skills, invoked])
+  }, [slash, skills, inline])
+  // A "/name" that matches no skill goes as plain text; say so (not while the menu is still open for it).
+  const unknown = useMemo(() => (slash || !skills.length ? [] : unknownSkills(draft, known)), [slash, skills.length, draft, known])
 
   const detectSlash = (value: string, caret: number) => {
-    const m = /(^|\s)\/([a-z0-9-]*)$/.exec(value.slice(0, caret))
-    if (!m) return setSlash(null)
+    const at = slashAt(value, caret)
+    if (!at) return setSlash(null)
     if (!slash) void api.skills.list().then(setSkills).catch(() => undefined)
-    setSlash({ query: m[2], start: caret - m[2].length - 1, end: caret })
+    setSlash(at)
     setSlashIndex(0)
   }
 
   const pickSkill = (sk: Skill) => {
     if (!slash) return
-    const at = slash.start
-    setDraft(draft.slice(0, slash.start) + draft.slice(slash.end))
-    setInvoked((cur) => (cur.includes(sk.name) ? cur : [...cur, sk.name]))
+    const head = `${draft.slice(0, slash.start)}/${sk.name} `
+    setDraft(head + draft.slice(slash.end).replace(/^\s/, ''))
     setSlash(null)
     requestAnimationFrame(() => {
       const el = textarea.current
       if (!el) return
       el.focus()
-      el.setSelectionRange(at, at)
+      el.setSelectionRange(head.length, head.length)
     })
   }
 
@@ -591,9 +597,6 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
   }
 
   const provider = providers.find((p) => p.id === session.model?.providerId)
-  const reasoning = !!provider?.models.find((m) => m.id === session.model?.modelId)?.reasoning
-  const selected = session.knowledgeEnabled ? (session.collectionIds.length ? session.collectionIds.filter((id) => collections.some((c) => c.id === id)) : collections.map((c) => c.id)) : []
-  const openSheet = (section: SheetSection) => setSheet({ open: true, section })
   const waiting = running && messages.at(-1)?.role === 'user'
   const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
 
@@ -635,6 +638,27 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
       {/* Header floats over the conversation and fades into it */}
       <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
         <SplitBack />
+        {side && (
+          <Tooltip content={listHidden ? 'Show the chat list (Ctrl+B)' : 'Hide the chat list (Ctrl+B)'}>
+            <motion.button
+              whileTap={{ scale: 0.88 }}
+              transition={SPRING_PRESS}
+              onClick={onToggleList}
+              aria-pressed={!listHidden}
+              aria-label="Show the chat list"
+              className="-ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+            >
+              <SidebarSimple size={17} weight={listHidden ? 'regular' : 'fill'} />
+            </motion.button>
+          </Tooltip>
+        )}
+        {listHidden && project && (
+          <span className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-[13px] text-dim" title={project.folder ?? undefined}>
+            <FolderSimple size={14} weight="fill" className="shrink-0" style={{ color: project.color }} />
+            <span className="truncate">{project.name}</span>
+            <span aria-hidden="true">/</span>
+          </span>
+        )}
         <input
           key={session.title}
           className="min-w-0 flex-1 truncate bg-transparent text-[14px] font-semibold tracking-tight outline-none focus-visible:outline-none"
@@ -659,8 +683,7 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
           </Tooltip>
         )}
         {session.container && <ContainerPill session={session} running={running} />}
-        <ModelPicker pill className="w-64 mobile:w-[46%] mobile:shrink-0" value={session.model} onChange={(model) => void update({ model })} />
-        <Tooltip content={panel.open ? 'Hide terminal, files and git' : 'Terminal, files and git (Ctrl+`)'}>
+        <Tooltip content={panel.open ? 'Hide the side panel' : 'Setup, files, terminal and git'}>
           <motion.button
             whileTap={{ scale: 0.88 }}
             transition={SPRING_PRESS}
@@ -690,7 +713,7 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
-        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[250px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -715,7 +738,7 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
                 <UserBubble message={m} fresh={fresh} />
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
             )
           })}
           <AnimatePresence>
@@ -761,7 +784,7 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
               setUnseen(false)
               scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
             }}
-            className="absolute bottom-[132px] left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg mobile:bottom-[112px]"
+            className="absolute bottom-[170px] left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg mobile:bottom-[150px]"
           >
             <ArrowDown size={13} />
             {unseen && running ? 'New output' : 'Jump to latest'}
@@ -781,35 +804,16 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
           <AnimatePresence>
             {slash && <SlashMenu key="slash" skills={matches} total={skills.length} index={slashIndex} query={slash.query} onPick={pickSkill} onHover={setSlashIndex} />}
           </AnimatePresence>
-          <AnimatePresence initial={false}>
-            {invoked.length > 0 && (
-              <motion.div key="chips" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 32 }} className="overflow-hidden">
-                <div className="flex flex-wrap gap-1.5 px-4 pt-3">
-                  <AnimatePresence initial={false}>
-                    {invoked.map((name) => (
-                      <motion.span
-                        key={name}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
-                        animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
-                        className="flex items-center gap-1.5 rounded-full border border-crimson-line bg-crimson-soft py-0.5 pl-2 pr-1 font-mono text-[11.5px] text-crimson-hi"
-                      >
-                        <Sparkle size={12} weight="fill" />/{name}
-                        <button onClick={() => setInvoked((cur) => cur.filter((n) => n !== name))} className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-crimson-line" aria-label={`Remove ${name}`}>
-                          <X size={10} weight="bold" />
-                        </button>
-                      </motion.span>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
           <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
+          <div className="relative">
+          {inline.length > 0 && (
+            <div ref={mirror} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg [scrollbar-gutter:stable]">
+              <SkillText text={`${draft}\u200b`} known={known} />
+            </div>
+          )}
           <textarea
             ref={textarea}
+            onScroll={(e) => mirror.current && (mirror.current.scrollTop = e.currentTarget.scrollTop)}
             value={draft}
             onPaste={(e) => {
               const files = [...e.clipboardData.files]
@@ -844,10 +848,6 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
                 setSlash(null)
                 return
               }
-              if (e.key === 'Backspace' && invoked.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
-                setInvoked((cur) => cur.slice(0, -1))
-                return
-              }
               // Phones: Enter is a newline; the send button sends.
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isMobile) {
                 e.preventDefault()
@@ -855,9 +855,13 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
               }
             }}
             rows={1}
-            placeholder={!session.model ? 'Pick a model above to start' : invoked.length ? 'Add details for the skill, or just send…' : 'Ask anything — type / to invoke a skill'}
-            className="block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus-visible:outline-none"
+            placeholder={!session.model ? 'Pick a model below to start' : 'Ask anything — type / to invoke a skill'}
+            className={clsx(
+              'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
+              inline.length > 0 && 'text-transparent caret-fg'
+            )}
           />
+          </div>
           <div className="flex items-center gap-0.5 pb-2 pl-2.5 pr-2 pt-1.5">
             <input
               ref={fileInput}
@@ -870,36 +874,22 @@ function ChatView({ session, project, running, onChange }: { session: ChatSessio
               }}
             />
             <ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />
-            <Tooltip content="Knowledge, folder, tools and instructions for this chat">
-              <button onClick={() => openSheet(null)} className="ml-0.5 flex h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] px-2 text-[12.5px] text-muted transition-colors hover:bg-elev-2 hover:text-fg">
-                <SlidersHorizontal size={16} />
-                <span className="mobile:hidden">Context</span>
-              </button>
-            </Tooltip>
-            <ComposerChips session={session} selected={selected} collections={collections.length} reasoning={reasoning} onOpen={openSheet} />
+            {unknown.length > 0 && (
+              <span className="ml-1.5 min-w-0 truncate text-[11.5px] text-dim" role="status">
+                No skill called {unknown.join(', ')}. It will be sent as text.
+              </span>
+            )}
             <div className="flex-1" />
-            <ContextMeter usage={usage} busy={compacting} onCompact={() => void compactNow()} />
-            <SendButton running={running} disabled={!running && ((!draft.trim() && !invoked.length && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
+            <SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
           </div>
         </div>
+        <StatusLine session={session} update={update} usage={usage} compacting={compacting} onCompact={() => void compactNow()} />
       </div>
-
-      <BottomSheet
-        open={sheet.open}
-        onClose={() => setSheet((s) => ({ ...s, open: false }))}
-        title="Chat context"
-        description="What this chat's agent can see and do. Drag down to close."
-        scrollTo={sheet.section ? `sheet-${sheet.section}` : null}
-      >
-        <ContextSheet session={session} collections={collections} selected={selected} reasoning={reasoning} update={update} />
-      </BottomSheet>
     </div>
-    {panel.open && <SidePanel session={session} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
+    {panel.open && <SidePanel session={session} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
     </div>
   )
 }
-
-const VERDICT_DOT: Record<string, string> = { fresh: 'bg-ok', stale: 'bg-warn', failing: 'bg-crimson', redundant: 'bg-info', untested: 'bg-line-strong' }
 
 function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: Skill[]; total: number; index: number; query: string; onPick(s: Skill): void; onHover(i: number): void }) {
   return (
@@ -909,33 +899,26 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
       exit={{ opacity: 0, y: 6, scale: 0.98, transition: { duration: 0.12 } }}
       transition={{ type: 'spring', stiffness: 520, damping: 34 }}
       style={{ transformOrigin: 'bottom left' }}
-      className="sheet-glass absolute inset-x-0 bottom-full z-30 mb-2 overflow-hidden rounded-[14px] border border-line-strong"
+      className="sheet-glass absolute bottom-full left-0 z-30 mb-2 w-[min(480px,100%)] overflow-hidden rounded-[14px] border border-line-strong"
       onMouseDown={(e) => e.preventDefault()}
     >
-      <div className="flex items-center justify-between border-b border-line px-3.5 py-2 text-[11px] text-dim">
-        <span className="flex items-center gap-1.5 font-medium">
-          <Sparkle size={12} /> Skills
-          {query ? <span className="font-mono normal-case tracking-normal text-muted">/{query}</span> : null}
-        </span>
-        <span>
-          <Key>↑</Key> <Key>↓</Key> navigate · <Key>Enter</Key> invoke · <Key>Esc</Key> close
-        </span>
-      </div>
       {skills.length ? (
         <LayoutGroup id="slash">
-          <div className="max-h-72 overflow-y-auto p-1.5">
+          <div role="listbox" aria-label="Skills" className="max-h-72 overflow-y-auto p-1.5">
             {skills.map((sk, i) => (
-              <button key={sk.name} onMouseEnter={() => onHover(i)} onClick={() => onPick(sk)} className="relative flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-left">
+              <button
+                key={sk.name}
+                role="option"
+                aria-selected={i === index}
+                onMouseEnter={() => onHover(i)}
+                onClick={() => onPick(sk)}
+                className="relative grid w-full grid-cols-[auto_1fr_auto] items-baseline gap-3 rounded-[10px] px-2.5 py-2 text-left"
+              >
                 {i === index && <motion.span layoutId="slash-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-[10px] bg-elev-2" />}
-                <span className={clsx('relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition-colors', i === index ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev text-dim')}>
-                  <Sparkle size={16} weight={i === index ? 'fill' : 'regular'} />
-                </span>
-                <span className="relative min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono text-[12.5px] text-fg">/{sk.name}</span>
-                    <span className={clsx('h-1.5 w-1.5 rounded-full', VERDICT_DOT[sk.health?.verdict ?? 'untested'])} title={sk.health?.verdict ?? 'untested'} />
-                  </span>
-                  <span className="block truncate text-[11.5px] text-dim">{sk.description || 'No description'}</span>
+                <span className="relative font-mono text-[12.5px] text-skill">/{sk.name}</span>
+                <span className="relative truncate text-[11.5px] text-dim">{sk.description || 'No description'}</span>
+                <span className="relative font-mono text-[10.5px] tabular-nums text-dim" title="Roughly what its instructions add to the request">
+                  +{tokensOf(sk)}
                 </span>
               </button>
             ))}
@@ -944,45 +927,20 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
       ) : (
         <div className="px-4 py-4 text-[12px] text-dim">{total ? `No skill matches “/${query}”.` : 'No skills yet — create or import one on the Skills page.'}</div>
       )}
+      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-[11px] text-dim">
+        <Key>↑</Key> <Key>↓</Key> to choose · <Key>Tab</Key> or <Key>Enter</Key> to insert · <Key>Esc</Key> to close
+      </div>
     </motion.div>
   )
 }
 
-function Key({ children }: { children: React.ReactNode }) {
-  return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
+const tokensOf = (sk: Skill) => {
+  const n = Math.ceil((sk.description.length + sk.body.length) / 4)
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
 
-/** What this chat has switched on, as readable chips; each opens its part of the context sheet. */
-function ComposerChips({ session, selected, collections, reasoning, onOpen }: { session: ChatSession; selected: string[]; collections: number; reasoning: boolean; onOpen(s: SheetSection): void }) {
-  const settings = useApp((s) => s.settings)
-  const servers = (settings?.mcpClients ?? []).filter((c) => c.enabled)
-  const chosen = session.mcpServers ?? servers.filter((c) => c.defaultOn).map((c) => c.id)
-  const folder = session.workspace?.split(/[\\/]/).pop()
-  const chips: { key: string; icon: Icon; label: string; detail?: string; title: string; section: SheetSection }[] = []
-  if (session.container) chips.push({ key: 'container', icon: Cube, label: folder ?? 'Container', detail: 'container', title: `Works in a ${session.container.image} container`, section: 'workspace' })
-  else if (folder) chips.push({ key: 'folder', icon: FolderSimple, label: folder, detail: session.fileAccess === 'write' ? (session.shell ? 'edits + shell' : 'edits') : session.shell ? 'read + shell' : 'read-only', title: session.workspace ?? '', section: 'workspace' })
-  if (selected.length) chips.push({ key: 'knowledge', icon: Books, label: 'Knowledge', detail: selected.length === collections ? undefined : String(selected.length), title: `${selected.length} collection${selected.length > 1 ? 's' : ''}`, section: 'knowledge' })
-  if (session.webEnabled) chips.push({ key: 'web', icon: GlobeHemisphereWest, label: 'Web', title: 'Web search and pages', section: 'capabilities' })
-  if (reasoning && session.thinking !== 'off') chips.push({ key: 'thinking', icon: Brain, label: 'Thinking', detail: session.thinking, title: 'Reasoning effort', section: 'thinking' })
-  for (const c of servers) if (chosen.includes(c.id)) chips.push({ key: c.id, icon: Plugs, label: c.name, title: `Tools from the ${c.name} MCP server`, section: 'external' })
-  if (!session.skillsEnabled) chips.push({ key: 'skills', icon: Sparkle, label: 'Skills off', title: 'Skills are off (/name still invokes one)', section: 'capabilities' })
-  if (!chips.length) return null
-  return (
-    <div className="ml-1 flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]">
-      {chips.map((c) => (
-        <button
-          key={c.key}
-          onClick={() => onOpen(c.section)}
-          title={c.title}
-          className="flex h-[26px] shrink-0 items-center gap-1.5 rounded-full border border-line bg-elev px-2 text-[11.5px] text-muted transition-colors hover:border-line-strong hover:text-fg"
-        >
-          <c.icon size={12} />
-          <span className="max-w-[160px] truncate">{c.label}</span>
-          {c.detail && <span className="text-dim">{c.detail}</span>}
-        </button>
-      ))}
-    </div>
-  )
+function Key({ children }: { children: React.ReactNode }) {
+  return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
 }
 
 function ComposerToggle({ icon: I, label, active, state, count, onClick }: { icon: Icon; label: string; active: boolean; state?: string; count?: number; onClick(): void }) {
@@ -1058,369 +1016,6 @@ function SendButton({ running, disabled, onSend, onStop }: { running: boolean; d
   )
 }
 
-function ContextSheet({
-  session,
-  collections,
-  selected,
-  reasoning,
-  update
-}: {
-  session: ChatSession
-  collections: Collection[]
-  selected: string[]
-  reasoning: boolean
-  update(p: Partial<ChatSession>): Promise<void>
-}) {
-  const [instructions, setInstructions] = useState(session.systemPrompt)
-  useEffect(() => setInstructions(session.systemPrompt), [session.systemPrompt])
-  const [projects, setProjects] = useState<Project[]>([])
-  useEffect(() => {
-    void api.projects.list().then(setProjects, () => undefined)
-  }, [])
-  // Moving into a project with a folder gives a folder-less chat that folder to work in.
-  const moveTo = (p: Project | null) =>
-    void update({ projectId: p?.id ?? null, ...(p?.folder && !session.workspace ? { workspace: p.folder } : {}) })
-
-  const toggleCollection = (id: string) => {
-    const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
-    if (!next.length) return void update({ knowledgeEnabled: false, collectionIds: [] })
-    void update({ knowledgeEnabled: true, collectionIds: next.length === collections.length ? [] : next })
-  }
-
-  return (
-    <div className="space-y-[22px]">
-      {!!projects.length && (
-        <SheetSection id="sheet-project" icon={FolderSimple} title="Project">
-          <div className="flex flex-wrap gap-1.5">
-            {[null, ...projects].map((p) => {
-              const on = (p?.id ?? null) === session.projectId
-              return (
-                <button
-                  key={p?.id ?? 'none'}
-                  onClick={() => moveTo(p)}
-                  aria-pressed={on}
-                  className={clsx('flex h-8 items-center gap-2 rounded-[10px] border px-3 text-[12.5px] transition-colors mobile:h-10', on ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:border-line-strong')}
-                >
-                  {p ? <FolderSimple size={14} weight="fill" style={{ color: p.color }} /> : <X size={12} />}
-                  {p?.name ?? 'No project'}
-                </button>
-              )
-            })}
-          </div>
-        </SheetSection>
-      )}
-      <SheetSection id="sheet-knowledge" icon={Books} title="Knowledge">
-        {collections.length ? (
-          <div className="grid grid-cols-3 gap-2 mobile:grid-cols-2">
-            {collections.map((c) => {
-              const on = selected.includes(c.id)
-              const I = c.name === 'Cloth examples' ? GraduationCap : c.embeddingDim ? Stack : Books
-              return (
-                <motion.button
-                  key={c.id}
-                  whileHover={{ y: -1 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => toggleCollection(c.id)}
-                  className={clsx(
-                    'relative rounded-[14px] border p-3 text-left transition-colors',
-                    on ? 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev' : 'border-line bg-elev hover:border-line-strong'
-                  )}
-                >
-                  <div className={clsx('mb-2.5 flex h-7 w-7 items-center justify-center rounded-[10px] transition-colors', on ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
-                    <I size={15} weight="fill" />
-                  </div>
-                  <div className="truncate pr-6 text-[12.5px] font-semibold">{c.name}</div>
-                  <div className="text-[11px] text-dim">
-                    {c.docCount} docs · {c.embeddingDim ? 'hybrid' : 'BM25'}
-                  </div>
-                  <motion.div
-                    initial={false}
-                    animate={{ scale: on ? 1 : 0.85, backgroundColor: on ? '#dc2645' : 'rgba(0,0,0,0)', borderColor: on ? '#dc2645' : '#303036' }}
-                    transition={{ type: 'spring', stiffness: 600, damping: 18 }}
-                    className="absolute right-2.5 top-2.5 flex h-[18px] w-[18px] items-center justify-center rounded-md border-[1.5px] text-white"
-                  >
-                    {on && <Check size={11} weight="bold" />}
-                  </motion.div>
-                </motion.button>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="rounded-[14px] border border-dashed border-line-strong p-3 text-[12px] text-dim">No collections yet — add knowledge on the Knowledge page.</div>
-        )}
-      </SheetSection>
-
-      <SheetSection id="sheet-capabilities" icon={ToggleRight} title="Capabilities">
-        <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
-          <Capability icon={Sparkle} title="Skills" sub="skill_list · skill_use" on={session.skillsEnabled} onToggle={() => void update({ skillsEnabled: !session.skillsEnabled })} />
-          <Capability icon={GlobeHemisphereWest} title="Web" sub="web_search · web_fetch" on={session.webEnabled} onToggle={() => void update({ webEnabled: !session.webEnabled })} />
-          <Capability icon={Wrench} title="Custom tools" sub="From the Tools page" on={session.customTools} onToggle={() => void update({ customTools: !session.customTools })} />
-          <Capability icon={Robot} title="Subagents" sub="task · delegate in parallel" on={session.subagents} onToggle={() => void update({ subagents: !session.subagents })} />
-          <Capability icon={ImageSquare} title="Images" sub="generate_image · needs an image model" on={session.imagesEnabled} onToggle={() => void update({ imagesEnabled: !session.imagesEnabled })} />
-        </div>
-      </SheetSection>
-
-      <ExternalTools session={session} update={update} />
-
-      <SheetSection id="sheet-thinking" icon={Brain} title="Thinking">
-        {reasoning ? (
-          <LayoutGroup id={`thinking-${session.id}`}>
-            <div className="inline-flex rounded-[10px] border border-line bg-bg p-[3px] mobile:flex mobile:w-full">
-              {THINKING_LEVELS.map((l) => (
-                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[10px] px-3.5 text-[12px] capitalize transition-colors mobile:h-9 mobile:flex-1 mobile:px-0', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
-                  {session.thinking === l && (
-                    <motion.span layoutId="thinking-pill" transition={{ type: 'spring', stiffness: 420, damping: 30 }} className="absolute inset-0 rounded-[10px] bg-elev-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_8px_rgb(0_0_0/0.4)]" />
-                  )}
-                  <span className="relative">{l}</span>
-                </button>
-              ))}
-            </div>
-          </LayoutGroup>
-        ) : (
-          <div className="text-[12px] text-dim">This model isn't marked as a reasoning model. Tick “Reason” for it on the Models page to enable thinking levels.</div>
-        )}
-      </SheetSection>
-
-      <SheetSection id="sheet-workspace" icon={FolderSimple} title="Workspace">
-        <div className="mb-3 space-y-3">
-          <OptionRow
-            label="Runs in"
-            value={session.container ? 'container' : 'local'}
-            onChange={(v) => void update(v === 'container' ? { container: session.container ?? DEFAULT_CONTAINER, fileAccess: 'write', shell: true } : { container: null })}
-            options={[
-              { value: 'local', icon: Desktop, title: 'This PC', sub: 'Works directly in the folder' },
-              { value: 'container', icon: Cube, title: 'Linux container', sub: 'A copy of the folder, in Docker' }
-            ]}
-          />
-          {session.container && <ContainerOptions session={session} update={update} />}
-        </div>
-        <div className={clsx('flex items-center gap-2.5 rounded-[14px] border px-3 py-2.5', session.workspace ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
-          {session.workspace ? <FolderSimple size={18} weight="fill" className="text-crimson-hi" /> : <FolderDashed size={18} className="text-dim" />}
-          <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', session.workspace ? 'text-fg' : 'text-dim')}>{session.workspace ?? (session.container ? 'No folder — the container starts empty' : "No folder — the agent can't read files")}</span>
-          {session.workspace && (
-            <Button size="sm" variant="ghost" onClick={() => void update({ workspace: null })}>
-              Clear
-            </Button>
-          )}
-          <Button
-            size="sm"
-            onClick={async () => {
-              const [dir] = await api.app.pickPaths({ directory: true, title: 'Choose workspace' })
-              if (dir) void update({ workspace: dir })
-            }}
-          >
-            Choose…
-          </Button>
-        </div>
-        {session.workspace || session.container ? (
-          <div className="mt-3 space-y-3">
-            <OptionRow
-              label="Files"
-              value={session.fileAccess}
-              onChange={(fileAccess) => void update({ fileAccess })}
-              options={[
-                { value: 'read', icon: LockSimple, title: 'Read only', sub: 'read · ls · find · grep' },
-                { value: 'write', icon: PencilSimpleLine, title: 'Read & write', sub: '+ write · edit, each change undoable' }
-              ]}
-            />
-            <OptionRow
-              label="Shell"
-              value={session.shell ? 'on' : 'off'}
-              onChange={(v) => void update({ shell: v === 'on' })}
-              options={[
-                { value: 'off', icon: X, title: 'No commands', sub: 'The agent cannot run programs' },
-                { value: 'on', icon: TerminalWindow, title: session.container || window.cloth.platform !== 'win32' ? 'bash' : 'PowerShell', sub: session.container ? 'Runs in the container' : 'Runs in the workspace folder' }
-              ]}
-            />
-            <OptionRow
-              label="Code intel"
-              value={session.codeIntel ? 'on' : 'off'}
-              onChange={(v) => void update({ codeIntel: v === 'on' })}
-              options={[
-                { value: 'off', icon: X, title: 'Off', sub: 'No language servers' },
-                { value: 'on', icon: Code, title: 'TypeScript · Python', sub: 'Definitions, references, type errors' }
-              ]}
-            />
-            <OptionRow<AutoApprove>
-              label="Approvals"
-              value={session.autoApprove}
-              onChange={(autoApprove) => void update({ autoApprove })}
-              options={[
-                { value: 'none', icon: ShieldCheck, title: 'Ask every time', sub: 'Review each change and command' },
-                { value: 'edits', icon: PencilSimpleLine, title: 'Auto-approve edits', sub: 'Still ask before commands' },
-                { value: 'all', icon: ShieldWarning, title: 'Auto-approve all', sub: 'Edits and commands run unasked', danger: true }
-              ]}
-            />
-          </div>
-        ) : (
-          <div className="mt-1.5 text-[11px] text-dim">Pick a folder to let the agent read it — and, if you allow it, edit files and run commands there.</div>
-        )}
-      </SheetSection>
-
-      <SheetSection icon={NotePencil} title="Instructions">
-        <textarea
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-          onBlur={() => instructions !== session.systemPrompt && void update({ systemPrompt: instructions })}
-          placeholder="e.g. Prefer idiomatic TypeScript; cite the knowledge base."
-          className="min-h-[84px] w-full resize-y rounded-[14px] border border-line bg-bg px-3.5 py-3 text-[13px] leading-relaxed text-fg outline-none transition-[border-color,box-shadow] placeholder:text-dim focus:border-crimson-line focus:shadow-[0_0_0_4px_rgb(220_38_69/0.1)] focus-visible:outline-none"
-        />
-        <div className="mt-1 text-[11px] text-dim">Appended to Cloth's system prompt for this chat. Saved when you click away.</div>
-      </SheetSection>
-    </div>
-  )
-}
-
-/** Image and network for a container chat, and a warning when Docker can't be reached. */
-function ContainerOptions({ session, update }: { session: ChatSession; update(p: Partial<ChatSession>): Promise<void> }) {
-  const settings = session.container ?? DEFAULT_CONTAINER
-  const [image, setImage] = useState(settings.image)
-  const [docker, setDocker] = useState<ContainerStatus | null>(null)
-  useEffect(() => setImage(settings.image), [settings.image])
-  useEffect(() => {
-    void api.containers.status(true).then(setDocker, () => undefined)
-  }, [])
-  const saveImage = () => {
-    const next = image.trim()
-    if (next && next !== settings.image) void update({ container: { ...settings, image: next } })
-    else setImage(settings.image)
-  }
-  return (
-    <>
-      {docker && !docker.available && (
-        <div className="flex items-center gap-2 rounded-[10px] border border-warn/40 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
-          <span className="min-w-0 flex-1">{docker.error}</span>
-          <Button size="sm" variant="ghost" onClick={() => void api.containers.status(true).then(setDocker)}>
-            Check again
-          </Button>
-        </div>
-      )}
-      <div className="grid grid-cols-[76px_1fr] items-center gap-3 mobile:grid-cols-1 mobile:gap-1.5">
-        <div className="text-[12px] text-muted">Image</div>
-        <div className="flex gap-1.5">
-          <input
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
-            onBlur={saveImage}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            spellCheck={false}
-            aria-label="Docker image"
-            className="h-9 min-w-0 flex-1 rounded-[10px] border border-line bg-bg px-3 font-mono text-[12.5px] outline-none focus:border-crimson-line"
-          />
-          {['node:22', 'python:3.12', 'ubuntu:24.04'].filter((i) => i !== settings.image).map((i) => (
-            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-9 shrink-0 rounded-[10px] border border-line px-2.5 font-mono text-[11.5px] text-muted hover:border-line-strong hover:text-fg mobile:hidden">
-              {i}
-            </button>
-          ))}
-        </div>
-      </div>
-      <OptionRow
-        label="Network"
-        value={settings.network ? 'on' : 'off'}
-        onChange={(v) => void update({ container: { ...settings, network: v === 'on' } })}
-        options={[
-          { value: 'on', icon: GlobeHemisphereWest, title: 'Online', sub: 'Can install packages' },
-          { value: 'off', icon: X, title: 'Offline', sub: 'No network access' }
-        ]}
-      />
-    </>
-  )
-}
-
-function OptionRow<T extends string>({
-  label,
-  value,
-  onChange,
-  options
-}: {
-  label: string
-  value: T
-  onChange(v: T): void
-  options: { value: T; icon: Icon; title: string; sub: string; danger?: boolean }[]
-}) {
-  return (
-    <div className="grid grid-cols-[76px_1fr] items-start gap-3 mobile:grid-cols-1 mobile:gap-1.5">
-      <div className="pt-2.5 text-[12px] text-muted mobile:pt-0">{label}</div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: isMobile ? '1fr' : `repeat(${options.length}, minmax(0, 1fr))` }}>
-        {options.map((o) => {
-          const on = o.value === value
-          return (
-            <motion.button
-              key={o.value}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onChange(o.value)}
-              aria-pressed={on}
-              className={clsx(
-                'flex items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition-colors',
-                on ? (o.danger ? 'border-warn/50 bg-warn/[0.07]' : 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev') : 'border-line bg-elev hover:border-line-strong'
-              )}
-            >
-              <o.icon size={16} weight={on ? 'fill' : 'regular'} className={clsx('shrink-0', on ? (o.danger ? 'text-warn' : 'text-crimson-hi') : 'text-dim')} />
-              <span className="min-w-0">
-                <span className="block truncate text-[12.5px] font-medium">{o.title}</span>
-                <span className="block truncate text-[10.5px] text-dim">{o.sub}</span>
-              </span>
-            </motion.button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function SheetSection({ id, icon: I, title, children }: { id?: string; icon: Icon; title: string; children: React.ReactNode }) {
-  return (
-    <section id={id} className="-mx-2 rounded-[10px] px-2 py-1">
-      <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-dim">
-        <I size={14} />
-        {title}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-/** External MCP servers this chat may use (set up on the MCP page). */
-function ExternalTools({ session, update }: { session: ChatSession; update(p: Partial<ChatSession>): Promise<void> }) {
-  const settings = useApp((s) => s.settings)
-  const [status, setStatus] = useState<McpClientStatus[]>([])
-  const load = () => void api.mcp.clients().then(setStatus).catch(() => undefined)
-  useEffect(load, [])
-  useEvent('mcpClients', load)
-  const servers = (settings?.mcpClients ?? []).filter((c) => c.enabled)
-  if (!servers.length) return null
-  const chosen = session.mcpServers ?? servers.filter((c) => c.defaultOn).map((c) => c.id)
-  const toggle = (id: string) => void update({ mcpServers: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] })
-  return (
-    <SheetSection id="sheet-external" icon={Plugs} title="External tools">
-      <div className="grid grid-cols-3 gap-2 mobile:grid-cols-1">
-        {servers.map((c) => {
-          const st = status.find((x) => x.id === c.id)
-          const sub = st?.state === 'ready' ? `${st.tools.length} tools · ${c.approval === 'ask' ? 'asks first' : 'runs freely'}` : st?.state === 'error' ? 'failed to start — see MCP page' : 'starts when the chat runs'
-          return <Capability key={c.id} icon={Plugs} title={c.name} sub={sub} on={chosen.includes(c.id)} onToggle={() => toggle(c.id)} />
-        })}
-      </div>
-    </SheetSection>
-  )
-}
-
-function Capability({ icon: I, title, sub, on, onToggle }: { icon: Icon; title: string; sub: string; on: boolean; onToggle(): void }) {
-  return (
-    <motion.button whileTap={{ scale: 0.98 }} onClick={onToggle} aria-pressed={on} className="flex items-center gap-3 rounded-[14px] border border-line bg-elev p-3 text-left">
-      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] transition-[background-color,color,box-shadow] duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
-        <I size={18} weight={on ? 'fill' : 'regular'} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-semibold">{title}</div>
-        <div className="truncate text-[11px] text-dim">{sub}</div>
-      </div>
-      <div className={clsx('relative h-5 w-[34px] shrink-0 rounded-full transition-colors duration-300', on ? 'bg-crimson' : 'bg-line-strong')}>
-        <motion.span initial={false} animate={{ x: on ? 14 : 0 }} transition={{ type: 'spring', stiffness: 500, damping: 24 }} className="absolute left-[3px] top-[3px] h-3.5 w-3.5 rounded-full bg-white" />
-      </div>
-    </motion.button>
-  )
-}
-
 function Welcome({ onPick, session, project, hasKnowledge }: { onPick(t: string): void; session: ChatSession; project: Project | null; hasKnowledge: boolean }) {
   const folder = session.workspace?.split(/[\\/]/).pop()
   const writes = session.fileAccess === 'write' || !!session.container
@@ -1465,25 +1060,29 @@ const enterProps = (fresh: boolean) =>
 
 function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) {
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
+  const used = useMemo(() => new Set(message.skills ?? []), [message.skills])
+  // Messages from before skills were written inline carry them only as a list: show those first.
+  const leading = (message.skills ?? []).filter((n) => !invokedSkills(text, used).includes(n))
   return (
     <motion.div {...enterProps(fresh)} className="mb-9 flex flex-col items-end gap-1.5">
-      {message.skills?.length ? (
-        <div className="flex flex-wrap justify-end gap-1.5">
-          {message.skills.map((name) => (
-            <span key={name} className="flex items-center gap-1.5 rounded-full border border-crimson-line bg-crimson-soft px-2 py-0.5 font-mono text-[11px] text-crimson-hi">
-              <Sparkle size={11} weight="fill" />/{name}
+      {message.attachments?.length ? <SentAttachments items={message.attachments} /> : null}
+      {(text.trim() || leading.length > 0) && (
+        <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">
+          {leading.map((n) => (
+            <span key={n}>
+              <SkillToken name={n} />{' '}
             </span>
           ))}
+          <SkillText text={text} known={used} />
         </div>
-      ) : null}
-      {message.attachments?.length ? <SentAttachments items={message.attachments} /> : null}
-      {text.trim() && <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">{text}</div>}
+      )}
     </motion.div>
   )
 }
 
 function AssistantTurn({
   message,
+  invoked,
   streaming,
   fresh,
   onRegenerate,
@@ -1491,6 +1090,8 @@ function AssistantTurn({
   onUndo
 }: {
   message: UiMessage
+  /** Skills the user's message invoked with /name. */
+  invoked?: string[]
   streaming: boolean
   fresh: boolean
   onRegenerate(): void
@@ -1499,22 +1100,29 @@ function AssistantTurn({
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
+  const all = useMemo<UiBlock[]>(
+    () => [
+      ...(invoked ?? []).map((name): UiBlock => ({ type: 'tool', trace: { id: `${message.id}:skill:${name}`, name: 'skill_use', args: { name }, status: 'ok', result: `Loaded with /${name} for this message.`, durationMs: null, references: [] } })),
+      ...message.blocks
+    ],
+    [invoked, message.blocks, message.id]
+  )
   // Citations [n] refer to the most recent search before each text block.
   const blocks = useMemo(() => {
     let refs: RagHit[] = []
-    return message.blocks.map((b) => {
+    return all.map((b) => {
       if (b.type === 'tool' && b.trace.references.length) refs = b.trace.references
       return { block: b, refs }
     })
-  }, [message.blocks])
+  }, [all])
   const allRefs = useMemo(() => {
     const seen = new Map<string, RagHit>()
     for (const b of message.blocks) if (b.type === 'tool') for (const r of b.trace.references) if (!seen.has(r.chunkId)) seen.set(r.chunkId, r)
     return [...seen.values()]
   }, [message.blocks])
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n\n')
-  const lastTextIdx = message.blocks.map((b) => b.type).lastIndexOf('text')
-  const lastTodoIdx = message.blocks.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
+  const lastTextIdx = all.map((b) => b.type).lastIndexOf('text')
+  const lastTodoIdx = all.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
   // Consecutive tool calls fold into one line. Plan updates other than the latest are dropped (the plan
   // panel shows the plan); images, questions and subagents keep their own cards.
   const items = useMemo(() => {
@@ -1525,7 +1133,7 @@ function AssistantTurn({
       else for (const i of run) out.push({ kind: 'block', i })
       run = []
     }
-    message.blocks.forEach((b, i) => {
+    all.forEach((b, i) => {
       if (b.type === 'tool') {
         const t = b.trace
         if (t.name === 'todo_write' && i !== lastTodoIdx) return
@@ -1540,7 +1148,7 @@ function AssistantTurn({
     })
     flush()
     return out
-  }, [message.blocks, lastTodoIdx])
+  }, [all, lastTodoIdx])
 
   return (
     <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4 mobile:mb-7 mobile:grid-cols-1">
@@ -1550,14 +1158,14 @@ function AssistantTurn({
       <div className="min-w-0">
         {items.map((item) => {
           if (item.kind === 'group') {
-            const traces = item.indices.map((j) => (message.blocks[j] as Extract<UiMessage['blocks'][number], { type: 'tool' }>).trace)
+            const traces = item.indices.map((j) => (all[j] as Extract<UiBlock, { type: 'tool' }>).trace)
             return <ToolGroup key={traces[0].id} traces={traces} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           }
           const i = item.i
           const { block, refs } = blocks[i]
-          if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === message.blocks.length - 1} />
+          if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === all.length - 1} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
-          return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
+          return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}
         {message.error && <div className="mt-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
         {!streaming && (
