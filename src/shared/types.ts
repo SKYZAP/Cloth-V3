@@ -317,6 +317,8 @@ export interface ChatSession {
   container: ContainerSettings | null
   /** External MCP servers whose tools this chat may use (by id); null = the ones on by default. */
   mcpServers: string[] | null
+  /** The start of the latest message (the reply, else what was asked), for the chat list. */
+  preview?: string
   createdAt: number
   updatedAt: number
 }

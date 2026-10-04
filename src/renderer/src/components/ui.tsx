@@ -60,8 +60,8 @@ const hasWidth = (c?: string) => !!c && /(^|\s)w-/.test(c)
 const fieldBase =
   'rounded-md border border-line bg-panel px-2.5 text-[12.5px] text-fg placeholder:text-dim transition-colors focus:border-crimson-line focus:outline-none focus:ring-2 focus:ring-crimson-soft'
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...rest} className={clsx(fieldBase, 'h-8', !hasWidth(className) && 'w-full', className)} />
+export function Input({ className, ref, ...rest }: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
+  return <input {...rest} ref={ref} className={clsx(fieldBase, 'h-8', !hasWidth(className) && 'w-full', className)} />
 }
 
 export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {

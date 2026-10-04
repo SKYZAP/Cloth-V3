@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import {
   ArrowClockwise,
+  ArrowDown,
   ArrowUp,
   Books,
   Brain,
@@ -45,7 +46,7 @@ import { DEFAULT_CONTAINER } from '@shared/types'
 import type { ApprovalDecision, AutoApprove, ChatSession, McpClientStatus, WorkspaceFile, Collection, ContainerStatus, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, ThinkingLevel, UiMessage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { compact, timeAgo } from '@/lib/format'
+import { timeAgo } from '@/lib/format'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
@@ -116,12 +117,15 @@ export function ChatPage() {
 
   useEvent('chat', (e) => {
     if (e.type === 'start') setRunning((r) => new Set(r).add(e.sessionId))
-    if (e.type === 'end')
+    if (e.type === 'end') {
       setRunning((r) => {
         const n = new Set(r)
         n.delete(e.sessionId)
         return n
       })
+      // The list shows each chat's latest line and order by activity.
+      void api.chat.list().then(setSessions)
+    }
     if (e.type === 'title') setSessions((ss) => ss.map((s) => (s.id === e.sessionId ? { ...s, title: e.title } : s)))
   })
 
@@ -159,7 +163,27 @@ export function ChatPage() {
   }
 
   const active = sessions.find((s) => s.id === activeId) ?? null
-  const shown = sessions.filter((s) => !filter || s.title.toLowerCase().includes(filter.toLowerCase()))
+  const q = filter.trim().toLowerCase()
+  const shown = sessions.filter((s) => !q || s.title.toLowerCase().includes(q) || !!s.preview?.toLowerCase().includes(q))
+
+  // Ctrl+N starts a chat (in the current chat's project); Ctrl+K jumps to the chat search.
+  const search = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k === 'n') {
+        e.preventDefault()
+        void create(active?.projectId ?? null)
+      } else if (k === 'k') {
+        e.preventDefault()
+        setOpen(false)
+        requestAnimationFrame(() => search.current?.focus())
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
   const known = new Set(projects.map((p) => p.id))
   const loose = shown.filter((s) => !s.projectId || !known.has(s.projectId))
 
@@ -168,21 +192,25 @@ export function ChatPage() {
     return (
       <div
         key={s.id}
+        role="button"
+        tabIndex={0}
+        aria-current={on ? 'true' : undefined}
         onClick={() => (setActiveId(s.id), setOpen(true))}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), setActiveId(s.id), setOpen(true))}
         className={clsx(
-          'group mx-0.5 my-1 flex cursor-default items-center gap-2 rounded-[10px] border py-[11px] pr-2 transition-colors duration-200 mobile:py-3.5',
+          'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:py-3.5',
           nested ? 'pl-6' : 'pl-3.5',
-          on && side ? 'border-crimson bg-elev-2' : 'border-transparent hover:bg-elev'
+          on && side ? 'bg-elev-2' : 'hover:bg-elev'
         )}
       >
+        {on && side && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-crimson" />}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
-            <span className={clsx('truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
+          <div className="flex items-baseline gap-1.5">
+            {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 self-center rounded-full bg-crimson" />}
+            <span className={clsx('min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14.5px]', on ? 'text-fg' : 'text-fg/90')}>{s.title}</span>
+            <span className="shrink-0 text-[10.5px] text-dim group-hover:hidden group-focus-within:hidden mobile:text-[11.5px]">{timeAgo(s.updatedAt)}</span>
           </div>
-          <div className="mt-px truncate text-[11px] text-dim mobile:text-[12px]">
-            {s.model?.modelId ?? 'no model'} · {timeAgo(s.updatedAt)}
-          </div>
+          <div className="mt-0.5 truncate text-[11.5px] text-dim mobile:text-[12.5px]">{s.preview || (s.workspace ? s.workspace.split(/[\\/]/).pop() : 'No messages yet')}</div>
         </div>
         <button
           onClick={(e) => {
@@ -191,8 +219,8 @@ export function ChatPage() {
           }}
           title="Delete chat"
           className={clsx(
-            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
-            on || isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
+            isMobile ? 'opacity-100' : 'hidden group-focus-within:flex group-hover:flex'
           )}
         >
           <Trash size={15} />
@@ -208,7 +236,7 @@ export function ChatPage() {
           <div className="flex gap-2">
             <div className="relative flex-1">
               <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" />
-              <Input className="pl-7" placeholder="Search chats" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <Input ref={search} className="pl-7" placeholder={isMobile ? 'Search chats' : 'Search chats (Ctrl+K)'} aria-label="Search chats" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setFilter(''), e.currentTarget.blur())} />
             </div>
             <motion.button
               whileTap={{ scale: 0.9 }}
@@ -224,7 +252,7 @@ export function ChatPage() {
               whileTap={{ scale: 0.9 }}
               transition={SPRING_PRESS}
               onClick={() => void create()}
-              title="New chat"
+              title={isMobile ? 'New chat' : 'New chat (Ctrl+N)'}
               aria-label="New chat"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-crimson text-white hover:bg-crimson-hi"
             >
@@ -264,7 +292,7 @@ export function ChatPage() {
             </div>
           )
         })}
-        {!!projects.length && !!loose.length && <div className="mx-2 mb-0.5 mt-4 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">Chats</div>}
+        {!!projects.length && !!loose.length && <div className="mx-2 mb-0.5 mt-4 text-[12px] font-medium text-dim">Chats</div>}
         {loose.map((s) => row(s, false))}
         {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
@@ -293,6 +321,7 @@ export function ChatPage() {
           <ChatView
             key={active.id}
             session={active}
+            project={projects.find((p) => p.id === active.projectId) ?? null}
             running={running.has(active.id)}
             onChange={(s) => setSessions((ss) => ss.map((x) => (x.id === s.id ? s : x)))}
           />
@@ -308,7 +337,7 @@ export function ChatPage() {
 
 type SheetSection = 'knowledge' | 'workspace' | 'thinking' | 'capabilities' | 'external' | null
 
-function ChatView({ session, running, onChange }: { session: ChatSession; running: boolean; onChange(s: ChatSession): void }) {
+function ChatView({ session, project, running, onChange }: { session: ChatSession; project: Project | null; running: boolean; onChange(s: ChatSession): void }) {
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
   const [sheet, setSheet] = useState<{ open: boolean; section: SheetSection }>({ open: false, section: null })
@@ -329,6 +358,8 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
   const scroller = useRef<HTMLDivElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const stick = useRef(true)
+  const [away, setAway] = useState(false)
+  const [unseen, setUnseen] = useState(false)
   // Messages present when the chat opened render still; anything after animates in.
   const initialIds = useRef<Set<string> | null>(null)
 
@@ -380,6 +411,9 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
     }
   })
 
+  useEffect(() => {
+    if (!stick.current && messages.length) setUnseen(true)
+  }, [messages])
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: initialIds.current && initialIds.current.size !== messages.length ? 'smooth' : 'auto' })
@@ -591,7 +625,7 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[22px] border-2 border-dashed border-crimson-line bg-bg/85 text-[14px] text-fg backdrop-blur-sm"
+            className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-crimson-line bg-bg/85 text-[14px] text-fg backdrop-blur-sm"
           >
             <Paperclip size={26} className="text-crimson-hi" />
             Drop files or images to attach
@@ -651,11 +685,13 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
         onScroll={(e) => {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          if (away === stick.current) setAway(!stick.current)
+          if (stick.current && unseen) setUnseen(false)
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
         <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[220px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
-          {!messages.length && <Welcome onPick={(t) => void send(t)} hasKnowledge={collections.length > 0} />}
+          {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
               <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[11.5px] text-dim transition-colors hover:border-line-strong hover:text-muted">
@@ -712,12 +748,33 @@ function ChatView({ session, running, onChange }: { session: ChatSession; runnin
         </div>
       </div>
 
+      <AnimatePresence>
+        {away && messages.length > 0 && (
+          <motion.button
+            key="jump"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => {
+              stick.current = true
+              setUnseen(false)
+              scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
+            }}
+            className="absolute bottom-[132px] left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg mobile:bottom-[112px]"
+          >
+            <ArrowDown size={13} />
+            {unseen && running ? 'New output' : 'Jump to latest'}
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Composer: floats over a gradient fade — no divider line */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
         <AnimatePresence>{showPlan && todos && <PlanPanel key="plan" todos={todos} />}</AnimatePresence>
         <div
           className={clsx(
-            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[22px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
+            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
             'focus-within:-translate-y-px focus-within:border-crimson-line focus-within:shadow-[0_16px_44px_-14px_rgb(0_0_0/0.8),0_0_0_4px_rgb(220_38_69/0.10)]'
           )}
         >
@@ -852,11 +909,11 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
       exit={{ opacity: 0, y: 6, scale: 0.98, transition: { duration: 0.12 } }}
       transition={{ type: 'spring', stiffness: 520, damping: 34 }}
       style={{ transformOrigin: 'bottom left' }}
-      className="sheet-glass absolute inset-x-0 bottom-full z-30 mb-2 overflow-hidden rounded-[18px] border border-line-strong"
+      className="sheet-glass absolute inset-x-0 bottom-full z-30 mb-2 overflow-hidden rounded-[14px] border border-line-strong"
       onMouseDown={(e) => e.preventDefault()}
     >
       <div className="flex items-center justify-between border-b border-line px-3.5 py-2 text-[11px] text-dim">
-        <span className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.06em]">
+        <span className="flex items-center gap-1.5 font-medium">
           <Sparkle size={12} /> Skills
           {query ? <span className="font-mono normal-case tracking-normal text-muted">/{query}</span> : null}
         </span>
@@ -868,8 +925,8 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
         <LayoutGroup id="slash">
           <div className="max-h-72 overflow-y-auto p-1.5">
             {skills.map((sk, i) => (
-              <button key={sk.name} onMouseEnter={() => onHover(i)} onClick={() => onPick(sk)} className="relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left">
-                {i === index && <motion.span layoutId="slash-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-xl bg-elev-2" />}
+              <button key={sk.name} onMouseEnter={() => onHover(i)} onClick={() => onPick(sk)} className="relative flex w-full items-center gap-3 rounded-[10px] px-2.5 py-2 text-left">
+                {i === index && <motion.span layoutId="slash-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-[10px] bg-elev-2" />}
                 <span className={clsx('relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition-colors', i === index ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev text-dim')}>
                   <Sparkle size={16} weight={i === index ? 'fill' : 'regular'} />
                 </span>
@@ -945,7 +1002,7 @@ function ComposerToggle({ icon: I, label, active, state, count, onClick }: { ico
         aria-pressed={active}
         aria-label={label}
         className={clsx(
-          'relative flex h-[34px] w-[34px] items-center justify-center rounded-[11px] transition-colors duration-200',
+          'relative flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-colors duration-200',
           active ? 'text-crimson-hi' : 'text-dim hover:bg-elev-2 hover:text-muted'
         )}
       >
@@ -983,7 +1040,7 @@ function SendButton({ running, disabled, onSend, onStop }: { running: boolean; d
       disabled={disabled}
       title={running ? 'Stop' : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
       aria-label={running ? 'Stop the reply' : 'Send message'}
-      className="relative h-9 w-9 overflow-hidden rounded-xl bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+      className="relative h-9 w-9 overflow-hidden rounded-[10px] bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
     >
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
@@ -1069,7 +1126,7 @@ function ContextSheet({
                     on ? 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev' : 'border-line bg-elev hover:border-line-strong'
                   )}
                 >
-                  <div className={clsx('mb-2.5 flex h-7 w-7 items-center justify-center rounded-[9px] transition-colors', on ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
+                  <div className={clsx('mb-2.5 flex h-7 w-7 items-center justify-center rounded-[10px] transition-colors', on ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
                     <I size={15} weight="fill" />
                   </div>
                   <div className="truncate pr-6 text-[12.5px] font-semibold">{c.name}</div>
@@ -1108,11 +1165,11 @@ function ContextSheet({
       <SheetSection id="sheet-thinking" icon={Brain} title="Thinking">
         {reasoning ? (
           <LayoutGroup id={`thinking-${session.id}`}>
-            <div className="inline-flex rounded-xl border border-line bg-bg p-[3px] mobile:flex mobile:w-full">
+            <div className="inline-flex rounded-[10px] border border-line bg-bg p-[3px] mobile:flex mobile:w-full">
               {THINKING_LEVELS.map((l) => (
-                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[9px] px-3.5 text-[12px] capitalize transition-colors mobile:h-9 mobile:flex-1 mobile:px-0', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
+                <button key={l} onClick={() => void update({ thinking: l })} className={clsx('relative h-[30px] rounded-[10px] px-3.5 text-[12px] capitalize transition-colors mobile:h-9 mobile:flex-1 mobile:px-0', session.thinking === l ? 'text-fg' : 'text-dim hover:text-muted')}>
                   {session.thinking === l && (
-                    <motion.span layoutId="thinking-pill" transition={{ type: 'spring', stiffness: 420, damping: 30 }} className="absolute inset-0 rounded-[9px] bg-elev-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_8px_rgb(0_0_0/0.4)]" />
+                    <motion.span layoutId="thinking-pill" transition={{ type: 'spring', stiffness: 420, damping: 30 }} className="absolute inset-0 rounded-[10px] bg-elev-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_8px_rgb(0_0_0/0.4)]" />
                   )}
                   <span className="relative">{l}</span>
                 </button>
@@ -1231,7 +1288,7 @@ function ContainerOptions({ session, update }: { session: ChatSession; update(p:
   return (
     <>
       {docker && !docker.available && (
-        <div className="flex items-center gap-2 rounded-[12px] border border-warn/40 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
+        <div className="flex items-center gap-2 rounded-[10px] border border-warn/40 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
           <span className="min-w-0 flex-1">{docker.error}</span>
           <Button size="sm" variant="ghost" onClick={() => void api.containers.status(true).then(setDocker)}>
             Check again
@@ -1248,10 +1305,10 @@ function ContainerOptions({ session, update }: { session: ChatSession; update(p:
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             spellCheck={false}
             aria-label="Docker image"
-            className="h-9 min-w-0 flex-1 rounded-[12px] border border-line bg-bg px-3 font-mono text-[12.5px] outline-none focus:border-crimson-line"
+            className="h-9 min-w-0 flex-1 rounded-[10px] border border-line bg-bg px-3 font-mono text-[12.5px] outline-none focus:border-crimson-line"
           />
           {['node:22', 'python:3.12', 'ubuntu:24.04'].filter((i) => i !== settings.image).map((i) => (
-            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-9 shrink-0 rounded-[12px] border border-line px-2.5 font-mono text-[11.5px] text-muted hover:border-line-strong hover:text-fg mobile:hidden">
+            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-9 shrink-0 rounded-[10px] border border-line px-2.5 font-mono text-[11.5px] text-muted hover:border-line-strong hover:text-fg mobile:hidden">
               {i}
             </button>
           ))}
@@ -1294,7 +1351,7 @@ function OptionRow<T extends string>({
               onClick={() => onChange(o.value)}
               aria-pressed={on}
               className={clsx(
-                'flex items-center gap-2.5 rounded-[12px] border px-2.5 py-2 text-left transition-colors',
+                'flex items-center gap-2.5 rounded-[10px] border px-2.5 py-2 text-left transition-colors',
                 on ? (o.danger ? 'border-warn/50 bg-warn/[0.07]' : 'border-crimson-line bg-gradient-to-b from-crimson-soft to-elev') : 'border-line bg-elev hover:border-line-strong'
               )}
             >
@@ -1313,8 +1370,8 @@ function OptionRow<T extends string>({
 
 function SheetSection({ id, icon: I, title, children }: { id?: string; icon: Icon; title: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="-mx-2 rounded-xl px-2 py-1">
-      <div className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-dim">
+    <section id={id} className="-mx-2 rounded-[10px] px-2 py-1">
+      <div className="mb-2.5 flex items-center gap-2 text-[12px] font-medium text-dim">
         <I size={14} />
         {title}
       </div>
@@ -1350,7 +1407,7 @@ function ExternalTools({ session, update }: { session: ChatSession; update(p: Pa
 function Capability({ icon: I, title, sub, on, onToggle }: { icon: Icon; title: string; sub: string; on: boolean; onToggle(): void }) {
   return (
     <motion.button whileTap={{ scale: 0.98 }} onClick={onToggle} aria-pressed={on} className="flex items-center gap-3 rounded-[14px] border border-line bg-elev p-3 text-left">
-      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] transition-[background-color,color,box-shadow] duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
+      <div className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] transition-[background-color,color,box-shadow] duration-300', on ? 'bg-crimson-soft text-crimson-hi shadow-[0_0_20px_-4px_rgb(220_38_69/0.4)]' : 'bg-elev-2 text-dim')}>
         <I size={18} weight={on ? 'fill' : 'regular'} />
       </div>
       <div className="min-w-0 flex-1">
@@ -1364,17 +1421,25 @@ function Capability({ icon: I, title, sub, on, onToggle }: { icon: Icon; title: 
   )
 }
 
-function Welcome({ onPick, hasKnowledge }: { onPick(t: string): void; hasKnowledge: boolean }) {
-  const prompts = [
-    hasKnowledge ? 'Search my knowledge base and summarize the key concepts' : 'Explain the difference between BM25 and dense retrieval',
-    'Which skills do I have, and when should I use each?',
-    'Draft a TypeScript function that debounces async calls, with tests'
-  ]
+function Welcome({ onPick, session, project, hasKnowledge }: { onPick(t: string): void; session: ChatSession; project: Project | null; hasKnowledge: boolean }) {
+  const folder = session.workspace?.split(/[\\/]/).pop()
+  const writes = session.fileAccess === 'write' || !!session.container
+  const prompts = folder
+    ? [
+        `Give me a tour of ${folder}: what it does and how it is organised`,
+        writes ? `Find a bug or rough edge in ${folder} and fix it` : `Review ${folder} for bugs and risky code`,
+        project ? `What should we work on next in ${project.name}?` : hasKnowledge ? 'Search my knowledge base for what relates to this project' : `Suggest three improvements for ${folder}, smallest first`
+      ]
+    : [
+        hasKnowledge ? 'Search my knowledge base and summarise the key ideas' : 'Explain the difference between BM25 and dense retrieval',
+        project ? `Help me plan the next step for ${project.name} — ask me questions first` : 'Which skills do I have, and when should I use each?',
+        'Draft a TypeScript function that debounces async calls, with tests'
+      ]
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={ENTER} className="flex flex-col items-center pt-16 text-center">
       <Logo size={40} />
-      <div className="mt-5 text-[20px] font-semibold tracking-tight">What are we building?</div>
-      <div className="mt-1 text-[13px] text-dim">A local agent with traced tools, grounded in your knowledge, skills and the web.</div>
+      <div className="mt-5 text-[20px] font-semibold tracking-tight [text-wrap:balance]">{project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
+      <div className="mt-1 text-[13px] text-dim">{folder ? `The agent can ${writes ? 'read and change' : 'read'} files in this folder${session.shell ? ' and run commands' : ''}.` : 'A local agent with traced tools, grounded in your knowledge, skills and the web.'}</div>
       <div className="mt-8 grid w-full max-w-xl gap-2">
         {prompts.map((p, i) => (
           <motion.button
@@ -1386,7 +1451,7 @@ function Welcome({ onPick, hasKnowledge }: { onPick(t: string): void; hasKnowled
             onClick={() => onPick(p)}
             className="flex items-center gap-2.5 rounded-[14px] border border-line bg-panel px-4 py-3 text-left text-[13px] text-muted transition-colors hover:border-crimson-line hover:text-fg"
           >
-            <ChatCircleDots size={16} className="shrink-0 text-crimson-hi" />
+            <ChatCircleDots size={16} className="shrink-0 text-dim" />
             {p}
           </motion.button>
         ))}
@@ -1494,15 +1559,13 @@ function AssistantTurn({
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === message.blocks.length - 1} className="mb-1" />
         })}
-        {message.error && <div className="mt-2 rounded-xl border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
+        {message.error && <div className="mt-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
         {!streaming && (
           <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
-            {message.model && <span className="font-mono">{message.model}</span>}
-            {message.usage && message.usage.input + message.usage.output > 0 && (
-              <span title="input / output tokens">
-                {compact(message.usage.input)} in · {compact(message.usage.output)} out{message.usage.cost > 0 ? ` · $${message.usage.cost.toFixed(4)}` : ''}
-              </span>
+            {message.model && (
+              <span title={message.usage && message.usage.input + message.usage.output > 0 ? `${message.usage.input.toLocaleString()} tokens sent (new, not cached) · ${message.usage.output.toLocaleString()} written` : undefined}>{message.model}</span>
             )}
+            {message.usage && message.usage.cost > 0 && <span title="Cost of this reply">${message.usage.cost < 0.01 ? message.usage.cost.toFixed(4) : message.usage.cost.toFixed(2)}</span>}
             {allRefs.length > 0 && (
               <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted transition-colors hover:text-fg">
                 <Books size={13} /> {allRefs.length} sources

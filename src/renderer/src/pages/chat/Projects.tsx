@@ -130,7 +130,7 @@ export function ProjectDialog({
         </div>
 
         <Field label="Folder" hint="Optional.">
-          <div className={clsx('flex items-center gap-2.5 rounded-[12px] border px-3 py-2', folder ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
+          <div className={clsx('flex items-center gap-2.5 rounded-[10px] border px-3 py-2', folder ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
             {folder ? <FolderSimple size={17} weight="fill" style={{ color }} /> : <FolderDashed size={17} className="text-dim" />}
             <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', folder ? 'text-fg' : 'text-dim')}>{folder ?? 'No folder'}</span>
             {folder && (
@@ -215,10 +215,10 @@ export function ProjectHeader({
       {running && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
       <span className="font-mono text-[10.5px] text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
       <div className="hidden items-center group-focus-within:flex group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-[7px] text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
+        <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
           <PencilSimple size={14} />
         </button>
-        <button onClick={onNewChat} title="New chat in this project" aria-label="New chat in this project" className="flex h-7 w-7 items-center justify-center rounded-[7px] text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
+        <button onClick={onNewChat} title="New chat in this project" aria-label="New chat in this project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
           <Plus size={14} weight="bold" />
         </button>
       </div>
