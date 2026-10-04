@@ -204,7 +204,7 @@ export function ProjectHeader({
   onEdit(): void
 }) {
   return (
-    <div onClick={onToggle} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 hover:bg-elev mobile:h-11" role="button" aria-expanded={!collapsed}>
+    <div onClick={onToggle} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onToggle())} tabIndex={0} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 outline-none hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-11" role="button" aria-expanded={!collapsed}>
       <span className={clsx('flex text-dim transition-transform duration-200', !collapsed && 'rotate-90')}>
         <CaretRight size={11} weight="bold" />
       </span>
@@ -213,8 +213,8 @@ export function ProjectHeader({
         {project.name}
       </span>
       {running && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
-      <span className="font-mono text-[10.5px] text-dim group-hover:hidden mobile:hidden">{count}</span>
-      <div className="hidden items-center group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
+      <span className="font-mono text-[10.5px] text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
+      <div className="hidden items-center group-focus-within:flex group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
         <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-[7px] text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
           <PencilSimple size={14} />
         </button>

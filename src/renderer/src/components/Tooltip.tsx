@@ -1,9 +1,11 @@
-import { useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 
 /** Hover/focus tooltip that scales and fades in above its trigger. */
-export function Tooltip({ content, children }: { content: ReactNode; children: ReactElement }) {
+export function Tooltip({ content, children }: { content: ReactNode; children: ReactElement<{ 'aria-label'?: string }> }) {
+  // A plain-text tip doubles as the trigger's accessible name when it has none (icon-only buttons).
+  const named = typeof content === 'string' && !children.props['aria-label'] ? cloneElement(children, { 'aria-label': content }) : children
   const ref = useRef<HTMLSpanElement>(null)
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const show = () => {
@@ -13,7 +15,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
   const hide = () => setPos(null)
   return (
     <span ref={ref} className="inline-flex" onPointerEnter={(e) => e.pointerType === 'mouse' && show()} onPointerLeave={hide} onFocus={(e) => (e.target as HTMLElement).matches(':focus-visible') && show()} onBlur={hide} onPointerDown={hide}>
-      {children}
+      {named}
       {createPortal(
         <AnimatePresence>
           {pos && (
