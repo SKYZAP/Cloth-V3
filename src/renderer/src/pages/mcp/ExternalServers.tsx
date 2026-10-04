@@ -126,7 +126,7 @@ export function ExternalServers() {
                 <ServerForm initial={c} onSave={(next) => patch(c.id, next)} />
                 {st?.state === 'ready' && (
                   <div>
-                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-dim">Tools</div>
+                    <div className="mb-1.5 text-[12px] font-medium text-dim">Tools</div>
                     <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
                       {st.tools.map((t) => (
                         <div key={t.name} className="min-w-0 text-[12px]" title={t.description}>

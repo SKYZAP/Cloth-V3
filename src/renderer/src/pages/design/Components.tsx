@@ -345,7 +345,7 @@ export function ComponentsPanel({ designId, input, setKit, theme, setTheme }: { 
 
 function ListHeading({ icon, children, action }: { icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">
+    <div className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[12px] font-medium text-dim">
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {action}
@@ -355,7 +355,7 @@ function ListHeading({ icon, children, action }: { icon: React.ReactNode; childr
 
 function ListRow({ active, onClick, icon, warn, children }: { active: boolean; onClick(): void; icon: React.ReactNode; warn?: boolean; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={clsx('mx-1.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-[9px] px-2.5 py-1.5 text-left text-[12.5px]', active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}>
+    <button onClick={onClick} className={clsx('mx-1.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-left text-[12.5px]', active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}>
       <span className="shrink-0 text-dim">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {warn && <Warning size={12} weight="fill" className="shrink-0 text-warn" />}
@@ -457,7 +457,7 @@ function CodeModal({ comp, onClose, onSave }: { comp: DesignComponent | null; on
           onChange={(e) => setDraft((d) => ({ ...d, [view]: e.target.value }))}
           spellCheck={false}
           aria-label={view}
-          className="h-[52vh] w-full resize-none rounded-[12px] border border-line bg-panel p-3 font-mono text-[12px] leading-relaxed text-fg outline-none focus:border-crimson-line"
+          className="h-[52vh] w-full resize-none rounded-[10px] border border-line bg-panel p-3 font-mono text-[12px] leading-relaxed text-fg outline-none focus:border-crimson-line"
         />
       </div>
     </Modal>

@@ -357,7 +357,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas({ input, f
     >
       <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, width: layout.width, height: layout.height }}>
         {layout.headers.map((h) => (
-          <div key={h.label} className="absolute left-0 flex items-center gap-2 font-semibold uppercase tracking-[0.08em] text-dim" style={{ top: h.y + 8, fontSize: 13 / Math.max(view.z, 0.5) }}>
+          <div key={h.label} className="absolute left-0 flex items-center gap-2 font-medium text-dim" style={{ top: h.y + 8, fontSize: 13 / Math.max(view.z, 0.5) }}>
             {h.label === 'Built-in' ? <SquaresFour size={14 / Math.max(view.z, 0.5)} /> : <Cube size={14 / Math.max(view.z, 0.5)} />}
             {h.label}
           </div>
@@ -371,7 +371,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas({ input, f
                 onClick={onNew}
                 onPointerDown={(e) => e.stopPropagation()}
                 onPointerUp={(e) => e.stopPropagation()}
-                className={clsx('absolute flex flex-col items-center justify-center gap-2 rounded-[18px] border-2 border-dashed text-[15px]', newActive ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line-strong text-dim hover:text-fg')}
+                className={clsx('absolute flex flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed text-[15px]', newActive ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line-strong text-dim hover:text-fg')}
                 style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h }}
               >
                 <Plus size={24} />

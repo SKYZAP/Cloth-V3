@@ -95,10 +95,10 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
         exit={{ opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.14 } }}
         transition={{ type: 'spring', stiffness: 420, damping: 32 }}
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-[440px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[18px] border border-line-strong bg-panel shadow-[0_24px_60px_-12px_rgb(0_0_0/0.8)]"
+        className="w-[440px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[14px] border border-line-strong bg-panel shadow-[0_24px_60px_-12px_rgb(0_0_0/0.8)]"
       >
         <div className="flex gap-3.5 px-5 pt-5">
-          <div className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]', req.danger ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
+          <div className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', req.danger ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
             <Icon size={18} weight="fill" />
           </div>
           <div className="min-w-0 pt-0.5">

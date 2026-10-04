@@ -138,7 +138,7 @@ function UseMenu({ input, color, onPick, onClose }: { input: DesignInput; color:
   }, [onClose])
   const current = usesOf(input, color)
   return (
-    <div ref={ref} className="sheet-glass absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-[12px] border border-line-strong p-1 text-[12.5px]">
+    <div ref={ref} className="sheet-glass absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-[10px] border border-line-strong p-1 text-[12.5px]">
       <div className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-dim">
         <span className="h-3 w-3 rounded-[3px] border border-black/30" style={{ background: color }} />
         <span className="font-mono uppercase">{color}</span> — use as

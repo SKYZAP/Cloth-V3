@@ -250,7 +250,7 @@ function CollectionView({ collection }: { collection: Collection }) {
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10.5px] font-medium uppercase tracking-wider text-dim">{label}</div>
+      <div className="text-[12px] font-medium text-dim">{label}</div>
       <div className="text-[15px] font-semibold tabular-nums">{value}</div>
     </div>
   )
@@ -271,7 +271,7 @@ function DocumentsTable({ docs, reload, onAdd }: { docs: RagDocument[]; reload()
       <Input className="mb-3 max-w-sm" placeholder="Filter documents" value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="overflow-hidden rounded-lg border border-line">
         <table className="w-full text-[12px]">
-          <thead className="bg-panel text-left text-[10.5px] uppercase tracking-wider text-dim">
+          <thead className="bg-panel text-left text-[11.5px] font-medium text-dim">
             <tr>
               <th className="px-3 py-2 font-medium">Document</th>
               <th className="w-20 px-3 py-2 font-medium mobile:hidden">Chunks</th>
@@ -556,7 +556,7 @@ function SearchPlayground({ collection }: { collection: Collection }) {
         {!hasModel && <span className="text-warn">No default model — results will be passages only.</span>}
       </div>
 
-      {error && <div className="mt-4 rounded-xl border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">{error}</div>}
+      {error && <div className="mt-4 rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">{error}</div>}
 
       {loading && (
         <div className="mt-5 flex items-center gap-2 text-[12.5px] text-dim">
@@ -567,10 +567,10 @@ function SearchPlayground({ collection }: { collection: Collection }) {
 
       {!loading && !result && !error && (
         <div className="mt-6">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-dim">Try</div>
+          <div className="mb-2 text-[12px] font-medium text-dim">Try</div>
           <div className="grid gap-1.5">
             {suggestions.map((s) => (
-              <button key={s} onClick={() => void run(s)} className="rounded-xl border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted transition-colors hover:border-crimson-line hover:text-fg">
+              <button key={s} onClick={() => void run(s)} className="rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted transition-colors hover:border-crimson-line hover:text-fg">
                 {s}
               </button>
             ))}
@@ -581,14 +581,14 @@ function SearchPlayground({ collection }: { collection: Collection }) {
       {!loading && result && (
         <div className="mt-5 space-y-4">
           {result.search.hits.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
+            <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
               Nothing in <b className="text-muted">{collection.name}</b> matched “{asked}”.
               <div className="mt-1">{collection.docCount === 0 ? 'The collection has no documents yet — add some under Add sources.' : 'Try different wording, or another retrieval mode.'}</div>
             </div>
           ) : (
             <>
               {result.answer && (
-                <div className="rounded-2xl border border-line bg-panel p-4">
+                <div className="rounded-[14px] border border-line bg-panel p-4">
                   <div className="mb-2 flex items-center gap-2 text-[11px] text-dim">
                     <Badge tone="crimson">answer</Badge>
                     {result.model && <span className="font-mono">{result.model}</span>}
@@ -597,7 +597,7 @@ function SearchPlayground({ collection }: { collection: Collection }) {
                   <Markdown text={result.answer} references={result.search.hits} />
                 </div>
               )}
-              {result.error && <div className="rounded-xl border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
+              {result.error && <div className="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
               <div>
                 <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-dim">
                   <Badge tone="crimson">{result.search.mode}</Badge>

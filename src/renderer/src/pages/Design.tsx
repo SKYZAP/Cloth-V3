@@ -339,7 +339,7 @@ function DesignEditor({ design, onSaved, onDeleted, onDuplicated }: { design: De
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-3 border-b border-line px-4 py-4 last:border-b-0 mobile:px-3">
-      <div className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">{title}</div>
+      <div className="text-[12px] font-medium text-dim">{title}</div>
       {children}
     </section>
   )

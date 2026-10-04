@@ -114,7 +114,7 @@ function Rail({ page, onGo, onPc }: { page: Page; onGo(p: Page): void; onPc(): v
         ))}
       </LayoutGroup>
       <div className="flex-1" />
-      <button onClick={onPc} aria-label="Your PC" className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted active:bg-elev-2">
+      <button onClick={onPc} aria-label="Your PC" className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] text-muted active:bg-elev-2">
         <Desktop size={22} />
         <span className={clsx('absolute right-2.5 top-2.5 h-2 w-2 rounded-full ring-2 ring-panel', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-crimson')} />
       </button>
@@ -148,7 +148,7 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
             key={p}
             whileTap={{ scale: 0.95 }}
             onClick={() => onGo(p)}
-            className={clsx('flex flex-col items-center gap-2 rounded-2xl border py-4 text-[12.5px] font-medium', page === p ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted')}
+            className={clsx('flex flex-col items-center gap-2 rounded-[14px] border py-4 text-[12.5px] font-medium', page === p ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted')}
           >
             <I size={24} weight={page === p ? 'fill' : 'regular'} className={page === p ? 'text-crimson-hi' : ''} />
             {label}
@@ -157,9 +157,9 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
       </div>
       )}
 
-      <div className="rounded-2xl border border-line bg-elev p-4">
+      <div className="rounded-[14px] border border-line bg-elev p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-elev-2 text-crimson-hi">
+          <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-elev-2 text-crimson-hi">
             <Desktop size={20} weight="fill" />
           </div>
           <div className="min-w-0 flex-1">
@@ -171,10 +171,10 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
           </div>
         </div>
         <div className="mt-3 flex gap-2">
-          <button onClick={reconnectNow} disabled={state === 'online'} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-line-strong text-[13px] text-muted disabled:opacity-40">
+          <button onClick={reconnectNow} disabled={state === 'online'} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-line-strong text-[13px] text-muted disabled:opacity-40">
             <ArrowClockwise size={15} /> Reconnect
           </button>
-          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-crimson-line text-[13px] text-crimson-hi">
+          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-crimson-line text-[13px] text-crimson-hi">
             <SignOut size={15} /> Forget PC
           </button>
         </div>

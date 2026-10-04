@@ -205,7 +205,7 @@ function Panel({ children, className, delay = 0 }: { children: ReactNode; classN
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={clsx('rounded-xl border border-line bg-panel', className)}
+      className={clsx('rounded-[10px] border border-line bg-panel', className)}
     >
       {children}
     </motion.div>
@@ -571,7 +571,7 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-[12px]">
             <thead>
-              <tr className="border-y border-line text-left text-[10.5px] font-semibold uppercase tracking-wider text-dim">
+              <tr className="border-y border-line text-left text-[12px] font-medium text-dim">
                 <th className="px-4 py-2 font-semibold">Model</th>
                 <th className="px-2 py-2 text-right font-semibold">Calls</th>
                 <th className="w-[26%] px-2 py-2 font-semibold">Tokens (in / out)</th>

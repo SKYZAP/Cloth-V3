@@ -51,7 +51,7 @@ export function McpPage() {
         <ExternalServers />
         <Card className="p-4">
           <div className="flex items-center gap-3">
-            <div className={clsx('flex h-10 w-10 items-center justify-center rounded-xl border', status.running ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
+            <div className={clsx('flex h-10 w-10 items-center justify-center rounded-[10px] border', status.running ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
               <Cable size={18} />
             </div>
             <div className="min-w-0 flex-1">

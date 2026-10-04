@@ -33,7 +33,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
       className="mb-4 ml-11 overflow-hidden rounded-[14px] border border-crimson-line bg-panel shadow-[0_0_0_4px_rgb(220_38_69/0.06)] mobile:ml-0"
     >
       <div className="flex items-center gap-2.5 border-b border-line px-3 py-2.5">
-        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-crimson-soft text-crimson-hi">
+        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
           <ChatCircleDots size={15} weight="fill" />
         </span>
         <span className="flex-1 text-[12.5px] font-semibold">Question for you</span>

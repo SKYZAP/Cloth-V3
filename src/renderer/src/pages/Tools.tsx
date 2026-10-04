@@ -182,7 +182,7 @@ function uniqueName(base: string, taken: string[]): string {
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="px-2.5 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-dim first:pt-1">{children}</div>
+  return <div className="px-2.5 pb-1 pt-3 text-[12px] font-medium text-dim first:pt-1">{children}</div>
 }
 
 function NewToolModal({ open, onClose, onCreated, existing }: { open: boolean; onClose(): void; onCreated(t: CustomTool): void; existing: string[] }) {

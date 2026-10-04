@@ -26,7 +26,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: u
     if (!error) return this.props.children
     return (
       <div className="flex h-full items-center justify-center p-8">
-        <div className="max-w-lg rounded-2xl border border-crimson-line bg-panel p-5">
+        <div className="max-w-lg rounded-[14px] border border-crimson-line bg-panel p-5">
           <div className="flex items-center gap-2 text-[14px] font-semibold">
             <WarningCircle size={18} className="text-crimson-hi" weight="fill" />
             This {this.props.label ?? 'view'} hit a problem

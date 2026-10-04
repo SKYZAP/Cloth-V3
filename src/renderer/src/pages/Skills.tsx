@@ -403,7 +403,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-col rounded-xl border border-line bg-bg">
+      <div className="flex min-h-0 flex-col rounded-[10px] border border-line bg-bg">
         {!selected ? (
           <Empty icon={<Store size={20} />} title="skills.sh">
             Search the registry, pick a skill to preview its SKILL.md, then install it into your hub.
@@ -658,7 +658,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
                 <Editor value={body} onChange={setBody} />
               </div>
               <div className="min-h-0 overflow-y-auto px-6 py-4">
-                <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-dim">Preview</div>
+                <div className="mb-2 text-[12px] font-medium text-dim">Preview</div>
                 <Markdown text={body} />
               </div>
             </div>

@@ -146,7 +146,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
             </div>
 
             <div>
-              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-dim">Included</div>
+              <div className="mb-1.5 text-[12px] font-medium text-dim">Included</div>
               <div className="flex flex-wrap gap-1.5">
                 <Chip icon={<Wrench size={12} />} label={`${plan!.tools.length} tool${plan!.tools.length === 1 ? '' : 's'}`} title={plan!.tools.join(', ')} />
                 <Chip icon={<Sparkles size={12} />} label={`${plan!.skills.length} skill${plan!.skills.length === 1 ? '' : 's'}`} title={plan!.skills.join(', ')} />

@@ -25,7 +25,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.1 } }}
               transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
-              className="pointer-events-none fixed z-[80] -translate-x-1/2 whitespace-nowrap rounded-[9px] border border-line-strong bg-[#1f1f24] px-2.5 py-1.5 text-[11.5px] shadow-xl shadow-black/50"
+              className="pointer-events-none fixed z-[80] -translate-x-1/2 whitespace-nowrap rounded-[10px] border border-line-strong bg-[#1f1f24] px-2.5 py-1.5 text-[11.5px] shadow-xl shadow-black/50"
               style={{ left: pos.x, top: pos.y - 10, translateY: '-100%', transformOrigin: 'bottom center' }}
             >
               {content}
