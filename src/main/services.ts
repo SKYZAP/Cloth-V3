@@ -10,6 +10,7 @@ import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
 import { ProjectService } from './agent/projects'
 import { AgentService } from './agent/agents'
+import { SkillInsights } from './skills/insights'
 import { DesignService } from './design/designs'
 import { ContainerService, type DockerRun } from './agent/containers'
 import { PanelService } from './panel/panel'
@@ -35,6 +36,7 @@ export interface Services {
   rag: RagService
   examples: ExamplesService
   skills: SkillService
+  skillInsights: SkillInsights
   registry: SkillRegistry
   web: WebService
   custom: CustomToolService
@@ -86,6 +88,7 @@ export function createServices(opts: {
   const rag = new RagService(ctx, providers, settings, () => (web.obscura.path() ? (url, signal) => web.obscura.renderHtml(url, signal) : null))
   const examples = new ExamplesService(ctx, rag, settings)
   const skills = new SkillService(ctx, providers)
+  const skillInsights = new SkillInsights(ctx, skills, providers)
   const registry = new SkillRegistry(ctx, skills, undefined, () => settings.get().webCaCertPath)
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const approvals = new ApprovalService((e) => ctx.emit('chat', e))
@@ -129,5 +132,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, registry, web, custom, runtime, chat, agents, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
 }

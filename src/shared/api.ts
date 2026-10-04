@@ -151,6 +151,15 @@ export interface ClothApi {
     registryPreview(id: string): Promise<RegistryPreview>
     registryInstall(id: string, overwrite?: boolean): Promise<string>
     registryCheckUpdate(name: string): Promise<{ updateAvailable: boolean; current: string | null; latest: string | null }>
+    /** Usage, local checks, a safety scan and the trigger check for the Overview tab. */
+    insight(name: string): Promise<import('./types').SkillInsight>
+    saveTriggers(name: string, triggers: import('./types').SkillTrigger[]): Promise<import('./types').SkillTrigger[]>
+    draftTriggers(name: string, model: ModelRef): Promise<import('./types').SkillTrigger[]>
+    runTriggers(name: string, model: ModelRef): Promise<import('./types').SkillTriggerRun>
+    markReviewed(name: string, reviewed: boolean): Promise<void>
+    usageAll(): Promise<Record<string, { total: number; lastUsedAt: number }>>
+    /** A new chat with the skill set to Always. */
+    tryInChat(name: string): Promise<ChatSession>
     dir(): Promise<string>
   }
   /** The chat side panel: the chat's files, terminals and git. */
