@@ -93,10 +93,10 @@ export function PendingAttachments({ items, onRemove, noVision }: { items: Pendi
                   className="group/att relative"
                 >
                   {a.preview ? (
-                    <img src={a.preview} alt={a.name} title={a.name} className="h-14 w-14 rounded-[12px] border border-line-strong object-cover" />
+                    <img src={a.preview} alt={a.name} title={a.name} className="h-14 w-14 rounded-[10px] border border-line-strong object-cover" />
                   ) : (
-                    <div className="flex h-14 max-w-[220px] items-center gap-2.5 rounded-[12px] border border-line-strong bg-elev py-2 pl-2.5 pr-3.5" title={a.name}>
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-elev-2 text-muted">
+                    <div className="flex h-14 max-w-[220px] items-center gap-2.5 rounded-[10px] border border-line-strong bg-elev py-2 pl-2.5 pr-3.5" title={a.name}>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-elev-2 text-muted">
                         <FileText size={18} />
                       </span>
                       <span className="min-w-0">

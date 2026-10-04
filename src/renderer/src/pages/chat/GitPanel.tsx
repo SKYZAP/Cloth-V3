@@ -204,7 +204,7 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 
         {log.length > 0 && (
           <div className="border-t border-line">
-            <button onClick={() => setShowLog(!showLog)} className="flex w-full items-center gap-1.5 px-2.5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim hover:text-muted">
+            <button onClick={() => setShowLog(!showLog)} className="flex w-full items-center gap-1.5 px-2.5 py-2 text-[12px] font-medium text-dim hover:text-muted">
               {showLog ? <CaretDown size={10} /> : <CaretRight size={10} />} Recent commits
             </button>
             {showLog &&
@@ -225,7 +225,7 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 function FileList({ title, files, staged, onOpen, onAll, allLabel, actions, empty }: { title: string; files: GitFile[]; staged: boolean; onOpen(f: GitFile): void; onAll?(): void; allLabel: string; actions(f: GitFile): React.ReactNode; empty?: string }) {
   return (
     <div className="py-1">
-      <div className="flex items-center justify-between px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-dim">
+      <div className="flex items-center justify-between px-2.5 py-1 text-[12px] font-medium text-dim">
         <span>
           {title} {files.length > 0 && <span className="font-mono normal-case">{files.length}</span>}
         </span>

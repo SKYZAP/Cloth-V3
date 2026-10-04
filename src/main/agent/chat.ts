@@ -77,6 +77,7 @@ interface SessionRow {
   config: string
   messages: string
   archive?: string
+  preview?: string | null
   created_at: number
   updated_at: number
 }
@@ -393,7 +394,14 @@ export class ChatService {
   ) {}
 
   list(): ChatSession[] {
-    const rows = this.ctx.db.prepare('SELECT id, title, config, created_at, updated_at FROM sessions ORDER BY updated_at DESC').all() as unknown as SessionRow[]
+    const rows = this.ctx.db.prepare('SELECT id, title, config, preview, created_at, updated_at FROM sessions ORDER BY updated_at DESC').all() as unknown as SessionRow[]
+    // Chats from before previews existed get theirs worked out once.
+    const fill = this.ctx.db.prepare('UPDATE sessions SET preview = ? WHERE id = ?')
+    for (const r of rows) {
+      if (r.preview !== null && r.preview !== undefined) continue
+      r.preview = previewOf(this.rawMessages(r.id))
+      fill.run(r.preview, r.id)
+    }
     return rows.map(toSession)
   }
 
@@ -863,7 +871,7 @@ export class ChatService {
   }
 
   private saveMessages(id: string, messages: AgentMessage[]): void {
-    this.ctx.db.prepare('UPDATE sessions SET messages = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(messages), Date.now(), id)
+    this.ctx.db.prepare('UPDATE sessions SET messages = ?, preview = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(messages), previewOf(messages), Date.now(), id)
   }
 
   private row(id: string): SessionRow {
@@ -875,7 +883,31 @@ export class ChatService {
 
 function toSession(row: SessionRow): ChatSession {
   const config = { ...DEFAULT_CONFIG, ...json<Partial<SessionConfig>>(row.config, {}) }
-  return { id: row.id, title: row.title, ...config, createdAt: row.created_at, updatedAt: row.updated_at }
+  return { id: row.id, title: row.title, ...config, ...(row.preview ? { preview: row.preview } : {}), createdAt: row.created_at, updatedAt: row.updated_at }
+}
+
+/** One line from the latest turn: the reply's opening, or what was asked when there's no reply yet. */
+export function previewOf(messages: AgentMessage[]): string {
+  const text = (m: AgentMessage): string => {
+    const c = (m as { content?: unknown }).content
+    if (typeof c === 'string') return c
+    if (!Array.isArray(c)) return ''
+    return c
+      .filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN) && !String(b.text).startsWith(FILE_OPEN) && !String(b.text).startsWith(SUMMARY_OPEN))
+      .map((b) => String(b.text))
+      .join(' ')
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'assistant' && m.role !== 'user') continue
+    const line = text(m)
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[#*_`>|[\]]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (line) return line.slice(0, 140)
+  }
+  return ''
 }
 
 /**

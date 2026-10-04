@@ -117,7 +117,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
       className={clsx(compact ? 'mb-1.5 rounded-[10px]' : 'mb-4 rounded-[14px]', 'overflow-hidden border bg-panel transition-colors', trace.status === 'error' ? 'border-crimson-line' : 'border-line hover:border-line-strong')}
     >
       <button onClick={() => setOpen(!open)} aria-expanded={open} className={clsx('flex w-full items-center gap-2.5 px-3 text-left', compact ? 'py-1.5' : 'py-2.5')}>
-        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-crimson-soft text-crimson-hi">
+        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
           <Icon size={14} />
         </span>
         <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.subagent ? 'subagent' : trace.name}</span>
@@ -307,7 +307,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
       </div>
       {!run.running && report && (
         <div className="mt-2.5 rounded-[10px] border border-line bg-bg px-3 py-2">
-          <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-dim">
+          <div className="mb-1 flex items-center gap-2 text-[12px] font-medium text-dim">
             Report
             <span className="font-normal normal-case tracking-normal">
               {steps.length} step{steps.length === 1 ? '' : 's'}
@@ -330,7 +330,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-dim">{label}</div>
+      <div className="mb-1 text-[12px] font-medium text-dim">{label}</div>
       {children}
     </div>
   )
@@ -420,7 +420,7 @@ export function ToolGroup({ traces, fresh, awaiting, onUndo }: { traces: Trace[]
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-[12px] border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-line-strong"
+        className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-line-strong"
       >
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
           <Icon size={14} />

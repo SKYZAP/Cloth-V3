@@ -192,6 +192,9 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   CREATE INDEX design_components_design ON design_components(design_id, created_at);
+  `,
+  /* 10 — a line of the latest message, for the chat list (null = not worked out yet) */ `
+  ALTER TABLE sessions ADD COLUMN preview TEXT;
   `
 ]
 
