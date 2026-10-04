@@ -124,7 +124,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
         {trace.subagent && (
           <span className={clsx('shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium', trace.subagent.role === 'worker' ? 'bg-warn/10 text-warn' : 'bg-info/10 text-info')}>{trace.subagent.role}</span>
         )}
-        <span className="min-w-0 flex-1 truncate text-[12px] text-dim">{summarize(trace)}</span>
+        <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : 'text-dim')}>{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
           {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
           {refs.length > 0 && <span>{refs.length} refs</span>}

@@ -59,6 +59,12 @@ export interface ToolScope {
   toolNames?: string[] | null
   /** Only these skills (by name); null/undefined = all. */
   skillNames?: string[] | null
+  /** Skills left out of the list and skill_use (a chat's Off skills). */
+  skillsOff?: string[]
+  /** Skills whose instructions are in the system prompt (a chat's Always skills). */
+  skillsAlways?: string[]
+  /** Tools switched off by name. */
+  disabledTools?: string[]
   /** A file was written in the workspace by a custom tool (absolute path). */
   onFile?: (abs: string) => void
   /** External MCP servers (by id) whose tools this agent gets. */
@@ -69,7 +75,7 @@ export interface ToolScope {
 
 /** Skills an agent with this scope may see and load. */
 export function allowedSkill(scope: ToolScope, name: string): boolean {
-  return !scope.skillNames || scope.skillNames.includes(name)
+  return (!scope.skillNames || scope.skillNames.includes(name)) && !scope.skillsOff?.includes(name)
 }
 
 interface Ctx {

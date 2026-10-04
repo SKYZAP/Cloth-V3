@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { FolderSimple, GitBranch, TerminalWindow, X } from '@phosphor-icons/react'
+import { FolderSimple, GitBranch, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
 import type { ChatSession, WorkspaceFile } from '@shared/types'
 import { isMobile } from '@/lib/platform'
 import { Terminals } from './Terminals'
 import { Files } from './Files'
 import { GitPanel } from './GitPanel'
+import { SetupPanel } from './Setup'
 
-export type PanelTab = 'terminal' | 'files' | 'git'
+export type PanelTab = 'setup' | 'terminal' | 'files' | 'git'
 const KEY = 'cloth.chat.panel'
 
 export interface PanelState {
@@ -21,9 +22,9 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
   const [state, setState] = useState<PanelState>(() => {
     try {
       const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<PanelState>
-      return { open: !isMobile && !!raw.open, tab: raw.tab ?? 'terminal', width: raw.width ?? 460 }
+      return { open: !isMobile && !!raw.open, tab: raw.tab ?? 'setup', width: raw.width ?? 400 }
     } catch {
-      return { open: false, tab: 'terminal', width: 460 }
+      return { open: false, tab: 'setup', width: 400 }
     }
   })
   const set = (p: Partial<PanelState>) =>
@@ -40,14 +41,16 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
 }
 
 const TABS: { id: PanelTab; label: string; icon: typeof TerminalWindow }[] = [
-  { id: 'terminal', label: 'Terminal', icon: TerminalWindow },
+  { id: 'setup', label: 'Setup', icon: SlidersHorizontal },
   { id: 'files', label: 'Files', icon: FolderSimple },
+  { id: 'terminal', label: 'Terminal', icon: TerminalWindow },
   { id: 'git', label: 'Git', icon: GitBranch }
 ]
 
-/** The chat's side panel: terminals, the folder's files and its git changes. */
+/** The chat's side panel: what the chat can use, the folder's files, terminals and git changes. */
 export function SidePanel({
   session,
+  update,
   state,
   set,
   onAttach,
@@ -55,6 +58,7 @@ export function SidePanel({
   onPickFolder
 }: {
   session: ChatSession
+  update(p: Partial<ChatSession>): Promise<void>
   state: PanelState
   set(p: Partial<PanelState>): void
   onAttach(f: WorkspaceFile): void
@@ -63,6 +67,8 @@ export function SidePanel({
 }) {
   // Tabs mount on first visit and then stay mounted (terminals keep running, trees stay expanded).
   const [seen, setSeen] = useState<Set<PanelTab>>(new Set([state.tab]))
+  // Clicking Setup again goes back to its overview from a section.
+  const [setupKey, setSetupKey] = useState(0)
   useEffect(() => setSeen((s) => (s.has(state.tab) ? s : new Set([...s, state.tab]))), [state.tab])
 
   // Drag the left edge to resize.
@@ -86,7 +92,7 @@ export function SidePanel({
             set({ width: Math.max(320, Math.min(max(), drag.current.w - (e.clientX - drag.current.x))) })
           }}
           onPointerUp={() => (drag.current = null)}
-          onDoubleClick={() => set({ width: 460 })}
+          onDoubleClick={() => set({ width: 400 })}
           title="Drag to resize · double-click to reset"
         />
       )}
@@ -94,11 +100,11 @@ export function SidePanel({
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => set({ tab: t.id })}
-            className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] transition-colors', state.tab === t.id ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
+            onClick={() => (t.id === 'setup' && state.tab === 'setup' ? setSetupKey((n) => n + 1) : set({ tab: t.id }))}
+            className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] transition-colors', state.tab === t.id ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
             aria-pressed={state.tab === t.id}
           >
-            <t.icon size={15} weight={state.tab === t.id ? 'fill' : 'regular'} />
+            <t.icon size={14} weight={state.tab === t.id ? 'fill' : 'regular'} />
             {t.label}
           </button>
         ))}
@@ -108,6 +114,11 @@ export function SidePanel({
         </button>
       </div>
       <div className="relative min-h-0 flex-1">
+        {state.tab === 'setup' && (
+          <div className="absolute inset-0">
+            <SetupPanel key={setupKey} session={session} update={update} />
+          </div>
+        )}
         {seen.has('terminal') && (
           <div className={clsx('absolute inset-0', state.tab !== 'terminal' && 'invisible')}>
             <Terminals sessionId={session.id} visible={state.tab === 'terminal'} hasFolder={!!session.workspace} container={!!session.container} />

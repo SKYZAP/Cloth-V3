@@ -317,10 +317,27 @@ export interface ChatSession {
   container: ContainerSettings | null
   /** External MCP servers whose tools this chat may use (by id); null = the ones on by default. */
   mcpServers: string[] | null
+  /** Tools switched off for this chat, by name (built-in, custom and mcp__server__tool). */
+  disabledTools: string[]
+  /** Skills this chat never lists or loads by itself (/name still invokes them). */
+  skillsOff: string[]
+  /** Skills whose instructions go with every request. */
+  skillsAlways: string[]
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
   preview?: string
   createdAt: number
   updatedAt: number
+}
+
+export type SkillMode = 'off' | 'auto' | 'always'
+
+/** What a chat's setup adds to every request, item by item (token counts are estimates). */
+export interface ChatSetup {
+  /** Every tool the chat could have with its folder settings, on or off. */
+  tools: { name: string; description: string; tokens: number; on: boolean }[]
+  skills: { name: string; description: string; mode: SkillMode; /** Its line in the skill list. */ listedTokens: number; /** Its instructions, sent each time when Always. */ fullTokens: number }[]
+  /** The knowledge section of the system prompt. */
+  knowledgeTokens: number
 }
 
 export interface ContainerSettings {

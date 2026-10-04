@@ -23,6 +23,7 @@ import type {
   ProjectInput,
   GeneratedImage,
   ImageSize,
+  ChatSetup,
   ContextUsage,
   ApprovalDecision,
   PendingApproval,
@@ -197,6 +198,8 @@ export interface ClothApi {
     /** Write a new AI title now (also replaces a title the user typed). */
     retitle(id: string): Promise<string | null>
     contextUsage(id: string): Promise<ContextUsage>
+    /** The chat's tools and skills with what each adds to a request. */
+    setup(id: string): Promise<ChatSetup>
   }
   containers: {
     status(force?: boolean): Promise<ContainerStatus>

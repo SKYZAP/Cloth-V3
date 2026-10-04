@@ -266,11 +266,10 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
       onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onClick())}
       className={clsx(
         'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pl-3 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
-        active && side ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
+        active && side ? 'bg-elev-2 text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
         className
       )}
     >
-      {active && side && <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-full bg-crimson" />}
       {children}
     </div>
   )
