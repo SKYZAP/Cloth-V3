@@ -936,3 +936,77 @@ export interface RemoteDirEntry {
   dir: boolean
   size?: number
 }
+
+// ─── Chat side panel: terminals, files, git ───────────────────────────────────
+
+export interface TerminalInfo {
+  id: string
+  sessionId: string
+  title: string
+  /** Where the shell started (inside the container for container chats). */
+  cwd: string
+  container: boolean
+  running: boolean
+  exitCode: number | null
+}
+
+export type TerminalEvent = { type: 'data'; id: string; data: string } | { type: 'exit'; id: string; code: number | null } | { type: 'opened'; terminal: TerminalInfo } | { type: 'closed'; id: string; sessionId: string }
+
+export interface WorkspaceEntry {
+  name: string
+  /** Relative to the workspace root, '/'-separated. */
+  path: string
+  dir: boolean
+  size: number
+  /** Matched by .gitignore (or a dependency/build folder): shown dimmed. */
+  ignored: boolean
+}
+
+export interface WorkspaceFile {
+  path: string
+  size: number
+  kind: 'text' | 'image' | 'binary'
+  text?: string
+  truncated?: boolean
+  mimeType?: string
+  /** Base64, for images. */
+  data?: string
+}
+
+export interface WorkspaceRoot {
+  /** The folder the panel shows: the chat's folder, or its container copy. */
+  path: string | null
+  container: boolean
+  /** The chat's own folder on this PC (git works here). */
+  folder: string | null
+}
+
+export interface GitFile {
+  path: string
+  /** For renames: the old path. */
+  from?: string
+  /** Index and worktree status letters (porcelain: M A D R C U ?, '.' = unchanged). */
+  index: string
+  worktree: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  conflicted: boolean
+}
+
+export interface GitStatus {
+  repo: boolean
+  root: string | null
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  files: GitFile[]
+}
+
+export interface GitCommit {
+  hash: string
+  subject: string
+  author: string
+  when: string
+}

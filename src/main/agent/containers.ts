@@ -317,6 +317,16 @@ export class ContainerService {
     if (ids.length) await this.docker(['stop', '-t', '2', ...ids]).catch(() => undefined)
   }
 
+  /** The chat's container name (for `docker exec` from a terminal). */
+  containerName(sessionId: string): string {
+    return this.name(sessionId)
+  }
+
+  /** Something is still using the container (an open terminal): push back the idle stop. */
+  keepAlive(sessionId: string): void {
+    this.touch(sessionId)
+  }
+
   private touch(sessionId: string): void {
     this.clearIdle(sessionId)
     const t = setTimeout(() => {

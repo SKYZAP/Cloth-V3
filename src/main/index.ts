@@ -175,6 +175,7 @@ else {
     quitting = true
     services.workflows.stopScheduler()
     services.lsp.disposeAll()
+    services.panel.terminals.killAll()
     void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.containers.stopAll()]).finally(() => app.quit())
   })
 }

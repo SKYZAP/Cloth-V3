@@ -114,6 +114,32 @@ export function createApi(s: Services): ClothApi {
       registryCheckUpdate: (name) => s.registry.checkUpdate(name),
       dir: async () => s.ctx.skillsDir
     },
+    panel: {
+      root: async (id) => s.panel.root(id),
+      list: (id, dir) => s.panel.list(id, dir),
+      read: (id, path) => s.panel.read(id, path),
+      open: async (id, path) => {
+        const err = await shell.openPath(s.panel.absolute(id, path))
+        if (err) throw new Error(err)
+      },
+      reveal: async (id, path) => shell.showItemInFolder(s.panel.absolute(id, path)),
+      terminals: async (id) => s.panel.terminals.list(id),
+      openTerminal: (id, size) => s.panel.openTerminal(id, size),
+      terminalBuffer: async (id) => s.panel.terminals.buffer(id),
+      writeTerminal: async (id, data) => s.panel.terminals.write(id, data),
+      resizeTerminal: async (id, cols, rows) => s.panel.terminals.resize(id, cols, rows),
+      closeTerminal: async (id) => s.panel.terminals.kill(id),
+      gitStatus: (id) => s.panel.gitStatus(id),
+      gitDiff: (id, path, staged) => s.panel.gitDiff(id, path, staged),
+      gitStage: (id, paths) => s.panel.gitStage(id, paths),
+      gitUnstage: (id, paths) => s.panel.gitUnstage(id, paths),
+      gitDiscard: (id, paths) => s.panel.gitDiscard(id, paths),
+      gitCommit: (id, message, all) => s.panel.gitCommit(id, message, all),
+      gitLog: (id) => s.panel.gitLog(id),
+      gitPush: (id) => s.panel.gitPush(id),
+      gitPull: (id) => s.panel.gitPull(id),
+      commitMessage: (id, all) => s.panel.commitMessage(id, all)
+    },
     chat: {
       list: async () => s.chat.list(),
       create: async (config) => s.chat.create(config),
@@ -123,7 +149,10 @@ export function createApi(s: Services): ClothApi {
         if (patch.model) await s.providers.refreshModel(patch.model, { force: true }).catch(() => undefined)
         return next
       },
-      remove: async (id) => s.chat.remove(id),
+      remove: async (id) => {
+        s.panel.terminals.killSession(id)
+        s.chat.remove(id)
+      },
       messages: async (id) => s.chat.messages(id),
       send: (id, text, skills, attachments) => s.chat.send(id, text, skills ?? [], attachments ?? []),
       resend: (id, messageId) => s.chat.resend(id, messageId),
