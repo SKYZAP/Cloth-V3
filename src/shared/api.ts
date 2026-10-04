@@ -259,6 +259,11 @@ export interface ClothApi {
     /** Back to the previous version. */
     undoComponent(id: string): Promise<DesignComponent>
     removeComponent(id: string): Promise<void>
+    /** Every project with a folder and the state of the system's files in its design/ folder. */
+    projects(designId: string): Promise<import('./design').DesignProjectSync[]>
+    projectDiff(designId: string, projectId: string, path: string): Promise<string>
+    /** Write files into a project's design/ folder; the project then follows the system. */
+    writeProject(designId: string, projectId: string, paths: string[]): Promise<import('./design').DesignProjectSync>
   }
   projects: {
     list(): Promise<Project[]>

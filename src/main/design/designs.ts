@@ -1,4 +1,6 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { createTwoFilesPatch } from 'diff'
 import { parseHTML } from 'linkedom'
 import { mergeRules } from '@shared/cssEdit'
 import { dirname, join } from 'node:path'
@@ -19,6 +21,7 @@ import {
   type DesignComponent,
   type DesignDraft,
   type DesignInput,
+  type DesignProjectSync,
   type DesignSystem
 } from '@shared/design'
 import { json } from '../core/db'
@@ -204,6 +207,63 @@ export class DesignService {
     return out
   }
 
+  // ─── Projects ───────────────────────────────────────────────────────────────
+
+  /**
+   * Every project with a folder, and the state of each of this system's files in its design/ folder:
+   * missing, current, outdated (Cloth wrote it and nobody touched it since) or edited by hand.
+   */
+  async projectSync(designId: string): Promise<DesignProjectSync[]> {
+    const files = this.files(designId)
+    const rows = this.ctx.db.prepare('SELECT id, name, color, folder, design_id FROM projects ORDER BY name COLLATE NOCASE').all() as { id: string; name: string; color: string; folder: string | null; design_id: string | null }[]
+    const out: DesignProjectSync[] = []
+    for (const p of rows) {
+      const states = p.folder ? await Promise.all(Object.entries(files).map(async ([path, content]) => ({ path, state: await this.fileState(p.id, p.folder!, path, content) }))) : []
+      out.push({ projectId: p.id, name: p.name, color: p.color, folder: p.folder, linked: p.design_id === designId, files: states })
+    }
+    return out
+  }
+
+  /** What writing a file would change in the project, as a unified diff. */
+  async projectDiff(designId: string, projectId: string, path: string): Promise<string> {
+    const folder = this.projectFolder(projectId)
+    const next = this.files(designId)[path]
+    if (next === undefined) throw new Error(`${path} is not one of the system's files`)
+    const cur = await readFile(join(folder, 'design', ...path.split('/')), 'utf8').catch(() => '')
+    return createTwoFilesPatch(`design/${path}`, `design/${path}`, cur, next, 'in the project', 'from the design system', { context: 3 })
+  }
+
+  /** Write files into the project's design/ folder, and make the project follow the system. */
+  async writeProject(designId: string, projectId: string, paths: string[]): Promise<DesignProjectSync> {
+    const folder = this.projectFolder(projectId)
+    const files = this.files(designId)
+    for (const path of paths) {
+      const content = files[path]
+      if (content === undefined) continue
+      const abs = join(folder, 'design', ...path.split('/'))
+      await mkdir(dirname(abs), { recursive: true })
+      await writeFile(abs, content)
+      this.ctx.kv.set(`designWritten:${projectId}:${path}`, sha(content))
+    }
+    this.ctx.db.prepare('UPDATE projects SET design_id = ?, updated_at = ? WHERE id = ?').run(designId, Date.now(), projectId)
+    return (await this.projectSync(designId)).find((p) => p.projectId === projectId)!
+  }
+
+  private projectFolder(projectId: string): string {
+    const row = this.ctx.db.prepare('SELECT folder FROM projects WHERE id = ?').get(projectId) as { folder: string | null } | undefined
+    if (!row) throw new Error('Project not found')
+    if (!row.folder) throw new Error('This project has no folder to write to')
+    return row.folder
+  }
+
+  private async fileState(projectId: string, folder: string, path: string, content: string): Promise<DesignProjectSync['files'][number]['state']> {
+    const disk = await readFile(join(folder, 'design', ...path.split('/')), 'utf8').catch(() => null)
+    if (disk === null) return 'missing'
+    if (disk === content) return 'current'
+    // Unchanged since Cloth wrote it: safe to update. Anything else was changed by someone.
+    return this.ctx.kv.get<string | null>(`designWritten:${projectId}:${path}`, null) === sha(disk) ? 'outdated' : 'edited'
+  }
+
   // ─── Component library ──────────────────────────────────────────────────────
 
   components(designId: string): DesignComponent[] {
@@ -343,3 +403,5 @@ function replaceElement(html: string, path: number[], replacement: string): stri
   el.replaceWith(...holder.childNodes)
   return body.innerHTML
 }
+
+const sha = (s: string) => createHash('sha1').update(s).digest('hex')
