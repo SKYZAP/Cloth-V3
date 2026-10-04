@@ -4,8 +4,9 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
-import type { ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
+import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
+import type { AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
@@ -103,7 +104,31 @@ const DEFAULT_CONFIG: SessionConfig = {
   mcpServers: null,
   disabledTools: [],
   skillsOff: [],
-  skillsAlways: []
+  skillsAlways: [],
+  agentId: null
+}
+
+/** The capability switches a chat copies from an agent when it is set up from one. */
+const SETUP_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools', 'fileAccess', 'shell', 'autoApprove']
+
+/** An agent's switches as a tool scope (its folder access capped at what the caller has). */
+export function agentScope(agent: AgentSetup, base: ToolScope): ToolScope {
+  const write = agent.fileAccess === 'write' && base.fileAccess === 'write'
+  return {
+    ...base,
+    skillsEnabled: agent.skillsEnabled,
+    skillsOff: agent.skillsOff,
+    skillsAlways: agent.skillsAlways,
+    webEnabled: agent.webEnabled,
+    customTools: agent.customTools,
+    codeIntel: agent.codeIntel,
+    images: agent.imagesEnabled,
+    knowledgeEnabled: agent.knowledgeEnabled,
+    collectionIds: agent.collectionIds,
+    disabledTools: agent.disabledTools,
+    fileAccess: write ? 'write' : 'read',
+    shell: !!base.shell && agent.shell
+  }
 }
 
 export interface AgentRunOptions {
@@ -125,11 +150,16 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService } = {}
   ) {}
 
   get mcpClients(): McpClientService | undefined {
     return this.ws.mcp
+  }
+
+  /** Saved agents other agents may hand work to by name. */
+  private delegates(self?: string | null): SavedAgent[] {
+    return (this.ws.agents?.list() ?? []).filter((a) => a.asSubagent && !a.builtin && a.id !== self)
   }
 
   private subagentSettings(): SubagentSettings {
@@ -201,6 +231,8 @@ export class AgentRuntime {
         '## Subagents',
         'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
+      const named = this.delegates(scope.agentId)
+      if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
     }
     const external = this.ws.mcp?.tools(scope) ?? []
     if (external.length) {
@@ -347,16 +379,30 @@ private imagesAvailable(scope: ToolScope): boolean {
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
-        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')]))
+        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')])),
+        ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain scout or worker: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker' }
+        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string }
         const cfg = this.subagentSettings()
-        const role: SubagentRun['role'] = p.role === 'worker' && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
-        const scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
-        // A dedicated subagent model, unless its provider is gone or switched off.
-        const model = cfg.model && this.providers.list().some((pr) => pr.id === cfg.model!.providerId && pr.enabled) ? cfg.model : parent.model
-        const base = { role, description: p.description || 'Subagent', model: model.modelId }
+        const named = p.agent ? this.ws.agents?.byName(p.agent) : null
+        if (p.agent && (!named || !named.asSubagent)) throw new Error(`There is no agent called "${p.agent}" that takes delegated work. Use role scout or worker instead.`)
+        const wantsWrite = named ? named.fileAccess === 'write' : p.role === 'worker'
+        const role: SubagentRun['role'] = wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
+        const builtin = this.ws.agents?.builtin(role)
+        let scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
+        if (named) {
+          scope = { ...agentScope(named, scope), depth: 1, subagents: false }
+          if (named.mcpServers && this.ws.mcp) {
+            scope.mcpServers = this.ws.mcp.chatServers(named.mcpServers)
+            await this.ws.mcp.ensure(scope.mcpServers)
+          }
+        }
+        const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && this.providers.list().some((pr) => pr.id === m.providerId && pr.enabled)
+        // The agent's own model, then the subagent model, unless its provider is gone or switched off.
+        const own = named?.model ?? builtin?.model
+        const model = usable(own) ? own : usable(cfg.model) ? cfg.model : parent.model
+        const base = { role, ...(named ? { agent: named.name } : {}), description: p.description || named?.name || 'Subagent', model: model.modelId }
         const release = await this.subagentSlot(signal, () =>
           onUpdate?.({ content: [{ type: 'text', text: 'Queued…' }], details: { subagent: { ...base, blocks: [], running: true } } as unknown as ToolDetails })
         )
@@ -365,9 +411,9 @@ private imagesAvailable(scope: ToolScope): boolean {
           this.run({
             model,
             prompt: p.prompt,
-            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), cfg.instructions.trim()].filter(Boolean).join('\n\n'),
+            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), named ? `You are the "${named.name}" agent. ${named.purpose}` : '', (named ?? builtin)?.instructions.trim() ?? cfg.instructions.trim()].filter(Boolean).join('\n\n'),
             scope,
-            thinking: cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking,
+            thinking: (named ?? builtin)?.thinking ?? (cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking),
             signal,
             maxTurns: Math.max(1, cfg.maxTurns),
             onEvent: (turn) =>
@@ -428,7 +474,8 @@ export class ChatService {
     private approvals?: ApprovalService,
     private checkpoints?: CheckpointStore,
     private projects?: ProjectService,
-    private containers?: ContainerService
+    private containers?: ContainerService,
+    private agents?: AgentService
   ) {}
 
   list(): ChatSession[] {
@@ -486,6 +533,7 @@ export class ChatService {
       disabledTools: cur.disabledTools,
       skillsOff: cur.skillsOff,
       skillsAlways: cur.skillsAlways,
+      agentId: cur.agentId,
       ...config
     }
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -709,10 +757,42 @@ export class ChatService {
     return { role: 'user', content: [...blocks, { type: 'text', text: prompt }], timestamp: Date.now() }
   }
 
-  /** The chat's own instructions, after its project's (instructions plus the folder's AGENTS.md). */
+  /** The chat's own instructions, after its project's (instructions plus the folder's AGENTS.md) and its agent's. */
   private async instructions(session: ChatSession): Promise<string> {
     const project = (await this.projects?.instructions(session.projectId).catch(() => '')) ?? ''
-    return [project, session.systemPrompt.trim()].filter(Boolean).join('\n\n')
+    const agent = this.agents?.find(session.agentId)
+    const role = agent ? [`You are working as the "${agent.name}" agent.${agent.purpose ? ` ${agent.purpose}` : ''}`, agent.instructions.trim()].filter(Boolean).join('\n\n') : ''
+    return [project, role, session.systemPrompt.trim()].filter(Boolean).join('\n\n')
+  }
+
+  /**
+   * Set the chat up from a saved agent: its capabilities, and its model and effort when it has its own.
+   * Folder access stays the chat's when the chat has less. null goes back to the default assistant
+   * (the chat keeps its current setup).
+   */
+  useAgent(id: string, agentId: string | null): ChatSession {
+    if (!agentId) return this.update(id, { agentId: null })
+    const agent = this.agents?.get(agentId)
+    if (!agent) throw new Error('Agent not found')
+    const cur = this.get(id)
+    const patch: Partial<SessionConfig> = { agentId }
+    for (const k of SETUP_KEYS) (patch as Record<string, unknown>)[k] = agent[k]
+    if (cur.workspace && cur.fileAccess === 'read') patch.fileAccess = 'read'
+    if (agent.model) patch.model = agent.model
+    if (agent.thinking) patch.thinking = agent.thinking
+    return this.update(id, patch)
+  }
+
+  /** An agent's tools and skills with their cost, as if it worked in a folder with full access. */
+  async agentSetup(agentId: string): Promise<ChatSetup> {
+    const agent = this.agents?.get(agentId)
+    if (!agent) throw new Error('Agent not found')
+    const base: ToolScope = { collectionIds: [], skillsEnabled: true, workspace: this.ctx.dataDir, fileAccess: 'write', shell: true, sessionId: 'agent-setup', depth: 0, subagents: agent.subagents }
+    const scope = agentScope({ ...agent, fileAccess: 'write', shell: true }, base)
+    scope.subagents = agent.subagents
+    const mcp = this.runtime.mcpClients
+    scope.mcpServers = mcp?.chatServers(agent.mcpServers) ?? []
+    return this.runtime.setup(scope, mcp?.chatServers(mcp.status().map((s) => s.id)) ?? [])
   }
 
   /**
@@ -750,6 +830,7 @@ export class ChatService {
       disabledTools: session.disabledTools,
       skillsOff: session.skillsOff,
       skillsAlways: session.skillsAlways,
+      agentId: session.agentId,
       depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {

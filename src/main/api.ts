@@ -168,7 +168,19 @@ export function createApi(s: Services): ClothApi {
       retitle: (id) => s.chat.retitle(id, { force: true }),
       compact: (id, instructions) => s.chat.compact(id, { instructions }),
       contextUsage: (id) => s.chat.contextUsage(id),
-      setup: (id) => s.chat.setup(id)
+      setup: (id) => s.chat.setup(id),
+      useAgent: async (id, agentId) => s.chat.useAgent(id, agentId)
+    },
+    agents: {
+      list: async () => s.agents.list(),
+      create: async (input) => s.agents.create(input ?? {}),
+      update: async (id, patch) => s.agents.update(id, patch),
+      duplicate: async (id) => s.agents.duplicate(id),
+      remove: async (id) => s.agents.remove(id),
+      setup: (id) => s.chat.agentSetup(id),
+      draft: (description, model, thinking) => s.agents.draft(description, model, thinking),
+      generate: (input) => s.agents.generate(input),
+      rewrite: (instructions, request, model, thinking) => s.agents.rewrite(instructions, request, model, thinking)
     },
     containers: {
       status: (force) => s.containers.status(force),

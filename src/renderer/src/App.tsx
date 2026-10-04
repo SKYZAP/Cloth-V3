@@ -10,6 +10,7 @@ import { ChatPage } from './pages/Chat'
 import { DashboardPage } from './pages/Dashboard'
 import { KnowledgePage } from './pages/Knowledge'
 import { SkillsPage } from './pages/Skills'
+import { AgentsPage } from './pages/Agents'
 import { ToolsPage } from './pages/Tools'
 import { WorkflowsPage } from './pages/Workflows'
 import { ProvidersPage } from './pages/Providers'
@@ -46,6 +47,7 @@ export function PageContent({ page }: { page: Page }) {
       {page === 'chat' && <ChatPage />}
       {page === 'knowledge' && <KnowledgePage />}
       {page === 'skills' && <SkillsPage />}
+      {page === 'agents' && <AgentsPage />}
       {page === 'tools' && <ToolsPage />}
       {page === 'workflows' && <WorkflowsPage />}
       {page === 'providers' && <ProvidersPage />}

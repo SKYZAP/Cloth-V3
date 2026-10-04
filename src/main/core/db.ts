@@ -195,6 +195,16 @@ const MIGRATIONS: string[] = [
   `,
   /* 10 — a line of the latest message, for the chat list (null = not worked out yet) */ `
   ALTER TABLE sessions ADD COLUMN preview TEXT;
+  `,
+  /* 11 — saved agents (scout and worker are built-in rows) */ `
+  CREATE TABLE agents (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    builtin TEXT,
+    config TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
   `
 ]
 
