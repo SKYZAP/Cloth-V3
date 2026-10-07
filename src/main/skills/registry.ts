@@ -1,3 +1,4 @@
+import { createTwoFilesPatch } from 'diff'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -130,6 +131,24 @@ export class SkillRegistry {
     const data = await this.download(skill.source.id, true)
     const latest = data.hash ?? null
     return { updateAvailable: !!latest && latest !== skill.source.hash, current: skill.source.hash, latest }
+  }
+
+  /** What updating would change: each file added, changed or removed, with a diff. */
+  async updateDiff(name: string): Promise<{ path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[]> {
+    const skill = await this.skills.get(name)
+    if (!skill.source) throw new Error(`${name} was not installed from skills.sh`)
+    const data = await this.download(skill.source.id, true)
+    const next = new Map((data.files ?? []).filter((f): f is { path: string; contents: string } => f.contents !== null).map((f) => [f.path, f.contents]))
+    const local = skill.files.filter((f) => f !== 'evals.json' && f !== SOURCE_FILE)
+    const out: { path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[] = []
+    for (const path of [...new Set([...local, ...next.keys()])].sort()) {
+      const before = local.includes(path) ? await readFile(join(skill.dir, ...path.split('/')), 'utf8').catch(() => '') : null
+      const after = next.get(path) ?? null
+      if (before === after) continue
+      const kind = before === null ? 'added' : after === null ? 'removed' : 'changed'
+      out.push({ path, kind, diff: createTwoFilesPatch(path, path, before ?? '', after ?? '', 'yours', 'skills.sh', { context: 3 }) })
+    }
+    return out
   }
 
   private async download(id: string, fresh = false): Promise<DownloadResponse> {

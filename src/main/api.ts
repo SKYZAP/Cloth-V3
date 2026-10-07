@@ -113,6 +113,7 @@ export function createApi(s: Services): ClothApi {
       registryPreview: (id) => s.registry.preview(id),
       registryInstall: (id, overwrite) => s.registry.install(id, { overwrite }),
       registryCheckUpdate: (name) => s.registry.checkUpdate(name),
+      registryUpdateDiff: (name) => s.registry.updateDiff(name),
       insight: (name) => s.skillInsights.insight(name),
       usageAll: async () => s.skillInsights.usageAll(),
       saveTriggers: async (name, triggers) => s.skillInsights.saveTriggers(name, triggers),
