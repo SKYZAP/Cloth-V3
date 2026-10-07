@@ -35,7 +35,7 @@ export function StatusLine({ session, update, usage, compacting, onCompact }: { 
         label={
           <>
             {session.container ? <Cube size={13} className="shrink-0" /> : folder ? <FolderSimple size={13} weight="fill" className="shrink-0" /> : <FolderDashed size={13} className="shrink-0" />}
-            <span className="min-w-0 max-w-[180px] truncate">{folder ?? 'No folder'}</span>
+            <span className={clsx('min-w-0 max-w-[180px] truncate', !folder && 'mobile:hidden')}>{folder ?? 'No folder'}</span>
             {folder && <span className="hidden shrink-0 whitespace-nowrap text-dim @[560px]:inline mobile:hidden">{access}</span>}
           </>
         }
@@ -124,22 +124,24 @@ function StatusButton({ label, title, width, sheetTitle, children }: { label: Re
 }
 
 function ModelEffortMenu({ session, update, reasoning, onPicked }: { session: ChatSession; update: Update; reasoning: boolean; onPicked(): void }) {
-  return (
-    <>
-      <div className="flex min-h-0 flex-1 flex-col" style={{ height: isMobile ? undefined : 360 }}>
-        <ModelMenu autoFocus={!isMobile} value={session.model} onChange={(model) => void update({ model }).then(() => !reasoning && onPicked())} />
-      </div>
-      <div className="shrink-0 border-t border-line px-3 py-2.5">
-        <div className="mb-1.5 text-[11.5px] text-dim">{reasoning ? 'Reasoning effort' : "This model doesn't reason, so it has no effort setting."}</div>
-        {reasoning && (
-          <>
-            <Segmented value={session.thinking} onChange={(thinking) => void update({ thinking })} options={EFFORTS} label="Reasoning effort" />
-            <div className="mt-1.5 text-[11px] text-dim">Higher effort thinks longer before answering: slower, better on tricky changes.</div>
-          </>
-        )}
-      </div>
-    </>
+  const list = (
+    <div key="list" className="flex min-h-0 flex-1 flex-col" style={{ height: isMobile ? undefined : 360 }}>
+      <ModelMenu autoFocus={!isMobile} value={session.model} onChange={(model) => void update({ model }).then(() => !reasoning && onPicked())} />
+    </div>
   )
+  const effort = (
+    <div key="effort" className={clsx('shrink-0 px-3 py-2.5', isMobile ? 'border-b border-line' : 'border-t border-line')}>
+      <div className="mb-1.5 text-[11.5px] text-dim">{reasoning ? 'Reasoning effort' : "This model doesn't reason, so it has no effort setting."}</div>
+      {reasoning && (
+        <>
+          <Segmented value={session.thinking} onChange={(thinking) => void update({ thinking })} options={EFFORTS} label="Reasoning effort" />
+          <div className="mt-1.5 text-[11px] text-dim">Higher effort thinks longer before answering: slower, better on tricky changes.</div>
+        </>
+      )}
+    </div>
+  )
+  // On the phone the model list runs long, so the effort switch goes first where it can be reached.
+  return <>{isMobile ? [effort, list] : [list, effort]}</>
 }
 
 const ACCESS: { value: string; label: string; patch: Partial<ChatSession> }[] = [

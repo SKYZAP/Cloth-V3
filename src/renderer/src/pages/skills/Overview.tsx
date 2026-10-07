@@ -93,13 +93,13 @@ function TriggerCheck({ skill, info, model, onModel, onChanged }: { skill: Skill
         {rows.map((r, i) => {
           const res = result(r.prompt)
           return (
-            <div key={i} className="flex items-center gap-2 rounded-[10px] border border-line bg-bg px-2 py-1.5">
+            <div key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[10px] border border-line bg-bg px-2 py-1.5">
               <input
                 value={r.prompt}
                 onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
                 onBlur={() => void save(rows)}
                 aria-label="Request"
-                className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none focus-visible:outline-none"
+                className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none focus-visible:outline-none mobile:basis-full"
               />
               <button
                 onClick={() => void save(rows.map((x, j) => (j === i ? { ...x, should: !x.should } : x)))}

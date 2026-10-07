@@ -217,7 +217,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         aria-expanded={open}
         className={clsx('flex h-7 items-center gap-2 rounded-lg px-2 transition-colors', open ? 'bg-elev-2' : 'hover:bg-elev')}
       >
-        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1 w-12 @[560px]:w-20 mobile:w-10" />}
+        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1 w-12 @[560px]:w-20 mobile:hidden" />}
         <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>

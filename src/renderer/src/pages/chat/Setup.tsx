@@ -185,7 +185,9 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         <SummaryLine label="Skills" count={skillsOn.length} tokens={parts.skills} onOpen={() => setView('skills')} hint={!session.skillsEnabled ? 'picked by you only' : undefined} />
         {!configs.length ? (
           <SummaryLine label="External servers" onOpen={() => setView('servers')} hint="none set up" />
-        ) : serversOn && !external.some((t) => isOn(t.name)) ? (
+        ) : !serversOn ? (
+          <SummaryLine label="External servers" onOpen={() => setView('servers')} hint="none on" />
+        ) : !external.some((t) => isOn(t.name)) ? (
           <SummaryLine label="External servers" onOpen={() => setView('servers')} hint={`${serversOn} start${serversOn === 1 ? 's' : ''} when the chat runs`} />
         ) : (
           <SummaryLine label="External servers" count={externalOn} tokens={parts.servers} onOpen={() => setView('servers')} />
