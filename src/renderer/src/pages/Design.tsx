@@ -30,7 +30,7 @@ import { kitCss } from '@shared/kit'
 import { Button, Field, IconButton, Modal, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { ComponentsPanel } from './design/Components'
-import { PaletteField } from './design/Palette'
+import { PaletteChoices, PaletteField } from './design/Palette'
 import { ShadcnPreview } from './design/Shadcn'
 import { ProjectsSync } from './design/ProjectsSync'
 
@@ -282,7 +282,7 @@ function DesignEditor({
     setInput(sanitizeDesign(p.input))
   }
 
-  const controls = <Controls input={input} set={set} description={description} setDescription={setDescription} />
+  const controls = <Controls input={input} set={set} description={description} setDescription={setDescription} designId={design.id} />
   const view = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
@@ -414,7 +414,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 const WEIGHTS: Record<number, string> = { 400: 'Regular', 450: 'Book', 500: 'Medium', 550: 'Medium+', 600: 'Semibold', 650: 'Semibold+', 700: 'Bold', 750: 'Bold+', 800: 'Extrabold', 850: 'Heavy', 900: 'Black' }
 
-function Controls({ input, set, description, setDescription }: { input: DesignInput; set(p: Partial<DesignInput>): void; description: string; setDescription(s: string): void }) {
+function Controls({ input, set, description, setDescription, designId }: { input: DesignInput; set(p: Partial<DesignInput>): void; description: string; setDescription(s: string): void; designId: string }) {
+  const [fine, setFine] = useState(false)
   const [principles, setPrinciples] = useState(input.principles.join('\n'))
   useEffect(() => setPrinciples(input.principles.join('\n')), [input.principles])
   const built = useMemo(() => buildDesign(input), [input])
@@ -422,7 +423,19 @@ function Controls({ input, set, description, setDescription }: { input: DesignIn
   return (
     <div>
       <Section title="Colour">
+        <PaletteChoices input={input} set={set} currentId={designId} />
         <PaletteField input={input} set={set} />
+        <button onClick={() => setFine(!fine)} aria-expanded={fine} className="flex items-center gap-1.5 text-[12px] text-muted hover:text-fg">
+          <span className={clsx('inline-block transition-transform', fine && 'rotate-90')} aria-hidden="true">›</span>
+          Fine-tune colours
+          <span className="flex gap-0.5 pl-1">
+            {[input.brand, input.accent, input.success, input.warning, input.danger].filter((c): c is string => !!c).map((c, i) => (
+              <span key={i} className="h-3 w-3 rounded-full border border-black/30" style={{ background: c }} />
+            ))}
+          </span>
+        </button>
+        {fine && (
+        <>
         <ColorField label="Brand" value={input.brand} onChange={(v) => v && set({ brand: v })} />
         <div className="flex items-center justify-between gap-3">
           <span className="text-[12px] text-muted">{input.pinBrand ? 'Buttons use exactly this colour' : 'Cloth picks the most readable shade'}</span>
@@ -434,6 +447,8 @@ function Controls({ input, set, description, setDescription }: { input: DesignIn
           <ColorField compact label="Warning" value={input.warning} onChange={(v) => v && set({ warning: v })} />
           <ColorField compact label="Danger" value={input.danger} onChange={(v) => v && set({ danger: v })} />
         </div>
+        </>
+        )}
       </Section>
       <Section title="Greys and themes">
         <Field label="Grey family">

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { ArrowSquareOut, ClipboardText, X } from '@phosphor-icons/react'
-import { applyPaletteColor, contrast, coolorsUrl, paletteToDesign, parsePalette, systemPalette, type DesignInput, type PaletteUse } from '@shared/design'
+import { applyPaletteColor, contrast, coolorsUrl, paletteToDesign, parsePalette, PRESETS, sanitizeDesign, systemPalette, type DesignInput, type PaletteUse } from '@shared/design'
 import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Input } from '@/components/ui'
@@ -165,6 +165,44 @@ function UseMenu({ input, color, onPick, onClose }: { input: DesignInput; color:
       >
         Copy hex
       </button>
+    </div>
+  )
+}
+
+/** Ready palettes to start from: the presets' and the user's other design systems'. One click applies one. */
+export function PaletteChoices({ input, set, currentId }: { input: DesignInput; set(p: Partial<DesignInput>): void; currentId: string }) {
+  const [saved, setSaved] = useState<{ name: string; colors: string[] }[]>([])
+  useEffect(() => {
+    void api.design.list().then(
+      (list) => setSaved(list.filter((d) => d.id !== currentId).map((d) => ({ name: d.name, colors: d.input.palette.length ? d.input.palette : systemPalette(d.input) }))),
+      () => undefined
+    )
+  }, [currentId])
+  const presets = PRESETS.map((p) => ({ name: p.name, colors: systemPalette(sanitizeDesign(p.input)) }))
+  const mine = (input.palette.length ? input.palette : systemPalette(input)).join()
+  const row = (p: { name: string; colors: string[] }, i: number) => (
+    <button
+      key={`${p.name}-${i}`}
+      onClick={() => (set(paletteToDesign(p.colors, input)), useApp.getState().toast(`Using the ${p.name} palette`, 'ok'))}
+      aria-pressed={p.colors.join() === mine}
+      title={`${p.name}: ${p.colors.join(' ')}`}
+      className={clsx('flex items-center gap-2 rounded-lg border px-1.5 py-1 text-left transition-colors', p.colors.join() === mine ? 'border-line-strong bg-elev-2' : 'border-transparent hover:bg-elev')}
+    >
+      <span className="flex h-5 w-24 shrink-0 overflow-hidden rounded-[5px]">
+        {p.colors.slice(0, 6).map((c, j) => (
+          <span key={j} className="flex-1" style={{ background: c }} />
+        ))}
+      </span>
+      <span className="min-w-0 truncate text-[12px] text-muted">{p.name}</span>
+    </button>
+  )
+  return (
+    <div className="grid gap-1">
+      <span className="text-[11.5px] font-medium text-muted">Start from a palette</span>
+      {saved.length > 0 && <span className="pt-1 text-[11px] text-dim">Yours</span>}
+      {saved.map(row)}
+      <span className="pt-1 text-[11px] text-dim">Presets</span>
+      {presets.map(row)}
     </div>
   )
 }
