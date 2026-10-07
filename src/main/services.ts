@@ -103,7 +103,7 @@ export function createServices(opts: {
   const containers = new ContainerService(ctx, opts.docker)
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)
-  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom })
+  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
   const tc = opts.exportToolchain ?? {}

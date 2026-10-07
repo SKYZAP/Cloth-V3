@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import type { CustomTool, ModelRef, Skill, WorkflowNodeType } from '@shared/types'
+import type { Agent, CustomTool, ModelRef, Skill, WorkflowNodeType } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { Button, Field, Input, Select, Switch, Textarea } from '@/components/ui'
@@ -24,7 +24,9 @@ export function Inspector({
   const collections = useApp((s) => s.collections)
   const [skills, setSkills] = useState<Skill[]>([])
   const [tools, setTools] = useState<CustomTool[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
   useEffect(() => {
+    if (type === 'agent') void api.agents.list().then((list) => setAgents(list.filter((a) => !a.builtin)), () => undefined)
     if (type === 'skill' || type === 'agent') void api.skills.list().then(setSkills)
     if (type === 'tool' || type === 'agent') void api.tools.list().then(setTools)
   }, [type])
@@ -134,9 +136,22 @@ export function Inspector({
       )}
       {type === 'agent' && (
         <>
-          {model()}
+          <Field label="Agent" hint={data.agentId ? "Runs with this agent's instructions, model and tools. Change them on the Agents page." : 'A saved agent, or set this step up here.'}>
+            <Select value={String(data.agentId ?? '')} onChange={(e) => onChange({ agentId: e.target.value || undefined })}>
+              <option value="">Set up here</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+              {!!data.agentId && !agents.some((a) => a.id === data.agentId) && <option value={String(data.agentId)}>Deleted agent</option>}
+            </Select>
+          </Field>
+          {model(data.agentId ? "Model (empty = the agent's)" : undefined)}
           {template('prompt', 'Task', 6)}
           {template('system', 'Extra instructions', 3)}
+          {!data.agentId && (
+          <>
           {collectionPicker}
           <Switch checked={data.skillsEnabled !== false} onChange={(v) => onChange({ skillsEnabled: v })} label="Skills available" />
           {data.skillsEnabled !== false && namePicker('skills', 'Only these skills', skills.map((s) => ({ name: s.name, note: s.description })), 'No skills in the hub')}
@@ -153,6 +168,8 @@ export function Inspector({
               tools.filter((t) => t.enabled).map((t) => ({ name: t.name, note: t.description })),
               'No enabled custom tools'
             )}
+          </>
+          )}
           <Field label="Own folder (optional)" hint="Empty = the flow's workspace, which the agent can read and write. A folder of its own is read-only.">
             <div className="flex gap-1.5">
               <Input value={str('workspace')} onChange={set('workspace')} placeholder="the flow's workspace" />

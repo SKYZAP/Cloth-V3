@@ -10,7 +10,9 @@ import type { ProviderService } from '../providers/providers'
 import type { SettingsService } from '../core/settings'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import { skillSystemPrompt, type SkillService } from '../skills/skills'
-import type { AgentRuntime } from '../agent/chat'
+import { agentScope, type AgentRuntime } from '../agent/chat'
+import type { AgentService } from '../agent/agents'
+import type { ToolScope } from '../agent/tools'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
@@ -64,7 +66,7 @@ export class WorkflowService {
 
   constructor(
     private ctx: Ctx,
-    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService; web: WebService; custom: CustomToolService }
+    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService; web: WebService; custom: CustomToolService; agents?: AgentService }
   ) {}
 
   list(): Workflow[] {
@@ -348,6 +350,34 @@ export class WorkflowService {
       .run(workflowId, workflowId)
   }
 
+  /**
+   * The flow with each Agent step's saved agent written into the step itself (instructions, switches,
+   * the skills it may use), for an exported app, which has no saved agents.
+   */
+  async withAgentsInlined(wf: Workflow): Promise<Workflow> {
+    if (!wf.nodes.some((n) => n.type === 'agent' && n.data.agentId)) return wf
+    const skills = (await this.deps.skills.list()).map((s) => s.name)
+    const nodes = wf.nodes.map((n) => {
+      if (n.type !== 'agent' || !n.data.agentId) return n
+      const a = this.deps.agents?.find(String(n.data.agentId))
+      const { agentId: _a, ...data } = n.data
+      if (!a) return { ...n, data }
+      return {
+        ...n,
+        data: {
+          ...data,
+          system: [`You are the "${a.name}" agent. ${a.purpose}`, a.instructions.trim(), String(n.data.system ?? '')].filter(Boolean).join('\n\n'),
+          skillsEnabled: a.skillsEnabled || a.skillsAlways.length > 0,
+          skills: skills.filter((s) => !a.skillsOff.includes(s)),
+          webEnabled: a.webEnabled,
+          customTools: a.customTools,
+          collectionIds: a.knowledgeEnabled ? a.collectionIds : []
+        }
+      }
+    })
+    return { ...wf, nodes }
+  }
+
   private modelFor(ref: ModelRef | null | undefined): ModelRef {
     const m = ref?.providerId ? ref : this.deps.settings.get().defaultModel
     if (!m) throw new Error('No model selected (and no default model in Settings)')
@@ -395,24 +425,39 @@ export class WorkflowService {
           // An agent works in its own folder (read-only unless set otherwise) or in the flow's workspace (read & write).
           const workspace = d.workspace || env.workspace
           const fileAccess = d.fileAccess ?? (workspace && workspace === env.workspace ? 'write' : 'read')
+          let scope: ToolScope = {
+            collectionIds: d.collectionIds ?? [],
+            skillsEnabled: d.skillsEnabled ?? true,
+            webEnabled: !!d.webEnabled,
+            customTools: d.customTools ?? true,
+            toolNames: Array.isArray(d.tools) ? d.tools : null,
+            skillNames: Array.isArray(d.skills) ? d.skills : null,
+            workspace: workspace || null,
+            fileAccess,
+            // Nobody is watching a flow run: edits inside its workspace are approved up front.
+            autoApprove: () => (fileAccess === 'write' ? 'edits' : 'none'),
+            onFile: env.onFile,
+            codeIntel: false
+          }
+          // A saved agent brings its own instructions, model, effort and what it may use.
+          const saved = d.agentId ? this.deps.agents?.find(String(d.agentId)) : null
+          if (d.agentId && !saved) throw new Error('The agent this step runs was deleted. Pick another one in the step settings.')
+          let system = t(d.system)
+          if (saved) {
+            scope = { ...agentScope(saved, scope), toolNames: null, skillNames: null, codeIntel: false, autoApprove: scope.autoApprove, onFile: env.onFile }
+            const mcp = runtime.mcpClients
+            if (mcp && saved.mcpServers) {
+              scope.mcpServers = mcp.chatServers(saved.mcpServers)
+              await mcp.ensure(scope.mcpServers)
+            }
+            system = [`You are the "${saved.name}" agent. ${saved.purpose}`, saved.instructions.trim(), system].filter(Boolean).join('\n\n')
+          }
           const res = await runtime.run({
-            model: this.modelFor(d.model),
+            model: d.model?.providerId ? d.model : (saved?.model ?? this.modelFor(null)),
             prompt: t(d.prompt) || String(prev ?? ''),
-            systemPrompt: t(d.system),
-            scope: {
-              collectionIds: d.collectionIds ?? [],
-              skillsEnabled: d.skillsEnabled ?? true,
-              webEnabled: !!d.webEnabled,
-              customTools: d.customTools ?? true,
-              toolNames: Array.isArray(d.tools) ? d.tools : null,
-              skillNames: Array.isArray(d.skills) ? d.skills : null,
-              workspace: workspace || null,
-              fileAccess,
-              // Nobody is watching a flow run: edits inside its workspace are approved up front.
-              autoApprove: () => (fileAccess === 'write' ? 'edits' : 'none'),
-              onFile: env.onFile,
-              codeIntel: false
-            },
+            systemPrompt: system,
+            scope,
+            thinking: saved?.thinking ?? undefined,
             maxTurns: d.maxTurns ? Number(d.maxTurns) : 12,
             signal
           })

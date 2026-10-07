@@ -57,7 +57,7 @@ export class FlowExporter {
   ) {}
 
   async preview(workflowId: string): Promise<ExportPreview> {
-    const wf = this.deps.workflows.get(workflowId)
+    const wf = await this.deps.workflows.withAgentsInlined(this.deps.workflows.get(workflowId))
     const plan = planExport(wf, { tools: this.deps.custom.list(), skills: await this.deps.skills.list(), collections: this.deps.rag.listCollections() })
     const missing: string[] = []
     if (process.platform !== 'win32') missing.push('Exporting apps is available on Windows for now')
@@ -100,7 +100,7 @@ export class FlowExporter {
     try {
       // 1 — what the flow needs
       next()
-      const wf = this.deps.workflows.get(input.workflowId)
+      const wf = await this.deps.workflows.withAgentsInlined(this.deps.workflows.get(input.workflowId))
       const name = input.name.trim() || wf.name
       const version = /^\d+(\.\d+){0,3}$/.test(input.version.trim()) ? input.version.trim() : '1.0.0'
       const preview = await this.preview(wf.id)

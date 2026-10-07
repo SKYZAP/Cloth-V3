@@ -117,4 +117,47 @@ describe('agents', () => {
     expect(task.status).toBe('error')
     expect(task.result).toMatch(/no agent called "Nobody"/)
   })
+
+  it('runs a saved agent as a flow step, and writes it into the step for an export', async () => {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    await services.skills.create({ name: 'keep', description: 'Kept', body: 'x' })
+    await services.skills.create({ name: 'drop', description: 'Dropped', body: 'x' })
+    const agent = services.agents.create({ name: 'Summariser', purpose: 'Summarises text.', instructions: 'FLOW-AGENT-MARKER', webEnabled: true, skillsOff: ['drop'], model: { providerId: provider.id, modelId: 'faux-1' } })
+    let system = ''
+    let tools: string[] = []
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      (ctx) => {
+        system = systemText(ctx)
+        tools = (ctx.messages as unknown as { role: string; toolsAdded?: { name: string }[] }[]).filter((m) => m.role === 'system').flatMap((m) => (m.toolsAdded ?? []).map((t) => t.name))
+        return fauxAssistantMessage('Short summary.')
+      }
+    ])
+    const wf = services.workflows.create({ name: 'Summarise' })
+    services.workflows.save(wf.id, {
+      nodes: [
+        { id: 't', type: 'trigger', position: { x: 0, y: 0 }, data: { key: 'trigger' } },
+        { id: 'a', type: 'agent', position: { x: 1, y: 0 }, data: { key: 'agent', prompt: 'Summarise {{input.text}}', agentId: agent.id, system: 'Keep it short.' } }
+      ],
+      edges: [{ id: 'e', source: 't', target: 'a' }]
+    })
+    const run = await services.workflows.run(wf.id, { text: 'hello' })
+    expect(run.error).toBeNull()
+    expect(system).toContain('FLOW-AGENT-MARKER')
+    expect(system).toContain('Keep it short.')
+    expect(system).toContain('- keep: Kept')
+    expect(system).not.toContain('- drop:')
+    expect(tools).toContain('web_search')
+
+    const inlined = await services.workflows.withAgentsInlined(services.workflows.get(wf.id))
+    const step = inlined.nodes.find((n) => n.id === 'a')!
+    expect(step.data.agentId).toBeUndefined()
+    expect(step.data).toMatchObject({ webEnabled: true, skills: ['keep'] })
+    expect(String(step.data.system)).toContain('FLOW-AGENT-MARKER')
+
+    services.agents.remove(agent.id)
+    const failed = await services.workflows.run(wf.id, { text: 'hello' })
+    expect(failed.error).toMatch(/was deleted/)
+  })
 })
