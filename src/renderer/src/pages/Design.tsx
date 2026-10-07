@@ -284,7 +284,7 @@ function DesignEditor({
 
   const controls = <Controls input={input} set={set} description={description} setDescription={setDescription} />
   const view = (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
         <Segmented
           value={tab}
