@@ -11,6 +11,7 @@ import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
+import { DiffView } from '@/components/DiffView'
 import { lintExpectation } from '@shared/skillEvals'
 import { SkillOverview } from './skills/Overview'
 
@@ -546,6 +547,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
   const [saving, setSaving] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [update, setUpdate] = useState<{ path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[] | null>(null)
   const dirty = name !== skill.name || description !== skill.description || body !== skill.body
 
   const checkUpdate = async () => {
@@ -555,10 +557,16 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
     setChecking(false)
     if (!res) return
     if (!res.updateAvailable) return useApp.getState().toast(`${skill.name} is up to date with skills.sh`, 'ok')
-    if (!(await confirmAction(`skills.sh has a newer version of ${skill.name}. Your local edits to its files will be replaced; eval cases are kept.`, { title: 'Update from skills.sh?', confirmLabel: 'Update' }))) return
+    setChecking(true)
+    const diff = await attempt(() => api.skills.registryUpdateDiff(skill.name))
+    setChecking(false)
+    if (diff) setUpdate(diff)
+  }
+  const applyUpdate = async () => {
     setChecking(true)
     const updated = await attempt(() => api.skills.registryInstall(skill.source!.id, true), `Updated ${skill.name}`)
     setChecking(false)
+    setUpdate(null)
     if (updated) onChanged(updated)
   }
 
@@ -666,6 +674,37 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         {tab === 'tests' && <SkillTests skill={skill} onChanged={() => onChanged(skill.name)} />}
       </div>
       <InstallModal open={installOpen} onClose={() => setInstallOpen(false)} skill={skill} />
+      <Modal
+        open={!!update}
+        onClose={() => setUpdate(null)}
+        title={`Update ${skill.name} from skills.sh`}
+        width={860}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setUpdate(null)}>
+              Keep mine
+            </Button>
+            <Button variant="primary" loading={checking} onClick={() => void applyUpdate()}>
+              Update
+            </Button>
+          </>
+        }
+      >
+        <p className="mb-3 text-[12px] text-dim">
+          {update?.length ? `${update.length} file${update.length === 1 ? '' : 's'} would change. Red is what you have; green is the new version. Your examples (evals.json) are kept.` : 'Only the version number changed: the files are the same.'}
+        </p>
+        <div className="grid gap-3">
+          {update?.map((f) => (
+            <div key={f.path}>
+              <div className="mb-1 flex items-center gap-2 text-[12px]">
+                <span className="font-mono text-muted">{f.path}</span>
+                <span className={f.kind === 'removed' ? 'text-crimson-hi' : f.kind === 'added' ? 'text-ok' : 'text-dim'}>{f.kind}</span>
+              </div>
+              <DiffView diff={f.diff} maxHeight={280} />
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -55,6 +55,14 @@ describe('skills.sh registry', () => {
     expect((await registry.checkUpdate(name)).updateAvailable).toBe(false)
     version = 2
     expect((await registry.checkUpdate(name)).updateAvailable).toBe(true)
+    // The diff shows what the update changes, and leaves out the local examples.
+    await services.skills.writeFile(name, 'notes.md', 'mine')
+    const diff = await registry.updateDiff(name)
+    expect(diff.map((f) => [f.path, f.kind])).toEqual([
+      ['SKILL.md', 'changed'],
+      ['notes.md', 'removed']
+    ])
+    expect(diff[0].diff).toContain('+Implement CanActivate (v2).')
     await registry.install(hit.id)
     const updated = await services.skills.get(name)
     expect(updated.body).toContain('v2')

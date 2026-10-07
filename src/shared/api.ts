@@ -151,6 +151,8 @@ export interface ClothApi {
     registryPreview(id: string): Promise<RegistryPreview>
     registryInstall(id: string, overwrite?: boolean): Promise<string>
     registryCheckUpdate(name: string): Promise<{ updateAvailable: boolean; current: string | null; latest: string | null }>
+    /** Each file an update from skills.sh would add, change or remove, with a diff. */
+    registryUpdateDiff(name: string): Promise<{ path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[]>
     /** Usage, local checks, a safety scan and the trigger check for the Overview tab. */
     insight(name: string): Promise<import('./types').SkillInsight>
     saveTriggers(name: string, triggers: import('./types').SkillTrigger[]): Promise<import('./types').SkillTrigger[]>
