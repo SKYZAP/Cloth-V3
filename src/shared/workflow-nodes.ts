@@ -46,6 +46,7 @@ export const NODE_SPECS: NodeSpec[] = [
     fields: [
       { key: 'prompt', description: 'task (template)' },
       { key: 'system', description: 'extra instructions (template)' },
+      { key: 'agentId', description: 'optional id of a saved agent: its instructions, model and capabilities replace the switches below' },
       { key: 'collectionIds', description: 'array of collection ids the agent may search ([] = all)' },
       { key: 'skillsEnabled', description: 'boolean' },
       { key: 'webEnabled', description: 'boolean — allow web_search / web_fetch' },
