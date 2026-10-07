@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowDown, ArrowUp, ArrowElbowLeftUp, CaretDown, CaretRight, Code, Copy, CopySimple, Plus, Trash, Warning, X } from '@phosphor-icons/react'
 import { buildDesign, componentLint, componentSlug, repairTokens, ROLE_INFO, sanitizeComponentHtml, unknownTokens, type DesignComponent, type DesignInput, type RoleName } from '@shared/design'
-import { DEFAULT_KIT, KIT, KIT_USAGE, type KitName, type KitSettings } from '@shared/kit'
+import { DEFAULT_KIT, KIT, KIT_USAGE, SHADCN_KIT, type KitName, type KitSettings } from '@shared/kit'
 import { ensureRule, listRules, restingSelector, setDeclaration, type CssRule } from '@shared/cssEdit'
 import { Button, Segmented, Select, Switch } from '@/components/ui'
 import { describe, shortLabel, stripBlock, duplicateElement, moveElement, ownText, removeElement, samePath, setClasses, setInnerHtml, type Path } from './htmlEdit'
@@ -44,6 +44,13 @@ export function KitInspector({ name, kit, onChange }: { name: KitName; kit: KitS
           <div className="text-[15px] font-semibold">{spec.label}</div>
           <div className="text-[12px] text-dim">{spec.description}</div>
         </div>
+        {JSON.stringify(kit) === JSON.stringify(SHADCN_KIT) ? (
+          <div className="text-[11.5px] text-dim">All built-in components match shadcn/ui.</div>
+        ) : (
+          <button onClick={() => onChange(SHADCN_KIT)} className="self-start rounded-md border border-line px-2 py-1 text-[11.5px] text-muted hover:border-line-strong hover:text-fg" title="Set every built-in component to shadcn/ui's look, so the playground matches the shadcn export">
+            Match shadcn/ui
+          </button>
+        )}
       </Section>
       <Section title="Settings">
         {spec.controls.map((c) => {

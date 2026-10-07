@@ -27,6 +27,17 @@ export const DEFAULT_KIT: KitSettings = {
   menu: { radius: 'md', shadow: 'md', highlight: 'primary-soft', density: 'comfortable' }
 }
 
+/** The built-in components set to look like shadcn/ui's (new-york): calm weights, small radii, hover surfaces. */
+export const SHADCN_KIT: KitSettings = {
+  button: { radius: 'md', size: 'md', weight: 500, textCase: 'none', tracking: 0, primary: 'solid', shadow: 'sm' },
+  input: { radius: 'md', style: 'outline', fill: 'background', focus: 'ring', labelWeight: 500 },
+  card: { radius: 'xl', padding: 6, border: true, shadow: 'sm', surface: 'surface', dividers: false },
+  badge: { radius: 'md', style: 'solid', weight: 500, textCase: 'none' },
+  tabs: { style: 'segmented', indicator: 'text', weight: 500 },
+  alert: { style: 'outline', radius: 'lg', icon: true },
+  menu: { radius: 'md', shadow: 'md', highlight: 'surface-raised', density: 'compact' }
+}
+
 type Option = { value: string; label: string }
 export type KitControl =
   | { key: string; label: string; type: 'select'; options: Option[] }

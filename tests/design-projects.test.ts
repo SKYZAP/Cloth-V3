@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildDesign, DEFAULT_DESIGN, designFiles, toDesignMd } from '../src/shared/design'
 import { shadcnVars, toShadcnCss } from '../src/shared/shadcn'
+import { SHADCN_KIT, sanitizeKit } from '../src/shared/kit'
 import { makeServices } from './helpers'
 
 describe('shadcn theme', () => {
@@ -20,6 +21,10 @@ describe('shadcn theme', () => {
     expect(css).toContain('.dark {')
     expect(css).toContain('--color-highlight: var(--highlight);')
     expect(css).toContain(`--radius: ${d.radii.md}px;`)
+  })
+
+  it('has a valid shadcn look for the built-in components', () => {
+    expect(sanitizeKit(SHADCN_KIT)).toEqual(SHADCN_KIT)
   })
 
   it('writes one theme block for a single-theme system, and the shadcn files with the export', () => {
