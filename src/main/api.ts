@@ -229,6 +229,7 @@ export function createApi(s: Services): ClothApi {
       remove: async (id, opts) => s.projects.remove(id, opts ?? {})
     },
     workflows: {
+      overview: async () => s.workflows.overview(),
       list: async () => s.workflows.list(),
       get: async (id) => s.workflows.get(id),
       create: async (input) => s.workflows.create(input),

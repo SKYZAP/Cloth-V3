@@ -849,6 +849,30 @@ export interface WorkflowRun {
   finishedAt: number | null
 }
 
+export type WorkflowTemplate = 'blank' | 'rag-digest' | 'watch-page' | 'summarise-folder'
+
+/** A run at a glance, for the Flows overview. */
+export interface WorkflowRunSummary {
+  id: string
+  workflowId: string
+  trigger: WorkflowRun['trigger']
+  status: WorkflowRun['status']
+  startedAt: number
+  durationMs: number | null
+  /** Steps that ran. */
+  steps: number
+  error: string | null
+  /** Label of the step that failed. */
+  failedStep: string | null
+}
+
+export interface WorkflowOverview {
+  /** Per flow: its last 10 runs (newest first) and its scheduled runs in the next 7 days. */
+  flows: { id: string; runs: WorkflowRunSummary[]; upcoming: number[] }[]
+  /** The latest runs across every flow, newest first. */
+  recent: WorkflowRunSummary[]
+}
+
 export type WorkflowEvent =
   | { type: 'run'; run: WorkflowRun }
   | { type: 'schedule'; workflowId: string; nextRunAt: number | null }

@@ -18,12 +18,13 @@ import {
   type Edge,
   type Node
 } from '@xyflow/react'
-import { ArrowLeft, ListChecks, MoreHorizontal, Eye, RotateCcw, Wand2, Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, Workflow as WorkflowIcon, X } from 'lucide-react'
-import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowRun, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
+import { ArrowLeft, ListChecks, MoreHorizontal, Eye, RotateCcw, Wand2, Check, Clock, Copy, ExternalLink, File, FileText, FolderOpen, History, LayoutDashboard, Maximize2, Package, Play, Plus, Save, Sparkles, Square, Trash2, X } from 'lucide-react'
+import type { Workflow, WorkflowGraph, WorkflowNodeType, WorkflowOverview, WorkflowRun, WorkflowRunSummary, WorkflowTemplate, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, pretty, timeAgo } from '@/lib/format'
-import { Badge, Button, Dot, Empty, IconButton, Input, ListItem, ListPane, Modal, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { Badge, Button, Dot, IconButton, Input, ListItem, Modal, Segmented, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { refocus } from '@/components/Inspector'
 import { Markdown } from '@/components/Markdown'
 import { layeredLayout } from '@shared/layout'
 import { Editor } from '@/components/Editor'
@@ -31,102 +32,154 @@ import { META, NODE_TYPES, nodeTypes, type FlowNodeData } from './workflow/nodes
 import { Inspector } from './workflow/Inspector'
 import { AssembleModal } from './workflow/AssembleModal'
 import { ExportModal } from './workflow/ExportModal'
-import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { BottomSheet } from '@/components/BottomSheet'
 import { isMobile } from '@/lib/platform'
 
+type Opened = { id: string; runId?: string; fix?: boolean } | null
+
+const TEMPLATE_CARDS: { id: WorkflowTemplate; label: string; desc: string }[] = [
+  { id: 'rag-digest', label: 'Knowledge digest', desc: 'Search your knowledge, then summarise what it finds, or say nothing matched.' },
+  { id: 'watch-page', label: 'Watch a web page', desc: 'Fetch a page on a schedule and report what it says about the thing you care about.' },
+  { id: 'summarise-folder', label: 'Summarise a folder', desc: "An agent reads the flow's folder and answers your question about it." },
+  { id: 'blank', label: 'Start simple', desc: 'Start → one model call → output, to build on.' }
+]
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+const when = (t: number) => {
+  const d = new Date(t)
+  const today = new Date()
+  const tomorrow = new Date(Date.now() + 86_400_000)
+  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString()
+  return `${same(d, today) ? 'today' : same(d, tomorrow) ? 'tomorrow' : dayFmt.format(d)} ${clockFmt.format(d)}`
+}
+const describeCron = (cron: string) => {
+  try {
+    return cronstrue.toString(cron, { use24HourTimeFormat: true, verbose: false })
+  } catch {
+    return cron
+  }
+}
+const until = (t: number) => {
+  const m = Math.round((t - Date.now()) / 60_000)
+  if (m < 1) return 'in under a minute'
+  if (m < 60) return `in ${m} min`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `in ${h} h${m % 60 ? ` ${m % 60} min` : ''}` : `on ${when(t)}`
+}
+
+/**
+ * What runs next and whether it worked: a timeline of scheduled runs, each flow as a card with a picture
+ * of its graph and its last ten runs, failures up front with "Fix with AI", and recent runs across flows.
+ * Opening a flow shows the canvas editor.
+ */
 export function WorkflowsPage() {
   const [flows, setFlows] = useState<Workflow[]>([])
+  const [overview, setOverview] = useState<WorkflowOverview | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
+  const [opened, setOpened] = useState<Opened>(null)
+  const [creating, setCreating] = useState<WorkflowTemplate | null>(null)
   const [assembling, setAssembling] = useState(false)
 
-  const load = async (select?: string) => {
-    const list = await api.workflows.list()
+  const load = async (open?: string) => {
+    const [list, o] = await Promise.all([api.workflows.list(), api.workflows.overview().catch(() => null)])
     setFlows(list)
+    setOverview(o)
     setLoaded(true)
-    if (select) {
-      setActiveId(select)
-      setOpen(true)
-    }
-    else if (!activeId || !list.some((f) => f.id === activeId)) setActiveId(list[0]?.id ?? null)
+    if (open) setOpened({ id: open })
   }
   useEffect(() => {
     void load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEvent('workflow', (e) => {
     if (e.type === 'schedule') setFlows((fs) => fs.map((f) => (f.id === e.workflowId ? { ...f, nextRunAt: e.nextRunAt } : f)))
+    // A run finished somewhere: refresh the history (cheap; only while the overview shows).
+    if (e.type === 'run' && e.run.status !== 'running' && !opened) void api.workflows.overview().then(setOverview, () => undefined)
   })
 
-  const active = flows.find((f) => f.id === activeId)
+  const active = opened ? flows.find((f) => f.id === opened.id) : undefined
+  if (active)
+    return (
+      <ReactFlowProvider key={active.id}>
+        <Editor2
+          workflow={active}
+          initialRunId={opened?.runId}
+          initialFix={opened?.fix}
+          onBack={() => {
+            const id = active.id
+            setOpened(null)
+            void load()
+            refocus(id)
+          }}
+          onSaved={(w) => setFlows((fs) => fs.map((f) => (f.id === w.id ? w : f)))}
+          onDeleted={() => (setOpened(null), void load())}
+          onDuplicated={(id) => void load(id)}
+        />
+      </ReactFlowProvider>
+    )
+
+  const byId = new Map(overview?.flows.map((f) => [f.id, f]) ?? [])
+  const scheduled = flows.filter((f) => f.cronEnabled && f.cron)
+  const summary = flows.length ? `${plural(flows.length, 'flow')}, ${scheduled.length ? `${scheduled.length} on a schedule` : 'none on a schedule'}` : 'No flows yet'
+  // Failing flows first, then the most recently changed.
+  const ordered = [...flows].sort((a, b) => Number(byId.get(b.id)?.runs[0]?.status === 'error') - Number(byId.get(a.id)?.runs[0]?.status === 'error') || b.updatedAt - a.updatedAt)
+
   return (
-    <SplitRoot open={open} onBack={() => setOpen(false)}>
-      <ListPane
-        width={248}
-        header={
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[13px] font-semibold">Flows</div>
-              <div className="text-[11px] text-dim">{flows.filter((f) => f.cronEnabled).length} scheduled</div>
-            </div>
-            <div className="flex gap-1">
-              <Button size="sm" icon={<Sparkles size={12} />} onClick={() => setAssembling(true)} title="Describe a workflow and let an agent assemble it">
-                AI
-              </Button>
-              <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
-                New
-              </Button>
-            </div>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <h1 className="text-[18px] font-semibold tracking-tight">Flows</h1>
+            <p className="mt-0.5 text-[12.5px] text-dim">{loaded ? summary : '…'}</p>
           </div>
-        }
-      >
-        {flows.map((f) => (
-          <ListItem key={f.id} active={f.id === activeId} onClick={() => (setActiveId(f.id), setOpen(true))}>
-            <WorkflowIcon size={14} className="shrink-0 text-dim" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12.5px]">{f.name}</div>
-              <div className="truncate text-[11px] text-dim">
-                {f.cronEnabled && f.cron ? (
-                  <span className="flex items-center gap-1">
-                    <Clock size={10} className="text-crimson-hi" /> next {timeAgo(f.nextRunAt)}
-                  </span>
-                ) : (
-                  `${f.nodes.length} nodes · manual`
-                )}
+          <Button icon={<Sparkles size={13} />} onClick={() => setAssembling(true)}>
+            Assemble with AI
+          </Button>
+          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating('blank')}>
+            New flow
+          </Button>
+        </div>
+
+        {loaded && !flows.length ? (
+          <section aria-label="Start from a template" className="grid gap-3">
+            <p className="max-w-[70ch] text-[13px] text-muted">A flow runs steps one after another: model calls, agents, knowledge search, web requests and code, on demand or on a schedule. Start from one of these, or describe what you want and let AI assemble it.</p>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+              {TEMPLATE_CARDS.map((t) => (
+                <button key={t.id} onClick={() => setCreating(t.id)} className="grid content-start gap-1.5 rounded-[12px] border border-line bg-elev p-4 text-left hover:border-line-strong hover:bg-elev-2">
+                  <span className="text-[13.5px] font-semibold">{t.label}</span>
+                  <span className="text-[12.5px] text-muted">{t.desc}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="grid grid-cols-[minmax(0,1fr)_290px] gap-5 max-[960px]:grid-cols-1">
+            <div className="grid min-w-0 content-start gap-5">
+              <Upcoming flows={flows} overview={overview} />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-dim">
+                <span>Last runs, oldest to newest:</span>
+                <span className="flex items-end gap-1">
+                  <i className="inline-block h-3 w-[7px] rounded-[2px] bg-ok" aria-hidden="true" /> passed
+                </span>
+                <span className="flex items-end gap-1">
+                  <i className="inline-block h-1.5 w-[7px] rounded-[2px] bg-crimson" aria-hidden="true" /> failed (short)
+                </span>
+                <span className="flex items-end gap-1">
+                  <i className="inline-block h-3 w-[7px] rounded-[2px] border-[1.5px] border-info" aria-hidden="true" /> running (hollow)
+                </span>
+              </div>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+                {ordered.map((f) => (
+                  <FlowCard key={f.id} flow={f} info={byId.get(f.id)} onOpen={(o) => setOpened({ id: f.id, ...o })} />
+                ))}
               </div>
             </div>
-          </ListItem>
-        ))}
-        {loaded && !flows.length && <div className="p-4 text-center text-[12px] text-dim">No flows yet — tap New, or AI to describe one.</div>}
-      </ListPane>
-      <SplitDetail>
-        {active ? (
-          <ReactFlowProvider key={active.id}>
-            <Editor2 workflow={active} onSaved={(w) => setFlows((fs) => fs.map((f) => (f.id === w.id ? w : f)))} onDeleted={() => (setOpen(false), void load())} onDuplicated={(id) => void load(id)} />
-          </ReactFlowProvider>
-        ) : (
-          <Empty
-            icon={<WorkflowIcon size={20} />}
-            title="Automate with workflows"
-            action={
-              <div className="flex gap-2">
-                <Button icon={<Sparkles size={13} />} onClick={() => setAssembling(true)}>
-                  Assemble with AI
-                </Button>
-                <Button variant="primary" onClick={() => setCreating(true)}>
-                  New workflow
-                </Button>
-              </div>
-            }
-          >
-            Wire LLM calls, agents, knowledge search, skills, HTTP and JS into a graph. Branch with conditions, run on demand or on a cron schedule.
-          </Empty>
+            <RecentRuns runs={overview?.recent ?? []} flows={flows} onOpen={(id, runId) => setOpened({ id, runId })} />
+          </div>
         )}
-      </SplitDetail>
-      <NewWorkflow open={creating} onClose={() => setCreating(false)} onCreated={(id) => void load(id)} />
+      </div>
+      <NewWorkflow template={creating} onClose={() => setCreating(null)} onCreated={(id) => void load(id)} />
       <AssembleModal
         open={assembling}
         mode="new"
@@ -136,51 +189,233 @@ export function WorkflowsPage() {
           if (wf) await load(wf.id)
         }}
       />
-    </SplitRoot>
+    </div>
   )
 }
 
-function NewWorkflow({ open, onClose, onCreated }: { open: boolean; onClose(): void; onCreated(id: string): void }) {
+/** Scheduled runs over the next two days or the week, with a line for now; a dated list on narrow screens and for screen readers. */
+function Upcoming({ flows, overview }: { flows: Workflow[]; overview: WorkflowOverview | null }) {
+  const [span, setSpan] = useState<'2d' | 'week'>('2d')
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const days = span === '2d' ? 2 : 7
+  const end = start.getTime() + days * 86_400_000
+  const names = new Map(flows.map((f) => [f.id, f.name]))
+  const events = (overview?.flows ?? [])
+    .flatMap((f) => f.upcoming.map((at) => ({ at, id: f.id, name: names.get(f.id) ?? 'Flow' })))
+    .filter((e) => e.at < end)
+    .sort((a, b) => a.at - b.at)
+  const pos = (t: number) => ((t - start.getTime()) / (end - start.getTime())) * 100
+  const ticks = Array.from({ length: days * (span === '2d' ? 2 : 1) + 1 }, (_, i) => start.getTime() + i * (span === '2d' ? 12 : 24) * 3_600_000)
+  return (
+    <section aria-label="Coming up" className="rounded-[12px] border border-line bg-elev px-4 pb-4 pt-3">
+      <div className="flex items-center gap-2">
+        <h2 className="text-[13px] font-semibold">Coming up</h2>
+        <span className="text-[12px] text-dim">{span === '2d' ? 'today and tomorrow' : 'this week'}</span>
+        <span className="flex-1" />
+        <Segmented
+          value={span}
+          onChange={setSpan}
+          items={[
+            { value: '2d', label: '2 days' },
+            { value: 'week', label: 'Week' }
+          ]}
+        />
+      </div>
+      {!events.length ? (
+        <p className="mt-3 text-[12.5px] text-dim">Nothing scheduled{span === '2d' ? ' for today or tomorrow' : ' this week'}. Give a flow a schedule in its editor to run it automatically.</p>
+      ) : (
+        <>
+          <div className="relative mt-6 h-[78px] max-[700px]:hidden" aria-hidden="true">
+            <span className="absolute inset-x-0 top-[5px] border-t border-line-strong" />
+            <span className="absolute top-[-6px] h-[66px] w-px bg-crimson" style={{ left: `${pos(Date.now())}%` }} />
+            {events.slice(0, 40).map((e, i) => (
+              <span key={`${e.id}-${e.at}`} className="absolute -translate-x-1/2" style={{ left: `${pos(e.at)}%`, top: 0 }} title={`${e.name}, ${when(e.at)}`}>
+                <i className="block h-[11px] w-[11px] rounded-full border-2 border-elev bg-muted" />
+                <span className={clsx('absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11.5px] text-muted', i % 2 ? 'top-[34px]' : 'top-[16px]')}>{e.name}</span>
+              </span>
+            ))}
+            {ticks.map((t, i) => (
+              <span
+                key={t}
+                className={clsx('absolute top-[58px] whitespace-nowrap text-[11.5px] tabular-nums text-dim', i === 0 ? '' : i === ticks.length - 1 ? '-translate-x-full' : '-translate-x-1/2')}
+                style={{ left: `${pos(t)}%` }}
+              >
+                {span === '2d' ? (i % 2 ? '12:00' : dayFmt.format(new Date(t))) : dayFmt.format(new Date(t))}
+              </span>
+            ))}
+          </div>
+          <ol className="sr-only max-[700px]:not-sr-only max-[700px]:mt-3 max-[700px]:grid max-[700px]:gap-1">
+            {events.slice(0, 12).map((e) => (
+              <li key={`${e.id}-${e.at}`} className="text-[12.5px]">
+                <span className="tabular-nums text-dim">{when(e.at)}</span> {e.name}
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </section>
+  )
+}
+
+/** A small picture of the flow's graph, fitted to the card. */
+function GraphThumb({ flow }: { flow: Workflow }) {
+  if (!flow.nodes.length) return <div className="h-[74px]" />
+  const W = 240
+  const H = 74
+  const xs = flow.nodes.map((n) => n.position.x)
+  const ys = flow.nodes.map((n) => n.position.y)
+  const minX = Math.min(...xs)
+  const minY = Math.min(...ys)
+  const spanX = Math.max(1, Math.max(...xs) - minX)
+  const spanY = Math.max(1, Math.max(...ys) - minY)
+  const bw = Math.min(40, (W - 24) / Math.max(1, flow.nodes.length) + 8)
+  const bh = 14
+  const sx = (W - 24 - bw) / spanX
+  const sy = (H - 20 - bh) / spanY
+  const s = Math.min(sx, spanY > 1 ? sy * 3 : sx)
+  const at = new Map(flow.nodes.map((n) => [n.id, { x: 12 + (n.position.x - minX) * sx, y: spanY > 1 ? 10 + (n.position.y - minY) * Math.min(sy, s) : (H - bh) / 2 }]))
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-[74px] w-full" aria-hidden="true">
+      {flow.edges.map((e) => {
+        const a = at.get(e.source)
+        const b = at.get(e.target)
+        if (!a || !b) return null
+        return <path key={e.id} d={`M${a.x + bw} ${a.y + bh / 2} C${(a.x + bw + b.x) / 2} ${a.y + bh / 2} ${(a.x + bw + b.x) / 2} ${b.y + bh / 2} ${b.x} ${b.y + bh / 2}`} fill="none" stroke="var(--color-info)" strokeOpacity="0.6" strokeWidth="1.2" />
+      })}
+      {flow.nodes.map((n) => {
+        const p = at.get(n.id)!
+        return <rect key={n.id} x={p.x} y={p.y} width={bw} height={bh} rx="4" fill="var(--color-elev-2)" stroke="var(--color-line-strong)" />
+      })}
+    </svg>
+  )
+}
+
+function RunBars({ runs }: { runs: WorkflowRunSummary[] }) {
+  const ordered = [...runs].reverse()
+  const passed = runs.filter((r) => r.status === 'ok').length
+  const failed = runs.filter((r) => r.status === 'error').length
+  const running = runs.filter((r) => r.status === 'running').length
+  const label = runs.length ? `Last ${plural(runs.length, 'run')}: ${[passed && `${passed} passed`, failed && `${failed} failed`, running && `${running} running`].filter(Boolean).join(', ')}${runs[0]?.status === 'error' ? ', including the latest' : ''}` : 'No runs yet'
+  if (!runs.length) return <span className="text-[12px] text-dim">No runs yet</span>
+  return (
+    <span role="img" aria-label={label} className="flex h-4 items-end gap-[3px]">
+      {ordered.map((r) => (
+        <i key={r.id} className={clsx('inline-block w-2 rounded-[2px]', r.status === 'ok' ? 'h-4 bg-ok' : r.status === 'error' ? 'h-[7px] bg-crimson' : 'h-4 border-[1.5px] border-info')} title={`${r.status === 'ok' ? 'Passed' : r.status === 'error' ? 'Failed' : 'Running'}, ${when(r.startedAt)}`} />
+      ))}
+    </span>
+  )
+}
+
+function FlowCard({ flow, info, onOpen }: { flow: Workflow; info?: WorkflowOverview['flows'][number]; onOpen(o?: { runId?: string; fix?: boolean }): void }) {
+  const last = info?.runs[0]
+  const failing = last?.status === 'error'
+  return (
+    <div className={clsx('grid min-w-0 grid-cols-[minmax(0,1fr)] content-start overflow-hidden rounded-[12px] border bg-elev', failing ? 'border-crimson-line' : 'border-line')}>
+      <button data-focus-key={flow.id} onClick={() => onOpen()} className="grid min-w-0 grid-cols-[minmax(0,1fr)] text-left hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line">
+        <span className="border-b border-line bg-panel">
+          <GraphThumb flow={flow} />
+        </span>
+        <span className="grid gap-1.5 px-3.5 py-3">
+          <span className="line-clamp-2 text-[13.5px] font-semibold">{flow.name}</span>
+          <span className="text-[12px] text-dim">
+            {flow.cronEnabled && flow.cron ? (
+              <>
+                {describeCron(flow.cron)}
+                <br />
+                {flow.nextRunAt ? `Next: ${until(flow.nextRunAt)}` : 'Not scheduled yet'}
+              </>
+            ) : (
+              <>
+                On demand
+                <br />
+                {last ? `Last run: ${timeAgo(last.startedAt)}` : 'Never run'}
+              </>
+            )}
+          </span>
+          <RunBars runs={info?.runs ?? []} />
+        </span>
+      </button>
+      {failing && (
+        <div className="flex items-center gap-2 border-t border-line px-3.5 py-2 text-[12px]">
+          <span className="min-w-0 flex-1 truncate text-crimson-hi" title={last.error ?? undefined}>
+            Failed{last.failedStep ? ` at ${last.failedStep}` : ''}: {last.error ?? 'see the run'}
+          </span>
+          <Button size="sm" icon={<Wand2 size={12} />} onClick={() => onOpen({ runId: last.id, fix: true })}>
+            Fix with AI
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecentRuns({ runs, flows, onOpen }: { runs: WorkflowRunSummary[]; flows: Workflow[]; onOpen(id: string, runId: string): void }) {
+  const names = new Map(flows.map((f) => [f.id, f.name]))
+  return (
+    <section aria-label="Recent runs" className="grid content-start gap-1 self-start rounded-[12px] border border-line bg-elev py-2">
+      <h2 className="px-3.5 pb-1 pt-1 text-[13px] font-semibold">Recent runs</h2>
+      {runs.map((r) => (
+        <button key={r.id} onClick={() => onOpen(r.workflowId, r.id)} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 px-3.5 py-1.5 text-left text-[12.5px] hover:bg-elev-2">
+          <span className={clsx('mt-[5px] h-2 w-2 rounded-full', r.status === 'ok' ? 'bg-ok' : r.status === 'error' ? 'bg-crimson' : 'bg-info')} aria-hidden="true" />
+          <span className="min-w-0">
+            <span className="block truncate">{names.get(r.workflowId) ?? 'Deleted flow'}</span>
+            <span className={clsx('block truncate text-[12px]', r.status === 'error' ? 'text-crimson-hi' : 'text-dim')}>
+              {r.status === 'error' ? `Failed${r.failedStep ? ` at ${r.failedStep}` : ''}` : r.status === 'running' ? 'Running' : `Passed, ${plural(r.steps, 'step')}${r.durationMs !== null ? ` in ${duration(r.durationMs)}` : ''}`}
+            </span>
+          </span>
+          <span className="text-[12px] tabular-nums text-dim">{timeAgo(r.startedAt)}</span>
+        </button>
+      ))}
+      {!runs.length && <p className="px-3.5 py-2 text-[12.5px] text-dim">No runs yet. Run a flow from its editor, or give it a schedule.</p>}
+    </section>
+  )
+}
+
+function NewWorkflow({ template, onClose, onCreated }: { template: WorkflowTemplate | null; onClose(): void; onCreated(id: string): void }) {
   const [name, setName] = useState('')
-  const [template, setTemplate] = useState<'blank' | 'rag-digest'>('blank')
+  const [chosen, setChosen] = useState<WorkflowTemplate>('blank')
+  useEffect(() => {
+    if (template) {
+      setChosen(template)
+      setName(TEMPLATE_CARDS.find((t) => t.id === template && t.id !== 'blank')?.label ?? '')
+    }
+  }, [template])
+  const create = async () => {
+    const w = await attempt(() => api.workflows.create({ name, template: chosen }))
+    if (w) {
+      onCreated(w.id)
+      onClose()
+      setName('')
+    }
+  }
   return (
     <Modal
-      open={open}
+      open={!!template}
       onClose={onClose}
-      title="New workflow"
+      title="New flow"
       footer={
-        <Button
-          variant="primary"
-          disabled={!name.trim()}
-          onClick={async () => {
-            const w = await attempt(() => api.workflows.create({ name, template }))
-            if (w) {
-              onCreated(w.id)
-              onClose()
-              setName('')
-            }
-          }}
-        >
-          Create
+        <Button variant="primary" disabled={!name.trim()} onClick={() => void create()}>
+          Create flow
         </Button>
       }
     >
       <div className="space-y-3">
-        <Input autoFocus placeholder="Nightly docs digest" value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="grid grid-cols-2 gap-2">
-          {(
-            [
-              ['blank', 'Starter', 'Trigger → LLM → Output'],
-              ['rag-digest', 'Knowledge digest', 'Search → branch on hits → summarize']
-            ] as const
-          ).map(([id, label, desc]) => (
+        <label className="grid gap-1.5">
+          <span className="text-[12px] font-medium text-muted">Name</span>
+          <Input autoFocus placeholder="Nightly docs digest" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && void create()} />
+        </label>
+        <div className="grid grid-cols-2 gap-2 mobile:grid-cols-1" role="radiogroup" aria-label="Start from">
+          {TEMPLATE_CARDS.map((t) => (
             <button
-              key={id}
-              onClick={() => setTemplate(id)}
-              className={clsx('rounded-lg border p-3 text-left', template === id ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+              key={t.id}
+              role="radio"
+              aria-checked={chosen === t.id}
+              onClick={() => setChosen(t.id)}
+              className={clsx('rounded-lg border p-3 text-left', chosen === t.id ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
             >
-              <div className="text-[12.5px] font-semibold">{label}</div>
-              <div className="text-[11px] text-dim">{desc}</div>
+              <div className="text-[12.5px] font-semibold">{t.label}</div>
+              <div className="text-[12px] text-dim">{t.desc}</div>
             </button>
           ))}
         </div>
@@ -191,7 +426,7 @@ function NewWorkflow({ open, onClose, onCreated }: { open: boolean; onClose(): v
 
 type RFNode = Node<FlowNodeData>
 
-function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Workflow; onSaved(w: Workflow): void; onDeleted(): void; onDuplicated(id: string): void }) {
+function Editor2({ workflow, initialRunId, initialFix, onBack, onSaved, onDeleted, onDuplicated }: { workflow: Workflow; initialRunId?: string; initialFix?: boolean; onBack(): void; onSaved(w: Workflow): void; onDeleted(): void; onDuplicated(id: string): void }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(workflow.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: n.data as FlowNodeData })))
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(workflow.edges.map((e) => ({ ...e, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })))
   const [name, setName] = useState(workflow.name)
@@ -244,7 +479,10 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
   useEffect(() => {
     void api.workflows.runs(workflow.id).then((r) => {
       setRuns(r)
-      setRunId(r[0]?.id ?? null)
+      // Opened from the overview on a particular run (and maybe straight into fixing it).
+      const wanted = initialRunId ? r.find((x) => x.id === initialRunId) : undefined
+      setRunId(wanted?.id ?? r[0]?.id ?? null)
+      if (wanted && initialFix) setFixRun(wanted)
     })
   }, [workflow.id])
 
@@ -420,7 +658,9 @@ function Editor2({ workflow, onSaved, onDeleted, onDuplicated }: { workflow: Wor
     <div className="relative flex h-full flex-col">
       {/* Top bar */}
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 mobile:flex-wrap mobile:gap-1.5 mobile:px-2">
-        <SplitBack className="ml-0" />
+        <button onClick={onBack} className="flex h-8 shrink-0 items-center gap-1 rounded-lg pl-1 pr-2 text-[12.5px] text-dim hover:bg-elev-2 hover:text-fg" aria-label="All flows">
+          <ArrowLeft size={14} /> <span className="mobile:hidden">Flows</span>
+        </button>
         <input className="w-56 min-w-0 bg-transparent text-[14px] font-semibold tracking-tight outline-none mobile:w-auto mobile:flex-1" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="flex flex-1 items-center gap-2 mobile:order-last mobile:basis-full mobile:flex-wrap mobile:px-1 mobile:pb-0.5">
           <div className="flex items-center gap-1.5 rounded-md border border-line bg-panel pl-2">

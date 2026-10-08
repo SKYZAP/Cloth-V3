@@ -286,7 +286,9 @@ export interface ClothApi {
   workflows: {
     list(): Promise<Workflow[]>
     get(id: string): Promise<Workflow>
-    create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }): Promise<Workflow>
+    create(input: { name: string; description?: string; template?: import('./types').WorkflowTemplate }): Promise<Workflow>
+    /** Run history and upcoming schedule for every flow, for the overview. */
+    overview(): Promise<import('./types').WorkflowOverview>
     save(
       id: string,
       patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>,
