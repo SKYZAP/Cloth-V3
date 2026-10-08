@@ -208,6 +208,7 @@ export function createApi(s: Services): ClothApi {
       duplicate: async (id) => s.designs.duplicate(id),
       remove: async (id) => s.designs.remove(id),
       generate: (input) => s.designs.generate(input),
+      looks: (input) => s.designs.looks(input),
       projects: (designId) => s.designs.projectSync(designId),
       projectDiff: (designId, projectId, path) => s.designs.projectDiff(designId, projectId, path),
       writeProject: (designId, projectId, paths) => s.designs.writeProject(designId, projectId, paths),
