@@ -142,6 +142,8 @@ describe('agents', () => {
       .map((b) => (b as { trace: ToolTrace }).trace)
       .find((t) => t.id === 't1')!
     expect(task.subagent).toMatchObject({ agent: 'Designer', role: 'worker' })
+    // The job counts toward Designer's activity on the Agents page.
+    expect(services.agents.activity()[designer.id]).toMatchObject({ jobs: 1, failed: 0 })
   })
 
   it('refuses to delegate to an agent that does not exist', async () => {

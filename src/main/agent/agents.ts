@@ -203,6 +203,14 @@ export class AgentService {
     for (let i = 2; ; i++) if (!taken.has(`${name} ${i}`.toLowerCase())) return `${name} ${i}`
   }
 
+  /** Jobs each agent ran as a subagent since `since` (default: the last 7 days), by agent id. */
+  activity(since = Date.now() - 7 * 86_400_000): Record<string, { jobs: number; failed: number; lastAt: number }> {
+    const rows = this.ctx.db
+      .prepare("SELECT name, COUNT(*) AS jobs, SUM(1 - ok) AS failed, MAX(at) AS last FROM usage_events WHERE kind = 'agent' AND at >= ? GROUP BY name")
+      .all(since) as { name: string; jobs: number; failed: number; last: number }[]
+    return Object.fromEntries(rows.map((r) => [r.name, { jobs: r.jobs, failed: r.failed, lastAt: r.last }]))
+  }
+
   /** The built-ins (scout, worker, designer) exist as editable agents from the start. */
   private seeded = false
   private seed(): void {

@@ -184,6 +184,7 @@ export function createApi(s: Services): ClothApi {
       useAgent: async (id, agentId) => s.chat.useAgent(id, agentId)
     },
     agents: {
+      activity: async () => s.agents.activity(),
       list: async () => s.agents.list(),
       create: async (input) => s.agents.create(input ?? {}),
       update: async (id, patch) => s.agents.update(id, patch),

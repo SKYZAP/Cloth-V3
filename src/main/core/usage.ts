@@ -10,7 +10,7 @@ export interface UsageOrigin {
   ref?: string | null
 }
 
-export type UsageKind = 'llm' | 'embed' | 'tool' | 'skill'
+export type UsageKind = 'llm' | 'embed' | 'tool' | 'skill' | 'agent'
 
 /** Price in USD per 1M tokens. */
 export interface Pricing {
@@ -70,6 +70,11 @@ export class UsageService {
 
   tool(name: string, detail: string, durationMs: number, ok: boolean): void {
     this.insert({ kind: 'tool', name, detail, durationMs, ok })
+  }
+
+  /** A job a saved agent (or built-in scout/worker) ran as a subagent; `name` is the agent's id. */
+  agentRun(agentId: string, role: string, durationMs: number, ok: boolean): void {
+    this.insert({ kind: 'agent', name: agentId, detail: role, durationMs, ok })
   }
 
   skill(name: string, via: 'slash' | 'tool' | 'mcp' | 'workflow'): void {
