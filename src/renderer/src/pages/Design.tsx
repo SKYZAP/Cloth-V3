@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowCounterClockwise, CaretLeft, Check, Copy, DesktopTower, DeviceMobile, DownloadSimple, FileCode, MagicWand, Moon, Plus, Sparkle, Star, Sun, SwatchesIcon, Trash, Warning } from '@phosphor-icons/react'
 import type { ModelRef, Project } from '@shared/types'
@@ -33,15 +33,34 @@ import { ComponentsPanel } from './design/Components'
 import { PaletteChoices, PaletteField } from './design/Palette'
 import { ShadcnPreview } from './design/Shadcn'
 import { ProjectsSync } from './design/ProjectsSync'
+import { GuidedSetup } from './design/Guided'
+import { ComponentsShowcase, SampleScreen, designVars } from './design/Sample'
+import { SimpleControls, UseInProject } from './design/Simple'
 
 type PresetChoice = { name: string; input: Partial<DesignInput> } | null
+
+const ADVANCED_KEY = 'cloth.design.advanced'
+const readAdvanced = () => {
+  try {
+    return localStorage.getItem(ADVANCED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const writeAdvanced = (on: boolean) => {
+  try {
+    localStorage.setItem(ADVANCED_KEY, on ? '1' : '0')
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export function DesignPage() {
   const [designs, setDesigns] = useState<DesignSystem[]>([])
   const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.design'))
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [picking, setPicking] = useState(false)
+  const [guided, setGuided] = useState<'describe' | 'presets' | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const settings = useApp((s) => s.settings)
   const defaultId = settings?.defaultDesignId ?? null
@@ -64,17 +83,26 @@ export function DesignPage() {
     }
   }, [activeId])
 
-  const create = async (preset: PresetChoice) => {
-    setPicking(false)
-    const d = await attempt(() => api.design.create(preset ? { name: preset.name, input: sanitizeDesign(preset.input) } : {}))
+  // Starting from scratch is for people who know what they want: it opens with every setting.
+  const createBlank = async () => {
+    const d = await attempt(() => api.design.create({}))
     if (!d) return
+    writeAdvanced(true)
+    setGuided(null)
     await load(d.id)
+    setOpen(true)
+  }
+  const created = async (id: string) => {
+    writeAdvanced(false)
+    setGuided(null)
+    await load(id)
     setOpen(true)
   }
   const openDesign = (id: string) => (setActiveId(id), setOpen(true))
   const setDefault = (id: string | null) => void useApp.getState().updateSettings({ defaultDesignId: id })
 
   const active = open ? (designs.find((d) => d.id === activeId) ?? null) : null
+  if (guided) return <GuidedSetup start={guided} askDefault={!defaultId} onCancel={() => setGuided(null)} onCreated={(id) => void created(id)} onBlank={() => void createBlank()} />
   if (active)
     return (
       <DesignEditor
@@ -90,6 +118,32 @@ export function DesignPage() {
     )
   // The default first, then the most recently changed.
   const ordered = [...designs].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId))
+  if (loaded && !designs.length)
+    return (
+      <div className="grid h-full place-items-center overflow-y-auto px-5">
+        <div className="grid max-w-[520px] justify-items-center gap-3 py-10 text-center">
+          <div className="mb-2 flex gap-2.5" aria-hidden="true">
+            {[
+              ['#f1f6f3', '#059669'],
+              ['#fbf5f2', '#c46a45'],
+              ['#17141a', '#b07ab0']
+            ].map(([bg, c]) => (
+              <span key={c} className="relative h-11 w-16 overflow-hidden rounded-lg border border-line-strong" style={{ background: bg }}>
+                <span className="absolute bottom-2 left-2 h-2.5 w-7 rounded" style={{ background: c }} />
+              </span>
+            ))}
+          </div>
+          <h1 className="text-[22px] font-semibold tracking-tight">Make your first design</h1>
+          <p className="text-[13px] text-muted">Answer a few questions and Cloth sets up the colours, fonts and components for what you're building. Chats in your projects then follow it. You can change anything later.</p>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <Button variant="primary" onClick={() => setGuided('describe')}>
+              Get started
+            </Button>
+            <Button onClick={() => setGuided('presets')}>Pick from finished looks</Button>
+          </div>
+        </div>
+      </div>
+    )
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-5 py-6 mobile:py-4">
@@ -98,7 +152,7 @@ export function DesignPage() {
             <h1 className="text-[18px] font-semibold tracking-tight">Design systems</h1>
             <p className="mt-0.5 max-w-xl text-[12.5px] text-dim">Your palette, type and shape, set once and used in every project that follows it: chats get its DESIGN.md, and the token and shadcn files can be written into the project.</p>
           </div>
-          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setPicking(true)}>
+          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setGuided('describe')}>
             New
           </Button>
         </div>
@@ -106,15 +160,13 @@ export function DesignPage() {
           {ordered.map((d) => (
             <DesignCard key={d.id} design={d} isDefault={d.id === defaultId} projects={projects.filter((p) => p.designId === d.id).length} onOpen={() => openDesign(d.id)} />
           ))}
-          <button onClick={() => setPicking(true)} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-[12.5px] text-dim transition-colors hover:border-crimson-line hover:text-fg">
+          <button onClick={() => setGuided('describe')} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-[12.5px] text-dim transition-colors hover:border-crimson-line hover:text-fg">
             <Plus size={18} />
             New design system
-            <span className="text-[11.5px] text-dim">From a preset, a Coolors palette or a description</span>
+            <span className="text-[11.5px] text-dim">Describe what you're making, or pick a finished look</span>
           </button>
         </div>
-        {loaded && !designs.length && <p className="text-[12.5px] text-dim">No design systems yet. Start from a preset; you can import a palette or describe the look once it's open.</p>}
       </div>
-      <PresetModal open={picking} title="New design system" blank onClose={() => setPicking(false)} onPick={(p) => void create(p)} />
     </div>
   )
 }
@@ -233,6 +285,9 @@ function DesignEditor({
   const [width, setWidth] = useState<'wide' | 'phone'>('wide')
   const [aiOpen, setAiOpen] = useState(false)
   const [presetsOpen, setPresetsOpen] = useState(false)
+  const [advanced, setAdvancedState] = useState(readAdvanced)
+  const [simpleTab, setSimpleTab] = useState<'sample' | 'components'>('sample')
+  const setAdvanced = (on: boolean) => (writeAdvanced(on), setAdvancedState(on))
   const side = useSideBySide()
   const built = useMemo(() => buildDesign(input), [input])
   const files = useMemo(() => designFiles({ name, description, input }), [name, description, input])
@@ -282,7 +337,64 @@ function DesignEditor({
     setInput(sanitizeDesign(p.input))
   }
 
-  const controls = <Controls input={input} set={set} description={description} setDescription={setDescription} designId={design.id} />
+  const controls = advanced ? (
+    <Controls input={input} set={set} description={description} setDescription={setDescription} designId={design.id} />
+  ) : (
+    <SimpleControls input={input} set={setInput} onAdvanced={() => setAdvanced(true)} />
+  )
+  const modeSwitch = (
+    <Segmented
+      value={advanced ? 'advanced' : 'simple'}
+      onChange={(v) => setAdvanced(v === 'advanced')}
+      items={[
+        { value: 'simple', label: 'Simple', title: 'Five plain choices' },
+        { value: 'advanced', label: 'Advanced', title: 'Every setting, the component playground, code and project files' }
+      ]}
+    />
+  )
+  const themeSwitch = input.mode === 'both' && (
+    <Segmented
+      value={theme}
+      onChange={setTheme}
+      items={[
+        { value: 'dark', label: <Moon size={13} />, title: 'Dark' },
+        { value: 'light', label: <Sun size={13} />, title: 'Light' }
+      ]}
+    />
+  )
+  const widthSwitch = !isMobile && (
+    <Segmented
+      value={width}
+      onChange={setWidth}
+      items={[
+        { value: 'wide', label: <DesktopTower size={13} />, title: 'Wide' },
+        { value: 'phone', label: <DeviceMobile size={13} />, title: 'Phone width' }
+      ]}
+    />
+  )
+  const phoneFrame = width === 'phone' && (!advanced ? simpleTab === 'sample' : true)
+  const simpleView = (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
+        <Segmented
+          value={simpleTab}
+          onChange={setSimpleTab}
+          items={[
+            { value: 'sample', label: 'Sample screen' },
+            { value: 'components', label: 'Components' }
+          ]}
+        />
+        <div className="flex-1" />
+        {simpleTab === 'sample' && widthSwitch}
+        {themeSwitch}
+      </div>
+      <div key={simpleTab} className={clsx('min-h-0 flex-1 overflow-auto', phoneFrame && 'bg-elev/40 py-6')}>
+        <div className={clsx(phoneFrame ? 'mx-auto w-[390px] overflow-hidden rounded-[28px] border border-line-strong shadow-2xl shadow-black/50' : 'flex min-h-full flex-col')}>
+          {simpleTab === 'sample' ? <SampleScreen input={input} theme={theme} name={name} /> : <ComponentsShowcase input={input} theme={theme} />}
+        </div>
+      </div>
+    </div>
+  )
   const view = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line px-4 py-2 mobile:px-3">
@@ -298,26 +410,8 @@ function DesignEditor({
           ]}
         />
         <div className="flex-1" />
-        {(tab === 'preview' || tab === 'shadcn') && !isMobile && (
-          <Segmented
-            value={width}
-            onChange={setWidth}
-            items={[
-              { value: 'wide', label: <DesktopTower size={13} />, title: 'Wide' },
-              { value: 'phone', label: <DeviceMobile size={13} />, title: 'Phone width' }
-            ]}
-          />
-        )}
-        {(tab === 'preview' || tab === 'shadcn') && input.mode === 'both' && (
-          <Segmented
-            value={theme}
-            onChange={setTheme}
-            items={[
-              { value: 'dark', label: <Moon size={13} />, title: 'Dark' },
-              { value: 'light', label: <Sun size={13} />, title: 'Light' }
-            ]}
-          />
-        )}
+        {(tab === 'preview' || tab === 'shadcn') && widthSwitch}
+        {(tab === 'preview' || tab === 'shadcn') && themeSwitch}
         {tab === 'code' && <CopyButton text={files[file] ?? ''} />}
       </div>
       {tab === 'components' ? (
@@ -345,18 +439,24 @@ function DesignEditor({
           <CaretLeft size={14} /> <span className="mobile:hidden">Designs</span>
         </button>
         <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none" />
+        {modeSwitch}
+        {!advanced && <UseInProject designId={design.id} version={saves} />}
         <Button icon={<Star size={14} weight={isDefault ? 'fill' : 'regular'} className={isDefault ? 'text-warn' : undefined} />} onClick={() => onDefault(!isDefault)} aria-pressed={isDefault} title={isDefault ? 'New projects follow this system. Click to stop.' : 'Make new projects follow this system'}>
           <span className="mobile:hidden">{isDefault ? 'Default' : 'Make default'}</span>
         </Button>
-        <Button icon={<SwatchesIcon size={14} />} onClick={() => setPresetsOpen(true)} title="Start over from a preset">
-          <span className="mobile:hidden">Presets</span>
-        </Button>
-        <Button icon={<MagicWand size={14} />} onClick={() => setAiOpen(true)} title="Describe a look and let AI set the system up">
-          <span className="mobile:hidden">Generate</span>
-        </Button>
-        <Button icon={<DownloadSimple size={14} />} onClick={() => void exportFiles()} title="Write DESIGN.md and the token files into a folder">
-          <span className="mobile:hidden">Export</span>
-        </Button>
+        {advanced && (
+          <>
+            <Button icon={<SwatchesIcon size={14} />} onClick={() => setPresetsOpen(true)} title="Start over from a preset">
+              <span className="mobile:hidden">Presets</span>
+            </Button>
+            <Button icon={<MagicWand size={14} />} onClick={() => setAiOpen(true)} title="Describe a look and let AI set the system up">
+              <span className="mobile:hidden">Generate</span>
+            </Button>
+            <Button icon={<DownloadSimple size={14} />} onClick={() => void exportFiles()} title="Write DESIGN.md and the token files into a folder">
+              <span className="mobile:hidden">Export</span>
+            </Button>
+          </>
+        )}
         <IconButton title="Duplicate" onClick={() => void duplicate()}>
           <Copy size={15} />
         </IconButton>
@@ -367,8 +467,8 @@ function DesignEditor({
       {side ? (
         <div className="flex min-h-0 flex-1">
           {/* The component playground needs the room; the system's controls come back on the other tabs. */}
-          {tab !== 'components' && tab !== 'projects' && <div className="w-[330px] shrink-0 overflow-y-auto border-r border-line">{controls}</div>}
-          {view}
+          {(!advanced || (tab !== 'components' && tab !== 'projects')) && <div className={clsx('shrink-0 overflow-y-auto overflow-x-hidden border-r border-line', advanced ? 'w-[330px]' : 'w-[300px]')}>{controls}</div>}
+          {advanced ? view : simpleView}
         </div>
       ) : (
         <>
@@ -378,11 +478,11 @@ function DesignEditor({
               onChange={setPhoneTab}
               items={[
                 { value: 'edit', label: 'Edit' },
-                { value: 'view', label: 'Preview & files' }
+                { value: 'view', label: advanced ? 'Preview & files' : 'Preview' }
               ]}
             />
           </div>
-          {phoneTab === 'edit' ? <div className="min-h-0 flex-1 overflow-y-auto">{controls}</div> : view}
+          {phoneTab === 'edit' ? <div className="min-h-0 flex-1 overflow-y-auto">{controls}</div> : advanced ? view : simpleView}
         </>
       )}
       <GenerateModal
@@ -789,25 +889,7 @@ function Preview({ name, input, built, theme, onOverride }: { name: string; inpu
   useEffect(() => {
     for (const f of [input.fontSans, input.fontHeading, input.fontMono]) void loadDesignFont(f)
   }, [input.fontSans, input.fontHeading, input.fontMono])
-  const vars = useMemo(() => {
-    const v: Record<string, string> = {}
-    for (const k of Object.keys(roles) as RoleName[]) v[`--color-${kebab(k)}`] = roles[k]
-    v['--font-sans'] = fontStack(input, 'sans')
-    v['--font-heading'] = fontStack(input, 'heading')
-    v['--font-mono'] = fontStack(input, 'mono')
-    for (const t of built.type) {
-      v[`--text-${t.name}`] = `${t.size}px`
-      v[`--leading-${t.name}`] = String(t.lineHeight)
-      v[`--tracking-${t.name}`] = `${t.tracking}em`
-      v[`--weight-${t.name}`] = String(t.weight)
-    }
-    for (const [k, r] of Object.entries(built.radii)) v[`--radius-${k}`] = `${r}px`
-    built.space.forEach((s, i) => (v[`--space-${i}`] = `${s}px`))
-    v['--control-height'] = `${built.control.height}px`
-    v['--pad-x'] = `${built.control.paddingX}px`
-    for (const [k, s] of Object.entries(built.shadows)) v[`--shadow-${k}`] = s
-    return v as CSSProperties
-  }, [roles, input, built])
+  const vars = useMemo(() => designVars(input, built, theme), [input, built, theme])
   const picked = input.overrides[theme] ?? {}
   return (
     <div className="dsp min-h-full" style={vars}>

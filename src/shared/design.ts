@@ -57,6 +57,75 @@ export interface DesignInput {
   overrides: { light: Partial<Roles>; dark: Partial<Roles> }
   /** Settings of the built-in components (button, input, card …). */
   kit: KitSettings
+  /** What the editor's sample screen shows: content written for this product, or null for the generic screen. */
+  sample: SampleContent | null
+}
+
+/** Words for the sample screen, so a design is judged on its own product rather than a stand-in. */
+export interface SampleContent {
+  /** The product's name in the header. */
+  app: string
+  /** Links in the header. */
+  nav: string[]
+  title: string
+  subtitle: string
+  /** A search or sign-up field in the hero: its label and example text. */
+  field: string
+  placeholder: string
+  primary: string
+  secondary: string
+  /** The section heading above the cards. */
+  section: string
+  items: { title: string; meta: string; tag: string }[]
+  /** A confirmation message. */
+  done: string
+}
+
+export const DEFAULT_SAMPLE: SampleContent = {
+  app: 'Your app',
+  nav: ['Home', 'Explore', 'Account'],
+  title: 'Everything in one place',
+  subtitle: 'Three things need your attention this week. The rest is on track.',
+  field: 'Email',
+  placeholder: 'you@example.com',
+  primary: 'Get started',
+  secondary: 'Learn more',
+  section: 'This week',
+  items: [
+    { title: 'Quarterly report', meta: 'Due Friday', tag: 'In progress' },
+    { title: 'Team offsite', meta: 'Tuesday, 10:00', tag: 'Booked' },
+    { title: 'Website refresh', meta: 'Waiting on review', tag: 'Paused' }
+  ],
+  done: 'Saved. Everyone on the team can see it now.'
+}
+
+/** Cleans up sample-screen words from a model: short strings, three cards. Null when there's nothing usable. */
+export function sanitizeSample(raw: unknown): SampleContent | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const str = (v: unknown, max: number, fallback: string) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback)
+  const d = DEFAULT_SAMPLE
+  const items = Array.isArray(r.items)
+    ? r.items
+        .filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')
+        .slice(0, 3)
+        .map((i, n) => ({ title: str(i.title, 40, d.items[n].title), meta: str(i.meta, 50, d.items[n].meta), tag: str(i.tag, 20, d.items[n].tag) }))
+    : []
+  if (!items.length && typeof r.title !== 'string') return null
+  while (items.length < 3) items.push(d.items[items.length])
+  return {
+    app: str(r.app, 30, d.app),
+    nav: Array.isArray(r.nav) ? r.nav.filter((n): n is string => typeof n === 'string' && !!n.trim()).map((n) => n.trim().slice(0, 16)).slice(0, 4) : d.nav,
+    title: str(r.title, 70, d.title),
+    subtitle: str(r.subtitle, 160, d.subtitle),
+    field: str(r.field, 30, d.field),
+    placeholder: str(r.placeholder, 40, d.placeholder),
+    primary: str(r.primary, 24, d.primary),
+    secondary: str(r.secondary, 24, d.secondary),
+    section: str(r.section, 40, d.section),
+    items,
+    done: str(r.done, 100, d.done)
+  }
 }
 
 /** One version of a component: specimen markup, its styles, and a minimal usage snippet. */
@@ -85,6 +154,12 @@ export interface DesignDraft {
   name: string
   description: string
   input: DesignInput
+}
+
+/** Looks proposed for a description by the guided setup, with the words for its sample screen. */
+export interface DesignLooks {
+  sample: SampleContent | null
+  looks: (DesignDraft & { why: string })[]
 }
 
 /** A file of the system in a project's design/ folder, compared with what the system would write now. */
@@ -136,7 +211,8 @@ export const DEFAULT_DESIGN: DesignInput = {
   shadow: 'soft',
   principles: ['Clear hierarchy: one primary action per view', 'Content first; chrome stays quiet', 'Readable at a glance — generous line height, strong contrast'],
   overrides: { light: {}, dark: {} },
-  kit: DEFAULT_KIT
+  kit: DEFAULT_KIT,
+  sample: null
 }
 
 /** Grey families: a hue and how much colour they carry at full tint (null hue = the brand's). */
@@ -167,7 +243,7 @@ export const SCALES: { value: number; label: string; hint: string }[] = [
 
 // ─── Colour maths (OKLCH) ─────────────────────────────────────────────────────
 
-type Lch = { l: number; c: number; h: number }
+export type Lch = { l: number; c: number; h: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
@@ -842,7 +918,8 @@ export function sanitizeDesign(raw: Partial<Record<keyof DesignInput, unknown>>,
     shadow: pick(raw.shadow, ['none', 'soft', 'strong'] as const, base.shadow),
     principles: Array.isArray(raw.principles) ? raw.principles.filter((p): p is string => typeof p === 'string' && !!p.trim()).map((p) => p.trim()).slice(0, 8) : base.principles,
     overrides: cleanOverrides(raw.overrides, base.overrides),
-    kit: sanitizeKit(raw.kit, base.kit ?? DEFAULT_KIT)
+    kit: sanitizeKit(raw.kit, base.kit ?? DEFAULT_KIT),
+    sample: raw.sample === null ? null : (sanitizeSample(raw.sample) ?? base.sample ?? null)
   }
 }
 

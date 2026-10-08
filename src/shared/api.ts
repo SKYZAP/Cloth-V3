@@ -252,6 +252,8 @@ export interface ClothApi {
     remove(id: string): Promise<void>
     /** A design proposed by a model from a description; not saved. */
     generate(input: { prompt: string; model: ModelRef; current?: DesignInput }): Promise<DesignDraft>
+    /** Three different looks for a description, with words for its sample screen; not saved. */
+    looks(input: { prompt: string; model: ModelRef; logoColor?: string | null; avoid?: string[] }): Promise<import('./design').DesignLooks>
     /** Writes DESIGN.md, tokens.css, tailwind.css and tokens.json into the folder. */
     export(id: string, folder: string): Promise<string[]>
     components(designId: string): Promise<DesignComponent[]>

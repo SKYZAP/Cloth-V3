@@ -16,6 +16,9 @@ import {
   sanitizeDesign,
   repairTokens,
   parsePalette,
+  sanitizeSample,
+  FONT_CHOICES,
+  type DesignLooks,
   toDesignMd,
   type ComponentVersion,
   type DesignComponent,
@@ -104,6 +107,37 @@ const GENERATE_SYSTEM = `You are a senior product designer. From the user's desc
 }
 Choose colours with intent: the brand colour should suit the product, and the system must stay accessible (Cloth adjusts shades for contrast).`
 
+const LOOKS_SYSTEM = `You help someone who is not a designer start a design system for what they're making. Propose THREE clearly different looks that all fit their description, and write the words for a sample screen of their product.
+Answer with ONLY a JSON object (no prose, no code fence):
+{
+  "sample": {
+    "app": the product's name (invent a plausible one if none is given, 1-3 words),
+    "nav": 3 short header links,
+    "title": the main headline of the product's home screen (under 60 characters),
+    "subtitle": one supporting sentence,
+    "field": label of the main input on that screen (a search, booking or sign-up field),
+    "placeholder": example text for that field,
+    "primary": main button label (verb first, 1-3 words),
+    "secondary": second button label (1-3 words),
+    "section": heading above three cards,
+    "items": exactly 3 cards, each { "title": short name, "meta": one detail such as a date, price or place, "tag": 1-2 word status or category },
+    "done": a one-sentence confirmation message the product would show
+  },
+  "looks": [3 objects, each with:
+    "name": 1-2 word name for the look,
+    "why": one plain sentence saying how it feels and why it suits the product (no design jargon),
+    "brand": main colour #rrggbb, "accent": second colour #rrggbb or null,
+    "success", "warning", "danger": #rrggbb in harmony with the brand,
+    "neutral": "brand" | "slate" | "zinc" | "gray" | "stone" | "sand" | "olive", "neutralTint": 0..1,
+    "mode": "light" | "dark" | "both", "darkDepth": 0..1,
+    "fontHeading": one of {{HEADINGS}}, "fontSans": one of {{SANS}}, "fontMono": one of {{MONOS}},
+    "baseSize": 14-18, "scale": 1.125-1.5, "headingWeight": 500-800, "headingTracking": -0.04..0.01, "bodyLeading": 1.4-1.75,
+    "radius": 0-16, "pill": true for fully round buttons, "density": "compact" | "comfortable" | "spacious", "shadow": "none" | "soft" | "strong",
+    "principles": 3 short, concrete rules in this look's voice
+  ]
+}
+Make the three looks differ in feel: vary the fonts, corner shape, spacing and light/dark, and vary colour unless the person named one — then every look uses it as the brand and they differ in everything else. Write sample words in the person's language, specific to their product.`
+
 export class DesignService {
   constructor(
     private ctx: Ctx,
@@ -181,6 +215,37 @@ export class DesignService {
       name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 40) : 'Untitled',
       description: typeof raw.description === 'string' ? raw.description.trim().slice(0, 300) : '',
       input: sanitizeDesign({ ...raw, ...(palette.length >= 2 ? { palette } : {}) }, input.current ?? DEFAULT_DESIGN)
+    }
+  }
+
+  /** Three different looks for a description, and the words for its sample screen. Nothing is saved. */
+  async looks(input: { prompt: string; model: ModelRef; logoColor?: string | null; avoid?: string[] }): Promise<DesignLooks> {
+    if (!input.prompt.trim()) throw new Error('Describe what you are making')
+    const system = LOOKS_SYSTEM.replace('{{HEADINGS}}', FONT_CHOICES.heading.filter((f) => !f.startsWith('System')).join(', '))
+      .replace('{{SANS}}', FONT_CHOICES.sans.filter((f) => !f.startsWith('System')).join(', '))
+      .replace('{{MONOS}}', FONT_CHOICES.mono.filter((f) => !f.startsWith('System')).join(', '))
+    const notes = [
+      input.logoColor ? `Their logo's main colour is ${input.logoColor}; use it as the brand of at least the first look.` : '',
+      input.avoid?.length ? `They have already seen looks named ${input.avoid.join(', ')}; make these three different from those.` : ''
+    ].filter(Boolean)
+    const prompt = [input.prompt.trim(), ...notes].join('\n\n')
+    const { text } = await this.providers.complete(input.model, { system, prompt, maxTokens: 4000, temperature: 0.9 })
+    const raw = parseJsonObject(text)
+    const list = Array.isArray(raw?.looks) ? (raw.looks as unknown[]).filter((l): l is Record<string, unknown> => !!l && typeof l === 'object') : []
+    if (!list.length) throw new Error('The model did not return any looks. Try again, or pick from finished looks.')
+    const sample = sanitizeSample(raw!.sample)
+    return {
+      sample,
+      looks: list.slice(0, 3).map((l) => {
+        const base = sanitizeDesign({ ...l, sample }, DEFAULT_DESIGN)
+        const pill = l.pill === true
+        return {
+          name: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 30) : 'Look',
+          why: typeof l.why === 'string' ? l.why.trim().slice(0, 200) : '',
+          description: typeof l.why === 'string' ? l.why.trim().slice(0, 300) : '',
+          input: pill ? { ...base, kit: { ...base.kit, button: { ...base.kit.button, radius: 'full' as const }, badge: { ...base.kit.badge, radius: 'full' as const } } } : base
+        }
+      })
     }
   }
 
