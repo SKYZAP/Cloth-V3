@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { stat } from 'node:fs/promises'
+import { sep } from 'node:path'
 import type {
   Collection,
   IngestProgress,
@@ -162,6 +164,37 @@ export class RagService {
       this.ctx.db.prepare('DELETE FROM documents WHERE id = ?').run(docId)
     })
     if (doc) this.vectorCache.delete(doc.collection_id)
+  }
+
+  /**
+   * Bring the documents that came from one source up to date: a folder is re-indexed (unchanged files are
+   * skipped) and documents whose files are gone are removed; web pages are fetched again.
+   */
+  async syncSource(collectionId: string, prefix: string): Promise<{ removed: number; queued: number }> {
+    const rows = this.ctx.db.prepare('SELECT id, source, source_type FROM documents WHERE collection_id = ?').all(collectionId) as { id: string; source: string; source_type: string }[]
+    const under = (r: { source: string; source_type: string }) => {
+      if (r.source === prefix) return true
+      const end = r.source_type === 'url' ? '/' : sep
+      return r.source.startsWith(prefix.endsWith(end) ? prefix : prefix + end)
+    }
+    const docs = rows.filter(under)
+    const exists = (p: string) => stat(p).then(() => true, () => false)
+    let removed = 0
+    const kept: string[] = []
+    for (const d of docs.filter((x) => x.source_type === 'file')) {
+      if (await exists(d.source)) kept.push(d.source)
+      else {
+        this.deleteDocument(d.id)
+        removed++
+      }
+    }
+    let queued = 0
+    // A folder that still exists is walked again, so new files come in too.
+    const folder = await stat(prefix).then((st) => st.isDirectory(), () => false)
+    if (folder) queued += (await this.ingestPaths(collectionId, [prefix])).queued
+    else if (kept.length) queued += (await this.ingestPaths(collectionId, kept)).queued
+    for (const d of docs.filter((x) => x.source_type === 'url')) queued += (await this.ingestUrl({ collectionId, url: d.source, crawl: false })).queued
+    return { removed, queued }
   }
 
   // ─── Ingestion ────────────────────────────────────────────────────────────
