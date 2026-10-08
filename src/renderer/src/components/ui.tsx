@@ -174,6 +174,7 @@ export function Segmented<T extends string>({ value, onChange, items }: { value:
         <button
           key={it.value}
           title={it.title}
+          aria-pressed={value === it.value}
           onClick={() => onChange(it.value)}
           className={clsx('h-6 rounded px-2.5 text-[11.5px] font-medium transition-colors', value === it.value ? 'bg-elev-2 text-fg shadow-sm' : 'text-dim hover:text-muted')}
         >

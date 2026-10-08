@@ -261,7 +261,7 @@ export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bas
 
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
-  const t = (name: string, label: string, description: string, availability: string, schema: Record<string, unknown>): BuiltinToolInfo => ({ name, label, description, group: 'workspace', availability, schema })
+  const t = (name: string, label: string, description: string, availability: string, schema: Record<string, unknown>): BuiltinToolInfo => ({ name, label, description, group: 'workspace', availability, where: { chats: true, subagents: true, flows: true, apps: false }, schema })
   const obj = (props: Record<string, string>, required: string[]) => ({
     type: 'object',
     required,
