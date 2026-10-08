@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { AnimatePresence, motion } from 'motion/react'
 import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
 import { AGENT_TEMPLATES, type Agent, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef, type ThinkingLevel } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { isMobile } from '@/lib/platform'
+import { Inspector, refocus } from '@/components/Inspector'
 import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Segmented } from './chat/StatusLine'
@@ -70,7 +69,7 @@ export function AgentsPage() {
     const id = openId
     setOpenId(null)
     // Focus goes back to the card that opened the editor.
-    requestAnimationFrame(() => (document.querySelector(`[data-agent="${id}"]`) as HTMLElement | null)?.focus())
+    refocus(id)
   }
 
   const card = (a: Agent, lane: 'sub' | 'chat') => (
@@ -147,23 +146,18 @@ export function AgentsPage() {
         </div>
       </div>
 
-      <AnimatePresence>
+      <Inspector open={!!open} label={open ? `Edit ${open.name}` : ''} onClose={close}>
         {open && (
-          <motion.div key="backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="absolute inset-0 z-20 bg-black/40" onClick={close} aria-hidden="true" />
+          <AgentEditor
+            key={open.id}
+            agent={open}
+            onClose={close}
+            onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))}
+            onRemoved={() => (setOpenId(null), void load())}
+            onDuplicated={(a) => void load().then(() => setOpenId(a.id))}
+          />
         )}
-        {open && (
-          <AgentPanel key="panel" onClose={close} label={open.name}>
-            <AgentEditor
-              key={open.id}
-              agent={open}
-              onClose={close}
-              onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))}
-              onRemoved={() => (setOpenId(null), void load())}
-              onDuplicated={(a) => void load().then(() => setOpenId(a.id))}
-            />
-          </AgentPanel>
-        )}
-      </AnimatePresence>
+      </Inspector>
 
       <NewAgentDialog
         open={creating}
@@ -190,35 +184,6 @@ function Lane({ title, hint, children }: { title: string; hint: string; children
 
 function LaneEmpty({ children }: { children: ReactNode }) {
   return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-[12.5px] text-dim">{children}</p>
-}
-
-/** The editor beside the team: a wide panel from the right (full screen on a phone). */
-function AgentPanel({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    ref.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      // Escape closes the panel unless a dialog inside it is handling the key.
-      if (e.key === 'Escape' && !document.querySelector('[role="dialog"][aria-modal="true"]')) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <motion.div
-      ref={ref}
-      tabIndex={-1}
-      role="dialog"
-      aria-label={`Edit ${label}`}
-      initial={{ x: 40, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      exit={{ x: 24, opacity: 0, transition: { duration: 0.12 } }}
-      transition={{ type: 'spring', stiffness: 420, damping: 40 }}
-      className={clsx('absolute inset-y-0 right-0 z-30 flex flex-col border-l border-line-strong bg-bg shadow-[-24px_0_60px_-20px_rgb(0_0_0/0.8)] outline-none', isMobile ? 'left-0' : 'w-[min(820px,calc(100%-120px))]')}
-    >
-      {children}
-    </motion.div>
-  )
 }
 
 const TILE: Record<string, string> = {
@@ -262,6 +227,7 @@ function AgentCard({ agent: a, lane, activity, chats, selected, onOpen }: { agen
   return (
     <button
       data-agent={a.id}
+      data-focus-key={a.id}
       onClick={onOpen}
       aria-haspopup="dialog"
       aria-expanded={selected}

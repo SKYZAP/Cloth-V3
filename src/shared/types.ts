@@ -924,6 +924,17 @@ export interface McpStatus {
   error: string | null
   tools: { name: string; description: string }[]
   recent: McpCallLog[]
+  /** When the port is taken: the next free one to offer instead. */
+  suggestedPort: number | null
+  /** Apps that have connected to Cloth's server, most recent first. */
+  apps: McpApp[]
+}
+
+export interface McpApp {
+  /** What the app calls itself in the MCP handshake (e.g. "claude-code"). */
+  name: string
+  lastSeen: number
+  calls: number
 }
 
 export interface McpCallLog {
@@ -933,6 +944,10 @@ export interface McpCallLog {
   ok: boolean
   durationMs: number
   error?: string
+  /** "in": an app called Cloth's server; "out": Cloth called an external server. */
+  direction?: 'in' | 'out'
+  /** The app (in) or the server (out). */
+  peer?: string
 }
 
 export interface AppInfo {

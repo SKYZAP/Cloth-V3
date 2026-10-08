@@ -43,7 +43,21 @@ describe('MCP server', () => {
     const bad = await client.callTool({ name: 'skill_use', arguments: { name: 'nope' } })
     expect(bad.isError).toBe(true)
     expect(services.mcp.status().recent.length).toBeGreaterThanOrEqual(4)
+    // Calls are put down to the app that introduced itself in the handshake.
+    expect(services.mcp.status().recent[0]).toMatchObject({ direction: 'in', peer: 'cloth-test' })
+    expect(services.mcp.status().apps.find((a) => a.name === 'cloth-test')?.calls).toBeGreaterThanOrEqual(4)
     await client.close()
+  })
+
+  it('offers the next free port when its own is taken', async () => {
+    const { services: other } = makeServices()
+    other.settings.update({ mcpPort: PORT, mcpEnabled: true })
+    await other.mcp.restart()
+    for (let i = 0; i < 50 && other.mcp.status().suggestedPort === null; i++) await new Promise((r) => setTimeout(r, 20))
+    const st = other.mcp.status()
+    expect(st.error).toMatch(/already in use/)
+    expect(st.suggestedPort).toBeGreaterThan(PORT)
+    await other.mcp.stop()
   })
 
   it('indexes knowledge, creates tools and skills', async () => {

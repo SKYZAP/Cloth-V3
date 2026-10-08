@@ -37,6 +37,12 @@ describe('external MCP servers', () => {
     const img = await byName.mcp__echo__pixel.execute('t2', {})
     expect(img.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' })
     await expect(byName.mcp__echo__fail.execute('t3', {})).rejects.toThrow('it broke')
+    // Each call lands in the MCP page's live log, newest first.
+    expect(services.mcpClients.calls().map((c) => [c.peer, c.tool, c.ok, c.direction])).toEqual([
+      ['echo', 'fail', false, 'out'],
+      ['echo', 'pixel', true, 'out'],
+      ['echo', 'echo', true, 'out']
+    ])
     // A chat that didn't turn the server on gets nothing.
     expect(services.mcpClients.tools({ collectionIds: [], skillsEnabled: false, workspace: null, mcpServers: [] })).toEqual([])
   }, 30_000)

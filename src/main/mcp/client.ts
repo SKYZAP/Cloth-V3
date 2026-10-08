@@ -5,7 +5,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
-import type { McpClientConfig, McpClientStatus } from '@shared/types'
+import type { McpCallLog, McpClientConfig, McpClientStatus } from '@shared/types'
 import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import type { ApprovalService } from '../agent/workspace'
@@ -53,6 +53,8 @@ export class McpClientService {
   private conns = new Map<string, Conn>()
   /** Servers the user said "always allow" for, per chat (until restart). */
   private trusted = new Map<string, Set<string>>()
+  /** Recent tool calls to external servers, newest first (for the MCP page's live log). */
+  private recent: McpCallLog[] = []
 
   constructor(
     private ctx: Ctx,
@@ -65,6 +67,15 @@ export class McpClientService {
       for (const c of next.mcpClients) if (before.get(c.id) !== undefined && before.get(c.id) !== JSON.stringify(c)) void this.stop(c.id)
       for (const id of before.keys()) if (!next.mcpClients.some((c) => c.id === id)) void this.stop(id)
     })
+  }
+
+  calls(): McpCallLog[] {
+    return this.recent
+  }
+
+  private record(entry: McpCallLog): void {
+    this.recent = [entry, ...this.recent].slice(0, 50)
+    this.ctx.emit('mcpCalls', entry)
   }
 
   configs(): McpClientConfig[] {
@@ -205,7 +216,15 @@ export class McpClientService {
         await this.approve(server, tool.name, params, scope, toolCallId, signal)
         const client = this.conns.get(server.id)?.client
         if (!client) throw new Error(`The ${server.name} server is not running — it may have exited. Try again, or check it in Settings → MCP.`)
-        const result = (await client.callTool({ name: tool.name, arguments: (params ?? {}) as Record<string, unknown> }, undefined, { signal, timeout: CALL_TIMEOUT })) as {
+        const call = client.callTool({ name: tool.name, arguments: (params ?? {}) as Record<string, unknown> }, undefined, { signal, timeout: CALL_TIMEOUT })
+        const log = (ok: boolean, error?: string) => this.record({ at: started, tool: tool.name, args: params, ok, durationMs: Date.now() - started, direction: 'out', peer: server.name, ...(error ? { error } : {}) })
+        const result = (await call.then(
+          (r) => r,
+          (err) => {
+            log(false, err instanceof Error ? err.message : String(err))
+            throw err
+          }
+        )) as {
           content?: { type: string; text?: string; data?: string; mimeType?: string; resource?: { uri?: string; text?: string } }[]
           isError?: boolean
           structuredContent?: unknown
@@ -218,7 +237,12 @@ export class McpClientService {
           else if (item.type === 'resource_link') content.push({ type: 'text', text: `[resource ${(item as { uri?: string }).uri ?? ''}]` })
         }
         if (!content.length && result.structuredContent !== undefined) content.push({ type: 'text', text: JSON.stringify(result.structuredContent) })
-        if (result.isError) throw new Error(content.map((x) => (x.type === 'text' ? x.text : '')).join('\n') || `${tool.name} failed`)
+        if (result.isError) {
+          const message = content.map((x) => (x.type === 'text' ? x.text : '')).join('\n') || `${tool.name} failed`
+          log(false, message.slice(0, 300))
+          throw new Error(message)
+        }
+        log(true)
         if (!content.length) content.push({ type: 'text', text: '(no output)' })
         return { content, details: { durationMs: Date.now() - started } as ToolDetails }
       }
