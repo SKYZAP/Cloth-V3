@@ -60,6 +60,7 @@ export function createApi(s: Services): ClothApi {
       updateCollection: async (id, patch) => s.rag.updateCollection(id, patch),
       deleteCollection: async (id) => s.rag.deleteCollection(id),
       documents: async (id) => s.rag.listDocuments(id),
+      syncSource: (id, source) => s.rag.syncSource(id, source),
       chunks: async (docId) => s.rag.getChunks(docId),
       deleteDocument: async (id) => s.rag.deleteDocument(id),
       reindexDocument: (id) => s.rag.reindexDocument(id),

@@ -110,6 +110,8 @@ export interface ClothApi {
     ingestUrl(input: IngestUrlInput): Promise<{ queued: number }>
     ingestText(collectionId: string, title: string, text: string): Promise<RagDocument>
     embedMissing(collectionId: string): Promise<number>
+    /** Re-index the documents from one folder or site: new and changed files come in, missing ones go. */
+    syncSource(collectionId: string, source: string): Promise<{ removed: number; queued: number }>
     search(input: RagSearchInput): Promise<RagSearchResult>
     ask(input: RagSearchInput): Promise<RagAskResult>
     loadExamples(): Promise<Collection | null>

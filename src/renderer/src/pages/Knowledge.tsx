@@ -1,35 +1,108 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { BookOpen, FilePlus2, FileText, FolderPlus, Globe, GraduationCap, Layers, Plus, RefreshCw, Search, Trash2, Type as TypeIcon, Zap } from 'lucide-react'
-import type { Collection, IngestProgress, ModelRef, RagAskResult, RagDocument, RagMode } from '@shared/types'
+import { FilePlus2, FolderPlus, Globe, GraduationCap, Plus, RefreshCw, Search, Settings2, SlidersHorizontal, Trash2, Type as TypeIcon, Zap } from 'lucide-react'
+import type { Collection, IngestProgress, ModelRef, RagAskResult, RagDocument, RagHit, RagMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, timeAgo } from '@/lib/format'
-import { Badge, Button, Card, Dot, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Segmented, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
-import { SplitDetail, SplitRoot } from '@/components/SplitView'
+import { Button, Field, IconButton, Input, Modal, Segmented, Spinner, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
-import { ReferenceCard } from '@/components/ToolTrace'
 import { Markdown } from '@/components/Markdown'
+import { Inspector, InspectorHead, refocus } from '@/components/Inspector'
 
-type Tab = 'documents' | 'add' | 'search'
+type Open = { kind: 'add' } | { kind: 'doc'; id: string } | { kind: 'settings' } | null
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** What a collection needs, in words (null when it's fine). */
+function attention(docs: RagDocument[] | undefined, c: Collection): string | null {
+  if (!docs) return null
+  const indexing = docs.filter((d) => d.status === 'indexing' || d.status === 'pending').length
+  if (indexing) return `indexing ${indexing}`
+  const failed = docs.filter((d) => d.status === 'error').length
+  if (failed) return `${failed} failed`
+  const missing = c.embedding ? docs.filter((d) => d.status === 'ready' && !d.embedded).length : 0
+  return missing ? `${missing} to embed` : null
+}
+
+/** Documents grouped by where they came from: top folders, sites, pasted text. */
+function sourcesOf(docs: RagDocument[]): { key: string; label: string; kind: 'folder' | 'site' | 'text'; docs: RagDocument[] }[] {
+  const out = new Map<string, { key: string; label: string; kind: 'folder' | 'site' | 'text'; docs: RagDocument[] }>()
+  const add = (key: string, label: string, kind: 'folder' | 'site' | 'text', d: RagDocument) => {
+    const g = out.get(key) ?? { key, label, kind, docs: [] }
+    g.docs.push(d)
+    out.set(key, g)
+  }
+  const dir = (p: string) => p.replace(/[\\/][^\\/]*$/, '')
+  const files = docs.filter((d) => d.sourceType === 'file')
+  // Sub-folders fold into the top-most folder that has documents.
+  const roots: string[] = []
+  for (const d of [...new Set(files.map((f) => dir(f.source)))].sort((a, b) => a.length - b.length)) if (!roots.some((r) => d.startsWith(r + '\\') || d.startsWith(r + '/'))) roots.push(d)
+  for (const f of files) {
+    const root = roots.find((r) => dir(f.source) === r || f.source.startsWith(r + '\\') || f.source.startsWith(r + '/')) ?? dir(f.source)
+    add(root, root, 'folder', f)
+  }
+  for (const d of docs.filter((x) => x.sourceType === 'url')) {
+    let origin = d.source
+    try {
+      origin = new URL(d.source).origin
+    } catch {
+      /* not a URL */
+    }
+    add(origin, origin.replace(/^https?:\/\//, ''), 'site', d)
+  }
+  for (const d of docs.filter((x) => x.sourceType === 'text')) add('text', 'Pasted text', 'text', d)
+  return [...out.values()]
+}
+
+/**
+ * What Cloth knows, and whether it finds the right passage: each collection opens on its search, with
+ * its health, sources and documents beside it. Adding sources and reading a document happen in a panel.
+ */
 export function KnowledgePage() {
   const collections = useApp((s) => s.collections)
   const loadCollections = useApp((s) => s.loadCollections)
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.knowledge'))
+  const [docsBy, setDocsBy] = useState<Record<string, RagDocument[]>>({})
   const [creating, setCreating] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [open, setOpen] = useState<Open>(null)
+  const [log, setLog] = useState<IngestProgress[]>([])
+  const [loadingExamples, setLoadingExamples] = useState(false)
+  const refreshTimer = useRef<number | null>(null)
 
+  const loadDocs = async (ids: string[]) => {
+    const lists = await Promise.all(ids.map((id) => api.rag.documents(id).then((d) => [id, d] as const, () => [id, [] as RagDocument[]] as const)))
+    setDocsBy((cur) => ({ ...cur, ...Object.fromEntries(lists) }))
+  }
   useEffect(() => {
     void loadCollections().then(() => setLoaded(true))
   }, [loadCollections])
   useEffect(() => {
     if (!activeId || !collections.some((c) => c.id === activeId)) setActiveId(collections[0]?.id ?? null)
-  }, [collections, activeId])
+    void loadDocs(collections.map((c) => c.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collections])
+  useEffect(() => {
+    try {
+      if (activeId) localStorage.setItem('cloth.knowledge', activeId)
+    } catch {
+      /* storage unavailable */
+    }
+  }, [activeId])
+  useEvent('ingest', (p) => {
+    setLog((l) => [p, ...l].slice(0, 200))
+    if (refreshTimer.current) return
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null
+      void loadDocs([p.collectionId])
+      void loadCollections()
+    }, 600)
+  })
 
   const active = collections.find((c) => c.id === activeId)
-  const [loadingExamples, setLoadingExamples] = useState(false)
+  const docs = active ? docsBy[active.id] : undefined
+  const hasExamples = collections.some((c) => c.name === 'Cloth examples')
   const loadExamples = async () => {
     setLoadingExamples(true)
     const col = await attempt(() => api.rag.loadExamples())
@@ -38,64 +111,549 @@ export function KnowledgePage() {
     if (col) setActiveId(col.id)
     else if (col === null) useApp.getState().toast('No example documents are bundled with this build', 'info')
   }
+  const openKey = open?.kind === 'doc' ? open.id : (open?.kind ?? null)
+  const close = () => {
+    const key = openKey
+    setOpen(null)
+    refocus(key)
+  }
+  const totalDocs = collections.reduce((n, c) => n + c.docCount, 0)
+  const tabs = useRef<HTMLDivElement>(null)
+  const onTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const i = collections.findIndex((c) => c.id === activeId)
+    const next = collections[(i + (e.key === 'ArrowRight' ? 1 : -1) + collections.length) % collections.length]
+    if (!next) return
+    setActiveId(next.id)
+    requestAnimationFrame(() => (tabs.current?.querySelector(`[data-tab="${next.id}"]`) as HTMLElement | null)?.focus())
+  }
+
+  if (loaded && !collections.length)
+    return (
+      <div className="grid h-full place-items-center overflow-y-auto px-5">
+        <div className="grid max-w-[520px] justify-items-center gap-3 py-10 text-center">
+          <h1 className="text-[20px] font-semibold tracking-tight">Give Cloth something to know</h1>
+          <p className="text-[13px] text-muted">A collection holds documents, folders and web pages. Chats search it and cite what they find. Start with the bundled examples to see how search works, or make your own.</p>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
+              Load the examples
+            </Button>
+            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+              New collection
+            </Button>
+          </div>
+        </div>
+        <NewCollection open={creating} onClose={() => setCreating(false)} onCreated={(c) => setActiveId(c.id)} />
+      </div>
+    )
+
   return (
-    <SplitRoot open={open} onBack={() => setOpen(false)}>
-      <ListPane
-        header={
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[13px] font-semibold">Knowledge</div>
-              <div className="text-[11px] text-dim">{collections.length} collection{collections.length === 1 ? '' : 's'}</div>
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[220px] flex-1">
+              <h1 className="text-[18px] font-semibold tracking-tight">Knowledge</h1>
+              <p className="mt-0.5 text-[12.5px] text-dim">{loaded ? `${plural(collections.length, 'collection')}, ${plural(totalDocs, 'document')}` : '…'}</p>
             </div>
-            <div className="flex gap-1">
-              <Button size="sm" title="Load example knowledge (bundled docs)" icon={<GraduationCap size={13} />} onClick={() => void loadExamples()} disabled={loadingExamples}>
+            {!hasExamples && (
+              <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
                 Examples
               </Button>
-              <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
-                New
+            )}
+            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+              New collection
+            </Button>
+          </div>
+
+          <div ref={tabs} role="tablist" aria-label="Collections" onKeyDown={onTabKey} className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line">
+            {collections.map((c) => {
+              const on = c.id === activeId
+              const need = attention(docsBy[c.id], c)
+              return (
+                <button
+                  key={c.id}
+                  data-tab={c.id}
+                  role="tab"
+                  aria-selected={on}
+                  tabIndex={on ? 0 : -1}
+                  onClick={() => setActiveId(c.id)}
+                  className={clsx('-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-[13px]', on ? 'border-crimson text-fg' : 'border-transparent text-muted hover:text-fg')}
+                >
+                  {c.name}
+                  <span className="text-[12px] tabular-nums text-dim">{c.docCount}</span>
+                  {need && <span className="rounded-full border border-warn/35 px-2 py-px text-[11.5px] text-warn">{need}</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {active && (
+            <div role="tabpanel" aria-label={active.name} className="grid grid-cols-[minmax(0,1fr)_320px] gap-5 max-[900px]:grid-cols-1">
+              <SearchPanel key={active.id} collection={active} />
+              <div className="grid content-start gap-4">
+                <Health collection={active} docs={docs} onAdd={() => setOpen({ kind: 'add' })} onSettings={() => setOpen({ kind: 'settings' })} />
+                <Documents docs={docs} onOpen={(id) => setOpen({ kind: 'doc', id })} />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Inspector open={!!open && !!active} label={open?.kind === 'add' ? 'Add sources' : open?.kind === 'settings' ? `${active?.name} settings` : 'Document'} onClose={close} width={760}>
+        {active && open?.kind === 'add' && (
+          <>
+            <InspectorHead title={`Add to ${active.name}`} sub="Files, folders, web pages or text" onClose={close} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <AddSources collection={active} log={log.filter((l) => l.collectionId === active.id)} />
+            </div>
+          </>
+        )}
+        {active && open?.kind === 'settings' && <CollectionSettings collection={active} docs={docs ?? []} onClose={close} onDeleted={() => setOpen(null)} />}
+        {active && open?.kind === 'doc' && <DocView doc={docs?.find((d) => d.id === open.id)} onClose={close} reload={() => loadDocs([active.id]).then(() => loadCollections())} />}
+      </Inspector>
+      <NewCollection open={creating} onClose={() => setCreating(false)} onCreated={(c) => setActiveId(c.id)} />
+    </div>
+  )
+}
+
+function Health({ collection: c, docs, onAdd, onSettings }: { collection: Collection; docs?: RagDocument[]; onAdd(): void; onSettings(): void }) {
+  const [syncing, setSyncing] = useState<string | null>(null)
+  const missing = c.embedding ? (docs ?? []).filter((d) => d.status === 'ready' && !d.embedded).length : 0
+  const need = attention(docs, c)
+  const sources = useMemo(() => sourcesOf(docs ?? []), [docs])
+  const sync = async (key: string) => {
+    setSyncing(key)
+    const r = await attempt(() => api.rag.syncSource(c.id, key))
+    setSyncing(null)
+    if (r) useApp.getState().toast(r.removed ? `Re-checking ${plural(r.queued, 'file')}; removed ${r.removed} that are gone` : `Re-checking ${plural(r.queued, 'document')}`, 'info')
+  }
+  return (
+    <section aria-label="Health and sources" className="rounded-[12px] border border-line bg-elev">
+      <h2 className="flex items-center gap-2 border-b border-line px-3.5 py-2.5 text-[12.5px] font-semibold">
+        Health
+        <span className="flex-1" />
+        <span className={clsx('rounded-full border px-2 py-px text-[11.5px] font-normal', need ? 'border-warn/35 text-warn' : 'border-ok/35 text-ok')}>{need ?? (c.embedding ? 'all embedded' : 'keyword search')}</span>
+      </h2>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-3.5 py-3">
+        <Fact label="documents" value={c.docCount} />
+        <Fact label="passages" value={c.chunkCount} />
+        <Fact label="embedding model" value={c.embedding?.modelId ?? 'none'} small />
+        <Fact label="search" value={c.embeddingDim ? 'keywords + meaning' : 'keywords only'} small />
+      </dl>
+      {missing > 0 && (
+        <div className="px-3.5 pb-3">
+          <Button size="sm" icon={<Zap size={12} />} onClick={() => void attempt(() => api.rag.embedMissing(c.id), 'Embedding complete')}>
+            Embed {plural(missing, 'document')}
+          </Button>
+        </div>
+      )}
+      {sources.length > 0 && (
+        <div className="border-t border-line">
+          <h3 className="px-3.5 pb-1 pt-2.5 text-[12px] font-medium text-dim">Sources</h3>
+          {sources.map((s) => (
+            <div key={s.key} className="flex items-center gap-2 px-3.5 py-1.5 text-[12.5px]">
+              {s.kind === 'folder' ? <FolderPlus size={13} className="shrink-0 text-dim" aria-hidden="true" /> : s.kind === 'site' ? <Globe size={13} className="shrink-0 text-dim" aria-hidden="true" /> : <TypeIcon size={13} className="shrink-0 text-dim" aria-hidden="true" />}
+              <span className="min-w-0 flex-1 truncate" title={s.label}>
+                {s.kind === 'folder' ? s.label.split(/[\\/]/).slice(-2).join('/') : s.label}
+              </span>
+              <span className="shrink-0 text-[12px] tabular-nums text-dim">{s.docs.length}</span>
+              {s.kind !== 'text' && (
+                <Button size="sm" variant="ghost" icon={<RefreshCw size={11} />} loading={syncing === s.key} onClick={() => void sync(s.key)} title={`Re-index ${s.label}: new and changed ${s.kind === 'folder' ? 'files' : 'pages'} come in, missing ones go`}>
+                  Sync
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2 border-t border-line px-3.5 py-3">
+        <Button size="sm" icon={<Plus size={12} />} onClick={onAdd} data-focus-key="add">
+          Add sources
+        </Button>
+        <Button size="sm" variant="ghost" icon={<Settings2 size={12} />} onClick={onSettings} data-focus-key="settings">
+          Settings
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function Fact({ label, value, small }: { label: string; value: ReactNode; small?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dd className={clsx('truncate font-semibold tabular-nums', small ? 'text-[12.5px]' : 'text-[17px]')}>{value}</dd>
+      <dt className="text-[12px] text-dim">{label}</dt>
+    </div>
+  )
+}
+
+function Documents({ docs, onOpen }: { docs?: RagDocument[]; onOpen(id: string): void }) {
+  const [filter, setFilter] = useState('')
+  if (!docs?.length) return null
+  const max = Math.max(1, ...docs.map((d) => d.chunkCount))
+  const shown = docs.filter((d) => !filter || `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase())).slice(0, 200)
+  return (
+    <section aria-label="Documents" className="rounded-[12px] border border-line bg-elev">
+      <h2 className="flex items-center gap-2 border-b border-line px-3.5 py-2.5 text-[12.5px] font-semibold">
+        Documents <span className="font-normal text-dim">passages</span>
+      </h2>
+      {docs.length > 8 && (
+        <div className="px-3 pt-2.5">
+          <Input placeholder="Filter documents" aria-label="Filter documents" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        </div>
+      )}
+      <div className="max-h-[420px] overflow-y-auto py-1">
+        {shown.map((d) => {
+          const state = d.status === 'error' ? 'failed' : d.status !== 'ready' ? 'indexing' : null
+          return (
+            <button
+              key={d.id}
+              data-focus-key={d.id}
+              onClick={() => onOpen(d.id)}
+              aria-haspopup="dialog"
+              title={d.source}
+              className="grid w-full grid-cols-[minmax(0,1fr)_70px_28px] items-center gap-2 px-3.5 py-1.5 text-left text-[12.5px] hover:bg-elev-2"
+            >
+              <span className="min-w-0 truncate">
+                {d.title}
+                {state && <span className={clsx('ml-2 text-[11.5px]', state === 'failed' ? 'text-crimson-hi' : 'text-info')}>{state}</span>}
+              </span>
+              <span className="h-[5px] overflow-hidden rounded-full bg-line-strong" aria-hidden="true">
+                <span className="block h-full rounded-full bg-info" style={{ width: `${(d.chunkCount / max) * 100}%` }} />
+              </span>
+              <span className="text-right text-[12px] tabular-nums text-dim">{d.chunkCount}</span>
+            </button>
+          )
+        })}
+        {docs.length > 200 && !filter && <p className="px-3.5 py-2 text-[12px] text-dim">Showing 200 of {docs.length}; filter to find the rest.</p>}
+      </div>
+    </section>
+  )
+}
+
+/** The words of a query worth highlighting in a passage. */
+const terms = (q: string) => [...new Set(q.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [])].filter((w) => !['the', 'and', 'for', 'with', 'how', 'what', 'does', 'but', 'you', 'your', 'are', 'can', 'when', 'should'].includes(w))
+
+function Highlight({ text, words }: { text: string; words: string[] }) {
+  if (!words.length) return <>{text}</>
+  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi')
+  return (
+    <>
+      {text.split(re).map((part, i) =>
+        i % 2 ? (
+          <mark key={i} className="rounded-[3px] bg-warn/20 px-0.5 text-fg">
+            {part}
+          </mark>
+        ) : (
+          <Fragment key={i}>{part}</Fragment>
+        )
+      )}
+    </>
+  )
+}
+
+function Passage({ hit, n, best, words }: { hit: RagHit; n: number; best: number; words: string[] }) {
+  const [more, setMore] = useState(false)
+  const short = hit.text.length > 360 && !more
+  return (
+    <article id={`cite-${n}`} className="grid gap-1.5 border-t border-line py-3 first:border-t-0">
+      <div className="flex items-center gap-2.5">
+        <span className="w-5 shrink-0 text-[12px] tabular-nums text-dim">{n}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted" title={`${hit.source}${hit.headingPath ? ` › ${hit.headingPath}` : ''}`} translate="no">
+          {hit.title}
+          {hit.headingPath && <span className="text-dim"> › {hit.headingPath}</span>}
+        </span>
+        <span className="h-[5px] w-16 shrink-0 overflow-hidden rounded-full bg-line-strong" aria-hidden="true">
+          <span className="block h-full rounded-full bg-ok" style={{ width: `${Math.max(6, (hit.score / best) * 100)}%` }} />
+        </span>
+        <span className="w-12 shrink-0 text-right text-[12px] tabular-nums text-dim" title="Relevance score (higher is closer)">
+          {hit.score.toPrecision(2)}
+        </span>
+      </div>
+      <p className="whitespace-pre-wrap pl-[30px] text-[12.5px] leading-relaxed text-muted">
+        <Highlight text={short ? `${hit.text.slice(0, 360).trimEnd()}…` : hit.text} words={words} />
+        {hit.text.length > 360 && (
+          <button onClick={() => setMore(!more)} className="ml-1.5 text-[12px] text-dim underline underline-offset-2 hover:text-fg">
+            {more ? 'Less' : 'More'}
+          </button>
+        )}
+      </p>
+    </article>
+  )
+}
+
+/** Search the collection, or ask it a question and get an answer that cites the passages it used. */
+function SearchPanel({ collection }: { collection: Collection }) {
+  const settings = useApp((s) => s.settings)
+  const [query, setQuery] = useState('')
+  const [how, setHow] = useState<'search' | 'ask'>('search')
+  const [mode, setMode] = useState<RagMode>('hybrid')
+  const [k, setK] = useState(8)
+  const [model, setModel] = useState<ModelRef | null>(null)
+  const [options, setOptions] = useState(false)
+  const [result, setResult] = useState<RagAskResult | null>(null)
+  const [asked, setAsked] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const hasModel = !!(model ?? settings?.defaultModel)
+  const asking = how === 'ask' && hasModel
+
+  const run = async (q = query) => {
+    const text = q.trim()
+    if (!text || loading) return
+    setQuery(text)
+    setLoading(true)
+    setError(null)
+    setAsked(text)
+    const input = { query: text, collectionIds: [collection.id], mode, k, model: model ?? undefined }
+    try {
+      if (asking) setResult(await api.rag.ask(input))
+      else {
+        const search = await api.rag.search(input)
+        setResult({ answer: null, model: null, search, error: null, tookMs: search.tookMs })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setResult(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+  const suggestions =
+    collection.name === 'Cloth examples'
+      ? ['undo my last commit but keep the changes', 'When should an API return 409 vs 422?', 'cron for every weekday at 9']
+      : [`What does ${collection.name} cover?`, `The main ideas in ${collection.name}`]
+  const words = useMemo(() => terms(asked), [asked])
+  const best = Math.max(1e-9, ...(result?.search.hits.map((h) => h.score) ?? [1]))
+  const status = loading
+    ? asking
+      ? 'Searching and writing an answer…'
+      : 'Searching…'
+    : result
+      ? `${plural(result.search.hits.length, 'passage')} found${result.search.mode === 'hybrid' ? ' by keywords and meaning' : result.search.mode === 'keyword' ? ' by keywords' : result.search.mode === 'vector' ? ' by meaning' : ' by agentic search'} in ${result.search.tookMs} ms`
+      : ''
+
+  return (
+    <section aria-label={`Search ${collection.name}`} className="grid min-w-0 content-start gap-3">
+      <form
+        className="flex items-center gap-2 rounded-[12px] border border-crimson-line bg-elev px-3 py-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run()
+        }}
+      >
+        <Search size={15} className="shrink-0 text-dim" aria-hidden="true" />
+        <input
+          className="h-8 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-dim"
+          placeholder={asking ? `Ask ${collection.name} a question` : `Search ${collection.name}`}
+          aria-label={asking ? `Ask ${collection.name} a question` : `Search ${collection.name}`}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <Segmented
+          value={how}
+          onChange={setHow}
+          items={[
+            { value: 'search', label: 'Search', title: 'Show matching passages' },
+            { value: 'ask', label: 'Ask', title: hasModel ? 'Answer with sources, as a chat would' : 'Set a default model to get answers' }
+          ]}
+        />
+        <IconButton title="Search options" aria-label="Search options" aria-expanded={options} onClick={() => setOptions(!options)}>
+          <SlidersHorizontal size={14} />
+        </IconButton>
+        <Button type="submit" variant="primary" size="sm" loading={loading} disabled={!query.trim()}>
+          {asking ? 'Ask' : 'Search'}
+        </Button>
+      </form>
+      {options && (
+        <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-line bg-panel px-3 py-2 text-[12px] text-muted">
+          <Segmented
+            value={mode}
+            onChange={setMode}
+            items={[
+              { value: 'hybrid', label: 'Keywords + meaning', title: 'BM25 and vectors, fused' },
+              { value: 'keyword', label: 'Keywords', title: 'SQLite FTS5 BM25' },
+              { value: 'vector', label: 'Meaning', title: 'Vectors only' },
+              { value: 'agentic', label: 'Agentic', title: 'A model plans queries, reflects and reranks' }
+            ]}
+          />
+          <label className="flex items-center gap-1.5">
+            Results
+            <Input type="number" className="h-7 w-14" min={1} max={50} value={k} onChange={(e) => setK(Number(e.target.value))} aria-label="Number of results" />
+          </label>
+          {(how === 'ask' || mode === 'agentic') && (
+            <div className="w-60">
+              <ModelPicker value={model} onChange={setModel} allowNone noneLabel={settings?.defaultModel ? `Default (${settings.defaultModel.modelId})` : 'Default model (none set)'} />
+            </div>
+          )}
+        </div>
+      )}
+      {how === 'ask' && !hasModel && <p className="text-[12px] text-warn">Set a default model under Models to get answers; until then Ask shows passages only.</p>}
+      <div aria-live="polite" className="min-h-[18px] text-[12px] text-dim">
+        {loading && <Spinner size={12} className="mr-1.5 inline text-crimson" />}
+        {status}
+      </div>
+
+      {error && (
+        <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">
+          {error}
+        </div>
+      )}
+
+      {!loading && !result && !error && (
+        <div className="grid gap-1.5">
+          <span className="text-[12px] font-medium text-dim">Try</span>
+          {suggestions.map((s) => (
+            <button key={s} onClick={() => void run(s)} className="rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted hover:border-crimson-line hover:text-fg">
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && result && (
+        <>
+          {result.search.hits.length === 0 ? (
+            <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
+              Nothing in {collection.name} matched “{asked}”.
+              <div className="mt-1">{collection.docCount === 0 ? 'Add sources first, then search again.' : 'Try other words, or Keywords + meaning under the options.'}</div>
+            </div>
+          ) : (
+            <>
+              {result.answer && (
+                <div className="rounded-[12px] border border-line-strong bg-elev p-4">
+                  <div className="mb-2 text-[12px] text-dim">
+                    Answer{result.model ? ` from ${result.model}` : ''} in {(result.tookMs / 1000).toFixed(1)} s, citing the passages below
+                  </div>
+                  <Markdown text={result.answer} references={result.search.hits} />
+                </div>
+              )}
+              {result.error && <div className="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
+              {result.search.queries.length > 1 && <p className="text-[12px] text-dim">Searched for: {result.search.queries.join('; ')}</p>}
+              <div>
+                {result.search.hits.map((h, i) => (
+                  <Passage key={h.chunkId} hit={h} n={i + 1} best={best} words={words} />
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function DocView({ doc, onClose, reload }: { doc?: RagDocument; onClose(): void; reload(): Promise<void> }) {
+  const [chunks, setChunks] = useState<Awaited<ReturnType<typeof api.rag.chunks>>>([])
+  useEffect(() => {
+    if (doc) void api.rag.chunks(doc.id).then(setChunks)
+  }, [doc?.id, doc?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!doc) return <InspectorHead title="Document removed" onClose={onClose} />
+  return (
+    <>
+      <InspectorHead
+        title={doc.title}
+        sub={`${plural(doc.chunkCount, 'passage')}, ${bytes(doc.bytes)}, updated ${timeAgo(doc.updatedAt)}${doc.embedded ? ', embedded' : ''}`}
+        onClose={onClose}
+        actions={
+          <>
+            <Button size="sm" variant="ghost" icon={<RefreshCw size={12} />} onClick={() => void attempt(() => api.rag.reindexDocument(doc.id)).then(reload)}>
+              Re-index
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Trash2 size={12} />}
+              onClick={async () => {
+                if (!(await confirmAction(`“${doc.title}” is removed from the collection. The file itself stays.`, { title: 'Remove document?', confirmLabel: 'Remove', danger: true }))) return
+                await attempt(() => api.rag.deleteDocument(doc.id))
+                await reload()
+                onClose()
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <p className="mb-3 truncate font-mono text-[11.5px] text-dim" title={doc.source} translate="no">
+          {doc.source}
+        </p>
+        {doc.error && <p className="mb-3 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">{doc.error}</p>}
+        <div className="grid gap-2">
+          {chunks.map((c) => (
+            <div key={c.id} className="rounded-[10px] border border-line bg-panel p-3">
+              <div className="mb-1 flex items-center gap-2 text-[11.5px] text-dim">
+                <span className="tabular-nums">#{c.ord}</span>
+                {c.headingPath && <span className="truncate">{c.headingPath}</span>}
+                <span className="flex-1" />
+                {c.embedded && <span className="text-ok">embedded</span>}
+              </div>
+              <pre className="selectable whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-muted">{c.text}</pre>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function CollectionSettings({ collection, docs, onClose, onDeleted }: { collection: Collection; docs: RagDocument[]; onClose(): void; onDeleted(): void }) {
+  const [description, setDescription] = useState(collection.description)
+  useEffect(() => setDescription(collection.description), [collection.description])
+  const missing = collection.embedding ? docs.filter((d) => d.status === 'ready' && !d.embedded).length : 0
+  return (
+    <>
+      <InspectorHead title={collection.name} sub="Collection settings" onClose={onClose} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <div className="grid gap-5">
+          <Field label="Description" hint="Chats read this to decide when to search the collection.">
+            <Textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => description !== collection.description && void attempt(() => api.rag.updateCollection(collection.id, { description })).then(() => useApp.getState().loadCollections())}
+            />
+          </Field>
+          <Field label="Embedding model" hint="Search by meaning as well as keywords. Changing it drops the existing vectors; embed again afterwards.">
+            <ModelPicker
+              kind="embedding"
+              value={collection.embedding}
+              allowNone
+              noneLabel="None: keyword search only"
+              onChange={async (embedding) => {
+                if (collection.chunkCount && !(await confirmAction('Existing vectors are dropped. Embed the documents again afterwards.', { title: 'Change the embedding model?', confirmLabel: 'Change model' }))) return
+                await attempt(() => api.rag.updateCollection(collection.id, { embedding }))
+                await useApp.getState().loadCollections()
+              }}
+            />
+          </Field>
+          {missing > 0 && (
+            <div>
+              <Button icon={<Zap size={13} />} onClick={() => void attempt(() => api.rag.embedMissing(collection.id), 'Embedding complete')}>
+                Embed {plural(missing, 'document')}
               </Button>
             </div>
+          )}
+          <div className="border-t border-line pt-4">
+            <Button
+              variant="ghost"
+              icon={<Trash2 size={13} />}
+              onClick={async () => {
+                if (!(await confirmAction(`“${collection.name}” and all of its indexed documents will be deleted. Your files stay where they are.`, { title: `Delete ${collection.name}?`, confirmLabel: 'Delete', danger: true }))) return
+                await attempt(() => api.rag.deleteCollection(collection.id))
+                await useApp.getState().loadCollections()
+                onDeleted()
+              }}
+            >
+              Delete collection
+            </Button>
           </div>
-        }
-      >
-        {collections.map((c) => (
-          <ListItem key={c.id} active={c.id === activeId} onClick={() => (setActiveId(c.id), setOpen(true))}>
-            <Layers size={14} className="shrink-0 text-dim" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12.5px]">{c.name}</div>
-              <div className="text-[11px] text-dim">
-                {c.docCount} docs · {c.chunkCount} chunks
-              </div>
-            </div>
-            {c.embeddingDim ? <Badge tone="crimson">vec</Badge> : <Badge tone="dim">bm25</Badge>}
-          </ListItem>
-        ))}
-        {loaded && !collections.length && <div className="p-4 text-center text-[12px] text-dim">No collections yet — tap New, or Examples for sample docs.</div>}
-      </ListPane>
-      <SplitDetail>
-        {active ? (
-          <CollectionView key={active.id} collection={active} />
-        ) : (
-          <Empty
-            icon={<BookOpen size={20} />}
-            title="No knowledge yet"
-            action={
-              <div className="flex gap-2">
-                <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
-                  Load example knowledge
-                </Button>
-                <Button variant="primary" onClick={() => setCreating(true)}>
-                  Create a collection
-                </Button>
-              </div>
-            }
-          >
-            Collections hold documents, folders and web pages. Search is hybrid: SQLite FTS5 (BM25) fused with embeddings via reciprocal-rank fusion.
-          </Empty>
-        )}
-      </SplitDetail>
-      <NewCollection open={creating} onClose={() => setCreating(false)} onCreated={(c) => (setActiveId(c.id), setOpen(true))} />
-    </SplitRoot>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -153,210 +711,6 @@ function NewCollection({ open, onClose, onCreated }: { open: boolean; onClose():
   )
 }
 
-function CollectionView({ collection }: { collection: Collection }) {
-  const [tab, setTab] = useState<Tab>('documents')
-  const [docs, setDocs] = useState<RagDocument[]>([])
-  const [log, setLog] = useState<IngestProgress[]>([])
-  const refreshTimer = useRef<number | null>(null)
-
-  const loadDocs = async () => setDocs(await api.rag.documents(collection.id))
-  useEffect(() => {
-    void loadDocs()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collection.id])
-
-  useEvent('ingest', (p) => {
-    if (p.collectionId !== collection.id) return
-    setLog((l) => [p, ...l].slice(0, 200))
-    if (refreshTimer.current) return
-    refreshTimer.current = window.setTimeout(() => {
-      refreshTimer.current = null
-      void loadDocs()
-      void useApp.getState().loadCollections()
-    }, 600)
-  })
-
-  const busy = log[0] && !log[0].done && docs.some((d) => d.status === 'indexing' || d.status === 'pending')
-  const missing = docs.filter((d) => d.status === 'ready' && !d.embedded).length
-
-  return (
-    <div className="flex h-full flex-col">
-      <PageHeader
-        title={
-          <span className="flex items-center gap-2">
-            {collection.name}
-            {busy && <Spinner size={13} />}
-          </span>
-        }
-        subtitle={collection.description || 'No description'}
-        actions={
-          <>
-            <div className="w-64">
-              <ModelPicker
-                kind="embedding"
-                value={collection.embedding}
-                allowNone
-                noneLabel="No embeddings (BM25 only)"
-                onChange={async (embedding) => {
-                  if (collection.chunkCount && !(await confirmAction('Existing vectors are dropped. Re-embed afterwards with “Embed missing”.', { title: 'Change the embedding model?', confirmLabel: 'Change model' }))) return
-                  await attempt(() => api.rag.updateCollection(collection.id, { embedding }))
-                  await useApp.getState().loadCollections()
-                }}
-              />
-            </div>
-            {collection.embedding && missing > 0 && (
-              <Button icon={<Zap size={13} />} onClick={() => void attempt(() => api.rag.embedMissing(collection.id), 'Embedding complete')}>
-                Embed {missing} missing
-              </Button>
-            )}
-            <IconButton
-              title="Delete collection"
-              onClick={async () => {
-                if (!(await confirmAction(`“${collection.name}” and all of its indexed documents will be deleted.`, { title: 'Delete collection?', confirmLabel: 'Delete', danger: true }))) return
-                await attempt(() => api.rag.deleteCollection(collection.id))
-                await useApp.getState().loadCollections()
-              }}
-            >
-              <Trash2 size={14} />
-            </IconButton>
-          </>
-        }
-      />
-      <div className="grid grid-cols-4 gap-3 border-b border-line px-5 py-3">
-        <Stat label="Documents" value={collection.docCount} />
-        <Stat label="Chunks" value={collection.chunkCount} />
-        <Stat label="Vectors" value={collection.embeddingDim ? `${collection.embeddingDim}-d` : '—'} />
-        <Stat label="Retrieval" value={collection.embeddingDim ? 'Hybrid RRF' : 'BM25'} />
-      </div>
-      <Tabs
-        className="px-3"
-        value={tab}
-        onChange={setTab}
-        items={[
-          { value: 'documents', label: `Documents (${docs.length})` },
-          { value: 'add', label: 'Add sources' },
-          { value: 'search', label: 'Search playground' }
-        ]}
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'documents' && <DocumentsTable docs={docs} reload={loadDocs} onAdd={() => setTab('add')} />}
-        {tab === 'add' && <AddSources collection={collection} log={log} />}
-        {tab === 'search' && <SearchPlayground collection={collection} />}
-      </div>
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[12px] font-medium text-dim">{label}</div>
-      <div className="text-[15px] font-semibold tabular-nums">{value}</div>
-    </div>
-  )
-}
-
-function DocumentsTable({ docs, reload, onAdd }: { docs: RagDocument[]; reload(): Promise<void>; onAdd(): void }) {
-  const [viewing, setViewing] = useState<RagDocument | null>(null)
-  const [filter, setFilter] = useState('')
-  if (!docs.length)
-    return (
-      <Empty icon={<FilePlus2 size={20} />} title="Empty collection" action={<Button variant="primary" onClick={onAdd}>Add sources</Button>}>
-        Index files, whole folders (code-aware), PDFs, Word documents, web pages or pasted text.
-      </Empty>
-    )
-  const shown = docs.filter((d) => !filter || `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase()))
-  return (
-    <div className="p-4">
-      <Input className="mb-3 max-w-sm" placeholder="Filter documents" value={filter} onChange={(e) => setFilter(e.target.value)} />
-      <div className="overflow-hidden rounded-lg border border-line">
-        <table className="w-full text-[12px]">
-          <thead className="bg-panel text-left text-[11.5px] font-medium text-dim">
-            <tr>
-              <th className="px-3 py-2 font-medium">Document</th>
-              <th className="w-20 px-3 py-2 font-medium mobile:hidden">Chunks</th>
-              <th className="w-20 px-3 py-2 font-medium mobile:hidden">Size</th>
-              <th className="w-24 px-3 py-2 font-medium mobile:hidden">Vectors</th>
-              <th className="w-24 px-3 py-2 font-medium mobile:hidden">Updated</th>
-              <th className="w-20" />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((d) => (
-              <tr key={d.id} className="group border-t border-line hover:bg-panel">
-                <td className="max-w-0 px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <Dot tone={d.status === 'ready' ? (d.error ? 'warn' : 'ok') : d.status === 'error' ? 'crimson' : 'info'} pulse={d.status === 'indexing'} />
-                    {d.sourceType === 'url' ? <Globe size={12} className="shrink-0 text-dim" /> : d.sourceType === 'text' ? <TypeIcon size={12} className="shrink-0 text-dim" /> : <FileText size={12} className="shrink-0 text-dim" />}
-                    <button className="truncate text-left font-medium hover:text-crimson-hi" onClick={() => setViewing(d)}>
-                      {d.title}
-                    </button>
-                  </div>
-                  <div className="truncate pl-[26px] font-mono text-[10.5px] text-dim" title={d.source}>
-                    {d.source}
-                  </div>
-                  {/* Phones: the columns don't fit, so the numbers go under the name. */}
-                  <div className="hidden pl-[26px] text-[11px] tabular-nums text-dim mobile:block">
-                    {d.chunkCount} chunks · {bytes(d.bytes)}{d.embedded ? ' · embedded' : ''} · {timeAgo(d.updatedAt)}
-                  </div>
-                  {d.error && <div className="truncate pl-[26px] text-[11px] text-warn" title={d.error}>{d.error}</div>}
-                </td>
-                <td className="px-3 py-2 tabular-nums text-muted mobile:hidden">{d.chunkCount}</td>
-                <td className="px-3 py-2 tabular-nums text-muted mobile:hidden">{bytes(d.bytes)}</td>
-                <td className="px-3 py-2 mobile:hidden">{d.embedded ? <Badge tone="ok">embedded</Badge> : <Badge tone="dim">none</Badge>}</td>
-                <td className="px-3 py-2 text-dim mobile:hidden">{timeAgo(d.updatedAt)}</td>
-                <td className="px-2 py-2">
-                  <div className="flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 mobile:opacity-100">
-                    <IconButton title="Re-index" onClick={() => void attempt(() => api.rag.reindexDocument(d.id)).then(reload)}>
-                      <RefreshCw size={12} />
-                    </IconButton>
-                    <IconButton
-                      title="Remove"
-                      onClick={async () => {
-                        await attempt(() => api.rag.deleteDocument(d.id))
-                        await reload()
-                        await useApp.getState().loadCollections()
-                      }}
-                    >
-                      <Trash2 size={12} />
-                    </IconButton>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <ChunksModal doc={viewing} onClose={() => setViewing(null)} />
-    </div>
-  )
-}
-
-function ChunksModal({ doc, onClose }: { doc: RagDocument | null; onClose(): void }) {
-  const [chunks, setChunks] = useState<Awaited<ReturnType<typeof api.rag.chunks>>>([])
-  useEffect(() => {
-    if (doc) void api.rag.chunks(doc.id).then(setChunks)
-  }, [doc])
-  return (
-    <Modal open={!!doc} onClose={onClose} title={doc?.title ?? ''} width={760}>
-      <div className="space-y-2">
-        {chunks.map((c) => (
-          <Card key={c.id} className="p-3">
-            <div className="mb-1 flex items-center gap-2 text-[11px] text-dim">
-              <span className="font-mono">#{c.ord}</span>
-              {c.headingPath && <span className="truncate">{c.headingPath}</span>}
-              <div className="flex-1" />
-              {c.embedded && <Badge tone="ok">vector</Badge>}
-              <span className="font-mono">{c.text.length} ch</span>
-            </div>
-            <pre className="selectable whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-muted">{c.text}</pre>
-          </Card>
-        ))}
-      </div>
-    </Modal>
-  )
-}
-
 function AddSources({ collection, log }: { collection: Collection; log: IngestProgress[] }) {
   const [url, setUrl] = useState('')
   const [crawl, setCrawl] = useState(false)
@@ -372,9 +726,9 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
   }
 
   return (
-    <div className="grid gap-4 p-5 xl:grid-cols-[1fr_380px]">
+    <div className="grid gap-4 p-5">
       <div className="space-y-4">
-        <Card className="p-4">
+        <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
             <FolderPlus size={14} className="text-crimson-hi" /> Files & folders
           </div>
@@ -387,9 +741,9 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
               Add folder
             </Button>
           </div>
-        </Card>
+        </section>
 
-        <Card className="p-4">
+        <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
             <Globe size={14} className="text-crimson-hi" /> Web page / docs site
           </div>
@@ -433,9 +787,9 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
               </>
             )}
           </div>
-        </Card>
+        </section>
 
-        <Card className="p-4">
+        <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold">
             <TypeIcon size={14} className="text-crimson-hi" /> Paste text
           </div>
@@ -456,178 +810,21 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
               Index text
             </Button>
           </div>
-        </Card>
+        </section>
       </div>
 
-      <Card className="flex max-h-[640px] flex-col">
+      <section className="flex max-h-[640px] flex-col rounded-[12px] border border-line bg-elev">
         <div className="border-b border-line px-3 py-2 text-[12px] font-semibold">Ingestion log</div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px]">
           {log.map((l, i) => (
             <div key={i} className={clsx('truncate px-1 py-0.5', l.error ? 'text-crimson-hi' : l.done ? 'text-ok' : 'text-dim')} title={l.error ?? l.message}>
-              {l.error ? `✗ ${l.message}: ${l.error}` : l.message}
+              {l.error ? `Failed: ${l.message}: ${l.error}` : l.message}
             </div>
           ))}
           {!log.length && <div className="p-2 text-dim">Nothing yet.</div>}
         </div>
-      </Card>
+      </section>
     </div>
   )
 }
 
-function SearchPlayground({ collection }: { collection: Collection }) {
-  const settings = useApp((s) => s.settings)
-  const [query, setQuery] = useState('')
-  const [mode, setMode] = useState<RagMode>('hybrid')
-  const [k, setK] = useState(8)
-  const [model, setModel] = useState<ModelRef | null>(null)
-  const [answerOn, setAnswerOn] = useState(true)
-  const [result, setResult] = useState<RagAskResult | null>(null)
-  const [asked, setAsked] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const hasModel = !!(model ?? settings?.defaultModel)
-  const answering = answerOn && hasModel
-
-  const run = async (q = query) => {
-    const text = q.trim()
-    if (!text || loading) return
-    setQuery(text)
-    setLoading(true)
-    setError(null)
-    setAsked(text)
-    const input = { query: text, collectionIds: [collection.id], mode, k, model: model ?? undefined }
-    try {
-      if (answering) setResult(await api.rag.ask(input))
-      else {
-        const search = await api.rag.search(input)
-        setResult({ answer: null, model: null, search, error: null, tookMs: search.tookMs })
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setResult(null)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const suggestions =
-    collection.name === 'Cloth examples'
-      ? ['How do I undo the last commit but keep my changes?', 'When should an API return 409 vs 422?', 'How does hybrid search work in Cloth?']
-      : [`What does ${collection.name} cover?`, `Give me an overview of the main concepts in ${collection.name}`]
-
-  return (
-    <div className="mx-auto max-w-4xl p-5">
-      <form
-        className="flex flex-wrap items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void run()
-        }}
-      >
-        <div className="relative min-w-72 flex-1">
-          <Search size={14} className="absolute left-3 top-[11px] text-dim" />
-          <Input className="h-9 pl-8 text-[13px]" placeholder={answering ? 'Ask the collection a question…' : 'Search the collection…'} value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <Button type="submit" variant="primary" className="h-9" loading={loading} disabled={!query.trim()}>
-          {answering ? 'Ask' : 'Search'}
-        </Button>
-      </form>
-      <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[12px] text-dim">
-        <Segmented
-          value={mode}
-          onChange={setMode}
-          items={[
-            { value: 'hybrid', label: 'Hybrid', title: 'BM25 + vectors, RRF fused' },
-            { value: 'keyword', label: 'Keyword', title: 'SQLite FTS5 BM25' },
-            { value: 'vector', label: 'Vector', title: 'Cosine similarity' },
-            { value: 'agentic', label: 'Agentic', title: 'LLM query planning, reflection and rerank' }
-          ]}
-        />
-        <label className="flex items-center gap-1.5">
-          top
-          <Input type="number" className="h-7 w-14" min={1} max={50} value={k} onChange={(e) => setK(Number(e.target.value))} />
-        </label>
-        <Switch checked={answerOn} onChange={setAnswerOn} label="Write an answer" disabled={!hasModel} />
-        {(answerOn || mode === 'agentic') && (
-          <div className="w-60">
-            <ModelPicker value={model} onChange={setModel} allowNone noneLabel={settings?.defaultModel ? `Default (${settings.defaultModel.modelId})` : 'Default model (none set)'} />
-          </div>
-        )}
-        {!hasModel && <span className="text-warn">No default model — results will be passages only.</span>}
-      </div>
-
-      {error && <div className="mt-4 rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">{error}</div>}
-
-      {loading && (
-        <div className="mt-5 flex items-center gap-2 text-[12.5px] text-dim">
-          <Spinner size={13} className="text-crimson" />
-          <span className="shimmer-text">{answering ? 'Searching and writing an answer…' : 'Searching…'}</span>
-        </div>
-      )}
-
-      {!loading && !result && !error && (
-        <div className="mt-6">
-          <div className="mb-2 text-[12px] font-medium text-dim">Try</div>
-          <div className="grid gap-1.5">
-            {suggestions.map((s) => (
-              <button key={s} onClick={() => void run(s)} className="rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted transition-colors hover:border-crimson-line hover:text-fg">
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!loading && result && (
-        <div className="mt-5 space-y-4">
-          {result.search.hits.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
-              Nothing in <b className="text-muted">{collection.name}</b> matched “{asked}”.
-              <div className="mt-1">{collection.docCount === 0 ? 'The collection has no documents yet — add some under Add sources.' : 'Try different wording, or another retrieval mode.'}</div>
-            </div>
-          ) : (
-            <>
-              {result.answer && (
-                <div className="rounded-[14px] border border-line bg-panel p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[11px] text-dim">
-                    <Badge tone="crimson">answer</Badge>
-                    {result.model && <span className="font-mono">{result.model}</span>}
-                    <span>· {(result.tookMs / 1000).toFixed(1)}s</span>
-                  </div>
-                  <Markdown text={result.answer} references={result.search.hits} />
-                </div>
-              )}
-              {result.error && <div className="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
-              <div>
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-dim">
-                  <Badge tone="crimson">{result.search.mode}</Badge>
-                  <span>
-                    {result.search.hits.length} passages in {result.search.tookMs}ms
-                  </span>
-                  {result.search.queries.length > 1 && (
-                    <span className="flex flex-wrap gap-1">
-                      queries:
-                      {result.search.queries.map((q) => (
-                        <Badge key={q}>{q}</Badge>
-                      ))}
-                    </span>
-                  )}
-                  {result.search.notes.map((n) => (
-                    <Badge key={n} tone="warn">
-                      {n}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="grid gap-2">
-                  {result.search.hits.map((h, i) => (
-                    <ReferenceCard key={h.chunkId} hit={h} n={i + 1} />
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
