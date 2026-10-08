@@ -218,6 +218,8 @@ export interface ClothApi {
     useAgent(id: string, agentId: string | null): Promise<ChatSession>
   }
   agents: {
+    /** Jobs each agent ran as a subagent in the last 7 days, by agent id. */
+    activity(): Promise<Record<string, { jobs: number; failed: number; lastAt: number }>>
     list(): Promise<Agent[]>
     create(input?: AgentInput & { template?: string }): Promise<Agent>
     update(id: string, patch: AgentInput): Promise<Agent>

@@ -201,7 +201,7 @@ export class DashboardService {
 
     // Recent activity
     const recent = this.q<{ at: number; kind: 'llm' | 'embed' | 'tool' | 'skill'; source: UsageSource; model_id: string | null; name: string | null; detail: string | null; input_tokens: number; output_tokens: number; duration_ms: number | null; ok: number }>(
-      `SELECT at, kind, source, model_id, name, detail, input_tokens, output_tokens, duration_ms, ok FROM usage_events WHERE kind != 'embed' ORDER BY at DESC LIMIT 14`
+      `SELECT at, kind, source, model_id, name, detail, input_tokens, output_tokens, duration_ms, ok FROM usage_events WHERE kind IN ('llm','tool','skill') ORDER BY at DESC, id DESC LIMIT 14`
     ).map((r) => ({
       at: r.at,
       kind: r.kind,

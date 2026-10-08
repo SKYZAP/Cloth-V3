@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Robot, Sparkle, Trash } from '@phosphor-icons/react'
+import { AnimatePresence, motion } from 'motion/react'
+import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
 import { AGENT_TEMPLATES, type Agent, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef, type ThinkingLevel } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Button, Empty, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
+import { isMobile } from '@/lib/platform'
+import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
-import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
 
@@ -20,100 +21,285 @@ const initials = (name: string) =>
     .join('')
     .toUpperCase() || '?'
 
+type Activity = Record<string, { jobs: number; failed: number; lastAt: number }>
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * The team: Cloth on top, the agents it hands work to below, and the agents you pick for a chat.
+ * Each card says what the agent may touch; the editor opens beside the team rather than replacing it.
+ */
 export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
+  const [activity, setActivity] = useState<Activity>({})
+  const [chatsUsing, setChatsUsing] = useState<Record<string, number>>({})
   const [loaded, setLoaded] = useState(false)
-  const [activeId, setActiveId] = useState<string | null>(() => localStorage.getItem('cloth.agent'))
-  const [open, setOpen] = useState(false)
+  const [openId, setOpenId] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
 
   const load = async () => {
-    const list = await api.agents.list()
+    const [list, act, chats] = await Promise.all([api.agents.list(), api.agents.activity().catch(() => ({})), api.chat.list().catch(() => [])])
     setAgents(list)
+    setActivity(act)
+    const using: Record<string, number> = {}
+    for (const c of chats) if (c.agentId) using[c.agentId] = (using[c.agentId] ?? 0) + 1
+    setChatsUsing(using)
     setLoaded(true)
-    setActiveId((cur) => (cur && list.some((a) => a.id === cur) ? cur : (list[0]?.id ?? null)))
+    setOpenId((cur) => (cur && list.some((a) => a.id === cur) ? cur : null))
   }
   useEffect(() => {
     void load()
   }, [])
   useEvent('agents', () => void load())
-  useEffect(() => {
-    try {
-      if (activeId) localStorage.setItem('cloth.agent', activeId)
-    } catch {
-      /* storage unavailable */
-    }
-  }, [activeId])
 
   const q = filter.trim().toLowerCase()
   const shown = agents.filter((a) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q))
-  const active = agents.find((a) => a.id === activeId) ?? null
-  const pick = (id: string) => (setActiveId(id), setOpen(true))
+  const subagents = shown.filter((a) => a.asSubagent)
+  const chatAgents = shown.filter((a) => a.asChat)
+  const idle = shown.filter((a) => !a.asSubagent && !a.asChat)
+  const open = agents.find((a) => a.id === openId) ?? null
+  // Templates you haven't added yet fill the chat-agent lane until it has a few of its own.
+  const templates = AGENT_TEMPLATES.filter((t) => !agents.some((a) => a.name.toLowerCase() === t.agent.name?.toLowerCase())).slice(0, q ? 0 : Math.max(0, 2 - chatAgents.length))
+
+  const fromTemplate = async (template: string) => {
+    const a = await attempt(() => api.agents.create({ template }))
+    if (a) void load().then(() => setOpenId(a.id))
+  }
+  const close = () => {
+    const id = openId
+    setOpenId(null)
+    // Focus goes back to the card that opened the editor.
+    requestAnimationFrame(() => (document.querySelector(`[data-agent="${id}"]`) as HTMLElement | null)?.focus())
+  }
+
+  const card = (a: Agent, lane: 'sub' | 'chat') => (
+    <AgentCard key={`${lane}-${a.id}`} agent={a} lane={lane} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
+  )
+  const counts = [plural(agents.filter((a) => a.asSubagent).length, 'subagent'), agents.some((a) => a.asChat) ? plural(agents.filter((a) => a.asChat).length, 'chat agent') : 'no chat agents yet'].join(', ')
 
   return (
-    <SplitRoot open={open} onBack={() => setOpen(false)}>
-      <ListPane
-        header={
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" />
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[200px] flex-1">
+              <h1 className="text-[18px] font-semibold tracking-tight">Agents</h1>
+              <p className="mt-0.5 text-[12.5px] text-dim">{loaded ? counts : '…'}</p>
+            </div>
+            <div className="relative w-[220px] mobile:w-full mobile:flex-1">
+              <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
               <Input className="pl-7" placeholder="Filter agents" aria-label="Filter agents" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            <button onClick={() => setCreating(true)} title="New agent" aria-label="New agent" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-crimson text-white hover:bg-crimson-hi">
-              <Plus size={16} weight="bold" />
-            </button>
+            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+              New agent
+            </Button>
           </div>
-        }
-      >
-        {shown.map((a) => (
-          <ListItem key={a.id} active={a.id === activeId} onClick={() => pick(a.id)}>
-            <Tile name={a.name} builtin={!!a.builtin} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-1.5">
-                <span className="min-w-0 truncate text-[12.5px] font-medium text-fg">{a.name}</span>
-                {a.builtin && <span className="shrink-0 text-[10.5px] text-dim">built in</span>}
+
+          <div className="grid justify-items-center gap-0">
+            <div className="flex max-w-[640px] items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3">
+              <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-[13px] font-semibold text-white">
+                C
+              </span>
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-semibold">Cloth</div>
+                <div className="text-[12px] text-muted">The main agent in every chat. It hands jobs to the subagents below when they fit.</div>
               </div>
-              <div className="truncate text-[11.5px] text-dim">{a.purpose || 'No purpose yet'}</div>
             </div>
-          </ListItem>
-        ))}
-        {loaded && !shown.length && <div className="p-4 text-center text-[12px] text-dim">{agents.length ? 'No agent matches.' : 'No agents yet'}</div>}
-      </ListPane>
-      <SplitDetail>
-        {active ? (
-          <AgentEditor key={active.id} agent={active} onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))} onRemoved={() => void load()} onDuplicated={(a) => (void load(), pick(a.id))} />
-        ) : (
-          <Empty icon={<Robot size={22} />} title="Agents you define once and use anywhere" action={<Button variant="primary" onClick={() => setCreating(true)}>New agent</Button>}>
-            An agent is a saved setup with a purpose: its instructions, model and what it may use. Pick one as a chat's agent, or let other agents hand it work by name.
-          </Empty>
+            <svg aria-hidden="true" className="h-6 w-full mobile:hidden max-[760px]:hidden" viewBox="0 0 900 24" preserveAspectRatio="none">
+              <path d="M450 0 V10 H150 V24 M450 10 H750 V24 M450 10 V24" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            </svg>
+          </div>
+
+          <Lane title="Subagents" hint="Cloth hands them work by name">
+            {subagents.map((a) => card(a, 'sub'))}
+            {!subagents.length && <LaneEmpty>{q ? 'No subagent matches.' : 'No subagents. Turn on "Subagent" in an agent to let Cloth hand it work.'}</LaneEmpty>}
+          </Lane>
+
+          <Lane title="Chat agents" hint="Pick one as a chat's agent in its Setup tab">
+            {chatAgents.map((a) => card(a, 'chat'))}
+            {templates.map((t) => (
+              <div key={t.id} className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
+                <span className="text-[13px] font-semibold">{t.name}</span>
+                <span className="text-[12px] text-muted">{t.summary}</span>
+                <Button size="sm" className="mt-1 justify-self-start" onClick={() => void fromTemplate(t.id)}>
+                  Add {t.name}
+                </Button>
+              </div>
+            ))}
+            {!q && (
+              <div className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
+                <span className="text-[13px] font-semibold">Describe your own</span>
+                <span className="text-[12px] text-muted">Say what it's for; Cloth drafts the name, purpose and instructions.</span>
+                <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
+                  Describe an agent
+                </Button>
+              </div>
+            )}
+            {q && !chatAgents.length && <LaneEmpty>No chat agent matches.</LaneEmpty>}
+          </Lane>
+
+          {idle.length > 0 && (
+            <Lane title="Not in use" hint="Neither a chat agent nor a subagent; turn one on in its editor">
+              {idle.map((a) => card(a, 'chat'))}
+            </Lane>
+          )}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div key="backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="absolute inset-0 z-20 bg-black/40" onClick={close} aria-hidden="true" />
         )}
-      </SplitDetail>
+        {open && (
+          <AgentPanel key="panel" onClose={close} label={open.name}>
+            <AgentEditor
+              key={open.id}
+              agent={open}
+              onClose={close}
+              onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))}
+              onRemoved={() => (setOpenId(null), void load())}
+              onDuplicated={(a) => void load().then(() => setOpenId(a.id))}
+            />
+          </AgentPanel>
+        )}
+      </AnimatePresence>
+
       <NewAgentDialog
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={(a) => {
           setCreating(false)
-          void load().then(() => pick(a.id))
+          void load().then(() => setOpenId(a.id))
         }}
       />
-    </SplitRoot>
+    </div>
   )
 }
 
-function Tile({ name, builtin, size = 'sm' }: { name: string; builtin?: boolean; size?: 'sm' | 'lg' }) {
+function Lane({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <section className="grid gap-2.5" aria-label={title}>
+      <h2 className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] font-semibold">
+        {title} <span className="text-[12px] font-normal text-dim">{hint}</span>
+      </h2>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{children}</div>
+    </section>
+  )
+}
+
+function LaneEmpty({ children }: { children: ReactNode }) {
+  return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-[12.5px] text-dim">{children}</p>
+}
+
+/** The editor beside the team: a wide panel from the right (full screen on a phone). */
+function AgentPanel({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      // Escape closes the panel unless a dialog inside it is handling the key.
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"][aria-modal="true"]')) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <motion.div
+      ref={ref}
+      tabIndex={-1}
+      role="dialog"
+      aria-label={`Edit ${label}`}
+      initial={{ x: 40, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 24, opacity: 0, transition: { duration: 0.12 } }}
+      transition={{ type: 'spring', stiffness: 420, damping: 40 }}
+      className={clsx('absolute inset-y-0 right-0 z-30 flex flex-col border-l border-line-strong bg-bg shadow-[-24px_0_60px_-20px_rgb(0_0_0/0.8)] outline-none', isMobile ? 'left-0' : 'w-[min(820px,calc(100%-120px))]')}
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+const TILE: Record<string, string> = {
+  designer: 'bg-skill-soft text-skill',
+  scout: 'bg-info/15 text-info',
+  worker: 'bg-warn/15 text-warn'
+}
+
+function Tile({ name, builtin, size = 'sm' }: { name: string; builtin?: string | null; size?: 'sm' | 'lg' }) {
   return (
     <span
       aria-hidden="true"
       className={clsx(
         'flex shrink-0 items-center justify-center font-semibold tracking-tight',
-        size === 'lg' ? 'h-10 w-10 rounded-[10px] text-[14px]' : 'h-8 w-8 rounded-[8px] text-[11.5px]',
-        builtin ? 'bg-elev-2 text-muted' : 'bg-crimson-soft text-crimson-hi'
+        size === 'lg' ? 'h-10 w-10 rounded-[10px] text-[14px]' : 'h-9 w-9 rounded-[9px] text-[12px]',
+        (builtin && TILE[builtin]) || 'bg-crimson-soft text-crimson-hi'
       )}
     >
       {initials(name)}
     </span>
   )
+}
+
+/** What the agent may touch, in words. */
+function access(a: Agent): string {
+  if (a.fileAccess !== 'write') return 'Reads files'
+  return a.shell ? 'Edits files, runs commands' : 'Edits files'
+}
+
+function AgentCard({ agent: a, lane, activity, chats, selected, onOpen }: { agent: Agent; lane: 'sub' | 'chat'; activity?: { jobs: number; failed: number }; chats: number; selected: boolean; onOpen(): void }) {
+  const always = a.skillsEnabled || a.skillsAlways.length ? a.skillsAlways : []
+  const extra = lane === 'sub' ? (a.asChat ? 'also a chat agent' : null) : a.asSubagent ? 'also a subagent' : null
+  const use =
+    lane === 'sub'
+      ? activity?.jobs
+        ? `${plural(activity.jobs, 'job')} this week${activity.failed ? `, ${activity.failed} failed` : ''}`
+        : 'No jobs this week'
+      : chats
+        ? `Used in ${plural(chats, 'chat')}`
+        : 'Not used in a chat yet'
+  return (
+    <button
+      data-agent={a.id}
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-expanded={selected}
+      className={clsx('grid content-start gap-2.5 rounded-[12px] border bg-elev p-3.5 text-left transition-colors hover:border-line-strong hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-crimson-line' : 'border-line')}
+    >
+      <span className="flex min-w-0 items-center gap-2.5">
+        <Tile name={a.name} builtin={a.builtin} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-semibold" title={a.name}>
+            {a.name}
+          </span>
+          {extra && <span className="block text-[11.5px] text-dim">{extra}</span>}
+        </span>
+        {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">built in</span>}
+      </span>
+      <span className="line-clamp-2 text-[12.5px] text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
+      <span className="flex flex-wrap gap-1.5">
+        <Cap>{access(a)}</Cap>
+        {a.webEnabled && <Cap>Web</Cap>}
+        {a.knowledgeEnabled && <Cap>Knowledge</Cap>}
+        {!!a.mcpServers?.length && <Cap>{plural(a.mcpServers.length, 'server')}</Cap>}
+        {always.slice(0, 3).map((s) => (
+          <span key={s} className="rounded-full border border-skill/30 px-2 py-px text-[11.5px] text-skill" title={`${s} is always on`} translate="no">
+            {s}
+          </span>
+        ))}
+        {always.length > 3 && <Cap>+{always.length - 3} skills</Cap>}
+      </span>
+      <span className="flex items-center justify-between gap-2 border-t border-line pt-2 text-[11.5px] text-dim">
+        <span className="min-w-0 truncate">{a.model ? a.model.modelId : "Chat's model"}</span>
+        <span className="shrink-0 tabular-nums">{use}</span>
+      </span>
+    </button>
+  )
+}
+
+function Cap({ children }: { children: ReactNode }) {
+  return <span className="rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">{children}</span>
 }
 
 const EFFORT: { value: ThinkingLevel | 'chat'; label: string }[] = [
@@ -124,7 +310,7 @@ const EFFORT: { value: ThinkingLevel | 'chat'; label: string }[] = [
   { value: 'high', label: 'High' }
 ]
 
-function AgentEditor({ agent, onSaved, onRemoved, onDuplicated }: { agent: Agent; onSaved(a: Agent): void; onRemoved(): void; onDuplicated(a: Agent): void }) {
+function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { agent: Agent; onClose(): void; onSaved(a: Agent): void; onRemoved(): void; onDuplicated(a: Agent): void }) {
   const [name, setName] = useState(agent.name)
   const [purpose, setPurpose] = useState(agent.purpose)
   const [instructions, setInstructions] = useState(agent.instructions)
@@ -168,7 +354,7 @@ function AgentEditor({ agent, onSaved, onRemoved, onDuplicated }: { agent: Agent
       <PageHeader
         title={
           <span className="flex items-center gap-2.5">
-            <Tile name={agent.name} builtin={!!agent.builtin} />
+            <Tile name={agent.name} builtin={agent.builtin} />
             {agent.name}
           </span>
         }
@@ -198,6 +384,7 @@ function AgentEditor({ agent, onSaved, onRemoved, onDuplicated }: { agent: Agent
                 }}
               />
             )}
+            <Button size="sm" variant="ghost" icon={<X size={15} />} aria-label="Close" title="Close (Esc)" onClick={onClose} />
           </>
         }
       />

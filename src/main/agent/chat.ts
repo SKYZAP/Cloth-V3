@@ -422,10 +422,14 @@ private imagesAvailable(scope: ToolScope): boolean {
         )
           .catch((err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
+            const who = named ?? builtin
+            if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, false)
             throw err
           })
           .finally(release)
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
+        const who = named ?? builtin
+        if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, true)
         return {
           content: [{ type: 'text', text: result.text || '(the subagent finished without a report)' }],
           details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
