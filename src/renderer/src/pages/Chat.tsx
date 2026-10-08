@@ -36,7 +36,7 @@ import { QuestionCard } from '@/components/QuestionCard'
 import { latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { ProjectDialog, ProjectHeader } from './chat/Projects'
+import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { SidePanel, usePanelState } from './chat/SidePanel'
@@ -46,6 +46,8 @@ import { invokedSkills, SkillText, SkillToken, slashAt, unknownSkills } from './
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
 const COLLAPSED_KEY = 'cloth.projects.collapsed'
+/** The collapse key for the chats that belong to no project. */
+const LOOSE = 'chats'
 const LIST_HIDDEN_KEY = 'cloth.chat.listHidden'
 
 function readJson<T>(key: string, fallback: T): T {
@@ -117,7 +119,7 @@ export function ChatPage() {
       setSessions((ss) => [s, ...ss])
       setActiveId(s.id)
       setOpen(true)
-      if (projectId) setCollapsed((c) => toggled(c, projectId, false))
+      setCollapsed((c) => toggled(c, projectId ?? LOOSE, false))
     }
   }
 
@@ -273,8 +275,26 @@ export function ChatPage() {
             </div>
           )
         })}
-        {!!projects.length && !!loose.length && <div className="mx-2 mb-0.5 mt-4 text-[12px] font-medium text-dim">Chats</div>}
-        {loose.map((s) => row(s, false))}
+        {projects.length && loose.length ? (
+          <div>
+            <ChatsHeader
+              count={loose.length}
+              collapsed={!filter && collapsed.has(LOOSE)}
+              running={loose.some((s) => running.has(s.id))}
+              onToggle={() => setCollapsed((c) => toggled(c, LOOSE))}
+              onNewChat={() => void create(null)}
+            />
+            <AnimatePresence initial={false}>
+              {!(!filter && collapsed.has(LOOSE)) && (
+                <motion.div key="chats" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
+                  {loose.map((s) => row(s, true))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ) : (
+          loose.map((s) => row(s, false))
+        )}
         {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
       </ListPane>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
-import { CaretRight, Check, FolderDashed, FolderOpen, FolderSimple, PencilSimple, Plus } from '@phosphor-icons/react'
+import type { ReactNode } from 'react'
+import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, PencilSimple, Plus } from '@phosphor-icons/react'
 import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, type ProjectInput } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt } from '@/lib/store'
@@ -188,12 +189,7 @@ export function ProjectDialog({
 /** A project's row in the chat sidebar: collapse toggle, name, chat count, and quick actions. */
 export function ProjectHeader({
   project,
-  count,
-  collapsed,
-  running,
-  onToggle,
-  onNewChat,
-  onEdit
+  ...rest
 }: {
   project: Project
   count: number
@@ -203,22 +199,64 @@ export function ProjectHeader({
   onNewChat(): void
   onEdit(): void
 }) {
+  const Icon = rest.collapsed ? FolderSimple : FolderOpen
+  return (
+    <GroupHeader
+      {...rest}
+      name={project.name}
+      title={project.folder ?? undefined}
+      icon={<Icon size={16} weight="fill" className="shrink-0" style={{ color: project.color }} />}
+      newChatLabel="New chat in this project"
+    />
+  )
+}
+
+/** The row above the chats that belong to no project, collapsible like a project's. */
+export function ChatsHeader(props: { count: number; collapsed: boolean; running: boolean; onToggle(): void; onNewChat(): void }) {
+  return <GroupHeader {...props} name="Chats" icon={<ChatsCircle size={16} weight="fill" className="shrink-0 text-dim" />} newChatLabel="New chat" />
+}
+
+function GroupHeader({
+  name,
+  title,
+  icon,
+  count,
+  collapsed,
+  running,
+  newChatLabel,
+  onToggle,
+  onNewChat,
+  onEdit
+}: {
+  name: string
+  title?: string
+  icon: ReactNode
+  count: number
+  collapsed: boolean
+  running: boolean
+  newChatLabel: string
+  onToggle(): void
+  onNewChat(): void
+  onEdit?(): void
+}) {
   return (
     <div onClick={onToggle} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onToggle())} tabIndex={0} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 outline-none hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-11" role="button" aria-expanded={!collapsed}>
       <span className={clsx('flex text-dim transition-transform duration-200', !collapsed && 'rotate-90')}>
         <CaretRight size={11} weight="bold" />
       </span>
-      {collapsed ? <FolderSimple size={16} weight="fill" className="shrink-0" style={{ color: project.color }} /> : <FolderOpen size={16} weight="fill" className="shrink-0" style={{ color: project.color }} />}
-      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14px]" title={project.folder ?? undefined}>
-        {project.name}
+      {icon}
+      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14px]" title={title}>
+        {name}
       </span>
       {running && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
       <span className="font-mono text-[10.5px] text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
       <div className="hidden items-center group-focus-within:flex group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
-          <PencilSimple size={14} />
-        </button>
-        <button onClick={onNewChat} title="New chat in this project" aria-label="New chat in this project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
+        {onEdit && (
+          <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
+            <PencilSimple size={14} />
+          </button>
+        )}
+        <button onClick={onNewChat} title={newChatLabel} aria-label={newChatLabel} className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
           <Plus size={14} weight="bold" />
         </button>
       </div>
