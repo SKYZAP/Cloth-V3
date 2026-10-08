@@ -283,7 +283,8 @@ export function createApi(s: Services): ClothApi {
       clients: async () => s.mcpClients.status(),
       clientPresets: async () => MCP_PRESETS,
       startClient: (id) => s.mcpClients.start(id),
-      stopClient: (id) => s.mcpClients.stop(id)
+      stopClient: (id) => s.mcpClients.stop(id),
+      externalCalls: async () => s.mcpClients.calls()
     },
     remote: {
       status: async () => s.remote.status(),

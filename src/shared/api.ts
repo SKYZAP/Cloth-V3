@@ -329,6 +329,8 @@ export interface ClothApi {
     clientPresets(): Promise<Omit<import('./types').McpClientConfig, 'id'>[]>
     startClient(id: string): Promise<import('./types').McpClientStatus>
     stopClient(id: string): Promise<void>
+    /** Recent calls Cloth made to external servers, newest first. */
+    externalCalls(): Promise<import('./types').McpCallLog[]>
   }
   /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
   remote: {
@@ -357,4 +359,5 @@ export type EventMap = {
   terminal: import('./types').TerminalEvent
   mcpClients: { type: 'changed' }
   agents: { type: 'changed' }
+  mcpCalls: import('./types').McpCallLog
 }

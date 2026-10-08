@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
-import type { McpCallLog, McpStatus } from '@shared/types'
+import type { McpApp, McpCallLog, McpStatus } from '@shared/types'
+import { createServer as createNetServer } from 'node:net'
 import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import { formatHitsForModel, type RagService } from '../rag/rag'
@@ -31,6 +32,7 @@ type ToolResult = { content: { type: 'text'; text: string }[]; structuredContent
 export class McpHost {
   private server: Server | null = null
   private error: string | null = null
+  private suggestedPort: number | null = null
   private recent: McpCallLog[] = []
 
   constructor(
@@ -63,7 +65,9 @@ export class McpHost {
       requireToken: s.mcpRequireToken,
       error: this.error,
       tools: TOOLS,
-      recent: this.recent
+      recent: this.recent,
+      suggestedPort: this.error ? this.suggestedPort : null,
+      apps: this.apps().map(({ name, lastSeen, calls }) => ({ name, lastSeen, calls }))
     }
   }
 
@@ -81,13 +85,46 @@ export class McpHost {
     this.ctx.emit('mcp', this.status())
   }
 
+  /** Apps seen in MCP handshakes, by user agent (the stateless server has no sessions to remember them by). */
+  private apps(): (McpApp & { ua: string })[] {
+    return this.ctx.kv.get<(McpApp & { ua: string })[]>('mcpApps', [])
+  }
+
+  private saveApps(list: (McpApp & { ua: string })[]): void {
+    this.ctx.kv.set('mcpApps', list.sort((a, b) => b.lastSeen - a.lastSeen).slice(0, 12))
+  }
+
+  /** The app behind a request: its handshake name if it introduced itself, else a name from its user agent. */
+  private appFor(ua: string, hello?: string): string {
+    const list = this.apps()
+    if (hello) {
+      const name = hello.slice(0, 60)
+      const known = list.find((a) => a.ua === ua)
+      if (known) known.name = name
+      else list.push({ name, ua, lastSeen: Date.now(), calls: 0 })
+      this.saveApps(list)
+      return name
+    }
+    return list.find((a) => a.ua === ua)?.name ?? (ua.split(/[\s/]/)[0] || 'An app')
+  }
+
+  private countCall(ua: string, name: string): void {
+    const list = this.apps()
+    const a = list.find((x) => x.ua === ua) ?? list[list.push({ name, ua, lastSeen: 0, calls: 0 }) - 1]
+    a.lastSeen = Date.now()
+    a.calls++
+    this.saveApps(list)
+  }
+
   private async start(port: number): Promise<void> {
     this.error = null
+    this.suggestedPort = null
     const srv = createServer((req, res) => void this.handle(req, res))
     await new Promise<void>((resolve) => {
       srv.once('error', (err: NodeJS.ErrnoException) => {
         this.error = err.code === 'EADDRINUSE' ? `Port ${port} is already in use` : errorMessage(err)
         this.server = null
+        if (err.code === 'EADDRINUSE') void freePort(port + 1).then((p) => ((this.suggestedPort = p), this.ctx.emit('mcp', this.status())))
         resolve()
       })
       srv.listen(port, '127.0.0.1', () => {
@@ -125,7 +162,11 @@ export class McpHost {
     }
     try {
       const body = await readJson(req)
-      const server = this.buildServer()
+      const ua = String(req.headers['user-agent'] ?? '')
+      const msg = (Array.isArray(body) ? body[0] : body) as { method?: string; params?: { clientInfo?: { name?: unknown } } } | undefined
+      const hello = msg?.method === 'initialize' && typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined
+      const app = this.appFor(ua, hello)
+      const server = this.buildServer(app, ua)
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
       res.on('close', () => {
         void transport.close()
@@ -138,7 +179,8 @@ export class McpHost {
     }
   }
 
-  private buildServer(): McpServer {
+  private buildServer(app: string, ua: string): McpServer {
+    const logged = (tool: string, args: unknown, fn: () => Promise<ToolResult>) => this.logged(tool, args, fn, app, ua)
     const server = new McpServer({ name: 'cloth', version: '0.1.0' }, {
         instructions:
           'Cloth is a local developer hub. Use rag_search to ground answers in indexed docs and skill_list/skill_use to load reusable skills. When the user asks, save knowledge with rag_index, make skills with skill_create and add tools to Cloth with tool_create.'
@@ -149,7 +191,7 @@ export class McpHost {
       'skill_list',
       { title: 'List skills', description: TOOLS[0].description, inputSchema: { query: z.string().optional().describe('Filter by substring in name/description') } },
       (args) =>
-        this.logged('skill_list', args, async () => {
+        logged('skill_list', args, async () => {
           const q = args.query?.toLowerCase()
           const list = (await skills.list()).filter((s) => !q || s.name.includes(q) || s.description.toLowerCase().includes(q))
           const items = list.map((s) => ({ name: s.name, description: s.description, health: s.health?.verdict ?? 'untested', files: s.files }))
@@ -168,7 +210,7 @@ export class McpHost {
         inputSchema: { name: z.string().describe('Skill name from skill_list'), file: z.string().optional().describe('Relative path of a bundled file') }
       },
       (args) =>
-        this.logged('skill_use', args, async () => {
+        logged('skill_use', args, async () => {
           if (args.file) return { content: [{ type: 'text', text: await skills.readFile(args.name, args.file) }] }
           const s = await skills.get(args.name)
           const extra = s.files.filter((f) => f !== 'SKILL.md' && f !== 'evals.json')
@@ -196,7 +238,7 @@ export class McpHost {
         }
       },
       (args) =>
-        this.logged('rag_search', args, async () => {
+        logged('rag_search', args, async () => {
           const res = await rag.search({ query: args.query, collectionIds: args.collections, k: args.k ?? 8, mode: args.mode ?? 'hybrid' })
           const notes = res.notes.length ? `\n\nNotes: ${res.notes.join('; ')}` : ''
           return {
@@ -211,7 +253,7 @@ export class McpHost {
     )
 
     server.registerTool('rag_collections', { title: 'List collections', description: TOOLS[3].description, inputSchema: {} }, (args) =>
-      this.logged('rag_collections', args, async () => {
+      logged('rag_collections', args, async () => {
         const cols = rag.listCollections().map((c) => ({ id: c.id, name: c.name, description: c.description, documents: c.docCount, chunks: c.chunkCount, vectors: !!c.embeddingDim }))
         return { content: [{ type: 'text', text: cols.map((c) => `- ${c.name} (${c.documents} docs): ${c.description}`).join('\n') || 'No collections.' }], structuredContent: { collections: cols } }
       })
@@ -224,7 +266,7 @@ export class McpHost {
         inputSchema: { query: z.string(), k: z.number().int().min(1).max(20).optional() }
       },
       (args) =>
-        this.logged('web_search', args, async () => {
+        logged('web_search', args, async () => {
           const res = await this.deps.web.search(args.query, { k: args.k })
           return {
             content: [{ type: 'text', text: res.results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n') || 'No results.' }],
@@ -250,7 +292,7 @@ export class McpHost {
         }
       },
       (args) =>
-        this.logged('rag_index', args, async () => {
+        logged('rag_index', args, async () => {
           const text = await indexKnowledge(this.deps.rag, args, {
             resolvePath: async (p) => {
               if (!isAbsolute(p)) throw new Error(`Use an absolute path: ${p}`)
@@ -282,7 +324,7 @@ export class McpHost {
         }
       },
       (args) =>
-        this.logged('tool_create', args, async () => {
+        logged('tool_create', args, async () => {
           const { tool, text } = createTool(this.deps.custom, args, 'mcp')
           return { content: [{ type: 'text', text }], structuredContent: { id: tool.id, name: tool.name, kind: tool.kind, enabled: tool.enabled } }
         })
@@ -300,24 +342,25 @@ export class McpHost {
           files: z.array(z.object({ path: z.string(), content: z.string() })).optional().describe('Supporting files by relative path')
         }
       },
-      (args) => this.logged('skill_create', args, async () => ({ content: [{ type: 'text', text: await createSkill(this.deps.skills, args) }] }))
+      (args) => logged('skill_create', args, async () => ({ content: [{ type: 'text', text: await createSkill(this.deps.skills, args) }] }))
     )
     return server
   }
 
-  private async logged(tool: string, args: unknown, fn: () => Promise<ToolResult>): Promise<ToolResult> {
+  private async logged(tool: string, args: unknown, fn: () => Promise<ToolResult>, app: string, ua: string): Promise<ToolResult> {
+    this.countCall(ua, app)
     const usage = this.deps.usage
     const call = async (): Promise<ToolResult> => {
       const started = Date.now()
       try {
         const out = await fn()
-        this.record({ at: started, tool, args, ok: true, durationMs: Date.now() - started })
+        this.record({ at: started, tool, args, ok: true, durationMs: Date.now() - started, direction: 'in', peer: app })
         usage?.tool(tool, 'mcp', Date.now() - started, true)
         const a = args as { name?: unknown; file?: unknown }
         if (tool === 'skill_use' && typeof a?.name === 'string' && !a.file) usage?.skill(a.name, 'mcp')
         return out
       } catch (err) {
-        this.record({ at: started, tool, args, ok: false, durationMs: Date.now() - started, error: errorMessage(err) })
+        this.record({ at: started, tool, args, ok: false, durationMs: Date.now() - started, error: errorMessage(err), direction: 'in', peer: app })
         usage?.tool(tool, 'mcp', Date.now() - started, false)
         return { content: [{ type: 'text', text: `Error: ${errorMessage(err)}` }], isError: true }
       }
@@ -329,6 +372,20 @@ export class McpHost {
     this.recent = [entry, ...this.recent].slice(0, 50)
     this.ctx.emit('mcp', this.status())
   }
+}
+
+/** The first port from `from` that nothing is listening on (null if none of the next 20 is free). */
+function freePort(from: number): Promise<number | null> {
+  const tryPort = (p: number) =>
+    new Promise<boolean>((resolve) => {
+      const s = createNetServer()
+      s.once('error', () => resolve(false))
+      s.listen(p, '127.0.0.1', () => s.close(() => resolve(true)))
+    })
+  return (async () => {
+    for (let p = from; p < from + 20 && p <= 65535; p++) if (await tryPort(p)) return p
+    return null
+  })()
 }
 
 function readJson(req: IncomingMessage): Promise<unknown> {
