@@ -6,7 +6,7 @@ import type { GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
-import type { AgentService } from './agents'
+import { ROLE_BUILTINS, type AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
@@ -159,7 +159,7 @@ export class AgentRuntime {
 
   /** Saved agents other agents may hand work to by name. */
   private delegates(self?: string | null): SavedAgent[] {
-    return (this.ws.agents?.list() ?? []).filter((a) => a.asSubagent && !a.builtin && a.id !== self)
+    return (this.ws.agents?.list() ?? []).filter((a) => a.asSubagent && (!a.builtin || !ROLE_BUILTINS.includes(a.builtin)) && a.id !== self)
   }
 
   private subagentSettings(): SubagentSettings {

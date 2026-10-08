@@ -424,7 +424,10 @@ export const DEFAULT_AGENT_SETUP: AgentSetup = {
 }
 
 /** Scout and worker: the built-in subagent roles, editable as agents. */
-export type AgentBuiltin = 'scout' | 'worker'
+export type AgentBuiltin = 'scout' | 'worker' | 'designer'
+
+/** The skills the built-in Designer always applies. */
+export const DESIGNER_SKILLS = ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines']
 
 /** A saved agent: who it is, what it's for, and what it may use. */
 export interface Agent extends AgentSetup {
