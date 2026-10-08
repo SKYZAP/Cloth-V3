@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
+import type { WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { describeChange, failureReport } from './history'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -81,10 +81,10 @@ export class WorkflowService {
   }
 
   /** `source: null` skips the first version (the caller saves real content right after). */
-  create(input: { name: string; description?: string; template?: 'blank' | 'rag-digest' }, source: WorkflowVersionSource | null = 'created'): Workflow {
+  create(input: { name: string; description?: string; template?: WorkflowTemplate }, source: WorkflowVersionSource | null = 'created'): Workflow {
     const id = newId('wf_')
     const now = Date.now()
-    const graph = input.template === 'rag-digest' ? ragDigestTemplate() : blankTemplate()
+    const graph = (TEMPLATES[input.template ?? 'blank'] ?? blankTemplate)()
     this.ctx.db
       .prepare('INSERT INTO workflows (id, name, description, graph, cron, cron_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 0, ?, ?)')
       .run(id, input.name.trim() || 'Untitled workflow', input.description ?? '', JSON.stringify(graph), now, now)
@@ -212,6 +212,56 @@ export class WorkflowService {
     const cur = this.get(id)
     const copy = this.create({ name: `${cur.name} (copy)`, description: cur.description }, null)
     return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false, workspace: cur.workspace }, { source: 'created', note: `Copied from “${cur.name}”` })
+  }
+
+  /** Every flow's last runs and upcoming schedule, and the latest runs overall. */
+  overview(): WorkflowOverview {
+    const week = Date.now() + 7 * 86_400_000
+    const labels = new Map<string, Map<string, string>>()
+    const label = (wfId: string, nodeId: string) => {
+      if (!labels.has(wfId)) {
+        const wf = this.find(wfId)
+        labels.set(wfId, new Map((wf?.nodes ?? []).map((n) => [n.id, String((n.data as { label?: unknown }).label ?? n.type)])))
+      }
+      return labels.get(wfId)!.get(nodeId) ?? null
+    }
+    const summary = (r: WorkflowRun): WorkflowRunSummary => {
+      const failed = r.nodes.find((n) => n.status === 'error')
+      return {
+        id: r.id,
+        workflowId: r.workflowId,
+        trigger: r.trigger,
+        status: r.status,
+        startedAt: r.startedAt,
+        durationMs: r.finishedAt ? r.finishedAt - r.startedAt : null,
+        steps: r.nodes.filter((n) => n.status === 'ok' || n.status === 'error').length,
+        error: (failed?.error ?? r.error)?.split('\n')[0].slice(0, 200) ?? null,
+        failedStep: failed ? label(r.workflowId, failed.nodeId) : null
+      }
+    }
+    const flows = this.list().map((wf) => {
+      let upcoming: number[] = []
+      if (wf.cronEnabled && wf.cron) {
+        try {
+          const c = new Cron(wf.cron, { paused: true })
+          upcoming = c.nextRuns(60).map((d) => d.getTime()).filter((t) => t <= week)
+          c.stop()
+        } catch {
+          /* invalid expression: nothing scheduled */
+        }
+      }
+      return { id: wf.id, runs: this.runs(wf.id, 10).map(summary), upcoming }
+    })
+    const recent = (this.ctx.db.prepare('SELECT data FROM workflow_runs ORDER BY started_at DESC LIMIT 12').all() as { data: string }[]).map((r) => summary(JSON.parse(r.data) as WorkflowRun))
+    return { flows, recent }
+  }
+
+  private find(id: string): Workflow | null {
+    try {
+      return this.get(id)
+    } catch {
+      return null
+    }
   }
 
   runs(workflowId: string, limit = 30): WorkflowRun[] {
@@ -570,6 +620,57 @@ function blankTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
       { id: 'e2', source: 'n_llm', target: 'n_out' }
     ]
   }
+}
+
+/** Fetch a page, turn it into text, and say what it says now. */
+function watchPageTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  return {
+    nodes: [
+      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "url": "https://example.com/pricing",\n  "watch_for": "price changes"\n}' } },
+      { id: 'n_http', type: 'http', position: { x: 300, y: 120 }, data: { key: 'page', label: 'Fetch the page', method: 'GET', url: '{{input.url}}', headers: '{}', body: '' } },
+      {
+        id: 'n_text',
+        type: 'transform',
+        position: { x: 600, y: 120 },
+        data: { key: 'text', label: 'Page as text', code: "return String(prev.body)\n  .replace(/<(script|style)[\\s\\S]*?<\\/\\1>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .slice(0, 12000)" }
+      },
+      { id: 'n_llm', type: 'llm', position: { x: 900, y: 120 }, data: { key: 'report', label: 'What it says now', system: 'Be brief and concrete.', prompt: 'Here is the text of {{input.url}}. Report anything about {{input.watch_for}}, quoting the page.\n\n{{text}}', model: null } },
+      { id: 'n_out', type: 'output', position: { x: 1200, y: 120 }, data: { key: 'result', label: 'Output', value: '{{report}}' } }
+    ],
+    edges: [
+      { id: 'e1', source: 'n_trigger', target: 'n_http' },
+      { id: 'e2', source: 'n_http', target: 'n_text' },
+      { id: 'e3', source: 'n_text', target: 'n_llm' },
+      { id: 'e4', source: 'n_llm', target: 'n_out' }
+    ]
+  }
+}
+
+/** An agent reads the flow's folder and answers a question about it. */
+function summariseFolderTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  return {
+    nodes: [
+      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "question": "What is in this folder, and what changed or needs attention?"\n}' } },
+      {
+        id: 'n_agent',
+        type: 'agent',
+        position: { x: 320, y: 100 },
+        data: { key: 'summary', label: 'Read the folder', prompt: 'Look through the files in your folder and answer: {{input.question}} Name the files you rely on.', system: '', collectionIds: [], skillsEnabled: false, webEnabled: false, customTools: false, fileAccess: 'read', maxTurns: 12 }
+      },
+      { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'result', label: 'Output', value: '{{summary}}' } }
+    ],
+    edges: [
+      { id: 'e1', source: 'n_trigger', target: 'n_agent' },
+      { id: 'e2', source: 'n_agent', target: 'n_out' }
+    ]
+  }
+}
+
+const TEMPLATES: Record<WorkflowTemplate, () => { nodes: WorkflowNode[]; edges: WorkflowEdge[] }> = {
+  blank: blankTemplate,
+  'rag-digest': ragDigestTemplate,
+  'watch-page': watchPageTemplate,
+  'summarise-folder': summariseFolderTemplate
 }
 
 function ragDigestTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {

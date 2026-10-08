@@ -33,5 +33,7 @@ export const newId = (prefix = ''): string => prefix + randomUUID().replace(/-/g
 
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
+  // Errors from another realm (a vm sandbox, a worker) aren't `instanceof Error` here but still carry a message.
+  if (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') return (err as { message: string }).message
   return typeof err === 'string' ? err : JSON.stringify(err)
 }
