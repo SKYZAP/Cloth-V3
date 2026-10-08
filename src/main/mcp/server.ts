@@ -16,7 +16,8 @@ import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_C
 import { stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 
-const TOOLS = [
+/** What Cloth's server shares with apps (the Tools page's "apps" column follows this). */
+export const TOOLS = [
   { name: 'skill_list', description: 'List skills in the Cloth skill hub (name, description, health).' },
   { name: 'skill_use', description: 'Fetch the full instructions of a skill (SKILL.md) or one of its bundled files.' },
   { name: 'rag_search', description: 'Hybrid (BM25 + vector) or agentic search over Cloth knowledge collections.' },

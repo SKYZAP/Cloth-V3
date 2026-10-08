@@ -116,6 +116,8 @@ export interface ClothApi {
   }
   tools: {
     builtins(): Promise<BuiltinToolInfo[]>
+    /** Calls per tool name over the last 30 days. */
+    usage(): Promise<Record<string, import('./types').ToolUsage>>
     list(): Promise<CustomTool[]>
     create(input: CustomToolInput): Promise<CustomTool>
     update(id: string, input: CustomToolInput): Promise<CustomTool>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
+import { X } from '@phosphor-icons/react'
 import { isMobile } from '@/lib/platform'
 
 /**
@@ -56,4 +57,20 @@ function Panel({ label, onClose, width, children }: { label: string; onClose(): 
 export function refocus(key: string | null): void {
   if (!key) return
   requestAnimationFrame(() => (document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`) as HTMLElement | null)?.focus())
+}
+
+/** Title row of an inspector: a heading, optional actions, and Close. */
+export function InspectorHead({ title, sub, actions, onClose }: { title: React.ReactNode; sub?: React.ReactNode; actions?: React.ReactNode; onClose(): void }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3">
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-[15px] font-semibold">{title}</h2>
+        {sub && <div className="truncate text-[12px] text-dim">{sub}</div>}
+      </div>
+      {actions}
+      <button onClick={onClose} aria-label="Close" title="Close (Esc)" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg">
+        <X size={15} />
+      </button>
+    </div>
+  )
 }

@@ -7,7 +7,7 @@ import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { Type, type Static, type TSchema } from 'typebox'
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
-import type { BuiltinToolInfo, RagHit, RagMode, WebResult } from '@shared/types'
+import type { BuiltinToolInfo, RagHit, RagMode, ToolWhere, WebResult } from '@shared/types'
 import { formatHitsForModel, type RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
@@ -373,6 +373,37 @@ export const BUILTINS: BuiltinSpec[] = [
 
 export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task', 'generate_image']
 
+const W = (chats: boolean, subagents: boolean, flows: boolean, apps: boolean): ToolWhere => ({ chats, subagents, flows, apps })
+/**
+ * Where each built-in can be called. Follows each tool's `when`: subagents run at depth 1 in their chat's
+ * session; flow Agent steps have no session, no shell, no code intelligence and no subagents; apps get
+ * what Cloth's MCP server shares (MCP_SHARED_TOOLS).
+ */
+const WHERE: Record<string, ToolWhere> = {
+  todo_write: W(true, false, false, false),
+  ask_user: W(true, false, false, false),
+  rag_search: W(true, true, true, true),
+  rag_index: W(true, false, false, true),
+  web_search: W(true, true, true, true),
+  web_fetch: W(true, true, true, false),
+  skill_list: W(true, true, true, true),
+  skill_use: W(true, true, true, true),
+  skill_create: W(true, false, false, true),
+  tool_create: W(true, false, false, true),
+  read: W(true, true, true, false),
+  ls: W(true, true, true, false),
+  find: W(true, true, true, false),
+  grep: W(true, true, true, false),
+  ast_grep: W(true, true, true, false),
+  ast_edit: W(true, true, true, false),
+  write: W(true, true, true, false),
+  edit: W(true, true, true, false),
+  lsp: W(true, true, false, false),
+  bash: W(true, true, false, false),
+  powershell: W(true, true, false, false),
+  task: W(true, false, false, false)
+}
+
 export function describeBuiltins(): BuiltinToolInfo[] {
   return BUILTINS.map((b) => ({
     name: b.name,
@@ -380,15 +411,17 @@ export function describeBuiltins(): BuiltinToolInfo[] {
     description: b.description(null),
     group: b.group,
     availability: b.availability,
+    where: WHERE[b.name] ?? W(true, false, false, false),
     schema: JSON.parse(JSON.stringify(b.parameters))
   }))
-    .concat(describeWorkspaceTools())
+    .concat(describeWorkspaceTools().map((t) => ({ ...t, where: WHERE[t.name] ?? W(true, true, true, false) })))
     .concat({
       name: 'task',
       label: 'Subagent',
       description: 'Delegate a self-contained job to a subagent with its own fresh context: a read-only scout for exploring and researching, or a worker that can also edit files (edits still need approval). Several can run in parallel; each returns a concise report.',
       group: 'planning',
       availability: 'Chats with subagents on',
+      where: WHERE.task,
       schema: { type: 'object', required: ['description', 'prompt'], properties: { description: { type: 'string' }, prompt: { type: 'string' }, role: { type: 'string', enum: ['scout', 'worker'] } } }
     })
 }

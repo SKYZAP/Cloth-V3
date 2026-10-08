@@ -995,7 +995,25 @@ export interface BuiltinToolInfo {
   description: string
   group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning' | 'tools'
   availability: string
+  /** Where an agent can call it: chats, subagents, flow Agent steps, and apps connected to Cloth over MCP. */
+  where: ToolWhere
   schema: unknown
+}
+
+export interface ToolWhere {
+  chats: boolean
+  subagents: boolean
+  flows: boolean
+  apps: boolean
+}
+
+/** Calls of one tool over the last 30 days, from every source (chats, flows, MCP…). */
+export interface ToolUsage {
+  calls: number
+  errors: number
+  lastAt: number
+  /** Calls per day for the last 14 days, oldest first. */
+  daily: number[]
 }
 
 export interface ToolRunResult {

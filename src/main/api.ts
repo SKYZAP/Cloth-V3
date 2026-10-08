@@ -72,6 +72,7 @@ export function createApi(s: Services): ClothApi {
       loadExamples: () => s.examples.load()
     },
     tools: {
+      usage: async () => s.dashboard.toolUsage(),
       builtins: async () => describeBuiltins(),
       list: async () => s.custom.list(),
       create: async (input) => s.custom.create(input),

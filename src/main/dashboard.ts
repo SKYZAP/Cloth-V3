@@ -260,6 +260,25 @@ export class DashboardService {
     return { cost: r.stored_cost + late, priced: !!price || r.stored_cost > 0 }
   }
 
+  /** Calls per tool over the last 30 days, with a 14-day daily series (local days, oldest first). */
+  toolUsage(): Record<string, import('@shared/types').ToolUsage> {
+    const DAY = 86_400_000
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const start14 = today.getTime() - 13 * DAY
+    const out: Record<string, import('@shared/types').ToolUsage> = {}
+    for (const r of this.q<{ name: string; calls: number; errors: number; last: number }>(
+      `SELECT name, COUNT(*) AS calls, SUM(1 - ok) AS errors, MAX(at) AS last FROM usage_events WHERE kind = 'tool' AND at >= ? AND name IS NOT NULL GROUP BY name`,
+      Date.now() - 30 * DAY
+    ))
+      out[r.name] = { calls: r.calls, errors: r.errors, lastAt: r.last, daily: Array(14).fill(0) }
+    for (const r of this.q<{ name: string; at: number }>(`SELECT name, at FROM usage_events WHERE kind = 'tool' AND at >= ? AND name IS NOT NULL`, start14)) {
+      const d = Math.floor((r.at - start14) / DAY)
+      if (out[r.name] && d >= 0 && d < 14) out[r.name].daily[d]++
+    }
+    return out
+  }
+
   private q<T>(sql: string, ...params: (string | number | null)[]): T[] {
     return this.ctx.db.prepare(sql).all(...params) as unknown as T[]
   }
@@ -277,3 +296,4 @@ function avg(xs: number[]): number {
 function fmt(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n)
 }
+
