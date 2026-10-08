@@ -292,6 +292,21 @@ function Documents({ docs, onOpen }: { docs?: RagDocument[]; onOpen(id: string):
   const [filter, setFilter] = useState('')
   if (!docs?.length) return null
   const max = Math.max(1, ...docs.map((d) => d.chunkCount))
+  // Sites often give every page the same title; then the page's path tells them apart.
+  const seen = new Map<string, number>()
+  for (const d of docs) seen.set(d.title, (seen.get(d.title) ?? 0) + 1)
+  const name = (d: RagDocument) => {
+    if ((seen.get(d.title) ?? 0) < 2) return d.title
+    if (d.sourceType === 'url') {
+      try {
+        const u = new URL(d.source)
+        return decodeURIComponent(u.pathname + u.hash).replace(/^\/$/, u.host) || d.title
+      } catch {
+        return d.title
+      }
+    }
+    return d.source.split(/[\\/]/).slice(-2).join('/')
+  }
   const shown = docs.filter((d) => !filter || `${d.title} ${d.source}`.toLowerCase().includes(filter.toLowerCase())).slice(0, 200)
   return (
     <section aria-label="Documents" className="rounded-[12px] border border-line bg-elev">
@@ -315,8 +330,8 @@ function Documents({ docs, onOpen }: { docs?: RagDocument[]; onOpen(id: string):
               title={d.source}
               className="grid w-full grid-cols-[minmax(0,1fr)_70px_28px] items-center gap-2 px-3.5 py-1.5 text-left text-[12.5px] hover:bg-elev-2"
             >
-              <span className="min-w-0 truncate">
-                {d.title}
+              <span className="min-w-0 truncate" translate="no">
+                {name(d)}
                 {state && <span className={clsx('ml-2 text-[11.5px]', state === 'failed' ? 'text-crimson-hi' : 'text-info')}>{state}</span>}
               </span>
               <span className="h-[5px] overflow-hidden rounded-full bg-line-strong" aria-hidden="true">
@@ -357,7 +372,7 @@ function Passage({ hit, n, best, words }: { hit: RagHit; n: number; best: number
   const [more, setMore] = useState(false)
   const short = hit.text.length > 360 && !more
   return (
-    <article id={`cite-${n}`} className="grid gap-1.5 border-t border-line py-3 first:border-t-0">
+    <article id={`cite-${n}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 border-t border-line py-3 first:border-t-0">
       <div className="flex items-center gap-2.5">
         <span className="w-5 shrink-0 text-[12px] tabular-nums text-dim">{n}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted" title={`${hit.source}${hit.headingPath ? ` › ${hit.headingPath}` : ''}`} translate="no">
@@ -371,7 +386,7 @@ function Passage({ hit, n, best, words }: { hit: RagHit; n: number; best: number
           {hit.score.toPrecision(2)}
         </span>
       </div>
-      <p className="whitespace-pre-wrap pl-[30px] text-[12.5px] leading-relaxed text-muted">
+      <p className="whitespace-pre-wrap pl-[30px] text-[12.5px] leading-relaxed text-muted [overflow-wrap:anywhere]">
         <Highlight text={short ? `${hit.text.slice(0, 360).trimEnd()}…` : hit.text} words={words} />
         {hit.text.length > 360 && (
           <button onClick={() => setMore(!more)} className="ml-1.5 text-[12px] text-dim underline underline-offset-2 hover:text-fg">
@@ -435,7 +450,7 @@ function SearchPanel({ collection }: { collection: Collection }) {
       : ''
 
   return (
-    <section aria-label={`Search ${collection.name}`} className="grid min-w-0 content-start gap-3">
+    <section aria-label={`Search ${collection.name}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3">
       <form
         className="flex items-center gap-2 rounded-[12px] border border-crimson-line bg-elev px-3 py-2"
         onSubmit={(e) => {
@@ -522,7 +537,7 @@ function SearchPanel({ collection }: { collection: Collection }) {
           ) : (
             <>
               {result.answer && (
-                <div className="rounded-[12px] border border-line-strong bg-elev p-4">
+                <div className="min-w-0 rounded-[12px] border border-line-strong bg-elev p-4 [&_pre]:max-w-full [&_pre]:overflow-x-auto">
                   <div className="mb-2 text-[12px] text-dim">
                     Answer{result.model ? ` from ${result.model}` : ''} in {(result.tookMs / 1000).toFixed(1)} s, citing the passages below
                   </div>
