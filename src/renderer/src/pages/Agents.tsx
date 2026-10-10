@@ -25,7 +25,7 @@ type Activity = Record<string, { jobs: number; failed: number; lastAt: number }>
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /**
- * The team: Cloth on top, the agents it hands work to below, and the agents you pick for a chat.
+ * The team: Cloth on top and every agent below. Any agent can run a chat or take work Cloth hands it.
  * Each card says what the agent may touch; the editor opens beside the team rather than replacing it.
  */
 export function AgentsPage() {
@@ -54,12 +54,9 @@ export function AgentsPage() {
 
   const q = filter.trim().toLowerCase()
   const shown = agents.filter((a) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q))
-  const subagents = shown.filter((a) => a.asSubagent)
-  const chatAgents = shown.filter((a) => a.asChat)
-  const idle = shown.filter((a) => !a.asSubagent && !a.asChat)
   const open = agents.find((a) => a.id === openId) ?? null
-  // Templates you haven't added yet fill the chat-agent lane until it has a few of its own.
-  const templates = AGENT_TEMPLATES.filter((t) => !agents.some((a) => a.name.toLowerCase() === t.agent.name?.toLowerCase())).slice(0, q ? 0 : Math.max(0, 2 - chatAgents.length))
+  // Templates you haven't added yet fill the team until you have a few agents of your own.
+  const templates = AGENT_TEMPLATES.filter((t) => !agents.some((a) => a.name.toLowerCase() === t.agent.name?.toLowerCase())).slice(0, q ? 0 : Math.max(0, 2 - agents.filter((a) => !a.builtin).length))
 
   const fromTemplate = async (template: string) => {
     const a = await attempt(() => api.agents.create({ template }))
@@ -72,10 +69,8 @@ export function AgentsPage() {
     refocus(id)
   }
 
-  const card = (a: Agent, lane: 'sub' | 'chat') => (
-    <AgentCard key={`${lane}-${a.id}`} agent={a} lane={lane} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
-  )
-  const counts = [plural(agents.filter((a) => a.asSubagent).length, 'subagent'), agents.some((a) => a.asChat) ? plural(agents.filter((a) => a.asChat).length, 'chat agent') : 'no chat agents yet'].join(', ')
+  // Cloth counts as one of the team.
+  const counts = `${plural(agents.length + 1, 'agent')}, all usable in chats and by other agents`
 
   return (
     <div className="relative h-full">
@@ -102,7 +97,7 @@ export function AgentsPage() {
               </span>
               <div className="min-w-0">
                 <div className="text-[13.5px] font-semibold">Cloth</div>
-                <div className="text-[12px] text-muted">The main agent in every chat. It hands jobs to the subagents below when they fit.</div>
+                <div className="text-[12px] text-muted">The main agent in every chat. It hands jobs to the agents below when they fit, and you can chat with any of them directly.</div>
               </div>
             </div>
             <svg aria-hidden="true" className="h-6 w-full mobile:hidden max-[760px]:hidden" viewBox="0 0 900 24" preserveAspectRatio="none">
@@ -110,13 +105,10 @@ export function AgentsPage() {
             </svg>
           </div>
 
-          <Lane title="Subagents" hint="Cloth hands them work by name">
-            {subagents.map((a) => card(a, 'sub'))}
-            {!subagents.length && <LaneEmpty>{q ? 'No subagent matches.' : 'No subagents. Turn on "Subagent" in an agent to let Cloth hand it work.'}</LaneEmpty>}
-          </Lane>
-
-          <Lane title="Chat agents" hint="Pick one as a chat's agent in its Setup tab">
-            {chatAgents.map((a) => card(a, 'chat'))}
+          <Lane title="Team" hint="Chat with any of them, or let Cloth hand them work by name">
+            {shown.map((a) => (
+              <AgentCard key={a.id} agent={a} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
+            ))}
             {templates.map((t) => (
               <div key={t.id} className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
                 <span className="text-[13px] font-semibold">{t.name}</span>
@@ -135,14 +127,8 @@ export function AgentsPage() {
                 </Button>
               </div>
             )}
-            {q && !chatAgents.length && <LaneEmpty>No chat agent matches.</LaneEmpty>}
+            {q && !shown.length && <LaneEmpty>No agent matches “{filter.trim()}”.</LaneEmpty>}
           </Lane>
-
-          {idle.length > 0 && (
-            <Lane title="Not in use" hint="Neither a chat agent nor a subagent; turn one on in its editor">
-              {idle.map((a) => card(a, 'chat'))}
-            </Lane>
-          )}
         </div>
       </div>
 
@@ -189,7 +175,9 @@ function LaneEmpty({ children }: { children: ReactNode }) {
 const TILE: Record<string, string> = {
   designer: 'bg-skill-soft text-skill',
   scout: 'bg-info/15 text-info',
-  worker: 'bg-warn/15 text-warn'
+  worker: 'bg-warn/15 text-warn',
+  researcher: 'bg-ok/15 text-ok',
+  reviewer: 'bg-fg/10 text-fg'
 }
 
 function Tile({ name, builtin, size = 'sm' }: { name: string; builtin?: string | null; size?: 'sm' | 'lg' }) {
@@ -213,17 +201,11 @@ function access(a: Agent): string {
   return a.shell ? 'Edits files, runs commands' : 'Edits files'
 }
 
-function AgentCard({ agent: a, lane, activity, chats, selected, onOpen }: { agent: Agent; lane: 'sub' | 'chat'; activity?: { jobs: number; failed: number }; chats: number; selected: boolean; onOpen(): void }) {
+function AgentCard({ agent: a, activity, chats, selected, onOpen }: { agent: Agent; activity?: { jobs: number; failed: number }; chats: number; selected: boolean; onOpen(): void }) {
   const always = a.skillsEnabled || a.skillsAlways.length ? a.skillsAlways : []
-  const extra = lane === 'sub' ? (a.asChat ? 'also a chat agent' : null) : a.asSubagent ? 'also a subagent' : null
-  const use =
-    lane === 'sub'
-      ? activity?.jobs
-        ? `${plural(activity.jobs, 'job')} this week${activity.failed ? `, ${activity.failed} failed` : ''}`
-        : 'No jobs this week'
-      : chats
-        ? `Used in ${plural(chats, 'chat')}`
-        : 'Not used in a chat yet'
+  // Chats it runs and jobs other agents handed it, together.
+  const parts = [chats ? plural(chats, 'chat') : '', activity?.jobs ? `${plural(activity.jobs, 'job')} this week${activity.failed ? ` (${activity.failed} failed)` : ''}` : ''].filter(Boolean)
+  const use = parts.length ? parts.join(', ') : 'Not used yet'
   return (
     <button
       data-agent={a.id}
@@ -239,7 +221,6 @@ function AgentCard({ agent: a, lane, activity, chats, selected, onOpen }: { agen
           <span className="block truncate text-[13.5px] font-semibold" title={a.name}>
             {a.name}
           </span>
-          {extra && <span className="block text-[11.5px] text-dim">{extra}</span>}
         </span>
         {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">built in</span>}
       </span>
@@ -324,14 +305,12 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
             {agent.name}
           </span>
         }
-        subtitle={agent.builtin ? 'Built in: the main agent hands it work as a subagent' : undefined}
+        subtitle={agent.builtin ? 'Built in: you can change it, but not delete it' : undefined}
         actions={
           <>
-            {agent.asChat && (
-              <Button size="sm" icon={<ChatCircleDots size={14} />} onClick={() => void useInChat()}>
-                New chat with it
-              </Button>
-            )}
+            <Button size="sm" icon={<ChatCircleDots size={14} />} onClick={() => void useInChat()}>
+              New chat with it
+            </Button>
             <Button size="sm" variant="ghost" icon={<Copy size={14} />} onClick={async () => {
               const a = await attempt(() => api.agents.duplicate(agent.id))
               if (a) onDuplicated(a)
@@ -417,12 +396,6 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
             </Collapsible>
           </div>
 
-          <Section title="Works as">
-            <div className="flex flex-wrap gap-4">
-              <Check label="Chat agent" sub="Pick it in a chat's Setup tab" on={agent.asChat} disabled={!!agent.builtin} onChange={(asChat) => void save({ asChat })} />
-              <Check label="Subagent" sub="Other agents can hand it work by name" on={agent.asSubagent} disabled={!!agent.builtin} onChange={(asSubagent) => void save({ asSubagent })} />
-            </div>
-          </Section>
           {!agent.builtin && (
             <Section title="Approvals" hint="Used when a chat is set up from this agent.">
               <Segmented
@@ -464,18 +437,6 @@ function Collapsible({ title, meta, defaultOpen, children }: { title: string; me
       </button>
       {open && <div className="border-t border-line p-2">{children}</div>}
     </div>
-  )
-}
-
-function Check({ label, sub, on, disabled, onChange }: { label: string; sub: string; on: boolean; disabled?: boolean; onChange(v: boolean): void }) {
-  return (
-    <label className={clsx('flex items-start gap-2', disabled ? 'opacity-50' : 'cursor-pointer')}>
-      <input type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 accent-crimson" />
-      <span>
-        <span className="block text-[12.5px] text-fg">{label}</span>
-        <span className="block text-[11px] text-dim">{sub}</span>
-      </span>
-    </label>
   )
 }
 

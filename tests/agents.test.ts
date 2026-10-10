@@ -17,27 +17,46 @@ afterEach(() => {
 const systemText = (ctx: TranscriptContext) => JSON.stringify(ctx.messages.filter((m) => (m.role as string) === 'system'))
 
 describe('agents', () => {
-  it('starts with scout, worker and designer built in, which can be edited but not deleted', () => {
+  it('starts with five built-in agents, which can be edited but not deleted', () => {
     const { services } = makeServices()
     const list = services.agents.list()
-    expect(list.map((a) => a.builtin)).toEqual(['designer', 'scout', 'worker'])
+    expect(list.map((a) => a.builtin)).toEqual(['reviewer', 'designer', 'researcher', 'scout', 'worker'])
     const scout = services.agents.builtin('scout')
     expect(() => services.agents.remove(scout.id)).toThrow(/built in/)
-    const edited = services.agents.update(scout.id, { name: 'Renamed', instructions: 'Cite files as path:line.', fileAccess: 'write', asChat: true })
+    const edited = services.agents.update(scout.id, { name: 'Renamed', instructions: 'Cite files as path:line.', fileAccess: 'write' })
     expect(edited.name).toBe('Scout')
     expect(edited.instructions).toBe('Cite files as path:line.')
     expect(edited.fileAccess).toBe('read')
-    expect(edited.asChat).toBe(false)
+  })
+
+  it('has a read-only Researcher and Code reviewer built in', () => {
+    const { services } = makeServices()
+    expect(services.agents.builtin('researcher')).toMatchObject({ name: 'Researcher', webEnabled: true, knowledgeEnabled: true, fileAccess: 'read', shell: false })
+    const reviewer = services.agents.builtin('reviewer')
+    expect(reviewer).toMatchObject({ name: 'Code reviewer', fileAccess: 'read', shell: false })
+    expect(reviewer.instructions).toContain('never edit files')
+    // It stays read-only whatever is asked of it.
+    expect(services.agents.update(reviewer.id, { fileAccess: 'write', shell: true })).toMatchObject({ fileAccess: 'read', shell: false })
+  })
+
+  it('turns an agent the user already named Researcher into the built-in, keeping its setup', () => {
+    const { services } = makeServices()
+    services.ctx.db.prepare("INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES ('agt_mine', 'researcher', NULL, ?, 1, 1)").run(JSON.stringify({ purpose: 'Mine', instructions: 'MY-NOTES', asChat: true, asSubagent: false, fileAccess: 'write' }))
+    const list = services.agents.list()
+    expect(list.filter((a) => a.name === 'Researcher')).toHaveLength(1)
+    const r = services.agents.builtin('researcher')
+    expect(r).toMatchObject({ id: 'agt_mine', name: 'Researcher', instructions: 'MY-NOTES', fileAccess: 'read' })
+    expect(r).not.toHaveProperty('asChat')
   })
 
   it('creates agents from templates with unique names', () => {
     const { services } = makeServices()
-    const a = services.agents.create({ template: 'researcher' })
-    expect(a).toMatchObject({ name: 'Researcher', webEnabled: true, fileAccess: 'read', builtin: null })
-    expect(a.instructions).toContain('cite each claim')
-    const b = services.agents.create({ template: 'researcher' })
-    expect(b.name).toBe('Researcher 2')
-    expect(() => services.agents.update(b.id, { name: 'researcher' })).toThrow(/already/)
+    const a = services.agents.create({ template: 'code-tour' })
+    expect(a).toMatchObject({ name: 'Code tour guide', codeIntel: true, fileAccess: 'read', builtin: null })
+    expect(a.instructions).toContain('Refer to files')
+    const b = services.agents.create({ template: 'code-tour' })
+    expect(b.name).toBe('Code tour guide 2')
+    expect(() => services.agents.update(b.id, { name: 'code tour guide' })).toThrow(/already/)
   })
 
   it('sets a chat up from an agent and sends its instructions', async () => {
@@ -103,10 +122,8 @@ describe('agents', () => {
     const { services } = makeServices()
     for (const name of ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines']) await services.skills.create({ name, description: `${name} rules`, body: `${name.toUpperCase()}-BODY` })
     const designer = services.agents.builtin('designer')
-    expect(designer).toMatchObject({ name: 'Designer', asSubagent: true, asChat: false, fileAccess: 'write', skillsAlways: ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines'] })
+    expect(designer).toMatchObject({ name: 'Designer', fileAccess: 'write', skillsAlways: ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines'] })
     expect(() => services.agents.remove(designer.id)).toThrow(/built in/)
-    // Its skills and instructions can be changed; it stays a subagent.
-    expect(services.agents.update(designer.id, { asChat: true, asSubagent: false }).asSubagent).toBe(true)
 
     const root = mkdtempSync(join(tmpdir(), 'cloth-agent-'))
     const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })

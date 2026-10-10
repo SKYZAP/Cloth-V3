@@ -29,23 +29,56 @@ While you work:
 
 Before you finish, review your own change against web-design-guidelines and fix what fails. Report what you changed (files and why), anything you couldn't check, and any design decision the main agent should confirm with the user.`
 
+const RESEARCHER_INSTRUCTIONS = `You research questions and report what you find.
+
+- Search the knowledge base first for anything about the user's own projects, then the web.
+- Read the sources themselves rather than trusting search snippets.
+- Cite every claim with its source (a link, or the document and section).
+- Say plainly when sources disagree, are old, or when you found nothing reliable. Never fill a gap with a guess.
+- Finish with a short answer first, then the evidence behind it.`
+
+const REVIEWER_INSTRUCTIONS = `You review code changes and report problems. You never edit files.
+
+Start from what changed: the git diff, or the files you were pointed at. Read enough of the surrounding code to judge each change in context.
+
+Check, in this order:
+- Bugs and syntax: wrong logic, missed edge cases, type errors, unhandled errors, missing awaits.
+- Security: secrets in code or logs, injection (shell, SQL, HTML), unsafe URLs or file paths, missing permission checks.
+- Code smells: long or tangled functions, duplication, unclear names, dead code.
+- Performance: repeated work, queries or requests in loops, needless re-renders.
+- Tests: changed behaviour with no test covering it.
+
+Report each finding with its severity (high, medium or low), the file and line, what is wrong, and how to fix it, most serious first. Only report what you are confident about. If you find nothing worth fixing, say so.`
+
 /** Built-in agents: `fixed` holds what the user can't change; `seed` is where each starts. */
 const BUILTINS: Record<AgentBuiltin, { name: string; purpose: string; fixed: Partial<AgentConfig>; seed?: Partial<AgentConfig> }> = {
   scout: {
     name: 'Scout',
     purpose: 'Explores code, files and the web for the main agent and reports back. Read-only.',
-    fixed: { fileAccess: 'read', shell: false, asChat: false, asSubagent: true }
+    fixed: { fileAccess: 'read', shell: false }
   },
   worker: {
     name: 'Worker',
     purpose: 'Makes changes the main agent hands over, keeping them minimal. Each edit follows the chat’s approvals.',
-    fixed: { fileAccess: 'write', shell: false, asChat: false, asSubagent: true }
+    fixed: { fileAccess: 'write', shell: false }
   },
   designer: {
     name: 'Designer',
     purpose: 'Designs and builds UI: pages, screens, components and visual polish, following the project’s design system. Hand it any job about how something looks or feels to use.',
-    fixed: { asChat: false, asSubagent: true },
+    fixed: {},
     seed: { fileAccess: 'write', shell: false, webEnabled: true, skillsEnabled: true, skillsAlways: DESIGNER_SKILLS, instructions: DESIGNER_INSTRUCTIONS }
+  },
+  researcher: {
+    name: 'Researcher',
+    purpose: 'Searches the web and the knowledge base, compares sources and cites every claim. Hand it any question that needs looking up. Read-only.',
+    fixed: { fileAccess: 'read', shell: false },
+    seed: { webEnabled: true, knowledgeEnabled: true, instructions: RESEARCHER_INSTRUCTIONS }
+  },
+  reviewer: {
+    name: 'Code reviewer',
+    purpose: 'Reviews code changes for bugs, security problems, code smells, performance and missing tests, and reports each finding with its file and line. Never edits.',
+    fixed: { fileAccess: 'read', shell: false },
+    seed: { codeIntel: true, instructions: REVIEWER_INSTRUCTIONS }
   }
 }
 
@@ -57,20 +90,22 @@ const DEFAULTS: AgentConfig = {
   instructions: '',
   model: null,
   thinking: null,
-  asChat: true,
-  asSubagent: true,
   ...DEFAULT_AGENT_SETUP
 }
 
-const toAgent = (r: AgentRow): Agent => ({
-  id: r.id,
-  name: r.name,
-  builtin: (r.builtin as AgentBuiltin | null) ?? null,
-  ...DEFAULTS,
-  ...json<Partial<AgentConfig>>(r.config, {}),
-  createdAt: r.created_at,
-  updatedAt: r.updated_at
-})
+const toAgent = (r: AgentRow): Agent => {
+  // Agents saved before every agent could work everywhere carry asChat / asSubagent; drop them.
+  const { asChat: _c, asSubagent: _s, ...config } = json<Partial<AgentConfig> & { asChat?: unknown; asSubagent?: unknown }>(r.config, {})
+  return {
+    id: r.id,
+    name: r.name,
+    builtin: (r.builtin as AgentBuiltin | null) ?? null,
+    ...DEFAULTS,
+    ...config,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }
+}
 
 const DRAFT_SYSTEM = `You set up AI agents for a developer tool. From the user's description, write a short name (1 to 3 words, Title Case, no quotes, no emoji, no word "Agent") and a purpose: one or two plain sentences saying what the agent does and when another agent should hand it work. Reply with JSON only: {"name": "...", "purpose": "..."}`
 
@@ -79,7 +114,7 @@ Write in the second person ("You review…"). Be concrete: what to do first, how
 
 const REWRITE_SYSTEM = `You edit the instructions (system prompt) of an AI agent. Apply the requested change and keep everything else as it is unless it contradicts the change. Keep the same voice and format. Reply with the full new instructions only, no preamble.`
 
-/** Saved agents: a purpose, instructions, a model and what they may use; usable as a chat's agent or a subagent. */
+/** Saved agents: a purpose, instructions, a model and what they may use. Every agent can run a chat and take work from other agents. */
 export class AgentService {
   constructor(
     private ctx: Ctx,
@@ -139,7 +174,7 @@ export class AgentService {
     if (name.toLowerCase() !== cur.name.toLowerCase() && this.list().some((a) => a.id !== id && a.name.toLowerCase() === name.toLowerCase())) throw new Error(`There is already an agent called ${name}`)
     const { id: _i, name: _n, builtin: _b, createdAt: _c, updatedAt: _u, ...config } = { ...cur, ...pickConfig(patch) }
     // A built-in keeps its name and the access its role depends on.
-    const fixed = cur.builtin ? { ...BUILTINS[cur.builtin].fixed, asChat: false } : {}
+    const fixed = cur.builtin ? BUILTINS[cur.builtin].fixed : {}
     this.ctx.db.prepare('UPDATE agents SET name = ?, config = ?, updated_at = ? WHERE id = ?').run(cur.builtin ? cur.name : name, JSON.stringify({ ...config, ...fixed }), Date.now(), id)
     this.changed()
     return this.get(id)
@@ -148,7 +183,7 @@ export class AgentService {
   duplicate(id: string): Agent {
     const cur = this.get(id)
     const { id: _i, builtin: _b, createdAt: _c, updatedAt: _u, ...rest } = cur
-    return this.create({ ...rest, name: `${cur.name} copy`, asChat: true })
+    return this.create({ ...rest, name: `${cur.name} copy` })
   }
 
   remove(id: string): void {
@@ -203,7 +238,7 @@ export class AgentService {
     for (let i = 2; ; i++) if (!taken.has(`${name} ${i}`.toLowerCase())) return `${name} ${i}`
   }
 
-  /** Jobs each agent ran as a subagent since `since` (default: the last 7 days), by agent id. */
+  /** Jobs each agent was handed by another agent since `since` (default: the last 7 days), by agent id. */
   activity(since = Date.now() - 7 * 86_400_000): Record<string, { jobs: number; failed: number; lastAt: number }> {
     const rows = this.ctx.db
       .prepare("SELECT name, COUNT(*) AS jobs, SUM(1 - ok) AS failed, MAX(at) AS last FROM usage_events WHERE kind = 'agent' AND at >= ? GROUP BY name")
@@ -211,7 +246,7 @@ export class AgentService {
     return Object.fromEntries(rows.map((r) => [r.name, { jobs: r.jobs, failed: r.failed, lastAt: r.last }]))
   }
 
-  /** The built-ins (scout, worker, designer) exist as editable agents from the start. */
+  /** The built-ins exist as editable agents from the start. */
   private seeded = false
   private seed(): void {
     if (this.seeded) return
@@ -222,6 +257,12 @@ export class AgentService {
       if (have.has(kind)) continue
       const b = BUILTINS[kind]
       const now = Date.now()
+      // An agent the user already made under this name (e.g. from the old Researcher template) becomes the built-in, keeping its setup.
+      const mine = this.ctx.db.prepare('SELECT id, config FROM agents WHERE builtin IS NULL AND name = ? COLLATE NOCASE').get(b.name) as { id: string; config: string } | undefined
+      if (mine) {
+        this.ctx.db.prepare('UPDATE agents SET builtin = ?, name = ?, config = ?, updated_at = ? WHERE id = ?').run(kind, b.name, JSON.stringify({ ...json<object>(mine.config, {}), ...b.fixed }), now, mine.id)
+        continue
+      }
       // Instructions set for all subagents before agents existed carry over to scout and worker.
       const config: AgentConfig = { ...DEFAULTS, purpose: b.purpose, instructions: legacy, ...b.seed, ...b.fixed }
       this.ctx.db.prepare('INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(newId('agt_'), b.name, kind, JSON.stringify(config), now, now)
@@ -233,7 +274,7 @@ export class AgentService {
   }
 }
 
-const KEYS: (keyof AgentConfig)[] = ['purpose', 'instructions', 'model', 'thinking', 'asChat', 'asSubagent', ...(Object.keys(DEFAULT_AGENT_SETUP) as (keyof AgentConfig)[])]
+const KEYS: (keyof AgentConfig)[] = ['purpose', 'instructions', 'model', 'thinking', ...(Object.keys(DEFAULT_AGENT_SETUP) as (keyof AgentConfig)[])]
 function pickConfig(input: AgentInput): Partial<AgentConfig> {
   const out: Partial<AgentConfig> = {}
   for (const k of KEYS) if (input[k as keyof AgentInput] !== undefined) (out as Record<string, unknown>)[k] = input[k as keyof AgentInput]

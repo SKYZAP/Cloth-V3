@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, Notification, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import { createApi } from './api'
 import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
 import type { UsageService } from './core/usage'
-import type { UsageSource } from '@shared/types'
+import type { UsageSource, WorkflowEvent } from '@shared/types'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -128,6 +128,7 @@ else {
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
         services?.remote.broadcast(channel, payload)
+        if (channel === 'workflow') notifyAutomation(payload as WorkflowEvent)
       }
     })
     const images = services.images
@@ -178,4 +179,17 @@ else {
     services.panel.terminals.killAll()
     void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.containers.stopAll(), services.mcpClients.stopAll()]).finally(() => app.quit())
   })
+}
+
+/** A desktop notification when an automation asks for one, or fails. */
+function notifyAutomation(e: WorkflowEvent): void {
+  if (e.type !== 'automation' || !e.notify || !Notification.isSupported()) return
+  const n = new Notification({ title: e.ok ? e.name : `${e.name} failed`, body: e.summary || (e.ok ? 'Finished.' : 'The run failed. Open Flows to see why.'), silent: e.ok })
+  n.on('click', () => {
+    const w = BrowserWindow.getAllWindows()[0]
+    if (!w) return
+    if (w.isMinimized()) w.restore()
+    w.focus()
+  })
+  n.show()
 }

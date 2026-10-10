@@ -34,6 +34,7 @@ import { AssembleModal } from './workflow/AssembleModal'
 import { ExportModal } from './workflow/ExportModal'
 import { BottomSheet } from '@/components/BottomSheet'
 import { isMobile } from '@/lib/platform'
+import { AutomationEditor } from './automation/AutomationEditor'
 
 type Opened = { id: string; runId?: string; fix?: boolean } | null
 
@@ -81,6 +82,7 @@ export function WorkflowsPage() {
   const [opened, setOpened] = useState<Opened>(null)
   const [creating, setCreating] = useState<WorkflowTemplate | null>(null)
   const [assembling, setAssembling] = useState(false)
+  const [newAutomation, setNewAutomation] = useState(false)
 
   const load = async (open?: string) => {
     const [list, o] = await Promise.all([api.workflows.list(), api.workflows.overview().catch(() => null)])
@@ -99,6 +101,30 @@ export function WorkflowsPage() {
   })
 
   const active = opened ? flows.find((f) => f.id === opened.id) : undefined
+  const upsert = (w: Workflow) => setFlows((fs) => (fs.some((f) => f.id === w.id) ? fs.map((f) => (f.id === w.id ? w : f)) : [w, ...fs]))
+  if (newAutomation || active?.automation)
+    return (
+      <AutomationEditor
+        key={active?.id ?? 'new'}
+        workflow={newAutomation ? null : (active ?? null)}
+        onBack={() => {
+          const id = active?.id ?? null
+          setNewAutomation(false)
+          setOpened(null)
+          void load()
+          refocus(id)
+        }}
+        onSaved={(w) => {
+          upsert(w)
+          if (newAutomation) {
+            setNewAutomation(false)
+            setOpened({ id: w.id })
+          }
+        }}
+        onDeleted={() => (setOpened(null), void load())}
+        onConverted={(w) => upsert(w)}
+      />
+    )
   if (active)
     return (
       <ReactFlowProvider key={active.id}>
@@ -121,7 +147,8 @@ export function WorkflowsPage() {
 
   const byId = new Map(overview?.flows.map((f) => [f.id, f]) ?? [])
   const scheduled = flows.filter((f) => f.cronEnabled && f.cron)
-  const summary = flows.length ? `${plural(flows.length, 'flow')}, ${scheduled.length ? `${scheduled.length} on a schedule` : 'none on a schedule'}` : 'No flows yet'
+  const automations = flows.filter((f) => f.automation).length
+  const summary = flows.length ? `${plural(flows.length, 'flow')}${automations ? ` (${automations} automation${automations === 1 ? '' : 's'})` : ''}, ${scheduled.length ? `${scheduled.length} on a schedule` : 'none on a schedule'}` : 'No flows yet'
   // Failing flows first, then the most recently changed.
   const ordered = [...flows].sort((a, b) => Number(byId.get(b.id)?.runs[0]?.status === 'error') - Number(byId.get(a.id)?.runs[0]?.status === 'error') || b.updatedAt - a.updatedAt)
 
@@ -136,15 +163,22 @@ export function WorkflowsPage() {
           <Button icon={<Sparkles size={13} />} onClick={() => setAssembling(true)}>
             Assemble with AI
           </Button>
-          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating('blank')}>
+          <Button icon={<Plus size={13} />} onClick={() => setCreating('blank')}>
             New flow
+          </Button>
+          <Button variant="primary" icon={<Clock size={13} />} onClick={() => setNewAutomation(true)}>
+            New automation
           </Button>
         </div>
 
         {loaded && !flows.length ? (
           <section aria-label="Start from a template" className="grid gap-3">
-            <p className="max-w-[70ch] text-[13px] text-muted">A flow runs steps one after another: model calls, agents, knowledge search, web requests and code, on demand or on a schedule. Start from one of these, or describe what you want and let AI assemble it.</p>
+            <p className="max-w-[70ch] text-[13px] text-muted">An automation is the quick way: write what should happen, pick how often and what it may use. A flow runs steps one after another: model calls, agents, knowledge search, web requests and code. Start from one of these, or describe what you want and let AI assemble it.</p>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+              <button onClick={() => setNewAutomation(true)} className="grid content-start gap-1.5 rounded-[12px] border border-crimson-line bg-crimson-soft p-4 text-left hover:bg-crimson-soft/80">
+                <span className="text-[13.5px] font-semibold">Automation</span>
+                <span className="text-[12.5px] text-muted">Say what should happen, pick how often, and choose the tools, Knowledge and skills it may use.</span>
+              </button>
               {TEMPLATE_CARDS.map((t) => (
                 <button key={t.id} onClick={() => setCreating(t.id)} className="grid content-start gap-1.5 rounded-[12px] border border-line bg-elev p-4 text-left hover:border-line-strong hover:bg-elev-2">
                   <span className="text-[13.5px] font-semibold">{t.label}</span>
@@ -314,7 +348,17 @@ function FlowCard({ flow, info, onOpen }: { flow: Workflow; info?: WorkflowOverv
     <div className={clsx('grid min-w-0 grid-cols-[minmax(0,1fr)] content-start overflow-hidden rounded-[12px] border bg-elev', failing ? 'border-crimson-line' : 'border-line')}>
       <button data-focus-key={flow.id} onClick={() => onOpen()} className="grid min-w-0 grid-cols-[minmax(0,1fr)] text-left hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line">
         <span className="border-b border-line bg-panel">
-          <GraphThumb flow={flow} />
+          {flow.automation ? (
+            <span className="grid h-[74px] content-start gap-1 px-3.5 py-2.5">
+              <span className="flex items-center gap-1.5 text-[11.5px] text-crimson-hi">
+                <Clock size={12} aria-hidden="true" />
+                Automation
+              </span>
+              <span className="line-clamp-2 text-[12px] text-muted">{flow.automation.prompt}</span>
+            </span>
+          ) : (
+            <GraphThumb flow={flow} />
+          )}
         </span>
         <span className="grid gap-1.5 px-3.5 py-3">
           <span className="line-clamp-2 text-[13.5px] font-semibold">{flow.name}</span>
@@ -341,9 +385,11 @@ function FlowCard({ flow, info, onOpen }: { flow: Workflow; info?: WorkflowOverv
           <span className="min-w-0 flex-1 truncate text-crimson-hi" title={last.error ?? undefined}>
             Failed{last.failedStep ? ` at ${last.failedStep}` : ''}: {last.error ?? 'see the run'}
           </span>
-          <Button size="sm" icon={<Wand2 size={12} />} onClick={() => onOpen({ runId: last.id, fix: true })}>
-            Fix with AI
-          </Button>
+          {!flow.automation && (
+            <Button size="sm" icon={<Wand2 size={12} />} onClick={() => onOpen({ runId: last.id, fix: true })}>
+              Fix with AI
+            </Button>
+          )}
         </div>
       )}
     </div>

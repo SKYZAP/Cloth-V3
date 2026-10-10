@@ -9,6 +9,8 @@ import type { SettingsService } from '../core/settings'
 import { renderTemplate } from '../workflows/engine'
 import { run } from '../web/process'
 import { sandboxRequire, workspaceApi, type ToolEnv } from './sandbox'
+import { parseJsonLoose } from '../core/llm-json'
+import { TOOL_CREATE_DESCRIPTION, toolInputFrom, type CreateToolInput } from '../agent/hub'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -108,6 +110,28 @@ export class CustomToolService {
     if (input.kind === 'command' && !String(c.command ?? '').trim()) throw new Error('Command tools need an executable')
     if (input.kind === 'prompt' && !String(c.prompt ?? '').trim()) throw new Error('Prompt tools need a prompt template')
     return { ...input, name, description: input.description.trim() }
+  }
+
+  /** A tool written from a description of what it should do, for the user to check and save. Not saved. */
+  async draft(description: string, model?: ModelRef | null): Promise<CustomToolInput> {
+    if (!description.trim()) throw new Error('Say what the tool should do')
+    const ref = model ?? this.settings.get().defaultModel
+    if (!ref) throw new Error('Pick a default model in Settings to draft tools with')
+    const system = [
+      'You design one tool for an AI agent app from what the user says it should do.',
+      TOOL_CREATE_DESCRIPTION,
+      'Prefer kind "http" when a public API with no key does the job, "prompt" for writing or reasoning jobs, "javascript" for calculations, text processing or making files, and "command" only when a program on the computer is needed.',
+      'Keep the description in plain words: what the tool does and when to use it. Give every parameter a description a model can follow.',
+      'Reply with JSON only: {"name": "...", "description": "...", "kind": "...", "params": [{"name": "...", "type": "string", "description": "...", "required": true}], "config": {...}}'
+    ].join('\n\n')
+    const { text } = await this.providers.complete(ref, { system, prompt: description.trim(), maxTokens: 1600, temperature: 0.2 })
+    const parsed = parseJsonLoose<CreateToolInput>(text)
+    if (!parsed || typeof parsed !== 'object') throw new Error("The model's draft couldn't be read. Try again or another model.")
+    const input = toolInputFrom({ ...parsed, kind: parsed.kind ?? 'prompt' })
+    let name = TOOL_NAME_RE.test(input.name) ? input.name : 'new_tool'
+    const taken = new Set([...this.list().map((t) => t.name), ...this.reserved()])
+    for (let i = 2; taken.has(name); i++) name = `${input.name || 'new_tool'}_${i}`
+    return { ...input, name, enabled: true }
   }
 
   /** Execute a tool definition with arguments (used by the agent and the Tools page test runner). */

@@ -423,8 +423,8 @@ export const DEFAULT_AGENT_SETUP: AgentSetup = {
   autoApprove: 'none'
 }
 
-/** Scout and worker: the built-in subagent roles, editable as agents. */
-export type AgentBuiltin = 'scout' | 'worker' | 'designer'
+/** The built-in agents, editable but not deletable. */
+export type AgentBuiltin = 'scout' | 'worker' | 'designer' | 'researcher' | 'reviewer'
 
 /** The skills the built-in Designer always applies. */
 export const DESIGNER_SKILLS = ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines']
@@ -442,10 +442,6 @@ export interface Agent extends AgentSetup {
   /** null = the chat's effort. */
   thinking: ThinkingLevel | null
   builtin: AgentBuiltin | null
-  /** Can be picked as a chat's agent. */
-  asChat: boolean
-  /** Other agents can delegate to it by name. */
-  asSubagent: boolean
   createdAt: number
   updatedAt: number
 }
@@ -470,25 +466,6 @@ export const AGENT_TEMPLATES: { id: string; name: string; summary: string; agent
 - Keep changes small and say what you changed and why.`,
       fileAccess: 'write',
       shell: false
-    }
-  },
-  {
-    id: 'researcher',
-    name: 'Researcher',
-    summary: 'Web and knowledge, read-only',
-    agent: {
-      name: 'Researcher',
-      purpose: 'Finds and cites sources on the web and in the knowledge base; never changes files.',
-      instructions:
-        `You research questions and report what you find.
-
-- Search the knowledge base first for anything project-specific, then the web.
-- Read the sources rather than trusting snippets, and cite each claim.
-- Say plainly when sources disagree or when you found nothing reliable.
-- Finish with a short answer, then the evidence.`,
-      webEnabled: true,
-      knowledgeEnabled: true,
-      fileAccess: 'read'
     }
   },
   {
@@ -813,8 +790,37 @@ export interface Workflow {
   nextRunAt: number | null
   /** Folder the flow works in: agent nodes and JavaScript tools can create files here. */
   workspace: string | null
+  /** Set when the flow is an automation: written as a prompt and edited on the automation screen. */
+  automation: Automation | null
   createdAt: number
   updatedAt: number
+}
+
+/** What happens with an automation's result when a run finishes. */
+export type AutomationDelivery = 'chat' | 'notify' | 'knowledge'
+
+/** A flow written as a prompt: one agent step with exactly the tools, servers, knowledge and skills it may use. */
+export interface Automation {
+  prompt: string
+  /** The saved agent it runs as (its instructions and model); null = Cloth. */
+  agentId: string | null
+  /** Built-in and custom tools, by name. */
+  tools: string[]
+  /** External MCP servers by id, each with the tools it may call (null = all of them). */
+  servers: { id: string; tools: string[] | null }[]
+  collectionIds: string[]
+  skills: string[]
+  deliver: AutomationDelivery
+  /** Where results are saved when `deliver` is 'knowledge'. */
+  collectionId: string | null
+}
+
+export interface AutomationInput {
+  name?: string
+  automation?: Automation
+  cron?: string | null
+  cronEnabled?: boolean
+  workspace?: string | null
 }
 
 export type NodeRunStatus = 'pending' | 'running' | 'ok' | 'error' | 'skipped'
@@ -875,6 +881,8 @@ export interface WorkflowOverview {
 
 export type WorkflowEvent =
   | { type: 'run'; run: WorkflowRun }
+  /** An automation finished and its result was delivered (`chatId` when it went to a new chat). */
+  | { type: 'automation'; workflowId: string; name: string; runId: string; ok: boolean; summary: string; chatId: string | null; notify: boolean }
   | { type: 'schedule'; workflowId: string; nextRunAt: number | null }
   | WorkflowBuildEvent
 
@@ -1311,6 +1319,12 @@ export interface McpClientConfig {
   defaultOn: boolean
   /** Ask before each tool call, or let calls run. */
   approval: 'ask' | 'auto'
+}
+
+/** The name an agent sees for an external server's tool. */
+export function mcpToolName(server: string, tool: string): string {
+  const clean = (s: string) => s.replace(/[^a-zA-Z0-9_-]+/g, '_')
+  return `mcp__${clean(server)}__${clean(tool)}`.slice(0, 64)
 }
 
 export interface McpClientStatus {

@@ -1,498 +1,520 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Search, Code2, Globe, Link2, MessageSquareText, Play, Plus, Save, ShieldAlert, SquareTerminal, Trash2, X } from 'lucide-react'
-import type { BuiltinToolInfo, CustomTool, CustomToolInput, CustomToolKind, McpClientStatus, ModelRef, ToolOrigin, ToolParam, ToolParamType, ToolRunResult, ToolUsage, ToolWhere } from '@shared/types'
+import { AlertTriangle, ArrowLeft, BookOpen, Code2, FileText, Globe, Link2, ListChecks, MessageSquareText, Play, Plug, Plus, Search, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
+import { mcpToolName, type BuiltinToolInfo, type CustomTool, type CustomToolInput, type CustomToolKind, type McpClientStatus, type ModelRef, type ToolParam, type ToolParamType, type ToolRunResult, type ToolUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Inspector, InspectorHead, refocus } from '@/components/Inspector'
+import { Inspector, refocus } from '@/components/Inspector'
 import { duration, timeAgo } from '@/lib/format'
-import { Badge, Button, Field, IconButton, Input, Modal, PageHeader, Segmented, Select, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, IconButton, Input, Select, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 
-const KINDS: Record<CustomToolKind, { label: string; icon: typeof Globe; blurb: string }> = {
-  http: { label: 'HTTP request', icon: Link2, blurb: 'Call a REST API. URL, headers and body are templates over the parameters.' },
-  javascript: { label: 'JavaScript', icon: Code2, blurb: 'Async function body with args, fetch, workspace and require("pptxgenjs" | "docx") in scope. Return a value.' },
-  command: { label: 'Command', icon: SquareTerminal, blurb: 'Run an executable (no shell). One templated argument per line.' },
-  prompt: { label: 'Prompt', icon: MessageSquareText, blurb: 'Call a model with a templated prompt — a reusable sub-task.' }
+type Icon = typeof Globe
+
+const KINDS: Record<CustomToolKind, { label: string; icon: Icon; blurb: string }> = {
+  http: { label: 'Web request', icon: Link2, blurb: 'Calls a web address (an API) and returns what it sends back.' },
+  javascript: { label: 'JavaScript', icon: Code2, blurb: 'Runs a short script, for anything a request can’t do on its own.' },
+  command: { label: 'Command', icon: SquareTerminal, blurb: 'Runs a program on this computer, like git or ImageMagick.' },
+  prompt: { label: 'AI prompt', icon: MessageSquareText, blurb: 'Asks a model to do a small job and returns its answer.' }
 }
 
-const ORIGIN: Record<Exclude<ToolOrigin, 'user'>, string> = { chat: 'a chat', mcp: 'an MCP client' }
+/** What the kind's settings step is called. */
+const SETUP_TITLE: Record<CustomToolKind, string> = { http: 'Where does it call?', javascript: 'The script', command: 'Which program, with what?', prompt: 'What to ask the model' }
 
-const TEMPLATES: Record<CustomToolKind, CustomToolInput> = {
-  http: {
-    name: 'github_repo',
-    description: 'Look up a public GitHub repository: description, stars, open issues and default branch.',
-    kind: 'http',
-    params: [
-      { name: 'owner', type: 'string', description: 'Repository owner, e.g. vercel', required: true },
-      { name: 'repo', type: 'string', description: 'Repository name, e.g. next.js', required: true }
-    ],
-    config: { method: 'GET', url: 'https://api.github.com/repos/{{owner}}/{{repo}}', headers: '{\n  "accept": "application/vnd.github+json"\n}', body: '', timeoutMs: 15000 }
-  },
-  javascript: {
-    name: 'date_math',
-    description: 'Add or subtract days from a date and return the ISO date and weekday.',
-    kind: 'javascript',
-    params: [
-      { name: 'date', type: 'string', description: 'Start date (ISO); defaults to today', required: false },
-      { name: 'days', type: 'number', description: 'Days to add (negative to subtract)', required: true }
-    ],
-    config: {
-      code: "const d = args.date ? new Date(args.date) : new Date()\nd.setDate(d.getDate() + args.days)\nreturn {\n  date: d.toISOString().slice(0, 10),\n  weekday: d.toLocaleDateString('en-US', { weekday: 'long' })\n}",
-      timeoutMs: 5000
-    }
-  },
-  command: {
-    name: 'git_recent_commits',
-    description: 'List the most recent commits of a local git repository.',
-    kind: 'command',
-    params: [
-      { name: 'repo', type: 'string', description: 'Absolute path of the repository', required: true },
-      { name: 'count', type: 'number', description: 'How many commits', required: false }
-    ],
-    config: { command: 'git', args: '-C\n{{repo}}\nlog\n--oneline\n-n\n{{count}}', cwd: '', timeoutMs: 15000 }
-  },
-  prompt: {
-    name: 'explain_error',
-    description: 'Explain a compiler or runtime error message and suggest the most likely fix.',
-    kind: 'prompt',
-    params: [{ name: 'error', type: 'string', description: 'The full error message / stack trace', required: true }],
-    config: { model: null, system: 'You are a senior engineer. Be brief and concrete.', prompt: 'Explain this error and give the most likely fix:\n\n{{error}}' }
-  }
+/** Settings each kind starts with. */
+const STARTER: Record<CustomToolKind, Record<string, unknown>> = {
+  http: { method: 'GET', url: '', headers: '{\n  "accept": "application/json"\n}', body: '', timeoutMs: 15000 },
+  javascript: { code: 'return args', timeoutMs: 5000 },
+  command: { command: '', args: '', cwd: '', timeoutMs: 15000 },
+  prompt: { model: null, system: '', prompt: '' }
 }
 
-type Selection = { kind: 'builtin'; name: string } | { kind: 'custom'; id: string } | null
-type Place = 'all' | keyof ToolWhere
-
-const PLACES: { value: Place; label: string; title: string }[] = [
-  { value: 'all', label: 'Everywhere', title: 'Every tool' },
-  { value: 'chats', label: 'Chats', title: 'What a chat can call' },
-  { value: 'subagents', label: 'Subagents', title: 'What a subagent can call' },
-  { value: 'flows', label: 'Flows', title: "What a flow's Agent step can call" },
-  { value: 'apps', label: 'Apps over MCP', title: 'What apps connected to Cloth can call' }
-]
-const PLACE_KEYS: (keyof ToolWhere)[] = ['chats', 'subagents', 'flows', 'apps']
-const PLACE_NAME: Record<keyof ToolWhere, string> = { chats: 'chats', subagents: 'subagents', flows: 'flows', apps: 'apps over MCP' }
-
-const GROUPS: { id: BuiltinToolInfo['group']; label: string }[] = [
-  { id: 'workspace', label: 'Files and code' },
-  { id: 'web', label: 'Web' },
-  { id: 'knowledge', label: 'Knowledge' },
-  { id: 'planning', label: 'Planning' },
-  { id: 'skills', label: 'Skills' },
-  { id: 'tools', label: 'Making tools' }
+const PARAM_TYPES: { value: ToolParamType; label: string }[] = [
+  { value: 'string', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'boolean', label: 'Yes or no' },
+  { value: 'json', label: 'List or object' }
 ]
 
-/** Custom tools work wherever custom tools are on: chats, their subagents and flow Agent steps. */
-const CUSTOM_WHERE: ToolWhere = { chats: true, subagents: true, flows: true, apps: false }
+const GROUPS: { id: BuiltinToolInfo['group']; label: string; icon: Icon }[] = [
+  { id: 'workspace', label: 'Files and code', icon: FileText },
+  { id: 'web', label: 'Web', icon: Globe },
+  { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
+  { id: 'planning', label: 'Planning', icon: ListChecks },
+  { id: 'skills', label: 'Skills', icon: Sparkles },
+  { id: 'tools', label: 'Making tools', icon: Wrench }
+]
 
-/** Why a tool isn't available somewhere, in a sentence. */
-function whyNot(name: string, place: keyof ToolWhere): string {
-  if (place === 'apps') return "Cloth's MCP server doesn't share it"
-  if (place === 'subagents') {
-    if (name === 'task') return "Subagents can't start subagents of their own"
-    if (name === 'todo_write' || name === 'ask_user') return 'Only the chat itself plans with you and asks you questions'
-    return 'Only chats add to Cloth’s knowledge, skills and tools'
-  }
-  if (name === 'lsp') return 'Flow steps run without code intelligence'
-  if (name === 'powershell' || name === 'bash') return "Flow steps can't run commands"
-  if (name === 'task') return "Flow steps can't start subagents"
-  if (name === 'todo_write' || name === 'ask_user') return 'Nobody is watching a flow run to plan with or ask'
-  return 'Only chats add to Cloth’s knowledge, skills and tools'
+type Source = 'builtin' | 'mine' | 'mcp'
+type Show = 'all' | Source
+
+interface Item {
+  key: string
+  source: Source
+  /** The name the agent calls it by. */
+  name: string
+  label: string
+  description: string
+  icon: Icon
+  kindLabel: string
+  builtin?: BuiltinToolInfo
+  custom?: CustomTool
+  server?: string
 }
 
-const whereLabel = (w: ToolWhere) => {
-  const yes = PLACE_KEYS.filter((k) => w[k]).map((k) => PLACE_NAME[k])
-  const no = PLACE_KEYS.filter((k) => !w[k]).map((k) => PLACE_NAME[k])
-  return `Works in ${yes.join(', ') || 'nothing'}${no.length ? `; not in ${no.join(', ')}` : ''}`
+const SOURCE_TILE: Record<Source, string> = {
+  builtin: 'bg-elev-2 text-muted',
+  mine: 'bg-crimson-soft text-crimson-hi',
+  mcp: 'bg-info/15 text-info'
+}
+
+const humanize = (name: string) => {
+  const s = name.replace(/[_-]+/g, ' ').trim()
+  return s ? s[0].toUpperCase() + s.slice(1) : name
+}
+
+/** A tool made by a model that waits for the user's OK (or one switched off before tools stopped having a switch). */
+const waiting = (t: CustomTool) => !t.enabled
+
+function useWide(query = '(min-width: 980px)') {
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [query])
+  return wide
 }
 
 /**
- * What agents can do and where: tools grouped by purpose, four squares per tool for chats, subagents,
- * flows and apps over MCP, calls this month, and details beside the map.
+ * What Cloth and its agents can do: every tool in one searchable list (built in, made by you, from MCP
+ * servers), its details and a quick test beside it, and a step-by-step screen for making your own.
+ * Which agent or automation may use a tool is chosen on those pages, not here.
  */
 export function ToolsPage() {
   const [builtins, setBuiltins] = useState<BuiltinToolInfo[]>([])
   const [custom, setCustom] = useState<CustomTool[]>([])
   const [usage, setUsage] = useState<Record<string, ToolUsage>>({})
+  const [usedBy, setUsedBy] = useState<Record<string, string[]>>({})
   const [servers, setServers] = useState<McpClientStatus[]>([])
-  const [sel, setSel] = useState<Selection>(null)
-  const [creating, setCreating] = useState(false)
+  const [selKey, setSelKey] = useState<string | null>(null)
+  const [making, setMaking] = useState<{ id: string | null } | null>(null)
   const [filter, setFilter] = useState('')
-  const [place, setPlace] = useState<Place>(() => (localStorage.getItem('cloth.tools.place') as Place | null) ?? 'all')
+  const [show, setShow] = useState<Show>(() => (localStorage.getItem('cloth.tools.show') as Show | null) ?? 'all')
   const settings = useApp((s) => s.settings)
   const setPage = useApp((s) => s.setPage)
+  const wide = useWide()
 
-  const load = async (select?: Selection) => {
-    const [b, c, u, m] = await Promise.all([api.tools.builtins(), api.tools.list(), api.tools.usage().catch(() => ({})), api.mcp.clients().catch(() => [])])
+  const load = async () => {
+    const [b, c, u, m, by] = await Promise.all([api.tools.builtins(), api.tools.list(), api.tools.usage().catch(() => ({})), api.mcp.clients().catch(() => []), api.tools.usedBy().catch(() => ({}))])
     setBuiltins(b)
     setCustom(c)
     setUsage(u)
     setServers(m)
-    if (select !== undefined) setSel(select)
+    setUsedBy(by)
   }
   useEffect(() => {
     void load()
   }, [])
   // Tools made by a model (chat or MCP) appear without a reload.
   useEvent('tools', () => void load())
+  useEvent('agents', () => void api.tools.usedBy().then(setUsedBy, () => undefined))
   useEvent('mcpClients', () => void api.mcp.clients().then(setServers, () => undefined))
   useEffect(() => {
     try {
-      localStorage.setItem('cloth.tools.place', place)
+      localStorage.setItem('cloth.tools.show', show)
     } catch {
       /* storage unavailable */
     }
-  }, [place])
+  }, [show])
+
+  const configs = settings?.mcpClients ?? []
+  const items = useMemo(() => {
+    const out: Item[] = []
+    for (const b of builtins) {
+      const g = GROUPS.find((x) => x.id === b.group)
+      out.push({ key: `b:${b.name}`, source: 'builtin', name: b.name, label: b.label, description: b.description, icon: g?.icon ?? Wrench, kindLabel: 'Built in', builtin: b })
+    }
+    for (const t of custom) out.push({ key: `c:${t.id}`, source: 'mine', name: t.name, label: humanize(t.name), description: t.description, icon: KINDS[t.kind].icon, kindLabel: KINDS[t.kind].label, custom: t })
+    for (const c of configs) {
+      const st = servers.find((s) => s.id === c.id)
+      for (const t of st?.state === 'ready' ? st.tools : [])
+        out.push({ key: `m:${c.id}:${t.name}`, source: 'mcp', name: mcpToolName(c.name, t.name), label: humanize(t.name), description: t.description || `A tool from the ${c.name} server.`, icon: Plug, kindLabel: `From ${c.name}`, server: c.name })
+    }
+    return out
+  }, [builtins, custom, configs, servers])
 
   const q = filter.trim().toLowerCase()
-  const match = (s: string) => !q || s.toLowerCase().includes(q)
-  const fits = (w: ToolWhere) => place === 'all' || w[place]
-  const selectedBuiltin = sel?.kind === 'builtin' ? builtins.find((b) => b.name === sel.name) : undefined
-  const selectedCustom = sel?.kind === 'custom' ? custom.find((c) => c.id === sel.id) : undefined
-  const selKey = sel?.kind === 'builtin' ? sel.name : sel?.kind === 'custom' ? sel.id : null
+  const matches = (i: Item) => (show === 'all' || i.source === show) && (!q || `${i.name} ${i.label} ${i.description}`.toLowerCase().includes(q))
+  const shown = items.filter(matches)
+  const count = (s: Show) => items.filter((i) => s === 'all' || i.source === s).length
+  const sections: { title: string; items: Item[]; note?: ReactNode }[] = [
+    ...GROUPS.map((g) => ({ title: g.label, items: shown.filter((i) => i.builtin?.group === g.id), note: undefined })),
+    { title: 'Made by you', items: shown.filter((i) => i.source === 'mine'), note: undefined },
+    ...configs.map((c) => {
+      const st = servers.find((s) => s.id === c.id)
+      const list = shown.filter((i) => i.source === 'mcp' && i.key.startsWith(`m:${c.id}:`))
+      const offline = st?.state !== 'ready' && (show === 'all' || show === 'mcp') && (!q || c.name.toLowerCase().includes(q))
+      return {
+        title: `From ${c.name}`,
+        items: list,
+        note: offline ? (
+          <button onClick={() => setPage('mcp')} className="w-full rounded-[11px] px-3 py-2.5 text-left text-[12.5px] text-dim hover:bg-elev hover:text-muted">
+            {c.enabled ? (st?.state === 'error' ? `${c.name} couldn’t start. Check it on the MCP page.` : `Its tools are listed once ${c.name} is running.`) : `${c.name} is turned off. Turn it on on the MCP page to see its tools.`}
+          </button>
+        ) : undefined
+      }
+    })
+  ].filter((s) => s.items.length || s.note)
+
+  const sel = items.find((i) => i.key === selKey) ?? null
   const close = () => {
     const key = selKey
-    setSel(null)
+    setSelKey(null)
     refocus(key)
   }
-  const configs = settings?.mcpClients ?? []
-  const ownOn = custom.filter((c) => c.enabled).length
-  const summary = [
-    `${builtins.length} built in`,
-    configs.length ? `${configs.length} external server${configs.length === 1 ? '' : 's'}` : null,
-    custom.length ? `${custom.length} of your own${ownOn < custom.length ? ` (${ownOn} on)` : ''}` : 'none of your own yet'
-  ]
-    .filter(Boolean)
-    .join(', ')
 
-  // Within a group, the tools doing the work come first.
-  const groups = GROUPS.map((g) => ({
-    ...g,
-    tools: builtins.filter((b) => b.group === g.id && match(b.name + b.label + b.description) && fits(b.where)).sort((a, b) => (usage[b.name]?.calls ?? 0) - (usage[a.name]?.calls ?? 0))
-  })).filter((g) => g.tools.length)
-  const own = custom.filter((t) => match(t.name + t.description) && fits(CUSTOM_WHERE))
-  const showServers = (place === 'all' || place === 'chats' || place === 'subagents') && configs.some((c) => match(c.name))
+  if (making)
+    return (
+      <ToolMaker
+        key={making.id ?? 'new'}
+        tool={making.id ? (custom.find((t) => t.id === making.id) ?? null) : null}
+        taken={[...custom.filter((t) => t.id !== making.id).map((t) => t.name), ...builtins.map((b) => b.name)]}
+        onBack={() => setMaking(null)}
+        onSaved={(t) => {
+          setMaking(null)
+          setSelKey(`c:${t.id}`)
+          void load()
+        }}
+        onDeleted={() => {
+          setMaking(null)
+          setSelKey(null)
+          void load()
+        }}
+      />
+    )
+
+  const details = sel && (
+    <ToolDetails
+      item={sel}
+      usage={usage[sel.name]}
+      usedBy={usedBy[sel.name] ?? []}
+      onEdit={sel.custom ? () => setMaking({ id: sel.custom!.id }) : undefined}
+      onChanged={() => void load()}
+      onClose={wide ? undefined : close}
+    />
+  )
+
+  const FILTERS: { value: Show; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'builtin', label: 'Built in' },
+    { value: 'mine', label: 'Made by you' },
+    { value: 'mcp', label: 'From MCP' }
+  ]
 
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Tools</h1>
-              <p className="mt-0.5 text-[12.5px] text-dim">{builtins.length ? summary : '…'}</p>
+              <p className="mt-0.5 text-[12.5px] text-dim">What Cloth and your agents can do. Try any of your tools, or make your own.</p>
             </div>
-            <div role="radiogroup" aria-label="Show tools that work in">
-              <Segmented value={place} onChange={setPlace} items={PLACES} />
-            </div>
-            <div className="relative w-[200px] mobile:w-full">
+            <div className="relative w-[260px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
-              <Input className="pl-7" placeholder="Filter tools" aria-label="Filter tools" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <Input className="pl-7" placeholder="Search tools…" aria-label="Search tools" spellCheck={false} autoComplete="off" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
+            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setMaking({ id: null })}>
               New tool
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-dim">
-            <span className="flex items-center gap-1.5">
-              <Square on /> works
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Square /> doesn't
-            </span>
-            <span>Columns: C chats, S subagents, F flows, A apps over MCP</span>
-            <span className="flex-1" />
-            <span>Calls in the last 30 days</span>
-          </div>
-
-          <div className="columns-[300px] gap-x-6 [&>section]:mb-6 [&>section]:break-inside-avoid">
-            {groups.map((g) => (
-              <Group key={g.id} label={g.label} count={g.tools.length}>
-                {g.tools.map((t) => (
-                  <ToolRow key={t.name} name={t.name} hint={t.label} where={t.where} calls={usage[t.name]?.calls ?? 0} selected={selKey === t.name} focusKey={t.name} onOpen={() => setSel({ kind: 'builtin', name: t.name })} />
-                ))}
-              </Group>
+          <div role="tablist" aria-label="Show" className="flex flex-wrap gap-0.5 border-b border-line pb-2">
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                role="tab"
+                aria-selected={show === f.value}
+                onClick={() => setShow(f.value)}
+                className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px]', show === f.value ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
+              >
+                {f.label}
+                <span className="text-[11px] tabular-nums text-dim">{count(f.value)}</span>
+              </button>
             ))}
+          </div>
 
-            {(own.length > 0 || (!q && place !== 'apps')) && (
-              <Group label="Your tools" count={own.length}>
-                {own.map((t) => (
-                  <ToolRow
-                    key={t.id}
-                    name={t.name}
-                    hint={KINDS[t.kind].label}
-                    status={t.enabled ? undefined : t.createdBy !== 'user' ? 'needs review' : 'off'}
-                    where={CUSTOM_WHERE}
-                    calls={usage[t.name]?.calls ?? 0}
-                    selected={selKey === t.id}
-                    focusKey={t.id}
-                    onOpen={() => setSel({ kind: 'custom', id: t.id })}
-                  />
-                ))}
-                {!custom.length && (
-                  <div className="grid gap-2 px-0.5 py-2.5 text-[12.5px] text-muted">
-                    Turn a script, an HTTP call or a prompt into a tool every chat can use.
-                    <span>
-                      <Button size="sm" onClick={() => setCreating(true)}>
-                        Make a tool
-                      </Button>
-                    </span>
-                  </div>
-                )}
-              </Group>
-            )}
-
-            {showServers && (
-              <Group label="From external servers" count={configs.length} columns={false}>
-                {configs
-                  .filter((c) => match(c.name))
-                  .map((c) => {
-                    const st = servers.find((s) => s.id === c.id)
-                    const n = st?.state === 'ready' ? st.tools.length : null
-                    return (
-                      <button key={c.id} onClick={() => setPage('mcp')} className="flex w-full items-center gap-2 border-b border-line px-0.5 py-1.5 text-left text-[12.5px] last:border-b-0 hover:bg-elev">
-                        <span className="min-w-0 flex-1 truncate font-mono text-[12px]" translate="no">
-                          {c.name}
-                        </span>
-                        <span className="shrink-0 text-[12px] text-dim">{n !== null ? `${n} tools` : c.enabled ? 'tools listed once running' : 'turned off'}</span>
-                        <span className="shrink-0 text-[12px] text-dim">{c.defaultOn ? 'on in new chats' : 'per chat'}</span>
-                      </button>
-                    )
-                  })}
-                <p className="pt-1.5 text-[12px] text-dim">Set up on the MCP page; each chat chooses which servers it uses.</p>
-              </Group>
+          <div className={clsx('grid items-start gap-5', wide && 'grid-cols-[minmax(0,1fr)_380px]')}>
+            <div className="grid min-w-0 gap-5">
+              {sections.map((s) => (
+                <section key={s.title} aria-label={s.title} className="grid gap-0.5">
+                  <h2 className="mb-1 ml-3 text-[12px] font-medium text-dim">{s.title}</h2>
+                  {s.items.map((i) => (
+                    <ToolRow key={i.key} item={i} selected={selKey === i.key} onOpen={() => setSelKey(i.key)} />
+                  ))}
+                  {s.note}
+                </section>
+              ))}
+              {!shown.length && builtins.length > 0 && (
+                <div className="grid justify-items-center gap-2 rounded-[14px] border border-dashed border-line-strong px-4 py-7 text-center">
+                  <div className="text-[13.5px] font-semibold">{q ? `No tool matches “${filter.trim()}”` : 'Nothing here yet'}</div>
+                  <div className="text-[12.5px] text-dim">Make one: describe what it should do and Cloth drafts it.</div>
+                  <Button size="sm" icon={<Plus size={12} />} onClick={() => setMaking({ id: null })}>
+                    New tool
+                  </Button>
+                </div>
+              )}
+            </div>
+            {wide && (
+              <aside aria-label="Tool details" className="sticky top-4 min-w-0 rounded-[16px] border border-line bg-panel">
+                {details ?? <p className="px-5 py-8 text-center text-[12.5px] text-dim">Pick a tool to see what it does, try it, and who uses it.</p>}
+              </aside>
             )}
           </div>
-          {!groups.length && !own.length && !showServers && builtins.length > 0 && <p className="text-[12.5px] text-dim">No tool matches “{filter}”{place !== 'all' ? ` in ${PLACE_NAME[place]}` : ''}.</p>}
         </div>
       </div>
-
-      <Inspector open={!!(selectedBuiltin || selectedCustom)} label={selectedBuiltin?.name ?? selectedCustom?.name ?? 'Tool'} onClose={close} width={selectedCustom ? 900 : 640}>
-        {selectedBuiltin && <BuiltinView tool={selectedBuiltin} usage={usage[selectedBuiltin.name]} onClose={close} />}
-        {selectedCustom && (
-          <CustomToolEditor
-            key={selectedCustom.id + selectedCustom.updatedAt}
-            tool={selectedCustom}
-            onClose={close}
-            onSaved={(t) => void load({ kind: 'custom', id: t.id })}
-            onDeleted={() => void load(null)}
-          />
-        )}
-      </Inspector>
-      <NewToolModal existing={custom.map((c) => c.name)} open={creating} onClose={() => setCreating(false)} onCreated={(t) => void load({ kind: 'custom', id: t.id })} />
+      {!wide && (
+        <Inspector open={!!sel} label={sel?.label ?? 'Tool'} onClose={close} width={520}>
+          <div className="min-h-0 flex-1 overflow-y-auto">{details}</div>
+        </Inspector>
+      )}
     </div>
   )
 }
 
-function Square({ on }: { on?: boolean }) {
-  return <span aria-hidden="true" className={clsx('inline-block h-[11px] w-[11px] rounded-[3px] border-[1.5px]', on ? 'border-ok bg-ok' : 'border-line-strong')} />
-}
-
-function Group({ label, count, columns = true, children }: { label: string; count: number; columns?: boolean; children: React.ReactNode }) {
-  return (
-    <section aria-label={label} className="min-w-0">
-      <h2 className="flex items-center gap-2 border-b border-line-strong pb-1.5 text-[13px] font-semibold">
-        {label} <span className="text-[12px] font-normal text-dim">{count}</span>
-        <span className="flex-1" />
-        {columns && (
-          <span aria-hidden="true" className="grid grid-cols-[repeat(4,11px)] gap-1 text-center text-[11px] font-medium text-dim">
-            <span>C</span>
-            <span>S</span>
-            <span>F</span>
-            <span>A</span>
-          </span>
-        )}
-        {columns && <span className="w-9" aria-hidden="true" />}
-      </h2>
-      <div>{children}</div>
-    </section>
-  )
-}
-
-function ToolRow({ name, hint, status, where, calls, selected, focusKey, onOpen }: { name: string; hint: string; status?: string; where: ToolWhere; calls: number; selected: boolean; focusKey: string; onOpen(): void }) {
+function ToolRow({ item: i, selected, onOpen }: { item: Item; selected: boolean; onOpen(): void }) {
+  const pending = i.custom && waiting(i.custom)
   return (
     <button
-      data-focus-key={focusKey}
+      data-focus-key={i.key}
       onClick={onOpen}
-      aria-haspopup="dialog"
-      title={hint}
-      className={clsx('flex w-full items-center gap-2 border-b border-line px-0.5 py-1.5 text-left last:border-b-0 hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line', selected && 'bg-crimson-soft shadow-[inset_2px_0_0_var(--color-crimson)]')}
+      aria-pressed={selected}
+      className={clsx('flex min-h-[56px] w-full items-center gap-3 rounded-[11px] border px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-line-strong bg-elev' : 'border-transparent hover:bg-elev/60')}
     >
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px]" translate="no">
-        {name}
-        {status && <span className="ml-2 font-sans text-[11.5px] text-warn">{status}</span>}
+      <span aria-hidden="true" className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px]', SOURCE_TILE[i.source])}>
+        <i.icon size={16} />
       </span>
-      <span role="img" aria-label={whereLabel(where)} className="grid shrink-0 grid-cols-[repeat(4,11px)] gap-1">
-        {PLACE_KEYS.map((k) => (
-          <Square key={k} on={where[k]} />
-        ))}
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="shrink-0 text-[13.5px] font-semibold">{i.label}</span>
+          <span className="truncate font-mono text-[11.5px] text-dim" translate="no">
+            {i.source === 'mcp' ? i.name.replace(/^mcp__/, '').replace('__', ' / ') : i.name}
+          </span>
+        </span>
+        <span className="truncate text-[12.5px] text-dim">{i.description}</span>
       </span>
-      <span className="w-9 shrink-0 text-right text-[12px] tabular-nums text-dim">{calls || '–'}</span>
+      {pending && <span className="shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Needs your OK</span>}
+      {i.source !== 'builtin' && !pending && <span className={clsx('shrink-0 rounded-full px-2 py-0.5 text-[11px] mobile:hidden', SOURCE_TILE[i.source])}>{i.source === 'mcp' ? i.server : i.kindLabel}</span>}
     </button>
   )
 }
 
-function uniqueName(base: string, taken: string[]): string {
-  let name = base
-  for (let i = 2; taken.includes(name); i++) name = `${base}_${i}`
-  return name
-}
+type SchemaProps = { properties?: Record<string, { type?: string; description?: string; anyOf?: { const?: string }[]; items?: { type?: string } }>; required?: string[] }
 
-function NewToolModal({ open, onClose, onCreated, existing }: { open: boolean; onClose(): void; onCreated(t: CustomTool): void; existing: string[] }) {
-  const [kind, setKind] = useState<CustomToolKind>('http')
-  const [blank, setBlank] = useState(false)
+function ToolDetails({ item: i, usage, usedBy, onEdit, onChanged, onClose }: { item: Item; usage?: ToolUsage; usedBy: string[]; onEdit?: () => void; onChanged(): void; onClose?: () => void }) {
+  const t = i.custom
+  const params: { name: string; description: string; required: boolean; type: string }[] = t
+    ? t.params.map((p) => ({ name: p.name, description: p.description, required: p.required, type: PARAM_TYPES.find((x) => x.value === p.type)?.label ?? p.type }))
+    : Object.entries((i.builtin?.schema as SchemaProps | undefined)?.properties ?? {}).map(([name, p]) => ({
+        name,
+        description: p.description ?? '',
+        required: !!(i.builtin?.schema as SchemaProps).required?.includes(name),
+        type: p.type ?? (p.anyOf ? 'one of' : 'any')
+      }))
+  const origin = t && t.createdBy !== 'user' ? (t.createdBy === 'chat' ? 'in a chat' : 'for an app connected over MCP') : null
+  const runsCode = t && (t.kind === 'command' || t.kind === 'javascript')
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="New tool"
-      width={620}
-      footer={
-        <>
-          <Switch checked={!blank} onChange={(v) => setBlank(!v)} label="Start from the example" />
-          <div className="flex-1" />
-          <Button
-            variant="primary"
-            onClick={async () => {
-              const tpl = TEMPLATES[kind]
-              const input: CustomToolInput = blank
-                ? { name: uniqueName(`new_${kind}_tool`, existing), description: 'Describe what this tool does and when to use it.', kind, params: [], config: { ...tpl.config, ...(kind === 'javascript' ? { code: 'return args' } : {}) }, enabled: false }
-                : { ...tpl, name: uniqueName(tpl.name, existing) }
-              const t = await attempt(() => api.tools.create(input))
-              if (t) {
-                onCreated(t)
-                onClose()
-              }
-            }}
-          >
-            Create
-          </Button>
-        </>
-      }
-    >
-      <div className="grid grid-cols-2 gap-2">
-        {(Object.keys(KINDS) as CustomToolKind[]).map((k) => {
-          const K = KINDS[k]
-          return (
-            <button
-              key={k}
-              onClick={() => setKind(k)}
-              className={clsx('flex gap-2.5 rounded-lg border p-3 text-left', kind === k ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
-            >
-              <K.icon size={16} className="mt-0.5 shrink-0 text-crimson-hi" />
-              <div>
-                <div className="text-[12.5px] font-semibold">{K.label}</div>
-                <div className="text-[11px] text-dim">{K.blurb}</div>
-                {!blank && <div className="mt-1 font-mono text-[10.5px] text-muted">example: {TEMPLATES[k].name}</div>}
-              </div>
-            </button>
-          )
-        })}
-      </div>
-    </Modal>
-  )
-}
-
-function BuiltinView({ tool, usage, onClose }: { tool: BuiltinToolInfo; usage?: ToolUsage; onClose(): void }) {
-  const schema = tool.schema as { properties?: Record<string, { type?: string; description?: string; anyOf?: { const?: string }[]; items?: { type?: string } }>; required?: string[] }
-  const props = Object.entries(schema.properties ?? {})
-  const max = Math.max(1, ...(usage?.daily ?? [0]))
-  const busiest = usage ? usage.daily.indexOf(Math.max(...usage.daily)) : -1
-  const day = (i: number) => new Date(Date.now() - (13 - i) * 86_400_000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
-  const fortnight = usage?.daily.reduce((a, b) => a + b, 0) ?? 0
-  return (
-    <>
-      <InspectorHead title={<span className="font-mono" translate="no">{tool.name}</span>} sub={`${tool.label}, built in`} onClose={onClose} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="grid gap-6">
-          <p className="text-[13px] leading-relaxed">{tool.description}</p>
-
-          <section className="grid gap-2">
-            <h3 className="text-[12px] font-medium text-muted">Where it works</h3>
-            <div className="grid gap-1.5">
-              {PLACE_KEYS.map((k) => (
-                <div key={k} className="grid grid-cols-[18px_120px_minmax(0,1fr)] items-start gap-2 text-[12.5px]">
-                  <span className={tool.where[k] ? 'text-ok' : 'text-dim'} aria-hidden="true">
-                    {tool.where[k] ? '✓' : '✗'}
-                  </span>
-                  <span className={tool.where[k] ? '' : 'text-dim'}>
-                    <span className="sr-only">{tool.where[k] ? 'Works in ' : 'Not in '}</span>
-                    {PLACE_NAME[k][0].toUpperCase() + PLACE_NAME[k].slice(1)}
-                  </span>
-                  <span className="text-[12px] text-dim">{tool.where[k] ? (k === 'chats' ? tool.availability : k === 'apps' ? "Shared by Cloth's MCP server" : k === 'subagents' ? 'When the chat that starts them has it' : 'In Agent steps that have it on') : whyNot(tool.name, k)}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="grid gap-2">
-            <h3 className="text-[12px] font-medium text-muted">Parameters</h3>
-            {props.length ? (
-              <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
-                {props.map(([name, p]) => (
-                  <Fragment key={name}>
-                    <span className="font-mono text-crimson-hi" translate="no">
-                      {name}
-                      {!schema.required?.includes(name) && <span className="text-dim">?</span>}
-                    </span>
-                    <span className="font-mono text-[11.5px] text-muted">
-                      {p.type ?? (p.anyOf ? p.anyOf.map((a) => JSON.stringify(a.const)).join(' | ') : 'any')}
-                      {p.items?.type ? `<${p.items.type}>` : ''}
-                    </span>
-                    <span className="text-muted">{p.description ?? ''}</span>
-                  </Fragment>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[12px] text-dim">No parameters.</p>
-            )}
-          </section>
-
-          <section className="grid gap-2">
-            <h3 className="text-[12px] font-medium text-muted">Use</h3>
-            {usage ? (
-              <>
-                <p className="text-[12.5px]">
-                  {usage.calls} call{usage.calls === 1 ? '' : 's'} in the last 30 days{usage.errors ? `, ${usage.errors} failed` : ''}. Last used {timeAgo(usage.lastAt)}.
-                  {fortnight > 0 && busiest >= 0 && ` Busiest recent day: ${day(busiest)} (${usage.daily[busiest]}).`}
-                </p>
-                <div role="img" aria-label={`Calls per day over the last 14 days: ${usage.daily.join(', ')}`} className="flex h-10 items-end gap-[3px]">
-                  {usage.daily.map((n, i) => (
-                    <span key={i} title={`${day(i)}: ${n}`} className={clsx('flex-1 rounded-t-[2px]', i === 13 ? 'bg-ok' : 'bg-ok/45')} style={{ height: `${n ? Math.max(8, (n / max) * 100) : 3}%` }} />
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-[12.5px] text-dim">Not used in the last 30 days.</p>
-            )}
-          </section>
-
-          <details>
-            <summary className="cursor-default text-[12px] text-dim hover:text-muted">JSON schema sent to the model</summary>
-            <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-panel p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(tool.schema, null, 2)}</pre>
-          </details>
+    <div className="grid gap-5 px-5 py-5">
+      <div className="flex items-center gap-3">
+        <span aria-hidden="true" className={clsx('flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px]', SOURCE_TILE[i.source])}>
+          <i.icon size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[16px] font-semibold">{i.label}</h2>
+          <div className="truncate font-mono text-[11.5px] text-dim" translate="no">
+            {i.name}
+          </div>
         </div>
+        {onClose && <IconButton aria-label="Close" title="Close (Esc)" onClick={onClose}>✕</IconButton>}
       </div>
-    </>
+      <p className="text-[13px] leading-relaxed text-fg/90">{i.description}</p>
+
+      {t && waiting(t) && (
+        <div className="grid gap-2.5 rounded-[11px] border border-warn/35 bg-warn/5 p-3">
+          <div className="flex gap-2 text-[12.5px] leading-relaxed">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
+            <span>
+              {origin ? `Cloth made this tool ${origin}. ` : 'This tool is switched off. '}
+              {runsCode ? 'It runs code on your computer, so it waits for your OK before any agent can use it.' : 'Agents can use it once you allow it.'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={async () => {
+                if (await attempt(() => api.tools.setEnabled(t.id, true), 'Tool allowed')) onChanged()
+              }}
+            >
+              Allow this tool
+            </Button>
+            {onEdit && (
+              <Button size="sm" onClick={onEdit}>
+                Review settings
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <section aria-labelledby="needs" className="grid gap-1.5">
+        <h3 id="needs" className="text-[12px] font-medium text-muted">
+          It needs
+        </h3>
+        {params.length ? (
+          params.map((p) => (
+            <div key={p.name} className="flex items-baseline gap-2.5 rounded-lg bg-elev px-2.5 py-1.5">
+              <span className="font-mono text-[12px]" translate="no">
+                {p.name}
+              </span>
+              <span className="min-w-0 flex-1 text-[12px] text-muted">{p.description}</span>
+              <span className="shrink-0 text-[11px] text-dim">{p.required ? 'needed' : 'optional'}</span>
+            </div>
+          ))
+        ) : (
+          <p className="text-[12px] text-dim">{i.source === 'mcp' ? 'The server describes its inputs to the agent when it runs.' : 'Nothing; it runs as it is.'}</p>
+        )}
+      </section>
+
+      {t && <TryIt tool={t} />}
+
+      <section aria-labelledby="usedby" className="grid gap-1.5 border-t border-line pt-4">
+        <h3 id="usedby" className="text-[12px] font-medium text-muted">
+          Used by
+        </h3>
+        <p className="text-[13px] leading-relaxed">{usedBy.length ? usedBy.join(', ') : 'No agent or automation has it yet.'}</p>
+        <p className="text-[11.5px] text-dim">Each agent and automation chooses its own tools. Change it there.</p>
+      </section>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {onEdit && (
+          <Button size="sm" onClick={onEdit}>
+            Edit tool
+          </Button>
+        )}
+        <span className="ml-auto text-[11.5px] text-dim">{usage ? `Used ${usage.calls} time${usage.calls === 1 ? '' : 's'} in 30 days${usage.errors ? `, ${usage.errors} failed` : ''}, last ${timeAgo(usage.lastAt)}` : 'Not used in the last 30 days'}</span>
+      </div>
+
+      {i.builtin && (
+        <details>
+          <summary className="cursor-default text-[12px] text-dim hover:text-muted">What the AI sees</summary>
+          <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(i.builtin.schema, null, 2)}</pre>
+        </details>
+      )}
+    </div>
   )
 }
 
-function CustomToolEditor({ tool, onClose, onSaved, onDeleted }: { tool: CustomTool; onClose(): void; onSaved(t: CustomTool): void; onDeleted(): void }) {
-  const [draft, setDraft] = useState<CustomToolInput>({ name: tool.name, description: tool.description, kind: tool.kind, params: tool.params, config: tool.config, enabled: tool.enabled })
+/** Fill in a tool's inputs and run it, without the JSON. */
+function TryIt({ tool, title = 'Try it' }: { tool: Pick<CustomTool, 'kind' | 'config' | 'params'>; title?: string }) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [result, setResult] = useState<ToolRunResult | null>(null)
+  const [running, setRunning] = useState(false)
+  const run = async () => {
+    const args: Record<string, unknown> = {}
+    for (const p of tool.params) {
+      const v = values[p.name] ?? ''
+      if (!v.trim()) continue
+      if (p.type === 'number') args[p.name] = Number(v)
+      else if (p.type === 'boolean') args[p.name] = v === 'true'
+      else if (p.type === 'json') {
+        try {
+          args[p.name] = JSON.parse(v)
+        } catch {
+          setResult({ ok: false, output: '', error: `${p.name} isn’t valid JSON. Check the brackets and quotes.`, durationMs: 0 })
+          return
+        }
+      } else args[p.name] = v
+    }
+    setRunning(true)
+    setResult(await api.tools.test({ kind: tool.kind, config: tool.config, params: tool.params }, args))
+    setRunning(false)
+  }
+  return (
+    <section aria-label={title} className="grid gap-2.5 border-t border-line pt-4">
+      <h3 className="text-[12px] font-medium text-muted">{title}</h3>
+      {tool.params.map((p) => (
+        <label key={p.name} className="grid gap-1">
+          <span className="font-mono text-[11.5px] text-muted" translate="no">
+            {p.name}
+            {!p.required && <span className="font-sans text-dim"> (optional)</span>}
+          </span>
+          {p.type === 'boolean' ? (
+            <Select value={values[p.name] ?? ''} onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))}>
+              <option value="">Leave out</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </Select>
+          ) : (
+            <Input className="font-mono" spellCheck={false} autoComplete="off" placeholder={p.description ? `${p.description}…` : undefined} value={values[p.name] ?? ''} onChange={(e) => setValues((v) => ({ ...v, [p.name]: e.target.value }))} />
+          )}
+        </label>
+      ))}
+      <Button size="sm" className="justify-self-start" icon={<Play size={11} fill="currentColor" />} loading={running} onClick={() => void run()}>
+        Run tool
+      </Button>
+      {result && (
+        <div className="grid gap-1.5" aria-live="polite">
+          <div className="flex items-center gap-2 text-[12px]">
+            <span className={clsx('h-2 w-2 rounded-full', result.ok ? 'bg-ok' : 'bg-crimson')} aria-hidden="true" />
+            <span className={result.ok ? 'text-ok' : 'text-crimson-hi'}>{result.ok ? 'Worked' : 'Failed'}</span>
+            <span className="text-dim">in {duration(result.durationMs)}</span>
+          </div>
+          <pre className={clsx('selectable max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px]', result.ok ? 'text-fg' : 'text-crimson-hi')}>{result.ok ? result.output : result.error}</pre>
+        </div>
+      )}
+    </section>
+  )
+}
+
+const blankTool = (taken: string[]): CustomToolInput => {
+  let name = 'new_tool'
+  for (let i = 2; taken.includes(name); i++) name = `new_tool_${i}`
+  return { name, description: '', kind: 'http', params: [], config: { ...STARTER.http }, enabled: true }
+}
+
+/** Making or changing a tool, as numbered steps, with a test beside it. */
+function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTool | null; taken: string[]; onBack(): void; onSaved(t: CustomTool): void; onDeleted(): void }) {
+  const initial = useMemo<CustomToolInput>(() => (tool ? { name: tool.name, description: tool.description, kind: tool.kind, params: tool.params, config: tool.config, enabled: tool.enabled } : blankTool(taken)), [tool]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [draft, setDraft] = useState<CustomToolInput>(initial)
   const [saving, setSaving] = useState(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify({ name: tool.name, description: tool.description, kind: tool.kind, params: tool.params, config: tool.config, enabled: tool.enabled })
+  const [drafting, setDrafting] = useState(false)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
   const set = (patch: Partial<CustomToolInput>) => setDraft((d) => ({ ...d, ...patch }))
   const setConfig = (patch: Record<string, unknown>) => setDraft((d) => ({ ...d, config: { ...d.config, ...patch } }))
-  const K = KINDS[draft.kind]
+  const runsCode = draft.kind === 'command' || draft.kind === 'javascript'
+  const nameOk = /^[a-z][a-z0-9_]{1,63}$/.test(draft.name)
 
   const save = async () => {
     setSaving(true)
-    const t = await attempt(() => api.tools.update(tool.id, draft), 'Tool saved')
+    // Saving here is the user's OK: what they made or reviewed is allowed.
+    const input = { ...draft, enabled: true }
+    const t = await attempt(() => (tool ? api.tools.update(tool.id, input) : api.tools.create(input)), tool ? 'Tool saved' : 'Tool made')
     setSaving(false)
     if (t) onSaved(t)
+  }
+  const back = async () => {
+    if (dirty && !(await confirmAction('Your changes to this tool will be lost.', { title: 'Leave without saving?', confirmLabel: 'Leave' }))) return
+    onBack()
+  }
+  const draftIt = async () => {
+    setDrafting(true)
+    const d = await attempt(() => api.tools.draft(draft.description))
+    setDrafting(false)
+    if (d) setDraft({ ...d, description: d.description || draft.description, enabled: true })
   }
 
   useEffect(() => {
@@ -507,177 +529,234 @@ function CustomToolEditor({ tool, onClose, onSaved, onDeleted }: { tool: CustomT
   })
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
-        title={
-          <span className="flex items-center gap-2">
-            <K.icon size={15} className="text-crimson-hi" />
-            <span className="font-mono">{tool.name}</span>
-            <Badge>{K.label}</Badge>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-5 py-5 mobile:w-[calc(100%-24px)]">
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => void back()} className="flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-[13px] text-muted hover:text-fg">
+            <ArrowLeft size={15} aria-hidden="true" />
+            Tools
+          </button>
+          <span className="text-line-strong" aria-hidden="true">
+            /
           </span>
-        }
-        subtitle={`${tool.createdBy !== 'user' ? `Made by AI in ${ORIGIN[tool.createdBy]} · ` : ''}Updated ${timeAgo(tool.updatedAt)}`}
-        actions={
-          <>
-            <Switch
-              checked={tool.enabled}
-              onChange={async (v) => {
-                const t = await attempt(() => api.tools.setEnabled(tool.id, v))
-                if (t) onSaved(t)
-              }}
-              label="Enabled"
-            />
+          <label className="min-w-[200px] flex-1">
+            <span className="sr-only">Tool name, as the AI calls it</span>
+            <input value={draft.name} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_') })} spellCheck={false} autoComplete="off" className="w-full bg-transparent py-1 font-mono text-[18px] font-semibold outline-none" />
+          </label>
+          {tool && (
             <IconButton
               title="Delete tool"
+              aria-label="Delete tool"
               onClick={async () => {
-                if (!(await confirmAction(`Chats and flows that use “${tool.name}” will no longer be able to call it.`, { title: 'Delete tool?', confirmLabel: 'Delete', danger: true }))) return
-                await attempt(() => api.tools.remove(tool.id))
-                onDeleted()
+                if (!(await confirmAction(`Agents and automations that use “${tool.name}” will no longer be able to call it.`, { title: 'Delete tool?', confirmLabel: 'Delete', danger: true }))) return
+                if (await attempt(() => api.tools.remove(tool.id).then(() => true))) onDeleted()
               }}
             >
               <Trash2 size={14} />
             </IconButton>
-            <Button variant="primary" icon={<Save size={13} />} disabled={!dirty} loading={saving} onClick={() => void save()}>
-              Save
-            </Button>
-            <IconButton title="Close (Esc)" aria-label="Close" onClick={onClose}>
-              <X size={14} />
-            </IconButton>
-          </>
-        }
-      />
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <div className="min-h-0 space-y-4 overflow-y-auto border-r border-line p-5">
-          {tool.createdBy !== 'user' && !tool.enabled && (
-            <div className="flex items-start gap-2.5 rounded-lg border border-warn/40 bg-warn/5 p-3 text-[12px]">
-              <ShieldAlert size={15} className="mt-px shrink-0 text-warn" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-fg">Review before enabling</div>
-                <div className="mt-0.5 text-muted">
-                  A model made this tool in {ORIGIN[tool.createdBy]}. {draft.kind === 'command' || draft.kind === 'javascript' ? 'It runs code on this computer, so read' : 'Read'} its settings below and try it in the test panel, then enable it.
-                </div>
-              </div>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={async () => {
-                  const t = await attempt(() => api.tools.setEnabled(tool.id, true), 'Tool enabled')
-                  if (t) onSaved(t)
-                }}
-              >
-                Enable tool
-              </Button>
-            </div>
           )}
-          <div className="grid grid-cols-[220px_1fr] gap-3">
-            <Field label="Name" hint="snake_case — how the model calls it">
-              <Input className="font-mono" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
-            </Field>
-            <Field label="Description" hint="The model decides when to call the tool from this text.">
-              <Textarea rows={2} value={draft.description} onChange={(e) => set({ description: e.target.value })} />
-            </Field>
-          </div>
-          <ParamsEditor params={draft.params} onChange={(params) => set({ params })} />
-          <div>
-            <div className="mb-2 text-[12.5px] font-semibold">{K.label} settings</div>
-            <KindConfig kind={draft.kind} config={draft.config} setConfig={setConfig} params={draft.params} />
-          </div>
+          <Button variant="primary" loading={saving} disabled={!nameOk} onClick={() => void save()}>
+            Save tool
+          </Button>
         </div>
-        <TestPanel draft={draft} />
+        {!nameOk && <p className="-mt-3 text-[12px] text-warn">Name it in lowercase with underscores, like weather_for_city.</p>}
+
+        {tool && waiting(tool) && (
+          <div className="flex items-start gap-2.5 rounded-[11px] border border-warn/35 bg-warn/5 p-3 text-[12.5px]">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
+            <span>A model made this tool. Read its settings and try it on the right; saving it allows agents to use it.</span>
+          </div>
+        )}
+
+        <div className="grid items-start gap-6 min-[1000px]:grid-cols-[minmax(0,1fr)_380px]">
+          <ol className="grid min-w-0">
+            <Step n={1} title="What should it do?">
+              <Textarea rows={3} aria-label="What the tool does" value={draft.description} onChange={(e) => set({ description: e.target.value })} placeholder="Get today’s weather for a city: temperature, rain chance and wind. Use it when I ask about the weather…" className="text-[13.5px]" />
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" icon={<Sparkles size={13} />} loading={drafting} disabled={!draft.description.trim()} onClick={() => void draftIt()}>
+                  Draft the rest for me
+                </Button>
+                <span className="text-[12px] text-dim">The AI reads this to decide when to use the tool. Cloth can fill in the next three steps from it.</span>
+              </div>
+            </Step>
+
+            <Step n={2} title="How does it work?">
+              <div role="radiogroup" aria-label="How it works" className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
+                {(Object.keys(KINDS) as CustomToolKind[]).map((k) => {
+                  const K = KINDS[k]
+                  const on = draft.kind === k
+                  return (
+                    <button
+                      key={k}
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => !on && setDraft((d) => ({ ...d, kind: k, config: { ...STARTER[k] } }))}
+                      className={clsx('flex min-h-[78px] gap-3 rounded-[12px] border p-3 text-left', on ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+                    >
+                      <span aria-hidden="true" className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]', on ? 'bg-crimson text-white' : 'bg-elev-2 text-muted')}>
+                        <K.icon size={16} />
+                      </span>
+                      <span className="grid content-start gap-0.5">
+                        <span className="text-[13px] font-semibold">{K.label}</span>
+                        <span className="text-[12px] text-dim">{K.blurb}</span>
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              {runsCode && (
+                <p className="flex items-center gap-2 text-[12px] text-warn">
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  This runs on your computer. Only add code you trust.
+                </p>
+              )}
+            </Step>
+
+            <Step n={3} title="What does it need?" hint="The AI fills these in each time it uses the tool.">
+              <ParamsEditor params={draft.params} onChange={(params) => set({ params })} />
+            </Step>
+
+            <Step n={4} title={SETUP_TITLE[draft.kind]} last>
+              <KindConfig kind={draft.kind} config={draft.config} setConfig={setConfig} params={draft.params} />
+            </Step>
+          </ol>
+
+          <aside aria-label="Test" className="grid gap-3 min-[1000px]:sticky min-[1000px]:top-4">
+            <div className="rounded-[16px] border border-line bg-panel px-4 pb-4">
+              <TryIt key={draft.params.map((p) => p.name).join()} tool={draft} title="Test it" />
+              <p className="mt-2 text-[11.5px] text-dim">Runs what’s on screen, saved or not.</p>
+            </div>
+            <details className="rounded-[16px] border border-line bg-panel px-4 py-3">
+              <summary className="cursor-default text-[12.5px] font-medium">What the AI sees</summary>
+              <pre className="selectable mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11.5px] text-muted">
+                {[draft.name, draft.description || '(no description yet)', '', ...draft.params.map((p) => `${p.name}  ${PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase()}  ${p.required ? 'needed' : 'optional'}  ${p.description}`)].join('\n')}
+              </pre>
+            </details>
+          </aside>
+        </div>
       </div>
     </div>
+  )
+}
+
+function Step({ n, title, hint, last, children }: { n: number; title: string; hint?: string; last?: boolean; children: ReactNode }) {
+  return (
+    <li className={clsx('relative grid gap-3 pl-12', last ? 'pb-2' : 'pb-8')}>
+      {!last && <span aria-hidden="true" className="absolute bottom-1 left-[13px] top-9 w-0.5 bg-elev-2" />}
+      <span aria-hidden="true" className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-line-strong bg-elev text-[12.5px] font-semibold">
+        {n}
+      </span>
+      <div className="flex min-h-7 flex-wrap items-baseline gap-x-3">
+        <h2 className="text-[15px] font-semibold leading-7">{title}</h2>
+        {hint && <span className="text-[12px] text-dim">{hint}</span>}
+      </div>
+      {children}
+    </li>
   )
 }
 
 function ParamsEditor({ params, onChange }: { params: ToolParam[]; onChange(p: ToolParam[]): void }) {
   const update = (i: number, patch: Partial<ToolParam>) => onChange(params.map((p, j) => (j === i ? { ...p, ...patch } : p)))
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-[12.5px] font-semibold">Parameters</div>
-        <Button size="sm" icon={<Plus size={12} />} onClick={() => onChange([...params, { name: `param${params.length + 1}`, type: 'string', description: '', required: true }])}>
-          Parameter
-        </Button>
-      </div>
-      {!params.length && <div className="text-[12px] text-dim">No parameters — the tool is called with no arguments.</div>}
-      <div className="space-y-1.5">
-        {params.map((p, i) => (
-          <div key={i} className="grid grid-cols-[140px_100px_1fr_auto_auto] items-center gap-2">
-            <Input className="font-mono" value={p.name} onChange={(e) => update(i, { name: e.target.value })} />
-            <Select value={p.type} onChange={(e) => update(i, { type: e.target.value as ToolParamType })}>
-              {['string', 'number', 'boolean', 'json'].map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </Select>
-            <Input placeholder="Description for the model" value={p.description} onChange={(e) => update(i, { description: e.target.value })} />
-            <label className="flex items-center gap-1 text-[11.5px] text-muted">
-              <input type="checkbox" className="accent-[#dc2645]" checked={p.required} onChange={(e) => update(i, { required: e.target.checked })} />
-              required
-            </label>
-            <IconButton onClick={() => onChange(params.filter((_, j) => j !== i))}>
-              <Trash2 size={12} />
-            </IconButton>
-          </div>
-        ))}
-      </div>
+    <div className="grid gap-2">
+      {params.length > 0 && (
+        <div className="grid grid-cols-[minmax(110px,1fr)_minmax(110px,0.8fr)_minmax(160px,2fr)_auto_auto] items-center gap-2 mobile:grid-cols-1">
+          <span className="text-[11.5px] text-dim mobile:hidden">Name</span>
+          <span className="text-[11.5px] text-dim mobile:hidden">Kind</span>
+          <span className="text-[11.5px] text-dim mobile:hidden">Tell the AI what to put here</span>
+          <span className="text-[11.5px] text-dim mobile:hidden">Needed</span>
+          <span className="mobile:hidden" />
+          {params.map((p, i) => (
+            <Fragment key={i}>
+              <Input aria-label={`Input ${i + 1} name`} className="font-mono" spellCheck={false} autoComplete="off" value={p.name} onChange={(e) => update(i, { name: e.target.value.replace(/[^a-zA-Z0-9_]+/g, '_') })} />
+              <Select aria-label={`Input ${i + 1} kind`} value={p.type} onChange={(e) => update(i, { type: e.target.value as ToolParamType })}>
+                {PARAM_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+              <Input aria-label={`Input ${i + 1}: what to put here`} placeholder="e.g. City name, like Lisbon…" value={p.description} onChange={(e) => update(i, { description: e.target.value })} />
+              <input aria-label={`Input ${i + 1} is needed`} type="checkbox" className="h-4 w-4 justify-self-center accent-[#dc2645]" checked={p.required} onChange={(e) => update(i, { required: e.target.checked })} />
+              <IconButton aria-label={`Remove input ${i + 1}`} title="Remove" onClick={() => onChange(params.filter((_, j) => j !== i))}>
+                <Trash2 size={12} />
+              </IconButton>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {!params.length && <p className="text-[12.5px] text-dim">Nothing yet. The tool runs with no inputs.</p>}
+      <Button size="sm" className="justify-self-start" icon={<Plus size={12} />} onClick={() => onChange([...params, { name: `input${params.length + 1}`, type: 'string', description: '', required: true }])}>
+        Add an input
+      </Button>
     </div>
   )
 }
 
 function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind; config: Record<string, any>; setConfig(p: Record<string, unknown>): void; params: ToolParam[] }) {
-  const refs = params.map((p) => `{{${p.name}}}`).join(' ')
-  const hint = refs ? `Available: ${refs}` : 'Add parameters to reference them as {{name}}'
   const str = (k: string) => String(config[k] ?? '')
+  // Buttons that insert an input's {{placeholder}} at the end of a field.
+  const inserts = (field: string) =>
+    params.length > 0 && (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11.5px] text-dim">Insert an input:</span>
+        {params.map((p) => (
+          <button key={p.name} onClick={() => setConfig({ [field]: `${str(field)}{{${p.name}}}` })} className="h-7 rounded-full border border-dashed border-line-strong px-2.5 font-mono text-[11.5px] text-muted hover:border-solid hover:text-fg">
+            {p.name}
+          </button>
+        ))}
+      </div>
+    )
   switch (kind) {
     case 'http':
       return (
-        <div className="space-y-3">
+        <div className="grid gap-3">
           <div className="grid grid-cols-[100px_1fr] gap-2">
-            <Select value={str('method') || 'GET'} onChange={(e) => setConfig({ method: e.target.value })}>
+            <Select aria-label="Method" value={str('method') || 'GET'} onChange={(e) => setConfig({ method: e.target.value })}>
               {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
                 <option key={m}>{m}</option>
               ))}
             </Select>
-            <Input className="font-mono text-[12px]" value={str('url')} onChange={(e) => setConfig({ url: e.target.value })} placeholder="https://api.example.com/items/{{id}}" />
+            <Input aria-label="Web address" className="font-mono text-[12px]" spellCheck={false} autoComplete="off" value={str('url')} onChange={(e) => setConfig({ url: e.target.value })} placeholder="https://api.example.com/items/{{id}}…" />
           </div>
-          <div className="text-[11px] text-dim">{hint}</div>
-          <Field label="Headers (JSON template)">
-            <Textarea rows={3} className="font-mono text-[11.5px]" value={str('headers')} onChange={(e) => setConfig({ headers: e.target.value })} />
-          </Field>
-          {config.method && config.method !== 'GET' && (
-            <Field label="Body (template)" hint="Empty = send all arguments as JSON">
-              <Textarea rows={4} className="font-mono text-[11.5px]" value={str('body')} onChange={(e) => setConfig({ body: e.target.value })} />
-            </Field>
-          )}
-          <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
+          {inserts('url')}
+          <details>
+            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Headers{config.method && config.method !== 'GET' ? ' and body' : ''}</summary>
+            <div className="mt-2 grid gap-3">
+              <Field label="Headers (JSON)">
+                <Textarea rows={3} className="font-mono text-[11.5px]" spellCheck={false} value={str('headers')} onChange={(e) => setConfig({ headers: e.target.value })} />
+              </Field>
+              {config.method && config.method !== 'GET' && (
+                <Field label="Body" hint="Leave empty to send every input as JSON.">
+                  <Textarea rows={4} className="font-mono text-[11.5px]" spellCheck={false} value={str('body')} onChange={(e) => setConfig({ body: e.target.value })} />
+                </Field>
+              )}
+              <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
+            </div>
+          </details>
         </div>
       )
     case 'javascript':
       return (
-        <div className="space-y-2">
-          <div className="space-y-1 text-[11px] text-dim">
-            <div>Async function body. In scope: args, fetch, URL, console, JSON, Math, Date, Buffer. Return a string or any JSON value.</div>
-            <div>
-              <span className="font-mono text-muted">workspace</span>: write(path, data), read, readBytes, list, exists — files in the flow's workspace (the test run uses a scratch folder).{' '}
-              <span className="font-mono text-muted">require</span>: pptxgenjs (PowerPoint), docx (Word).
-            </div>
-          </div>
-          <div className="h-64 overflow-hidden rounded-md border border-line bg-bg">
+        <div className="grid gap-2">
+          <p className="text-[12px] text-dim">
+            Inputs are in <span className="font-mono text-muted">args</span>. You can use fetch, and <span className="font-mono text-muted">workspace</span> to read and write files in the run’s folder; require("pptxgenjs") and require("docx") make PowerPoint and Word files. Return the result.
+          </p>
+          <div className="h-64 overflow-hidden rounded-lg border border-line bg-bg">
             <Editor value={str('code')} onChange={(code) => setConfig({ code })} lang="javascript" />
           </div>
           <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
-          <div className="text-[11px] text-dim">Runs in a separate V8 context inside Cloth — convenient, but not a security sandbox. Only add code you trust.</div>
         </div>
       )
     case 'command':
       return (
-        <div className="space-y-3">
-          <Field label="Executable" hint="Name on PATH (git, node, python) or an absolute path">
+        <div className="grid gap-3">
+          <Field label="Program" hint="A name on PATH (git, node, python) or a full path.">
             <div className="flex gap-2">
-              <Input className="font-mono" value={str('command')} onChange={(e) => setConfig({ command: e.target.value })} />
+              <Input className="font-mono" spellCheck={false} autoComplete="off" value={str('command')} onChange={(e) => setConfig({ command: e.target.value })} />
               <Button
                 onClick={async () => {
-                  const [f] = await api.app.pickPaths({ title: 'Choose executable' })
+                  const [f] = await api.app.pickPaths({ title: 'Choose a program' })
                   if (f) setConfig({ command: f })
                 }}
               >
@@ -685,27 +764,35 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
               </Button>
             </div>
           </Field>
-          <Field label="Arguments — one per line" hint={`${hint}. Each line becomes exactly one argument; no shell is involved.`}>
-            <Textarea rows={6} className="font-mono text-[11.5px]" value={str('args')} onChange={(e) => setConfig({ args: e.target.value })} />
+          <Field label="Arguments, one per line" hint="Each line is passed as exactly one argument, with no shell, so inputs can’t add extra commands.">
+            <Textarea rows={5} className="font-mono text-[11.5px]" spellCheck={false} value={str('args')} onChange={(e) => setConfig({ args: e.target.value })} />
           </Field>
-          <Field label="Working directory (optional, template)">
-            <Input className="font-mono" value={str('cwd')} onChange={(e) => setConfig({ cwd: e.target.value })} />
-          </Field>
-          <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
+          {inserts('args')}
+          <details>
+            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Folder and time limit</summary>
+            <div className="mt-2 grid gap-3">
+              <Field label="Run it in this folder (optional)">
+                <Input className="font-mono" spellCheck={false} value={str('cwd')} onChange={(e) => setConfig({ cwd: e.target.value })} />
+              </Field>
+              <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
+            </div>
+          </details>
         </div>
       )
     case 'prompt':
       return (
-        <div className="space-y-3">
+        <div className="grid gap-3">
+          <Field label="Prompt">
+            <Textarea rows={5} className="text-[13px]" value={str('prompt')} onChange={(e) => setConfig({ prompt: e.target.value })} placeholder="Give a one-line weather summary for {{city}}…" />
+          </Field>
+          {inserts('prompt')}
           <Field label="Model">
             <ModelPicker value={(config.model as ModelRef) ?? null} onChange={(model) => setConfig({ model })} allowNone noneLabel="Default model" />
           </Field>
-          <Field label="System prompt (template)">
-            <Textarea rows={2} value={str('system')} onChange={(e) => setConfig({ system: e.target.value })} />
-          </Field>
-          <Field label="Prompt (template)" hint={hint}>
-            <Textarea rows={6} className="font-mono text-[11.5px]" value={str('prompt')} onChange={(e) => setConfig({ prompt: e.target.value })} />
-          </Field>
+          <details>
+            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Instructions for the model (optional)</summary>
+            <Textarea rows={2} className="mt-2" aria-label="Instructions for the model" value={str('system')} onChange={(e) => setConfig({ system: e.target.value })} />
+          </details>
         </div>
       )
   }
@@ -714,70 +801,9 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
 function TimeoutField({ value, onChange }: { value: unknown; onChange(v: number): void }) {
   return (
     <label className="flex items-center gap-2 text-[12px] text-muted">
-      Timeout
-      <Input type="number" className="w-24" value={Number(value) || 30000} onChange={(e) => onChange(Number(e.target.value))} />
-      ms
+      Give up after
+      <Input type="number" className="w-24" value={Math.round((Number(value) || 30000) / 1000)} onChange={(e) => onChange(Math.max(1, Number(e.target.value)) * 1000)} />
+      seconds
     </label>
-  )
-}
-
-function TestPanel({ draft }: { draft: CustomToolInput }) {
-  const sample = useMemo(
-    () =>
-      JSON.stringify(
-        Object.fromEntries(draft.params.map((p) => [p.name, p.type === 'number' ? 1 : p.type === 'boolean' ? true : p.type === 'json' ? {} : ''])),
-        null,
-        2
-      ),
-    [draft.params]
-  )
-  const [args, setArgs] = useState(sample)
-  const [result, setResult] = useState<ToolRunResult | null>(null)
-  const [running, setRunning] = useState(false)
-
-  const run = async () => {
-    let parsed: Record<string, unknown>
-    try {
-      parsed = args.trim() ? JSON.parse(args) : {}
-    } catch (err) {
-      setResult({ ok: false, output: '', error: `Arguments are not valid JSON: ${err instanceof Error ? err.message : err}`, durationMs: 0 })
-      return
-    }
-    setRunning(true)
-    setResult(await api.tools.test({ kind: draft.kind, config: draft.config, params: draft.params }, parsed))
-    setRunning(false)
-  }
-
-  return (
-    <div className="flex min-h-0 flex-col bg-panel">
-      <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-        <div className="text-[12.5px] font-semibold">Test</div>
-        <div className="flex gap-1.5">
-          <Button size="sm" variant="ghost" onClick={() => setArgs(sample)}>
-            Reset args
-          </Button>
-          <Button size="sm" variant="primary" icon={<Play size={11} fill="currentColor" />} loading={running} onClick={() => void run()}>
-            Run
-          </Button>
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-        <div className="text-[11px] text-dim">Runs the current (unsaved) definition with these arguments.</div>
-        <div className="h-40 shrink-0 overflow-hidden rounded-md border border-line bg-bg">
-          <Editor value={args} onChange={setArgs} lang="json" />
-        </div>
-        {result && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="mb-1.5 flex items-center gap-2 text-[11.5px]">
-              <Badge tone={result.ok ? 'ok' : 'crimson'}>{result.ok ? 'ok' : 'error'}</Badge>
-              <span className="font-mono text-dim">{duration(result.durationMs)}</span>
-            </div>
-            <pre className={clsx('selectable min-h-0 flex-1 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-bg p-3 font-mono text-[11.5px]', result.ok ? 'text-fg' : 'text-crimson-hi')}>
-              {result.ok ? result.output : result.error}
-            </pre>
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
