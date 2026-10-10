@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
+import type { Automation, AutomationInput, WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { describeChange, failureReport } from './history'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -13,6 +13,8 @@ import { skillSystemPrompt, type SkillService } from '../skills/skills'
 import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { AgentService } from '../agent/agents'
 import type { ToolScope } from '../agent/tools'
+import { mcpToolName } from '../mcp/client'
+import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
@@ -96,7 +98,7 @@ export class WorkflowService {
 
   save(
     id: string,
-    patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>,
+    patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace' | 'automation'>>,
     meta: { source?: WorkflowVersionSource; note?: string } = {}
   ): Workflow {
     const cur = this.get(id)
@@ -110,11 +112,66 @@ export class WorkflowService {
     const next = { ...cur, ...patch, cron }
     this.ctx.db
       .prepare('UPDATE workflows SET name = ?, description = ?, graph = ?, cron = ?, cron_enabled = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
+      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null, automation: next.automation ?? null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
     this.schedule(id)
     const saved = this.get(id)
     this.recordVersion(saved, meta.source ?? 'edit', meta.note)
     return saved
+  }
+
+  // ─── Automations ──────────────────────────────────────────────────────────
+
+  /** Delivers an automation's result (a new chat, a Knowledge note); set up by the app. Returns the new chat's id. */
+  deliver: ((wf: Workflow, run: WorkflowRun, transcript: AgentMessage[]) => Promise<string | null>) | null = null
+
+  createAutomation(input: AutomationInput & { name: string; automation: Automation }): Workflow {
+    const wf = this.create({ name: input.name }, null)
+    return this.saveAutomation(wf.id, input, 'created')
+  }
+
+  /** Saves an automation and rebuilds its one-step graph from it. */
+  saveAutomation(id: string, input: AutomationInput, source: WorkflowVersionSource = 'edit'): Workflow {
+    const cur = this.get(id)
+    const automation = cleanAutomation(input.automation ?? cur.automation)
+    if (!automation) throw new Error('This flow is not an automation')
+    if (!automation.prompt.trim()) throw new Error('Say what the automation should do')
+    if (automation.deliver === 'knowledge' && !automation.collectionId) throw new Error('Pick the Knowledge collection to save results to')
+    const name = input.name?.trim() || cur.name
+    return this.save(
+      id,
+      { name, ...automationGraph(automation), automation, cron: input.cron === undefined ? cur.cron : input.cron, cronEnabled: input.cronEnabled ?? cur.cronEnabled, workspace: input.workspace === undefined ? cur.workspace : input.workspace },
+      { source }
+    )
+  }
+
+  /** Keeps the graph and drops the automation, so the flow editor takes over. */
+  toFlow(id: string): Workflow {
+    const cur = this.get(id)
+    if (!cur.automation) return cur
+    return this.save(id, { automation: null }, { note: 'Turned into a flow' })
+  }
+
+  private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[]): Promise<void> {
+    const a = wf.automation
+    if (!a) return
+    let chatId: string | null = null
+    try {
+      chatId = run.status === 'ok' && this.deliver ? await this.deliver(wf, run, transcript) : null
+    } catch (err) {
+      this.ctx.log('automation', `Delivering ${wf.name} failed:`, errorMessage(err))
+    }
+    const text = run.status === 'ok' ? (typeof run.output === 'string' ? run.output : JSON.stringify(run.output)) : run.error ?? 'Failed'
+    this.ctx.emit('workflow', {
+      type: 'automation',
+      workflowId: wf.id,
+      name: wf.name,
+      runId: run.id,
+      ok: run.status === 'ok',
+      summary: text.replace(/\s+/g, ' ').trim().slice(0, 180),
+      chatId,
+      // Failed runs always say so; finished ones when the automation asks to notify.
+      notify: run.status !== 'ok' || a.deliver === 'notify'
+    })
   }
 
   // ─── History ──────────────────────────────────────────────────────────────
@@ -347,6 +404,7 @@ export class WorkflowService {
     const controller = new AbortController()
     this.running.set(run.id, controller)
     this.persist(run)
+    let transcript: AgentMessage[] = []
     const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
       executeGraph(
         wf,
@@ -356,7 +414,8 @@ export class WorkflowService {
           onFile: (abs) => {
             files.add(abs)
             run.files = [...files]
-          }
+          },
+          onTranscript: (messages) => (transcript = messages)
         }),
         controller.signal,
         {
@@ -383,6 +442,10 @@ export class WorkflowService {
         this.running.delete(run.id)
         this.persist(run)
         this.prune(id)
+      })
+      .then(async (r) => {
+        if (wf.automation) await this.afterAutomation(wf, r, transcript)
+        return r
       })
     return { run: { ...run }, done }
   }
@@ -434,7 +497,7 @@ export class WorkflowService {
     return m
   }
 
-  private executor(env: { workspace: string | null; onFile(abs: string): void }): Executor {
+  private executor(env: { workspace: string | null; onFile(abs: string): void; onTranscript?(messages: AgentMessage[]): void }): Executor {
     const { providers, rag, skills, runtime, web, custom } = this.deps
     /** Tool-like nodes count as tool calls on the dashboard. */
     const timed = async <T>(name: string, kind: string, fn: () => Promise<T>): Promise<T> => {
@@ -502,6 +565,8 @@ export class WorkflowService {
             }
             system = [`You are the "${saved.name}" agent. ${saved.purpose}`, saved.instructions.trim(), system].filter(Boolean).join('\n\n')
           }
+          // An automation's step may use exactly what was picked for it, whoever it runs as.
+          if (d.automation) scope = await this.automationScope(d, scope)
           const res = await runtime.run({
             model: d.model?.providerId ? d.model : (saved?.model ?? this.modelFor(null)),
             prompt: t(d.prompt) || String(prev ?? ''),
@@ -512,6 +577,7 @@ export class WorkflowService {
             signal
           })
           if (workspace) for (const b of res.turn.blocks) if (b.type === 'tool') for (const c of b.trace.changes ?? []) env.onFile(join(workspace, c.path))
+          if (d.automation) env.onTranscript?.(res.messages)
           const tools = res.turn.blocks.filter((b) => b.type === 'tool').map((b) => (b.type === 'tool' ? b.trace.name : ''))
           return { output: d.includeTrace ? { text: res.text, tools } : res.text }
         }
@@ -590,8 +656,48 @@ export class WorkflowService {
     }
   }
 
+  /** The scope of an automation's agent step: its picked tools, servers, collections and skills, and nothing else. */
+  private async automationScope(d: Record<string, any>, scope: ToolScope): Promise<ToolScope> {
+    const tools: string[] = Array.isArray(d.tools) ? d.tools : []
+    const collectionIds: string[] = Array.isArray(d.collectionIds) ? d.collectionIds : []
+    const skills: string[] = Array.isArray(d.skills) ? d.skills : []
+    const picked: { id: string; tools: string[] | null }[] = Array.isArray(d.servers) ? d.servers : []
+    const only = new Set(tools)
+    if (collectionIds.length) only.add('rag_search')
+    if (skills.length) for (const n of ['skill_list', 'skill_use']) only.add(n)
+    const mcp = this.deps.runtime.mcpClients
+    const configs = this.deps.settings.get().mcpClients
+    const servers = mcp ? mcp.chatServers(picked.map((p) => p.id)) : []
+    if (mcp && servers.length) await mcp.ensure(servers)
+    for (const p of picked) {
+      const config = configs.find((c) => c.id === p.id)
+      if (!config || !servers.includes(p.id)) continue
+      const names = p.tools ?? mcp?.status().find((s) => s.id === p.id)?.tools.map((t) => t.name) ?? []
+      for (const n of names) only.add(mcpToolName(config.name, n))
+    }
+    const writes = ['write', 'edit', 'ast_edit'].some((n) => only.has(n))
+    return {
+      ...scope,
+      collectionIds,
+      knowledgeEnabled: collectionIds.length > 0,
+      skillsEnabled: skills.length > 0,
+      skillNames: skills,
+      skillsOff: [],
+      skillsAlways: [],
+      webEnabled: true,
+      customTools: true,
+      toolNames: null,
+      disabledTools: [],
+      mcpServers: servers,
+      onlyTools: [...only],
+      fileAccess: writes && scope.workspace ? 'write' : 'read',
+      shell: false,
+      subagents: false
+    }
+  }
+
   private toWorkflow(r: WorkflowRow): Workflow {
-    const graph = json<{ nodes: WorkflowNode[]; edges: WorkflowEdge[]; workspace?: string | null }>(r.graph, { nodes: [], edges: [] })
+    const graph = json<{ nodes: WorkflowNode[]; edges: WorkflowEdge[]; workspace?: string | null; automation?: Automation | null }>(r.graph, { nodes: [], edges: [] })
     return {
       id: r.id,
       name: r.name,
@@ -602,9 +708,45 @@ export class WorkflowService {
       cronEnabled: !!r.cron_enabled,
       nextRunAt: this.jobs.get(r.id)?.nextRun()?.getTime() ?? null,
       workspace: graph.workspace ?? null,
+      automation: graph.automation ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at
     }
+  }
+}
+
+/** An automation as a graph: Start → one agent step that does the prompt → Output. */
+export function automationGraph(a: Automation): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  return {
+    nodes: [
+      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{}' } },
+      {
+        id: 'n_agent',
+        type: 'agent',
+        position: { x: 320, y: 100 },
+        data: { key: 'result', label: 'Do the task', automation: true, prompt: a.prompt, agentId: a.agentId, tools: a.tools, servers: a.servers, collectionIds: a.collectionIds, skills: a.skills, maxTurns: 24 }
+      },
+      { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'output', label: 'Output', value: '{{result}}' } }
+    ],
+    edges: [
+      { id: 'e1', source: 'n_trigger', target: 'n_agent' },
+      { id: 'e2', source: 'n_agent', target: 'n_out' }
+    ]
+  }
+}
+
+function cleanAutomation(a: Automation | null | undefined): Automation | null {
+  if (!a) return null
+  const list = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && !!x.trim()))] : [])
+  return {
+    prompt: String(a.prompt ?? ''),
+    agentId: a.agentId || null,
+    tools: list(a.tools),
+    servers: (Array.isArray(a.servers) ? a.servers : []).filter((s) => s && typeof s.id === 'string').map((s) => ({ id: s.id, tools: Array.isArray(s.tools) ? list(s.tools) : null })),
+    collectionIds: list(a.collectionIds),
+    skills: list(a.skills),
+    deliver: a.deliver === 'notify' || a.deliver === 'knowledge' ? a.deliver : 'chat',
+    collectionId: a.collectionId || null
   }
 }
 

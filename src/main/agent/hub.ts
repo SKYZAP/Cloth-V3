@@ -90,7 +90,8 @@ export const TOOL_CREATE_DESCRIPTION =
 /** Kinds that run code on this machine: a person reviews them before they can be called. */
 const NEEDS_REVIEW: CustomToolKind[] = ['javascript', 'command']
 
-export function createTool(custom: CustomToolService, p: CreateToolInput, origin: Exclude<ToolOrigin, 'user'>): { tool: CustomTool; text: string } {
+/** A tool definition from the natural JSON shapes a model writes, stored as the Tools page edits them. */
+export function toolInputFrom(p: CreateToolInput): Omit<CustomToolInput, 'enabled'> {
   const kind = p.kind
   if (!['http', 'javascript', 'command', 'prompt'].includes(kind)) throw new Error('kind must be http, javascript, command or prompt')
   const config: Record<string, unknown> = { ...(p.config ?? {}) }
@@ -104,8 +105,13 @@ export function createTool(custom: CustomToolService, p: CreateToolInput, origin
     description: String(x.description ?? ''),
     required: x.required !== false
   }))
+  return { name: String(p.name ?? '').trim(), description: String(p.description ?? ''), kind, params, config }
+}
+
+export function createTool(custom: CustomToolService, p: CreateToolInput, origin: Exclude<ToolOrigin, 'user'>): { tool: CustomTool; text: string } {
+  const kind = p.kind
   const review = NEEDS_REVIEW.includes(kind)
-  const input: CustomToolInput = { name: String(p.name ?? '').trim(), description: String(p.description ?? ''), kind, params, config, enabled: !review }
+  const input: CustomToolInput = { ...toolInputFrom(p), enabled: !review }
 
   const existing = custom.findByName(input.name)
   let tool: CustomTool

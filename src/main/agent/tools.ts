@@ -65,6 +65,8 @@ export interface ToolScope {
   skillsAlways?: string[]
   /** Tools switched off by name. */
   disabledTools?: string[]
+  /** Only these tools, by name (an automation's exact list); null/undefined = no such limit. */
+  onlyTools?: string[] | null
   /** The saved agent this agent is (it doesn't delegate to itself). */
   agentId?: string | null
   /** A file was written in the workspace by a custom tool (absolute path). */

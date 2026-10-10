@@ -126,6 +126,10 @@ export interface ClothApi {
     setEnabled(id: string, enabled: boolean): Promise<CustomTool>
     remove(id: string): Promise<void>
     test(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, args: Record<string, unknown>): Promise<ToolRunResult>
+    /** A tool written from a description, for the user to check and save. Not saved. */
+    draft(description: string): Promise<CustomToolInput>
+    /** Which agents and automations can call each tool, by tool name (external tools by their agent-facing name). */
+    usedBy(): Promise<Record<string, string[]>>
   }
   web: {
     status(): Promise<WebStatus>
@@ -315,6 +319,11 @@ export interface ClothApi {
     exportStart(input: import('./flow-bundle').ExportInput): Promise<string>
     exportCancel(exportId: string): Promise<void>
     createFromGraph(graph: WorkflowGraph): Promise<Workflow>
+    /** A new automation: a prompt, how often it runs and what it may use. */
+    createAutomation(input: import('./types').AutomationInput & { name: string; automation: import('./types').Automation }): Promise<Workflow>
+    saveAutomation(id: string, input: import('./types').AutomationInput): Promise<Workflow>
+    /** Turn an automation into an ordinary flow, edited step by step from then on. */
+    toFlow(id: string): Promise<Workflow>
   }
   dashboard: {
     stats(range: UsageRange): Promise<DashboardStats>

@@ -130,6 +130,19 @@ export function createServices(opts: {
     }
   })
 
+  // An automation's result becomes a chat you can reply to, or a note in a Knowledge collection.
+  workflows.deliver = async (wf, run, transcript) => {
+    const a = wf.automation
+    if (!a) return null
+    const text = typeof run.output === 'string' ? run.output : JSON.stringify(run.output, null, 2)
+    if (a.deliver === 'knowledge' && a.collectionId) {
+      await rag.ingestText(a.collectionId, `${wf.name}, ${new Date(run.startedAt).toLocaleString()}`, text)
+      return null
+    }
+    if (a.deliver === 'chat' && transcript.length) return chat.fromTranscript({ title: wf.name, workspace: wf.workspace, agentId: a.agentId, messages: transcript }).id
+    return null
+  }
+
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }

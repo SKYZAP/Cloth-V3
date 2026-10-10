@@ -135,7 +135,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
       return (
         <AgentPicker
           back={back}
-          agents={agents.filter((a) => a.asChat)}
+          agents={agents}
           current={session.agentId}
           changed={changed}
           onPick={async (id) => {

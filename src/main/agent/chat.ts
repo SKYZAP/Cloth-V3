@@ -159,7 +159,7 @@ export class AgentRuntime {
 
   /** Saved agents other agents may hand work to by name. */
   private delegates(self?: string | null): SavedAgent[] {
-    return (this.ws.agents?.list() ?? []).filter((a) => a.asSubagent && (!a.builtin || !ROLE_BUILTINS.includes(a.builtin)) && a.id !== self)
+    return (this.ws.agents?.list() ?? []).filter((a) => (!a.builtin || !ROLE_BUILTINS.includes(a.builtin)) && a.id !== self)
   }
 
   private subagentSettings(): SubagentSettings {
@@ -275,12 +275,13 @@ export class AgentRuntime {
   private toolset(parent: Omit<AgentRunOptions, 'prompt'>, usage = false): AgentTool<any, ToolDetails>[] {
     const scope = parent.scope
     const off = new Set(scope.disabledTools ?? [])
+    const only = scope.onlyTools ? new Set(scope.onlyTools) : null
     return [
       ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...(usage ? { usage: this.providers.usage } : {}), ...this.ws }, scope),
       ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
-    ].filter((t) => !off.has(t.name))
+    ].filter((t) => !off.has(t.name) && (!only || only.has(t.name)))
   }
 
   /** The tool declarations an agent with this scope is given, as the model sees them. */
@@ -386,7 +387,7 @@ private imagesAvailable(scope: ToolScope): boolean {
         const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
-        if (p.agent && (!named || !named.asSubagent)) throw new Error(`There is no agent called "${p.agent}" that takes delegated work. Use role scout or worker instead.`)
+        if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
         const wantsWrite = named ? named.fileAccess === 'write' : p.role === 'worker'
         const role: SubagentRun['role'] = wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
         const builtin = this.ws.agents?.builtin(role)
@@ -785,6 +786,17 @@ export class ChatService {
     if (agent.model) patch.model = agent.model
     if (agent.thinking) patch.thinking = agent.thinking
     return this.update(id, patch)
+  }
+
+  /** A new chat holding a finished run's conversation (an automation's result), to read and reply to. */
+  fromTranscript(input: { title: string; workspace: string | null; agentId: string | null; messages: AgentMessage[] }): ChatSession {
+    const s = this.create({ workspace: input.workspace, fileAccess: 'read' })
+    if (input.agentId && this.agents?.find(input.agentId)) this.useAgent(s.id, input.agentId)
+    this.saveMessages(s.id, input.messages)
+    const chat = this.update(s.id, { title: input.title.slice(0, 80), titleSource: 'user' })
+    // Open chat lists refresh on 'end'.
+    this.ctx.emit('chat', { sessionId: s.id, type: 'end' } satisfies ChatEvent)
+    return chat
   }
 
   /** An agent's tools and skills with their cost, as if it worked in a folder with full access. */

@@ -33,10 +33,8 @@ const CONNECT_TIMEOUT = 90_000
 const CALL_TIMEOUT = 5 * 60_000
 
 /** Tool names models accept: letters, digits, _ and -, at most 64 characters. */
-export function mcpToolName(server: string, tool: string): string {
-  const clean = (s: string) => s.replace(/[^a-zA-Z0-9_-]+/g, '_')
-  return `mcp__${clean(server)}__${clean(tool)}`.slice(0, 64)
-}
+import { mcpToolName } from '@shared/types'
+export { mcpToolName }
 
 /** Ready-made servers for the settings page. */
 export const MCP_PRESETS: Omit<McpClientConfig, 'id'>[] = [

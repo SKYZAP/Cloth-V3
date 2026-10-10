@@ -1,5 +1,5 @@
 import { app, dialog, shell, BrowserWindow } from 'electron'
-import { MCP_PRESETS } from './mcp/client'
+import { MCP_PRESETS, mcpToolName } from './mcp/client'
 import type { ClothApi } from '@shared/api'
 import { copyFile } from 'node:fs/promises'
 import type { Services } from './services'
@@ -74,6 +74,8 @@ export function createApi(s: Services): ClothApi {
     },
     tools: {
       usage: async () => s.dashboard.toolUsage(),
+      draft: async (description) => s.custom.draft(description),
+      usedBy: async () => toolUsers(s),
       builtins: async () => describeBuiltins(),
       list: async () => s.custom.list(),
       create: async (input) => s.custom.create(input),
@@ -229,6 +231,9 @@ export function createApi(s: Services): ClothApi {
       remove: async (id, opts) => s.projects.remove(id, opts ?? {})
     },
     workflows: {
+      createAutomation: async (input) => s.workflows.createAutomation(input),
+      saveAutomation: async (id, input) => s.workflows.saveAutomation(id, input),
+      toFlow: async (id) => s.workflows.toFlow(id),
       overview: async () => s.workflows.overview(),
       list: async () => s.workflows.list(),
       get: async (id) => s.workflows.get(id),
@@ -300,4 +305,37 @@ export function createApi(s: Services): ClothApi {
       imageData: async (id) => s.remote.imageData(await s.images.file(id))
     }
   }
+}
+
+/** Which agents and automations can call each tool. An agent counts with the folder access it really has. */
+async function toolUsers(s: Services): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {}
+  const add = (tool: string, who: string) => {
+    const list = (out[tool] ??= [])
+    if (!list.includes(who)) list.push(who)
+  }
+  const writes = new Set(['write', 'edit', 'ast_edit'])
+  const shells = new Set(['bash', 'powershell'])
+  for (const a of s.agents.list()) {
+    const setup = await s.chat.agentSetup(a.id).catch(() => null)
+    for (const t of setup?.tools ?? []) {
+      if (!t.on || (a.fileAccess === 'read' && writes.has(t.name)) || (!a.shell && shells.has(t.name))) continue
+      add(t.name, a.name)
+    }
+  }
+  const configs = s.settings.get().mcpClients
+  const status = s.mcpClients.status()
+  for (const wf of s.workflows.list()) {
+    const a = wf.automation
+    if (!a) continue
+    for (const t of a.tools) add(t, wf.name)
+    if (a.collectionIds.length) add('rag_search', wf.name)
+    if (a.skills.length) add('skill_use', wf.name)
+    for (const sv of a.servers) {
+      const config = configs.find((c) => c.id === sv.id)
+      if (!config) continue
+      for (const n of sv.tools ?? status.find((x) => x.id === sv.id)?.tools.map((t) => t.name) ?? []) add(mcpToolName(config.name, n), wf.name)
+    }
+  }
+  return out
 }
