@@ -1,4 +1,4 @@
-import { DEFAULT_KIT, KIT, KIT_NAMES, KIT_USAGE, kitCss, kitMarkdown, kitSpecimen, sanitizeKit, type KitSettings } from './kit'
+import { DEFAULT_KIT, KIT, KIT_NAMES, kitCss, kitMarkdown, kitSpecimen, sanitizeKit, type KitSettings } from './kit'
 /**
  * Design systems: a handful of choices (seed colours, fonts, shape) expanded into full colour
  * scales, light/dark roles, a type scale and spacing — and written out as DESIGN.md (for people and
@@ -126,27 +126,6 @@ export function sanitizeSample(raw: unknown): SampleContent | null {
     items,
     done: str(r.done, 100, d.done)
   }
-}
-
-/** One version of a component: specimen markup, its styles, and a minimal usage snippet. */
-export interface ComponentVersion {
-  html: string
-  css: string
-  usage: string
-  /** What was asked for to get this version. */
-  prompt: string
-  createdAt: number
-}
-
-/** A component in a design system's library, built only from the system's tokens. */
-export interface DesignComponent extends ComponentVersion {
-  id: string
-  designId: string
-  name: string
-  description: string
-  /** Earlier versions, newest first (undo). */
-  history: ComponentVersion[]
-  updatedAt: number
 }
 
 /** A design as edited or proposed, before it has an id. */
@@ -661,7 +640,7 @@ export function toTokensJson(input: DesignInput, d = buildDesign(input)): string
 }
 
 /** DESIGN.md: the system written for people and coding agents building UI with it. */
-export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | 'input'>, d = buildDesign(system.input), components: Pick<DesignComponent, 'name' | 'description' | 'html' | 'usage'>[] = []): string {
+export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | 'input'>, d = buildDesign(system.input)): string {
   const i = system.input
   const modes = i.mode === 'both' ? ['dark', 'light'] : [i.mode]
   const lines: string[] = [`# ${system.name} — design system`, '']
@@ -713,46 +692,25 @@ export function toDesignMd(system: Pick<DesignSystem, 'name' | 'description' | '
     )
   lines.push('## Contrast checks', '', '| Pair | Theme | Ratio | Needs | |', '|---|---|---|---|---|')
   for (const c of d.checks.filter((x) => modes.includes(x.mode))) lines.push(`| ${c.label} | ${c.mode} | ${c.ratio.toFixed(2)} | ${c.need} | ${c.ratio >= c.need ? 'pass' : '**fails**'} |`)
-  if (components.length) {
-    lines.push(
-      '',
-      '## Component library',
-      '',
-      'Ready-made components built from these tokens and the built-in ones. Their styles are in `components.css` (load it after `tokens.css`); each has a page with every variant in `components/`. Reuse them instead of restyling the same thing.',
-      ''
-    )
-    for (const c of components) {
-      lines.push(`### ${c.name}`, '')
-      if (c.description) lines.push(c.description, '')
-      lines.push('```html', c.usage.trim() || c.html.trim().slice(0, 1200), '```', '')
-    }
-  }
   lines.push('', ...shadcnMarkdown())
   lines.push('## Files', '', '- `DESIGN.md` — this guide', '- `tokens.css` — CSS variables for both themes', '- `tailwind.css` — Tailwind v4 theme mapped to the tokens', '- `tokens.json` — the same tokens in the W3C design-tokens format')
-  lines.push('- `components.css` — styles for the built-in components' + (components.length ? ' and the component library' : ''), '- `components/*.html` — every component with its variants', '- `shadcn/` — the theme and starter components for shadcn/ui projects')
+  lines.push('- `components.css` — styles for the built-in components', '- `components/*.html` — every component with its variants', '- `shadcn/` — the theme and starter components for shadcn/ui projects')
   lines.push('')
   return lines.join('\n')
 }
 
-/** Every export file, by name (components get a page each under components/). */
-export function designFiles(system: Pick<DesignSystem, 'name' | 'description' | 'input'>, components: Pick<DesignComponent, 'name' | 'description' | 'html' | 'css' | 'usage'>[] = []): Record<string, string> {
+/** Every export file, by name (each built-in component gets a page under components/). */
+export function designFiles(system: Pick<DesignSystem, 'name' | 'description' | 'input'>): Record<string, string> {
   const d = buildDesign(system.input)
-  const files: Record<string, string> = { 'DESIGN.md': toDesignMd(system, d, components), 'tokens.css': toCss(system.input, d), 'tailwind.css': toTailwind(system.input, d), 'tokens.json': toTokensJson(system.input, d) }
-  files['components.css'] = [kitCss(system.input.kit), ...components.map((c) => `/* ── ${c.name} ── */\n${c.css.trim()}\n`)].join('\n')
+  const files: Record<string, string> = { 'DESIGN.md': toDesignMd(system, d), 'tokens.css': toCss(system.input, d), 'tailwind.css': toTailwind(system.input, d), 'tokens.json': toTokensJson(system.input, d) }
+  files['components.css'] = kitCss(system.input.kit)
   const page = { tokens: '../tokens.css', components: '../components.css' }
   for (const n of KIT_NAMES) files[`components/ds-${n}.html`] = componentDocument(system.input, { html: kitSpecimen(n), css: '' }, { ...page, title: `${system.name} — ${KIT[n].label}` })
-  for (const c of components) files[`components/${componentSlug(c.name)}.html`] = componentDocument(system.input, c, { ...page, title: `${system.name} — ${c.name}` })
   for (const [path, content] of Object.entries(shadcnFiles(system.input, d))) files[`shadcn/${path}`] = content
   return files
 }
 
-// ─── Component library ────────────────────────────────────────────────────────
-
-export const componentSlug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'component'
+// ─── Component pages ──────────────────────────────────────────────────────────
 
 /** Markup from a model: no scripts, embeds, event handlers or javascript: links (components are HTML and CSS only). */
 export function sanitizeComponentHtml(html: string): string {
@@ -771,27 +729,6 @@ export function sanitizeComponentCss(css: string): string {
     .replace(/url\(\s*(['"]?)(?!data:)[^)]*\1\s*\)/gi, 'none')
     .replace(/<\/?\s*style[^>]*>/gi, '')
     .trim()
-}
-
-/**
- * CSS variables a component uses that the system doesn't define (and the component doesn't set itself).
- * A missing variable silently drops the whole declaration — e.g. an unknown weight in a `font:` shorthand.
- */
-export function unknownTokens(css: string, html: string, input: DesignInput): string[] {
-  const defined = new Set([...toCss(input).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]))
-  const styles = [css, ...[...html.matchAll(/style\s*=\s*("([^"]*)"|'([^']*)')/gi)].map((m) => m[2] ?? m[3] ?? '')]
-  for (const text of styles) for (const m of text.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1])
-  const out = new Set<string>()
-  // Only uses without a fallback: var(--x, 4px) still works when --x is missing.
-  for (const text of styles) for (const m of text.matchAll(/var\(\s*(--[\w-]+)\s*\)/g)) if (!defined.has(m[1])) out.add(m[1])
-  return [...out]
-}
-
-const WEIGHT_NAMES: Record<string, number> = { thin: 100, light: 300, regular: 400, normal: 400, book: 400, medium: 500, semibold: 600, 'semi-bold': 600, bold: 700, extrabold: 800, 'extra-bold': 800, black: 900, heavy: 900 }
-
-/** Models often invent named weight tokens (--weight-bold); the system has per-style weights, so use the number. */
-export function repairTokens(css: string): string {
-  return css.replace(/var\(\s*--(?:font-)?weight-([a-z-]+)\s*\)/g, (m, name: string) => (WEIGHT_NAMES[name] ? String(WEIGHT_NAMES[name]) : m))
 }
 
 /** Colours written as literals instead of tokens (the component would ignore theme and system changes). */
@@ -821,7 +758,7 @@ body{padding:28px;background:var(--color-background);color:var(--color-text);fon
  */
 export function componentDocument(
   input: DesignInput,
-  comp: Pick<DesignComponent, 'html' | 'css'>,
+  comp: { html: string; css: string },
   opts: { theme?: 'light' | 'dark'; tokens?: string; components?: string; fontCss?: string; title?: string } = {}
 ): string {
   const theme = opts.theme ?? (input.mode === 'light' ? 'light' : 'dark')
@@ -835,55 +772,6 @@ export function componentDocument(
     opts.components ? `<link rel="stylesheet" href="${opts.components}">` : `<style data-kit>${kitCss(input.kit)}</style>\n<style data-component>${sanitizeComponentCss(comp.css)}</style>`
   ]
   return `<!doctype html>\n<html data-theme="${theme}">\n<head>\n${head.filter(Boolean).join('\n')}\n</head>\n<body>\n${sanitizeComponentHtml(comp.html)}\n</body>\n</html>\n`
-}
-
-/** Reads a model's component answer (the NAME / DESCRIPTION / === CSS === … format; code fences tolerated). */
-export function parseComponentAnswer(text: string, opts: { partial?: boolean } = {}): { name: string; description: string; css: string; html: string; usage: string } | null {
-  const section = (label: string) => {
-    const m = new RegExp(`===\\s*${label}\\s*===\\s*\\n([\\s\\S]*?)(?=\\n\\s*===\\s*[A-Z]+\\s*===|$)`, 'i').exec(text)
-    return m ? m[1].replace(/^\s*```[a-z]*\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '').trim() : ''
-  }
-  const line = (label: string) => new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, 'im').exec(text)?.[1].trim() ?? ''
-  const html = section('HTML')
-  const css = section('CSS')
-  // A change to one part may touch only markup (no CSS).
-  if (!html || (!css && !opts.partial)) return null
-  return { name: line('NAME').replace(/^["'*]+|["'*]+$/g, '').slice(0, 60), description: line('DESCRIPTION').slice(0, 300), css, html, usage: section('USAGE') }
-}
-
-/** The model's instructions for writing or refining a component in this system. */
-export function componentPrompt(system: Pick<DesignSystem, 'name' | 'description' | 'input'>): string {
-  const d = buildDesign(system.input)
-  const roles = (Object.keys(ROLE_INFO) as RoleName[]).map((k) => `--color-${kebab(k)} (${ROLE_INFO[k]})`).join('\n')
-  return `You build UI components for the "${system.name}" design system${system.description ? ` — ${system.description}` : ''}.
-${system.input.principles.length ? `Principles: ${system.input.principles.join('; ')}.\n` : ''}
-Write each component as plain HTML and CSS (no JavaScript, no frameworks, no external assets). Answer in exactly this format, with nothing before or after it:
-
-NAME: short component name
-DESCRIPTION: one sentence on what it is for
-=== CSS ===
-(the component's styles)
-=== HTML ===
-(the specimen page)
-=== USAGE ===
-(the minimal markup to copy)
-
-Rules:
-- Use ONLY these CSS variables for colour, type, spacing, radius and shadow — never hex, rgb or named colours (transparent and currentColor are fine; color-mix() of variables is fine):
-${roles}
---font-sans, --font-heading, --font-mono
---text-{display,h1,h2,h3,h4,body,small,caption} with --leading-*, --weight-*, --tracking-* of the same names (e.g. --weight-h1, --weight-body; there are no --weight-bold-style tokens — use 400-800 for other weights)
---space-0 … --space-12 (${d.space.slice(1, 13).join(', ')} px), --radius-{sm,md,lg,xl,full}, --shadow-{sm,md,lg}, --control-height (${d.control.height}px)
-- Built-in components already exist (their CSS is loaded on every page). Reuse them inside your component instead of styling your own buttons, fields, cards, badges, tabs, alerts or menus, and never redefine their ds- classes:
-${KIT_NAMES.map((n) => `  ${KIT[n].label}: ${KIT_USAGE[n]}`).join('\n')}
-- Prefix every class with c- and the component name (e.g. .c-button, .c-button--primary, .c-button__icon). Variants are modifier classes; states use :hover, :focus-visible, :disabled / [aria-*] and also static classes (.is-hover, .is-focus, .is-disabled, .is-loading) so they can be shown side by side.
-- Text on a fill uses that fill's own on- role: --color-on-primary only on --color-primary, --color-on-primary-soft on --color-primary-soft, --color-on-accent only on --color-accent, --color-on-accent-soft on --color-accent-soft, --color-on-danger on --color-danger. Never mix them — e.g. on-accent on accent-soft is unreadable in dark mode.
-- Focus states are visible: 2px outline in --color-focus with 2px offset.
-- Accessible markup: real buttons and labels, aria attributes where needed, text contrast from the role pairs above.
-- "html" is a specimen page: wrap everything in <div class="specimen">, and group variants in <section class="specimen-section"> each starting with <div class="specimen-label">Variant name</div> and the examples in <div class="specimen-row">. Show every variant, size and state, with realistic content.
-- "usage" is the minimal markup for the most common case (what a developer would copy).
-- Icons: inline <svg> with stroke="currentColor", 16-20px.
-- Work in both light and dark themes (roles switch automatically).`
 }
 
 /** Cleans up a design from a model or an import: valid colours, numbers in range, known options. */

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
-import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, PencilSimple, Plus } from '@phosphor-icons/react'
+import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, Palette, PencilSimple, Plus } from '@phosphor-icons/react'
 import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, type ProjectInput } from '@shared/types'
 import { api } from '@/lib/api'
-import { attempt } from '@/lib/store'
+import { attempt, useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { Button, Field, Input, Modal, Select, Textarea, confirmAction } from '@/components/ui'
 import type { DesignSystem } from '@shared/design'
@@ -200,6 +200,7 @@ export function ProjectHeader({
   onEdit(): void
 }) {
   const Icon = rest.collapsed ? FolderSimple : FolderOpen
+  // "Design system" opens its design system in the editor, or the list to pick one for it.
   return (
     <GroupHeader
       {...rest}
@@ -207,6 +208,7 @@ export function ProjectHeader({
       title={project.folder ?? undefined}
       icon={<Icon size={16} weight="fill" className="shrink-0" style={{ color: project.color }} />}
       newChatLabel="New chat in this project"
+      onDesign={() => useApp.getState().openDesign({ designId: project.designId ?? undefined, projectId: project.id })}
     />
   )
 }
@@ -226,7 +228,8 @@ function GroupHeader({
   newChatLabel,
   onToggle,
   onNewChat,
-  onEdit
+  onEdit,
+  onDesign
 }: {
   name: string
   title?: string
@@ -238,6 +241,7 @@ function GroupHeader({
   onToggle(): void
   onNewChat(): void
   onEdit?(): void
+  onDesign?(): void
 }) {
   return (
     <div onClick={onToggle} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onToggle())} tabIndex={0} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 outline-none hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-11" role="button" aria-expanded={!collapsed}>
@@ -254,6 +258,11 @@ function GroupHeader({
         {onEdit && (
           <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
             <PencilSimple size={14} />
+          </button>
+        )}
+        {onDesign && (
+          <button onClick={onDesign} title="Design system" aria-label="Design system" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">
+            <Palette size={14} />
           </button>
         )}
         <button onClick={onNewChat} title={newChatLabel} aria-label={newChatLabel} className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">

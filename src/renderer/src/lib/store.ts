@@ -10,9 +10,18 @@ interface Toast {
   text: string
 }
 
+/** What the design page opens on: a project's design system, or the list with that project in mind. */
+export interface DesignFocus {
+  designId?: string
+  projectId?: string
+}
+
 interface AppState {
   page: Page
   setPage(p: Page): void
+  /** Set when the design page is opened for something; null opens it plainly (from Settings). */
+  designFocus: DesignFocus | null
+  openDesign(focus?: DesignFocus | null): void
   providers: Provider[]
   collections: Collection[]
   settings: Settings | null
@@ -36,6 +45,11 @@ export const useApp = create<AppState>((set, get) => ({
       /* storage unavailable */
     }
     set({ page })
+  },
+  designFocus: null,
+  openDesign: (focus = null) => {
+    set({ designFocus: focus })
+    get().setPage('design')
   },
   providers: [],
   collections: [],

@@ -17,8 +17,8 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** Five plain controls; every other setting follows from them and stays under Advanced. */
-export function SimpleControls({ input, set, onAdvanced }: { input: DesignInput; set(next: DesignInput): void; onAdvanced(): void }) {
+/** Five plain controls; every other setting follows from them. */
+export function SimpleControls({ input, set }: { input: DesignInput; set(next: DesignInput): void }) {
   const feel = textFeelOf(input)
   const corners = cornersOf(input)
   const known = SWATCHES.some((s) => s.color.toLowerCase() === input.brand.toLowerCase())
@@ -85,13 +85,7 @@ export function SimpleControls({ input, set, onAdvanced }: { input: DesignInput;
         <Button icon={<Shuffle size={14} />} onClick={() => set(variation(input))} className="justify-self-start">
           Try a variation
         </Button>
-        <p className="text-[12px] text-dim">
-          Greys, type sizes, shadows and each component's details follow from these.{' '}
-          <button onClick={onAdvanced} className="underline underline-offset-[3px] hover:text-fg">
-            Change them under Advanced
-          </button>
-          .
-        </p>
+        <p className="text-[12px] text-dim">Greys, type sizes, shadows and each component's details follow from these.</p>
       </div>
     </div>
   )
@@ -99,10 +93,11 @@ export function SimpleControls({ input, set, onAdvanced }: { input: DesignInput;
 
 /**
  * Pick the projects that use this design. Their chats follow it; a project with a folder also gets the
- * design files, except files someone edited by hand (those wait in Advanced → Projects).
+ * design files, except files someone edited by hand (those wait in the Projects tab). Opened for a
+ * project (`forProjectId`), the list starts open with that project marked.
  */
-export function UseInProject({ designId, version }: { designId: string; version: number }) {
-  const [open, setOpen] = useState(false)
+export function UseInProject({ designId, version, forProjectId = null }: { designId: string; version: number; forProjectId?: string | null }) {
+  const [open, setOpen] = useState(() => !!forProjectId)
   const [projects, setProjects] = useState<Project[]>([])
   const [sync, setSync] = useState<DesignProjectSync[]>([])
   const [busy, setBusy] = useState<string | null>(null)
@@ -134,7 +129,7 @@ export function UseInProject({ designId, version }: { designId: string; version:
     const paths = files.filter((f) => f.state !== 'edited' && f.state !== 'current').map((f) => f.path)
     if (paths.length) await api.design.writeProject(designId, p.id, paths)
     const kept = files.filter((f) => f.state === 'edited').length
-    setNote(kept ? `${kept} file${kept === 1 ? '' : 's'} in ${p.name} you edited by hand were left alone. Compare them under Advanced → Projects.` : null)
+    setNote(kept ? `${kept} file${kept === 1 ? '' : 's'} in ${p.name} you edited by hand were left alone. Compare them in the Projects tab.` : null)
   }
   const toggle = async (p: Project) => {
     setBusy(p.id)
@@ -173,7 +168,7 @@ export function UseInProject({ designId, version }: { designId: string; version:
               const s = sync.find((x) => x.projectId === p.id)
               const outdated = on && !!s?.files.some((f) => f.state === 'outdated' || f.state === 'missing')
               return (
-                <div key={p.id} className="flex items-center gap-2 rounded-[9px] px-1.5 py-1 hover:bg-hover">
+                <div key={p.id} className={clsx('flex items-center gap-2 rounded-[9px] px-1.5 py-1 hover:bg-hover', p.id === forProjectId && 'bg-hover')}>
                   <button onClick={() => void toggle(p)} disabled={busy === p.id} aria-pressed={on} className="flex min-w-0 flex-1 items-center gap-2 text-left text-[13px]">
                     <span className={clsx('grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border', on ? 'border-crimson bg-crimson text-white' : 'border-line-strong')}>{on && <Check size={11} weight="bold" />}</span>
                     <FolderSimple size={14} weight="fill" style={{ color: p.color }} className="shrink-0" />
