@@ -188,7 +188,7 @@ export function createApi(s: Services): ClothApi {
       answerQuestion: async (questionId, answer) => s.chat.answerQuestion(questionId, answer),
       undoChange: (id, toolCallId, force) => s.chat.undoChange(id, toolCallId, force),
       retitle: (id) => s.chat.retitle(id, { force: true }),
-      compact: (id, instructions) => s.chat.compact(id, { instructions }),
+      compact: (id, instructions) => s.chat.compact(id, { instructions, splitTurns: true }),
       contextUsage: (id) => s.chat.contextUsage(id),
       setup: (id) => s.chat.setup(id),
       useAgent: async (id, agentId) => s.chat.useAgent(id, agentId)

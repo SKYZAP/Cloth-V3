@@ -26,7 +26,7 @@ import { allowedSkill, buildTools, type ToolDetails, type ToolScope } from './to
 import { runAsCall } from './workspace'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { budget, estimateHistory, findCut, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
+import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
 
 const SUBAGENT_INSTRUCTIONS = (role: 'scout' | 'worker') =>
@@ -673,44 +673,44 @@ export class ChatService {
   /**
    * Summarise older turns into a checkpoint carried by the first kept user message. The
    * summarised turns move to the archive (still shown in the UI, no longer sent to the model).
+   * `splitTurns` (automatic summarising) may also cut between the steps of a long turn.
    */
-  async compact(id: string, opts: { instructions?: string; signal?: AbortSignal } = {}): Promise<UiMessage[]> {
+  async compact(id: string, opts: { instructions?: string; signal?: AbortSignal; splitTurns?: boolean } = {}): Promise<UiMessage[]> {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('Wait for the agent to finish first')
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first')
-    const raw = this.rawMessages(id)
-    const window = this.contextWindow(session.model)
-    const cut = findCut(raw, budget(window).keep)
-    if (cut === null) throw new Error('Not enough conversation to summarise yet')
     this.compacting.add(id)
+    try {
+      await this.summariseHistory(id, session.model, this.rawMessages(id), opts)
+      return this.messages(id)
+    } finally {
+      this.compacting.delete(id)
+    }
+  }
+
+  /**
+   * Summarise `raw` (the chat's history, saved or in flight) up to the cut, archive what was
+   * summarised and save the shortened history, which is returned. Emits compacting/compacted like
+   * any summarising, with the error when it fails.
+   */
+  private async summariseHistory(id: string, model: ModelRef, raw: AgentMessage[], opts: { instructions?: string; signal?: AbortSignal; splitTurns?: boolean }): Promise<AgentMessage[]> {
+    const window = this.contextWindow(model)
+    const plan = planCompaction(raw, budget(window).keep, { steps: opts.splitTurns })
+    if (!plan) throw new Error('Not enough conversation to summarise yet')
     this.ctx.emit('chat', { sessionId: id, type: 'compacting' })
     try {
-      // pi keeps the system prompt as a message at the head of the history: it stays, it isn't summarised.
-      const system = raw.slice(0, cut).filter((m) => m.role === 'system')
-      const older = raw.slice(0, cut).filter((m) => m.role !== 'system')
-      // Fold an earlier summary (on the first user message) into the new one rather than re-summarising it.
-      let previous: string | null = null
-      const firstUser = older.findIndex((m) => m.role === 'user')
-      if (firstUser >= 0) {
-        const split = splitSummary(older[firstUser] as UserMessage)
-        previous = split.summary
-        older[firstUser] = split.message
-      }
-      const run = () => summarize(this.runtime.providers, session.model!, older, { previous, instructions: opts.instructions, signal: opts.signal, contextWindow: window })
+      const run = () => summarize(this.runtime.providers, model, plan.older, { previous: plan.previous, instructions: opts.instructions, signal: opts.signal, contextWindow: window })
       const summary = await (this.usage ? this.usage.run({ source: 'chat', ref: id }, run) : run())
-      const tail = raw.slice(cut)
-      tail[0] = withSummary(tail[0] as UserMessage, summary)
-      const kept = [...system, ...tail]
-      const archive = [...this.archive(id), ...older]
+      const kept = compactedHistory(plan, summary)
+      const archive = [...this.archive(id), ...plan.older]
       this.ctx.db.prepare('UPDATE sessions SET messages = ?, archive = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(kept), JSON.stringify(archive), Date.now(), id)
       this.ctx.kv.set('compactedAt:' + id, Date.now())
       this.ctx.emit('chat', { sessionId: id, type: 'compacted' })
-      return this.messages(id)
+      return kept
     } catch (err) {
-      this.ctx.emit('chat', { sessionId: id, type: 'compacted', error: errorMessage(err) })
+      // Stopping the chat while it summarises isn't a failure worth a message.
+      this.ctx.emit('chat', { sessionId: id, type: 'compacted', ...(opts.signal?.aborted ? {} : { error: errorMessage(err) }) })
       throw err
-    } finally {
-      this.compacting.delete(id)
     }
   }
 
@@ -941,7 +941,7 @@ export class ChatService {
       const usage = await this.contextUsage(id)
       const incoming = Math.ceil(contentChars(prepared) / 4) + 2000
       if (usage.threshold && usage.tokens + incoming > usage.threshold) {
-        await this.compact(id).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
+        await this.compact(id, { splitTurns: true }).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
       }
     }
     const history = this.rawMessages(id)
@@ -950,7 +950,34 @@ export class ChatService {
     this.active.set(id, agent)
 
     const emit = (e: ChatEvent) => this.ctx.emit('chat', e)
-    const startIndex = history.length
+    let startIndex = history.length
+
+    // Tool results pile up between the model calls of one turn: summarise before a call that would
+    // outgrow the context too. The first call is covered by the check above.
+    const model = session.model
+    let retryAbove = 0
+    agent.prepareRequest = async ({ context }, signal) => {
+      if (!this.settings.get().autoCompact || context.messages.findLast((m) => m.role !== 'system')?.role !== 'toolResult') return
+      const window = this.contextWindow(model)
+      const { threshold } = budget(window)
+      const tokens = estimateHistory(context.messages, this.ctx.kv.get<number>('compactedAt:' + id, 0))
+      if (tokens <= Math.max(threshold, retryAbove)) return
+      try {
+        // The latest step (its tool calls and their results) always stays whole.
+        const kept = await this.summariseHistory(id, model, context.messages, { signal, splitTurns: true })
+        agent.state.messages = kept
+        startIndex = Math.max(0, kept.findLastIndex((m) => m.role === 'user'))
+        // Still over the line (one huge result): leave it until it has grown by another tenth of the window.
+        const after = estimateHistory(kept, this.ctx.kv.get<number>('compactedAt:' + id, 0))
+        retryAbove = after > threshold ? after + Math.round(window / 10) : 0
+        return { context: { ...context, messages: kept.slice() } }
+      } catch (err) {
+        // The turn carries on with the full history; the error was shown like any failed summarising.
+        this.ctx.log('chat', 'mid-turn compaction failed', errorMessage(err))
+        retryAbove = tokens + Math.round(window / 10)
+        return
+      }
+    }
     const partials = new Map<string, ToolDetails>()
     let timer: NodeJS.Timeout | null = null
     const pushTurn = () => {

@@ -12,12 +12,21 @@ import type { ProviderService } from '../providers/providers'
 export const SUMMARY_OPEN = '<conversation-summary>'
 export const SUMMARY_CLOSE = '</conversation-summary>'
 const PREAMBLE = 'The conversation so far was summarised to save context. Summary of everything before this message:'
+/** A summary taken in the middle of a turn also covers the work already done on that turn's request. */
+const PREAMBLE_IN_TURN = 'The conversation so far was summarised to save context, including the work already done on the request in this message. Summary:'
 
-/** How much room to leave for the reply, and how much recent history to keep verbatim. */
+/** Summarise automatically once the history reaches this share of the model's context window. */
+export const AUTO_COMPACT_AT = 0.75
+
+/**
+ * When to summarise automatically (`threshold`), the room that leaves for the reply, a running
+ * turn's tool results and the summary call itself (`reserve`), and how much recent history to keep
+ * verbatim (`keep`).
+ */
 export function budget(contextWindow: number): { reserve: number; keep: number; threshold: number } {
-  const reserve = Math.min(16_384, Math.round(contextWindow * 0.25))
+  const threshold = Math.round(contextWindow * AUTO_COMPACT_AT)
   const keep = Math.min(20_000, Math.round(contextWindow * 0.3))
-  return { reserve, keep, threshold: contextWindow - reserve }
+  return { reserve: contextWindow - threshold, keep, threshold }
 }
 
 /** Tokens the history will cost on the next request (last reported usage + anything after it). */
@@ -36,24 +45,81 @@ export function estimateHistory(messages: AgentMessage[], notBefore = 0): number
 }
 
 /**
- * Index of the first message to keep: the latest user-message boundary such that the kept tail
- * holds at least `keep` tokens. Cutting at a user message keeps tool calls paired with their results.
- * Returns null when there is nothing worth summarising.
+ * Index of the first message to keep: the latest boundary such that the kept tail holds at least
+ * `keep` tokens. Boundaries are user messages and, with `steps`, the start of any later step of a
+ * turn (an assistant message after the turn's first): every tool call before it already has its
+ * result, so no call is ever separated from its result. Returns null when there is nothing worth
+ * summarising.
  */
-export function findCut(messages: AgentMessage[], keep: number): number | null {
+export function findCut(messages: AgentMessage[], keep: number, opts: { steps?: boolean } = {}): number | null {
   // pi keeps the system prompt as the first message; it is never summarised.
   const start = messages.findIndex((m) => m.role !== 'system')
   if (start < 0) return null
+  const boundary: boolean[] = []
+  let inTurn = false
+  let stepped = false
+  for (const m of messages) {
+    if (m.role === 'user') {
+      inTurn = true
+      stepped = false
+      boundary.push(true)
+    } else if (m.role === 'assistant') {
+      boundary.push(!!opts.steps && inTurn && stepped)
+      stepped = true
+    } else boundary.push(false)
+  }
   let tail = 0
-  let latestUser: number | null = null
+  let latest: number | null = null
   for (let i = messages.length - 1; i > start; i--) {
     tail += estimateTokens(messages[i])
-    if (messages[i].role !== 'user') continue
-    latestUser ??= i
+    if (!boundary[i]) continue
+    latest ??= i
     if (tail >= keep) return i
   }
   // History shorter than the keep budget (manual summarising): keep only the latest exchange.
-  return latestUser
+  return latest
+}
+
+/** How a history gets summarised: what goes into the summary, and what stays around it. */
+export interface CompactionPlan {
+  /** System messages (the prompt, tool declarations) before the cut: they stay, at the head. */
+  system: AgentMessage[]
+  /** The messages to summarise (and archive), without the earlier summary. */
+  older: AgentMessage[]
+  /** The summary already in the history, folded into the new one. */
+  previous: string | null
+  /** The user message that carries the new summary. */
+  carrier: UserMessage
+  /** Messages kept verbatim after the carrier. */
+  rest: AgentMessage[]
+  /** The cut fell between two steps of a turn: the carrier repeats that turn's request. */
+  inTurn: boolean
+}
+
+export function planCompaction(messages: AgentMessage[], keep: number, opts: { steps?: boolean } = {}): CompactionPlan | null {
+  const cut = findCut(messages, keep, opts)
+  if (cut === null) return null
+  const head = messages.slice(0, cut)
+  const system = head.filter((m) => m.role === 'system')
+  const older = head.filter((m) => m.role !== 'system')
+  // Fold an earlier summary (on the first user message) into the new one rather than re-summarising it.
+  let previous: string | null = null
+  const firstUser = older.findIndex((m) => m.role === 'user')
+  if (firstUser >= 0) {
+    const split = splitSummary(older[firstUser] as UserMessage)
+    previous = split.summary
+    older[firstUser] = split.message
+  }
+  const tail = messages.slice(cut)
+  if (tail[0].role === 'user') return { system, older, previous, carrier: tail[0], rest: tail.slice(1), inTurn: false }
+  // Cut inside a turn: its request is summarised with the steps before the cut, and also stays to carry the summary.
+  const request = older.findLast((m): m is UserMessage => m.role === 'user')!
+  return { system, older, previous, carrier: request, rest: tail, inTurn: true }
+}
+
+/** The history after summarising: system messages, the summary on its carrier, then what was kept. */
+export function compactedHistory(plan: CompactionPlan, summary: string): AgentMessage[] {
+  return [...plan.system, withSummary(plan.carrier, summary, plan.inTurn), ...plan.rest]
 }
 
 /** Pull a previous summary out of a user message, returning it and the message without it. */
@@ -61,14 +127,14 @@ export function splitSummary(m: UserMessage): { summary: string | null; message:
   if (typeof m.content === 'string') return { summary: null, message: m }
   const block = m.content.find((c): c is TextContent => c.type === 'text' && c.text.startsWith(SUMMARY_OPEN))
   if (!block) return { summary: null, message: m }
-  const summary = block.text.slice(SUMMARY_OPEN.length, block.text.lastIndexOf(SUMMARY_CLOSE)).trim().replace(PREAMBLE, '').trim()
+  const summary = block.text.slice(SUMMARY_OPEN.length, block.text.lastIndexOf(SUMMARY_CLOSE)).trim().replace(PREAMBLE, '').replace(PREAMBLE_IN_TURN, '').trim()
   return { summary, message: { ...m, content: m.content.filter((c) => c !== block) } }
 }
 
-export function withSummary(m: UserMessage, summary: string): UserMessage {
+export function withSummary(m: UserMessage, summary: string, inTurn = false): UserMessage {
   const block: TextContent = {
     type: 'text',
-    text: `${SUMMARY_OPEN}\n${PREAMBLE}\n\n${summary}\n${SUMMARY_CLOSE}`
+    text: `${SUMMARY_OPEN}\n${inTurn ? PREAMBLE_IN_TURN : PREAMBLE}\n\n${summary}\n${SUMMARY_CLOSE}`
   }
   const inner = splitSummary(m).message.content
   const rest: (TextContent | ImageContent)[] = typeof inner === 'string' ? [{ type: 'text', text: inner }] : inner
