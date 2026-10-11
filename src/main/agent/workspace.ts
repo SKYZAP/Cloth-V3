@@ -513,7 +513,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       exec: async (command, cwd, options) => {
         const rel = relative(await realpath(o.root), await inside(cwd)).split(sep).join('/')
         await ask({ kind: 'command', command, path: rel || '.' })
-        return run(command, rel, options)
+        return withDefaultTimeout('bash', options, (opts) => run(command, rel, opts))
       }
     }
     tools.push(createBashTool(o.root, { operations }))
@@ -523,13 +523,37 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       exec: async (command, cwd, options) => {
         const dir = await inside(cwd)
         await ask({ kind: 'command', command, path: relative(await realpath(o.root), dir).split(sep).join('/') || '.' })
-        return local.exec(command, dir, options)
+        return withDefaultTimeout(process.platform === 'win32' ? 'powershell' : 'bash', options, (opts) => local.exec(command, dir, opts))
       }
     }
     tools.push(process.platform === 'win32' ? createPowerShellTool(o.root, { operations }) : createBashTool(o.root, { operations }))
   }
 
   return tools.map(withCallState)
+}
+
+/** Seconds a shell command may run when the model gives no timeout. */
+export const DEFAULT_COMMAND_TIMEOUT = 300
+
+type ExecOptions = Parameters<BashOperations['exec']>[2]
+
+/** Run with the default timeout unless one was given; on timeout, add a note on what to do instead to the command's output. */
+async function withDefaultTimeout(shell: 'bash' | 'powershell', options: ExecOptions, exec: (o: ExecOptions) => Promise<{ exitCode: number | null }>): Promise<{ exitCode: number | null }> {
+  const timeout = options.timeout ?? DEFAULT_COMMAND_TIMEOUT
+  try {
+    return await exec({ ...options, timeout })
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('timeout:')) {
+      const took = timeout % 60 === 0 ? `${timeout / 60} minute${timeout === 60 ? '' : 's'}` : `${timeout} seconds`
+      const example = shell === 'bash' ? '`nohup npm run dev > /tmp/server.log 2>&1 &`' : "`Start-Process npm -ArgumentList 'run','dev' -RedirectStandardOutput server.log`"
+      options.onData(
+        Buffer.from(
+          `\n[The command was stopped after ${took}. Start servers and other long-running processes in the background with output to a log file (e.g. ${example}), then check they respond. For a long build, pass a larger timeout.]\n`
+        )
+      )
+    }
+    throw e
+  }
 }
 
 /**

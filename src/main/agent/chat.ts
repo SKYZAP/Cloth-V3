@@ -273,7 +273,16 @@ export class AgentRuntime {
                 ? `You can run commands with bash in the container (working directory /workspace). It is Linux: use its package manager or language tools to install what you need. ${unattended ? 'Nobody is watching this run, so commands run without asking.' : 'Unless the user auto-approves commands, they approve each one, so explain why a command is needed.'}`
                 : scope.commandAllow?.length
                   ? `You can run only these commands with ${shell} (working directory = the workspace), each on its own and with any arguments: ${scope.commandAllow.map((c) => `\`${c}\``).join(', ')}. Anything else, or chaining commands with ; && | or redirects, is refused.`
-                  : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`
+                  : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`,
+              ...(scope.container
+                ? [
+                    'Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file, listening on 0.0.0.0 (e.g. `nohup npm run dev -- --host 0.0.0.0 > /tmp/dev.log 2>&1 &`), then check they respond (e.g. with curl) and tell the user the port. Cloth opens container servers on the user’s PC automatically.'
+                  ]
+                : scope.commandAllow?.length
+                  ? []
+                  : [
+                      `Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file (e.g. ${shell === 'bash' ? '`nohup npm run dev > /tmp/dev.log 2>&1 &`' : "`Start-Process npm -ArgumentList 'run','dev' -RedirectStandardOutput dev.log`"}), then check they respond (e.g. with curl) and tell the user the port.`
+                    ])
             ]
           : [])
       )

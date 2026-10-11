@@ -205,9 +205,10 @@ export function createApi(s: Services): ClothApi {
     },
     containers: {
       status: (force) => s.containers.status(force),
-      changes: (sessionId) => s.containers.changes(sessionId),
-      apply: (sessionId, paths) => s.containers.apply(sessionId, paths),
-      discard: (sessionId, paths) => s.containers.discard(sessionId, paths),
+      // Against the chat's folder now: one picked or changed after the copy was made is where changes go.
+      changes: async (sessionId) => s.containers.changes(sessionId, s.chat.get(sessionId).workspace),
+      apply: async (sessionId, paths) => s.containers.apply(sessionId, paths, s.chat.get(sessionId).workspace),
+      discard: async (sessionId, paths) => s.containers.discard(sessionId, paths, s.chat.get(sessionId).workspace),
       reset: (sessionId) => s.containers.reset(sessionId)
     },
     design: {

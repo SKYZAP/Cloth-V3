@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import ignore, { type Ignore } from 'ignore'
@@ -99,6 +99,15 @@ async function walk(root: string, skip: Set<string>, rel = '', rules: Rules = []
   return out
 }
 
+/** Empty `dir` except for the paths in `keep` (files, and the folders holding them). */
+async function clear(dir: string, keep: Set<string>, rel = ''): Promise<void> {
+  for (const e of await readdir(join(dir, ...rel.split('/').filter(Boolean)), { withFileTypes: true }).catch(() => [])) {
+    const r = rel ? `${rel}/${e.name}` : e.name
+    if (!keep.has(r)) await rm(join(dir, ...r.split('/')), { recursive: true, force: true })
+    else if (e.isDirectory()) await clear(dir, keep, r)
+  }
+}
+
 const hashOf = async (abs: string): Promise<string | null> => (existsSync(abs) ? sha1(await readFile(abs)) : null)
 
 /**
@@ -142,19 +151,52 @@ export class ContainerService {
     return status
   }
 
-  /** Make the chat's private copy of `folder` (once; again if the folder changed). Returns its path. */
+  /**
+   * Make the chat's private copy of `folder` (once). When the chat's folder changed since, the copy is
+   * made again from the new folder, keeping the changes that still wait for review. Returns its path.
+   */
   async prepare(sessionId: string, folder: string | null): Promise<string> {
+    return this.serial(sessionId, () => this.copyFrom(sessionId, folder))
+  }
+
+  private async copyFrom(sessionId: string, folder: string | null): Promise<string> {
     const copy = this.copyDir(sessionId)
     const current = await this.manifest(sessionId)
-    if (current && current.folder === folder && existsSync(copy)) return copy
-    await rm(copy, { recursive: true, force: true })
+    // Written while the copy is being remade: if that stopped halfway, the next try picks it up from here.
+    const marker = join(this.root(sessionId), 'moving.json')
+    let plan = await readFile(marker, 'utf8').then((t) => JSON.parse(t) as { pending: string[]; keep: string[] }, () => null)
+    if (!plan && current && current.folder === folder && existsSync(copy)) return copy
+    const listed = folder ? await walk(folder, COPY_SKIP) : []
+    if (!plan) {
+      // Changes not applied or discarded yet stay as they are (a deleted file stays deleted) and are then
+      // measured against the new folder; everything else is replaced by the new folder's files.
+      plan = { pending: [], keep: [] }
+      if (current && existsSync(copy)) {
+        const now = await this.scan(sessionId)
+        for (const rel of new Set([...Object.keys(current.files), ...now.keys()])) {
+          if (current.files[rel] === now.get(rel)) continue
+          plan.pending.push(rel)
+          const parts = rel.split('/')
+          if (now.has(rel)) for (let i = 1; i <= parts.length; i++) plan.keep.push(parts.slice(0, i).join('/'))
+        }
+      }
+      await mkdir(this.root(sessionId), { recursive: true })
+      await writeFile(marker, JSON.stringify(plan))
+    }
+    const pending = new Set(plan.pending)
+    // Emptied in place rather than removed: a running container keeps its mount of it.
     await mkdir(copy, { recursive: true })
+    await clear(copy, new Set(plan.keep))
     const files: Record<string, string> = {}
     const cache: StatCache = {}
     if (folder) {
-      for (const { rel } of await walk(folder, COPY_SKIP)) {
+      for (const { rel } of listed) {
         const src = join(folder, ...rel.split('/'))
         const dest = join(copy, ...rel.split('/'))
+        if (pending.has(rel)) {
+          files[rel] = sha1(await readFile(src))
+          continue
+        }
         await mkdir(dirname(dest), { recursive: true })
         await copyFile(src, dest)
         if (rel.split('/').some((part) => DIFF_SKIP.has(part))) continue
@@ -166,7 +208,24 @@ export class ContainerService {
     }
     await this.saveManifest(sessionId, { folder, files })
     await this.saveCache(sessionId, cache)
+    await rm(marker, { force: true })
     return copy
+  }
+
+  private queue = new Map<string, Promise<void>>()
+
+  /** One copy job per chat at a time: a turn, a terminal and the review sheet can all ask at once. */
+  private serial<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+    const next = (this.queue.get(sessionId) ?? Promise.resolve()).then(fn)
+    const done = next.then(() => undefined, () => undefined)
+    this.queue.set(sessionId, done)
+    void done.then(() => this.queue.get(sessionId) === done && this.queue.delete(sessionId))
+    return next
+  }
+
+  /** With the chat's folder now: a copy made from another folder (or none) is first moved onto it. No copy yet: nothing to do. */
+  private async follow(sessionId: string, folder: string | null | undefined): Promise<void> {
+    if (folder !== undefined && (await this.manifest(sessionId))) await this.copyFrom(sessionId, folder)
   }
 
   /** Start (or create) the chat's container. Settings changed since it was made: it is recreated. */
@@ -198,8 +257,9 @@ export class ContainerService {
         if (started.code !== 0) throw new Error(`Couldn't start the container: ${started.stderr.trim()}`)
       }
     } else {
-      if (inspect.code === 0) await this.docker(['rm', '-f', name])
-      const args = ['run', '-d', '--name', name, '--label', `cloth.session=${sessionId}`, '-v', `${this.copyDir(sessionId)}:/workspace`]
+      if (inspect.code === 0) await this.docker(['rm', '-f', '-v', name])
+      // --init reaps what the agent's commands leave behind (PID 1 is otherwise `sleep`, which never does).
+      const args = ['run', '-d', '--init', '--name', name, '--label', `cloth.session=${sessionId}`, '-v', `${this.copyDir(sessionId)}:/workspace`]
       for (const v of DEP_VOLUMES) args.push('-v', v)
       if (!settings.network) args.push('--network', 'none')
       args.push('-w', '/workspace', settings.image, 'sleep', 'infinity')
@@ -220,21 +280,63 @@ export class ContainerService {
     cwd: string,
     opts: { onData: (chunk: Buffer) => void; signal?: AbortSignal; timeout?: number }
   ): Promise<{ exitCode: number | null }> {
+    if (opts.signal?.aborted) throw new Error('aborted')
     await this.ensureRunning(sessionId, settings)
+    const name = this.name(sessionId)
     const wd = posix.join('/workspace', cwd.split(sep).join('/'))
+    // Killing the docker client leaves the command running in the container, so the command's pid is
+    // recorded: `docker exec` makes it a process-group leader, and stop() kills that group.
+    const pidFile = `/tmp/.cloth-cmd-${randomBytes(6).toString('hex')}`
     // bash when the image has it (most do), plain sh otherwise (alpine).
-    const shell = 'if command -v bash >/dev/null 2>&1; then exec bash -lc "$1"; else exec sh -lc "$1"; fi'
-    const r = await this.docker(['exec', '-i', '-w', wd, this.name(sessionId), 'sh', '-c', shell, 'sh', command], opts)
-    this.touch(sessionId)
-    return { exitCode: r.code }
+    const shell = 'echo $$ > "$1"; if command -v bash >/dev/null 2>&1; then bash -lc "$2"; else sh -lc "$2"; fi; c=$?; rm -f "$1"; exit $c'
+    const ctl = new AbortController()
+    let timedOut = false
+    let stopping: Promise<void> | null = null
+    const stop = () => {
+      if (stopping) return
+      ctl.abort()
+      stopping = this.stopCommand(name, pidFile)
+    }
+    opts.signal?.addEventListener('abort', stop, { once: true })
+    const timer = opts.timeout ? setTimeout(() => ((timedOut = true), stop()), opts.timeout * 1000) : null
+    try {
+      const r = await this.docker(['exec', '-i', '-w', wd, name, 'sh', '-c', shell, 'sh', pidFile, command], { onData: opts.onData, signal: ctl.signal })
+      if (stopping) await stopping
+      if (opts.signal?.aborted) throw new Error('aborted')
+      if (timedOut) throw new Error(`timeout:${opts.timeout}`)
+      return { exitCode: r.code }
+    } finally {
+      if (timer) clearTimeout(timer)
+      opts.signal?.removeEventListener('abort', stop)
+      this.touch(sessionId)
+    }
   }
 
-  /** Files that differ between the copy and the real folder, measured from when the copy was made. */
-  async changes(sessionId: string): Promise<ContainerChanges> {
-    const m = await this.manifest(sessionId)
-    if (!m) return { folder: null, changes: [] }
+  /** Stop a command started by exec() and everything it started: TERM its process group, then KILL after a grace period. */
+  private async stopCommand(name: string, pidFile: string): Promise<void> {
+    // The command may not have written its pid yet; give it a moment. Plain POSIX sh, for busybox images.
+    const script =
+      'i=0; while [ ! -s "$1" ] && [ $i -lt 3 ]; do sleep 1; i=$((i+1)); done; p=$(cat "$1" 2>/dev/null); [ -n "$p" ] || exit 0; ' +
+      // The group's members come from /proc: busybox and dash disagree on how `kill` takes a negative pid.
+      'grp() { for s in /proc/[0-9]*/stat; do set -- $(cat "$s" 2>/dev/null); [ "$5" = "$p" ] && [ "$3" != Z ] && echo "$1"; done; }; ' +
+      'for x in $(grp); do kill -TERM "$x" 2>/dev/null; done; sleep 2; for x in $(grp); do kill -KILL "$x" 2>/dev/null; done; rm -f "$1"'
+    await this.docker(['exec', name, 'sh', '-c', script, 'sh', pidFile], { timeout: 30 }).catch(() => undefined)
+  }
+
+  /**
+   * Files that differ between the copy and the real folder, measured from when the copy was made.
+   * `folder` is the chat's folder now (see follow); left out, the copy's own folder is used.
+   */
+  async changes(sessionId: string, folder?: string | null): Promise<ContainerChanges> {
+    return this.serial(sessionId, async () => {
+      await this.follow(sessionId, folder)
+      return this.diff(sessionId)
+    })
+  }
+
+  /** The copy's files now (path → hash). Only files whose size or modified time changed since the last look are read again. */
+  private async scan(sessionId: string): Promise<Map<string, string>> {
     const copy = this.copyDir(sessionId)
-    // Only files whose size or modified time changed since the last look are read and hashed again.
     const cache = await this.cache(sessionId)
     const fresh: StatCache = {}
     const now = new Map<string, string>()
@@ -245,6 +347,14 @@ export class ContainerService {
       now.set(f.rel, hash)
     }
     await this.saveCache(sessionId, fresh)
+    return now
+  }
+
+  private async diff(sessionId: string): Promise<ContainerChanges> {
+    const m = await this.manifest(sessionId)
+    if (!m) return { folder: null, changes: [] }
+    const copy = this.copyDir(sessionId)
+    const now = await this.scan(sessionId)
     const paths = [...new Set([...Object.keys(m.files), ...now.keys()])].sort()
     const out: ContainerChange[] = []
     for (const rel of paths) {
@@ -267,58 +377,64 @@ export class ContainerService {
     return { folder: m.folder, changes: out }
   }
 
-  /** Copy changes (all, or just `paths`) from the container copy into the real folder. */
-  async apply(sessionId: string, paths?: string[]): Promise<ContainerChanges> {
-    const m = await this.manifest(sessionId)
-    if (!m?.folder) throw new Error('This chat has no folder to apply changes to')
-    const { changes } = await this.changes(sessionId)
-    for (const c of changes.filter((x) => !paths || paths.includes(x.path))) {
-      const real = join(m.folder, ...c.path.split('/'))
-      const copied = join(this.copyDir(sessionId), ...c.path.split('/'))
-      if (c.kind === 'delete') {
-        await rm(real, { force: true })
-        delete m.files[c.path]
-      } else {
-        await mkdir(dirname(real), { recursive: true })
-        await copyFile(copied, real)
-        m.files[c.path] = sha1(await readFile(copied))
+  /** Copy changes (all, or just `paths`) from the container copy into the real folder (`folder`: as in changes). */
+  async apply(sessionId: string, paths?: string[], folder?: string | null): Promise<ContainerChanges> {
+    return this.serial(sessionId, async () => {
+      await this.follow(sessionId, folder)
+      const m = await this.manifest(sessionId)
+      if (!m?.folder) throw new Error('This chat has no folder to apply changes to')
+      const { changes } = await this.diff(sessionId)
+      for (const c of changes.filter((x) => !paths || paths.includes(x.path))) {
+        const real = join(m.folder, ...c.path.split('/'))
+        const copied = join(this.copyDir(sessionId), ...c.path.split('/'))
+        if (c.kind === 'delete') {
+          await rm(real, { force: true })
+          delete m.files[c.path]
+        } else {
+          await mkdir(dirname(real), { recursive: true })
+          await copyFile(copied, real)
+          m.files[c.path] = sha1(await readFile(copied))
+        }
       }
-    }
-    await this.saveManifest(sessionId, m)
-    return this.changes(sessionId)
+      await this.saveManifest(sessionId, m)
+      return this.diff(sessionId)
+    })
   }
 
-  /** Undo changes in the copy (all, or just `paths`), back to what the real folder has now. */
-  async discard(sessionId: string, paths?: string[]): Promise<ContainerChanges> {
-    const m = await this.manifest(sessionId)
-    if (!m) return { folder: null, changes: [] }
-    const { changes } = await this.changes(sessionId)
-    for (const c of changes.filter((x) => !paths || paths.includes(x.path))) {
-      const copied = join(this.copyDir(sessionId), ...c.path.split('/'))
-      const real = m.folder ? join(m.folder, ...c.path.split('/')) : null
-      if (real && existsSync(real)) {
-        await mkdir(dirname(copied), { recursive: true })
-        await copyFile(real, copied)
-        m.files[c.path] = sha1(await readFile(copied))
-      } else {
-        await rm(copied, { force: true })
-        delete m.files[c.path]
+  /** Undo changes in the copy (all, or just `paths`), back to what the real folder has now (`folder`: as in changes). */
+  async discard(sessionId: string, paths?: string[], folder?: string | null): Promise<ContainerChanges> {
+    return this.serial(sessionId, async () => {
+      await this.follow(sessionId, folder)
+      const m = await this.manifest(sessionId)
+      if (!m) return { folder: null, changes: [] }
+      const { changes } = await this.diff(sessionId)
+      for (const c of changes.filter((x) => !paths || paths.includes(x.path))) {
+        const copied = join(this.copyDir(sessionId), ...c.path.split('/'))
+        const real = m.folder ? join(m.folder, ...c.path.split('/')) : null
+        if (real && existsSync(real)) {
+          await mkdir(dirname(copied), { recursive: true })
+          await copyFile(real, copied)
+          m.files[c.path] = sha1(await readFile(copied))
+        } else {
+          await rm(copied, { force: true })
+          delete m.files[c.path]
+        }
       }
-    }
-    await this.saveManifest(sessionId, m)
-    return this.changes(sessionId)
+      await this.saveManifest(sessionId, m)
+      return this.diff(sessionId)
+    })
   }
 
   /** Throw the container away (the copy is kept); the next command starts a fresh one. */
   async reset(sessionId: string): Promise<void> {
-    await this.docker(['rm', '-f', this.name(sessionId)]).catch(() => undefined)
+    await this.docker(['rm', '-f', '-v', this.name(sessionId)]).catch(() => undefined)
     await rm(join(this.root(sessionId), 'container.json'), { force: true })
   }
 
   /** The chat was deleted: remove its container and copy. */
   async remove(sessionId: string): Promise<void> {
     this.clearIdle(sessionId)
-    if (existsSync(this.root(sessionId))) await this.docker(['rm', '-f', this.name(sessionId)]).catch(() => undefined)
+    if (existsSync(this.root(sessionId))) await this.docker(['rm', '-f', '-v', this.name(sessionId)]).catch(() => undefined)
     await rm(this.root(sessionId), { recursive: true, force: true })
   }
 
