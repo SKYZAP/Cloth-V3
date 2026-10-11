@@ -132,7 +132,8 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
   const used = Math.min(usage.tokens, window_)
   const near = usage.threshold ? usage.tokens / usage.threshold : used / window_
   const tone = near >= 0.9 ? 'text-crimson-hi' : near >= 0.7 ? 'text-warn' : 'text-dim'
-  const slices = usage.breakdown
+  // Biggest share first, in the list and the bar alike.
+  const slices = [...usage.breakdown].sort((a, b) => b.tokens - a.tokens)
 
   /** `of`: what 100% width represents — the whole window (panel) or just what is used (compact pill). */
   const Bar = ({ className, marker, of = window_ }: { className: string; marker?: boolean; of?: number }) => (
