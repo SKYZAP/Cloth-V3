@@ -19,7 +19,18 @@ function words(s: string): string[] {
   return [...s.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3])
 }
 const quote = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
-export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args'>) => [c.command, ...c.args].map(quote).join(' ')
+/** What a server is: its command line, or its address for a server reached over HTTP. */
+export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args' | 'transport' | 'url'>) => (c.transport === 'http' ? (c.url ?? '') : [c.command, ...c.args].map(quote).join(' '))
+
+const lines = (o: Record<string, string> | undefined, sep: string) => Object.entries(o ?? {}).map(([k, v]) => `${k}${sep}${v}`).join('\n')
+function parseLines(text: string, sep: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const l of text.split('\n')) {
+    const i = l.indexOf(sep)
+    if (i > 0) out[l.slice(0, i).trim()] = l.slice(i + sep.length).trim()
+  }
+  return out
+}
 
 /** External MCP servers Cloth connects to (configs live in settings), with their live status. */
 export function useExternalServers() {
@@ -85,7 +96,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">
           <div className="font-medium">It stopped with this error:</div>
           <div className="mt-1 font-mono text-[11.5px]">{st.error}</div>
-          <div className="mt-1.5 text-muted">Check the command and environment below, then Start it again.</div>
+          <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and headers below, then Start it again.' : 'Check the command and environment below, then Start it again.'}</div>
         </div>
       )}
       <div className="grid gap-2">
@@ -107,7 +118,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         </div>
       </div>
       <div className="grid gap-2">
-        <h3 className="text-[12px] font-medium text-muted">Command</h3>
+        <h3 className="text-[12px] font-medium text-muted">Connection</h3>
         <ServerForm initial={c} onSave={(next) => servers.patch(c.id, next)} />
       </div>
       <div className="grid gap-2">
@@ -136,45 +147,93 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
   )
 }
 
-/** Name, command line and environment of a server. */
+/** A server's name and how Cloth reaches it: a program it starts (stdio) or a web address (HTTP). */
 export function ServerForm({ initial, onSave, onCancel }: { initial?: McpClientConfig; onSave(c: Omit<McpClientConfig, 'id'>): void; onCancel?(): void }) {
+  const [kind, setKind] = useState<'stdio' | 'http'>(initial?.transport ?? 'stdio')
   const [name, setName] = useState(initial?.name ?? '')
-  const [line, setLine] = useState(initial ? commandLine(initial) : '')
-  const [env, setEnv] = useState(initial ? Object.entries(initial.env).map(([k, v]) => `${k}=${v}`).join('\n') : '')
+  const [line, setLine] = useState(initial && initial.transport !== 'http' ? commandLine(initial) : '')
+  const [env, setEnv] = useState(lines(initial?.env, '='))
+  const [url, setUrl] = useState(initial?.url ?? '')
+  const [headers, setHeaders] = useState(lines(initial?.headers, ': '))
   // Follow changes made elsewhere (another window, the phone, an import).
   useEffect(() => {
     if (!initial) return
+    setKind(initial.transport ?? 'stdio')
     setName(initial.name)
-    setLine(commandLine(initial))
-    setEnv(Object.entries(initial.env).map(([k, v]) => `${k}=${v}`).join('\n'))
-  }, [initial?.name, initial?.command, initial?.args.join('\u0000'), JSON.stringify(initial?.env)])
+    setLine(initial.transport !== 'http' ? commandLine(initial) : '')
+    setEnv(lines(initial.env, '='))
+    setUrl(initial.url ?? '')
+    setHeaders(lines(initial.headers, ': '))
+  }, [initial?.name, initial?.transport, initial?.command, initial?.args.join('\u0000'), JSON.stringify(initial?.env), initial?.url, JSON.stringify(initial?.headers)])
   const parsed = words(line)
-  const valid = /^[a-zA-Z0-9_-]{1,32}$/.test(name) && parsed.length > 0
-  const dirty = !initial || name !== initial.name || line !== commandLine(initial) || env !== Object.entries(initial.env).map(([k, v]) => `${k}=${v}`).join('\n')
+  const urlOk = /^https?:\/\/\S+$/i.test(url.trim())
+  const valid = /^[a-zA-Z0-9_-]{1,32}$/.test(name) && (kind === 'http' ? urlOk : parsed.length > 0)
+  const dirty =
+    !initial ||
+    name !== initial.name ||
+    kind !== (initial.transport ?? 'stdio') ||
+    (kind === 'http' ? url !== (initial.url ?? '') || headers !== lines(initial.headers, ': ') : line !== commandLine(initial) || env !== lines(initial.env, '='))
   const submit = () => {
     if (!valid) return
-    const vars: Record<string, string> = {}
-    for (const l of env.split('\n')) {
-      const i = l.indexOf('=')
-      if (i > 0) vars[l.slice(0, i).trim()] = l.slice(i + 1).trim()
-    }
-    onSave({ name, command: parsed[0], args: parsed.slice(1), env: vars, enabled: initial?.enabled ?? true, defaultOn: initial?.defaultOn ?? false, approval: initial?.approval ?? 'ask' })
+    const base = { name, enabled: initial?.enabled ?? true, defaultOn: initial?.defaultOn ?? false, approval: initial?.approval ?? ('ask' as const) }
+    if (kind === 'http') onSave({ ...base, transport: 'http', url: url.trim(), headers: parseLines(headers, ':'), command: '', args: [], env: {} })
+    else onSave({ ...base, transport: 'stdio', command: parsed[0], args: parsed.slice(1), env: parseLines(env, '=') })
   }
+  const field = 'resize-none rounded-[10px] border border-line bg-panel px-3 py-1.5 font-mono text-[12px] outline-none placeholder:text-dim focus:border-crimson-line'
   return (
     <div className="grid gap-2">
+      <div role="radiogroup" aria-label="How Cloth reaches it" className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ['stdio', 'A program', 'Cloth starts it on this computer (npx, uvx, docker…)'],
+            ['http', 'A web address', 'A server already running, here or online (HTTP)']
+          ] as const
+        ).map(([k, label, sub]) => (
+          <button
+            key={k}
+            role="radio"
+            aria-checked={kind === k}
+            onClick={() => setKind(k)}
+            className={clsx('grid content-start gap-0.5 rounded-[10px] border px-3 py-2 text-left', kind === k ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+          >
+            <span className="text-[12.5px] font-semibold">{label}</span>
+            <span className="text-[11.5px] text-dim">{sub}</span>
+          </button>
+        ))}
+      </div>
       <div className="grid gap-2 sm:grid-cols-[160px_1fr]">
         <Input value={name} onChange={(e) => setName(e.target.value.replace(/\s+/g, '-'))} placeholder="name" aria-label="Server name" spellCheck={false} className="h-8 font-mono text-[12px]" />
-        <Input value={line} onChange={(e) => setLine(e.target.value)} placeholder="npx -y @playwright/mcp@latest" aria-label="Command" spellCheck={false} className="h-8 font-mono text-[12px]" />
+        {kind === 'http' ? (
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/mcp" aria-label="Server address" spellCheck={false} autoComplete="off" className="h-8 font-mono text-[12px]" />
+        ) : (
+          <Input value={line} onChange={(e) => setLine(e.target.value)} placeholder="npx -y @playwright/mcp@latest" aria-label="Command" spellCheck={false} className="h-8 font-mono text-[12px]" />
+        )}
       </div>
-      <textarea
-        value={env}
-        onChange={(e) => setEnv(e.target.value)}
-        rows={Math.max(1, Math.min(4, env.split('\n').length))}
-        placeholder="Environment variables, one KEY=value per line (optional)"
-        aria-label="Environment variables"
-        spellCheck={false}
-        className="resize-none rounded-[10px] border border-line bg-panel px-3 py-1.5 font-mono text-[12px] outline-none placeholder:text-dim focus:border-crimson-line"
-      />
+      {kind === 'http' ? (
+        <>
+          <textarea
+            value={headers}
+            onChange={(e) => setHeaders(e.target.value)}
+            rows={Math.max(1, Math.min(4, headers.split('\n').length))}
+            placeholder="Headers, one per line (optional), e.g. Authorization: Bearer <token>"
+            aria-label="Headers"
+            spellCheck={false}
+            className={field}
+          />
+          {url.trim() && !urlOk && <p className="text-[11.5px] text-warn">Give the full address, starting with https:// (or http:// on this computer).</p>}
+          <p className="text-[11.5px] text-dim">Cloth tries Streamable HTTP first, then the older HTTP + SSE transport. Headers are saved with Cloth’s settings on this computer.</p>
+        </>
+      ) : (
+        <textarea
+          value={env}
+          onChange={(e) => setEnv(e.target.value)}
+          rows={Math.max(1, Math.min(4, env.split('\n').length))}
+          placeholder="Environment variables, one KEY=value per line (optional)"
+          aria-label="Environment variables"
+          spellCheck={false}
+          className={field}
+        />
+      )}
       {dirty && (
         <div className="flex justify-end gap-2">
           {onCancel && (

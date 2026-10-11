@@ -2,6 +2,9 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
@@ -23,7 +26,7 @@ interface Conn {
   error: string | null
   tools: McpTool[]
   client: Client | null
-  transport: StdioClientTransport | null
+  transport: Transport | null
   starting: Promise<void> | null
   /** Recent stderr, for the error message when it fails to start. */
   stderr: string
@@ -118,21 +121,34 @@ export class McpClientService {
     c.stderr = ''
     this.changed()
     c.starting = (async () => {
-      // Each server works in its own folder under Cloth's data (screenshots, logs and caches land there).
-      const cwd = join(this.ctx.dataDir, 'mcp-servers', config.name.replace(/[^a-zA-Z0-9_-]+/g, '_'))
-      await mkdir(cwd, { recursive: true })
-      const transport = new StdioClientTransport({
-        command: config.command,
-        args: config.args,
-        cwd,
-        env: { ...(process.env as Record<string, string>), ...config.env },
-        stderr: 'pipe'
-      })
-      transport.stderr?.on('data', (d: Buffer) => (c.stderr = (c.stderr + d.toString()).slice(-4000)))
-      const client = new Client({ name: 'cloth', version: '1.0.0' })
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${config.name} did not start within ${CONNECT_TIMEOUT / 1000}s`)), CONNECT_TIMEOUT).unref?.())
+      let transport: Transport
+      let client = new Client({ name: 'cloth', version: '1.0.0' })
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${config.name} did not ${config.transport === 'http' ? 'answer' : 'start'} within ${CONNECT_TIMEOUT / 1000}s`)), CONNECT_TIMEOUT).unref?.())
+      if (config.transport === 'http') {
+        transport = await this.connectHttp(config, client, timeout).then(
+          (r) => ((client = r.client), r.transport),
+          (err) => {
+            c.state = 'error'
+            c.error = errorMessage(err).slice(0, 600)
+            throw err
+          }
+        )
+      } else {
+        // Each server works in its own folder under Cloth's data (screenshots, logs and caches land there).
+        const cwd = join(this.ctx.dataDir, 'mcp-servers', config.name.replace(/[^a-zA-Z0-9_-]+/g, '_'))
+        await mkdir(cwd, { recursive: true })
+        const stdio = new StdioClientTransport({
+          command: config.command,
+          args: config.args,
+          cwd,
+          env: { ...(process.env as Record<string, string>), ...config.env },
+          stderr: 'pipe'
+        })
+        stdio.stderr?.on('data', (d: Buffer) => (c.stderr = (c.stderr + d.toString()).slice(-4000)))
+        transport = stdio
+      }
       try {
-        await Promise.race([client.connect(transport), timeout])
+        if (config.transport !== 'http') await Promise.race([client.connect(transport), timeout])
         const tools: McpTool[] = []
         let cursor: string | undefined
         do {
@@ -161,9 +177,46 @@ export class McpClientService {
         c.starting = null
         this.changed()
       }
-    })()
+    })().catch((err) => {
+      // A remote server that couldn't be reached at all.
+      c.state = 'error'
+      c.error = c.error ?? errorMessage(err).slice(0, 600)
+      c.starting = null
+      this.ctx.log('mcp-client', `${config.name} failed to connect`, c.error)
+      this.changed()
+    })
     await c.starting
     return this.statusOf(id)
+  }
+
+  /**
+   * Connect to a server at a web address: Streamable HTTP first (the current MCP transport), then the older
+   * HTTP+SSE transport for servers that only speak that. Returns the client and transport that worked.
+   */
+  private async connectHttp(config: McpClientConfig, first: Client, timeout: Promise<never>): Promise<{ client: Client; transport: Transport }> {
+    let url: URL
+    try {
+      url = new URL(String(config.url ?? '').trim())
+    } catch {
+      throw new Error(`${config.name}: “${config.url ?? ''}” isn't a web address`)
+    }
+    const requestInit = { headers: config.headers ?? {} }
+    const streamable = new StreamableHTTPClientTransport(url, { requestInit })
+    try {
+      await Promise.race([first.connect(streamable), timeout])
+      return { client: first, transport: streamable }
+    } catch (err) {
+      await streamable.close().catch(() => undefined)
+      const sse = new SSEClientTransport(url, { requestInit, eventSourceInit: { fetch: (u, init) => fetch(u, { ...init, headers: { ...(init?.headers as Record<string, string>), ...requestInit.headers } }) } })
+      const client = new Client({ name: 'cloth', version: '1.0.0' })
+      try {
+        await Promise.race([client.connect(sse), timeout])
+        return { client, transport: sse }
+      } catch {
+        await sse.close().catch(() => undefined)
+        throw new Error(`${config.name}: couldn't connect to ${url.href} (${errorMessage(err)})`)
+      }
+    }
   }
 
   async stop(id: string): Promise<void> {
