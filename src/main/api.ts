@@ -18,11 +18,12 @@ export function createApi(s: Services): ClothApi {
         electron: process.versions.electron,
         node: process.versions.node
       }),
-      pickPaths: async ({ directory, multiple, title }) => {
+      pickPaths: async ({ directory, multiple, title, filters }) => {
         const win = BrowserWindow.getFocusedWindow()
         const props: ('openFile' | 'openDirectory' | 'multiSelections')[] = [directory ? 'openDirectory' : 'openFile']
         if (multiple) props.push('multiSelections')
-        const res = win ? await dialog.showOpenDialog(win, { title, properties: props }) : await dialog.showOpenDialog({ title, properties: props })
+        const opts = { title, properties: props, ...(filters?.length && !directory ? { filters } : {}) }
+        const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
         return res.canceled ? [] : res.filePaths
       },
       showInFolder: async (path) => shell.showItemInFolder(path),
