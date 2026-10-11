@@ -9,6 +9,7 @@ import { autoStart, terminalsAfter, withTerminal } from '@shared/terminal-tabs'
 import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { Button } from '@/components/ui'
+import { isMobile } from '@/lib/platform'
 
 const css = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 
@@ -110,7 +111,9 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
   return <div ref={host} className={clsx('absolute inset-0 px-2 pt-1.5', !active && 'invisible')} />
 }
 
-export function Terminals({ sessionId, visible, hasFolder, container }: { sessionId: string; visible: boolean; hasFolder: boolean; container: boolean }) {
+export function Terminals({ sessionId, visible, hasFolder, container, onPickFolder }: { sessionId: string; visible: boolean; hasFolder: boolean; container: boolean; onPickFolder(): void }) {
+  // Without a folder the tab waits to be asked: a shell would open in the home folder.
+  const homeOnly = !hasFolder && !container
   const [list, setList] = useState<TerminalInfo[] | null>(null)
   const [active, setActive] = useState<string | null>(null)
   const [opening, setOpening] = useState(false)
@@ -146,13 +149,13 @@ export function Terminals({ sessionId, visible, hasFolder, container }: { sessio
       setActive(t.id)
     }
   }
-  // The first time the tab is shown, start a shell if the chat has none (closing the last one doesn't start another).
+  // The first time the tab is shown with a folder, start a shell if the chat has none (closing the last one doesn't start another).
   const decided = useRef(false)
   useEffect(() => {
-    const next = autoStart(decided.current, visible, list)
+    const next = autoStart(decided.current, visible && !homeOnly, list)
     decided.current = next.decided
     if (next.start) void open()
-  }, [visible, list])
+  }, [visible, list, homeOnly])
   useEffect(() => {
     if (list && active && !list.some((t) => t.id === active)) setActive(list.at(-1)?.id ?? null)
   }, [list, active])
@@ -192,12 +195,28 @@ export function Terminals({ sessionId, visible, hasFolder, container }: { sessio
         {list?.map((t) => <TerminalView key={t.id} info={t} active={visible && t.id === active} />)}
         {list && !list.length && !opening && (
           <div className="absolute inset-0 grid place-items-center p-6 text-center">
-            <div className="space-y-3">
-              <div className="text-[12.5px] text-dim">{hasFolder ? 'No terminals open.' : 'This chat has no folder — the terminal starts in your home folder.'}</div>
-              <Button size="sm" icon={<Plus size={13} />} onClick={() => void open()}>
-                New terminal
-              </Button>
-            </div>
+            {homeOnly ? (
+              <div className="space-y-3">
+                <div className="text-[12.5px] text-dim">No folder yet. A terminal opens in your home folder.</div>
+                <div className="flex flex-col items-center gap-2">
+                  <Button size="sm" icon={<Plus size={13} />} onClick={() => void open()}>
+                    Open a terminal
+                  </Button>
+                  {!isMobile && (
+                    <button onClick={onPickFolder} className="text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline">
+                      Choose a folder
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-[12.5px] text-dim">No terminals open.</div>
+                <Button size="sm" icon={<Plus size={13} />} onClick={() => void open()}>
+                  New terminal
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
