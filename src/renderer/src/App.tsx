@@ -15,6 +15,7 @@ import { ToolsPage } from './pages/Tools'
 import { WorkflowsPage } from './pages/Workflows'
 import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
+import { RunPage } from './pages/Run'
 import { DesignPage } from './pages/Design'
 import { SettingsPage } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
@@ -51,6 +52,7 @@ export function PageContent({ page }: { page: Page }) {
       {page === 'tools' && <ToolsPage />}
       {page === 'workflows' && <WorkflowsPage />}
       {page === 'providers' && <ProvidersPage />}
+      {page === 'run' && <RunPage />}
       {page === 'mcp' && <McpPage />}
       {page === 'design' && <DesignPage />}
       {page === 'settings' && <SettingsPage />}

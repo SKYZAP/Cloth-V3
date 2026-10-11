@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import { Cloud, Cpu, HardDrive, Plus, RefreshCw, Star, Trash2, Zap } from 'lucide-react'
 import type { GeneratedImage, ImageSize, ModelInfo, ModelRef, Provider, ProviderPreset, ProviderTestResult } from '@shared/types'
@@ -13,7 +13,9 @@ import { GeneratedImageCard } from '@/components/GeneratedImageCard'
 const isLocal = (url: string) => /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(url)
 
 export function ProvidersPage() {
-  const providers = useApp((s) => s.providers)
+  // Runners on the Run page show up as providers while they run; they're managed there, not here.
+  const all = useApp((s) => s.providers)
+  const providers = useMemo(() => all.filter((p) => !p.runnerId), [all])
   const loadProviders = useApp((s) => s.loadProviders)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [open, setOpen] = useState(false)

@@ -74,7 +74,7 @@ export type SessionPatch = Partial<Omit<ChatSession, 'id' | 'createdAt' | 'updat
 export interface ClothApi {
   app: {
     info(): Promise<AppInfo>
-    pickPaths(opts: { directory?: boolean; multiple?: boolean; title?: string }): Promise<string[]>
+    pickPaths(opts: { directory?: boolean; multiple?: boolean; title?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string[]>
     openPath(path: string): Promise<void>
     /** Reveal a file in Explorer / Finder. */
     showInFolder(path: string): Promise<void>
