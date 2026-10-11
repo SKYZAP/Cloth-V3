@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, ExternalLink, FileCode2, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2 } from 'lucide-react'
-import type { ModelRef, RegistryPreview, RegistrySkill, Skill } from '@shared/types'
+import type { ModelRef, RegistryPreview, RegistrySkill, Skill, SkillRegistryStatus, SkillUpdateFile } from '@shared/types'
 import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -536,28 +536,45 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
   const [body, setBody] = useState(skill.body)
   const [saving, setSaving] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
-  const [checking, setChecking] = useState(false)
-  const [update, setUpdate] = useState<{ path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[] | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const [update, setUpdate] = useState<SkillUpdateFile[] | null>(null)
+  const [status, setStatus] = useState<SkillRegistryStatus | null>(null)
   const dirty = name !== skill.name || description !== skill.description || body !== skill.body
+  const linked = status ? status.linked : (skill.source ?? null)
 
-  const checkUpdate = async () => {
-    if (!skill.source) return
-    setChecking(true)
-    const res = await attempt(() => api.skills.registryCheckUpdate(skill.name))
-    setChecking(false)
-    if (!res) return
-    if (!res.updateAvailable) return useApp.getState().toast(`${skill.name} is up to date with skills.sh`, 'ok')
-    setChecking(true)
+  /** Fetches the skills.sh link and update state; the main process may link it from the skills CLI lock file, so reload the skill when the link changed. */
+  const refreshStatus = async () => {
+    const s = await api.skills.registryStatus(skill.name).catch(() => null)
+    if (!s) return
+    setStatus(s)
+    if ((s.linked?.id ?? null) !== (skill.source?.id ?? null)) onChanged(skill.name)
+  }
+  useEffect(() => {
+    void refreshStatus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skill.name])
+
+  const startUpdate = async () => {
+    setUpdating(true)
     const diff = await attempt(() => api.skills.registryUpdateDiff(skill.name))
-    setChecking(false)
-    if (diff) setUpdate(diff)
+    setUpdating(false)
+    if (!diff) return
+    if (!diff.length) {
+      useApp.getState().toast('Already up to date', 'ok')
+      void refreshStatus()
+      return
+    }
+    setUpdate(diff)
   }
   const applyUpdate = async () => {
-    setChecking(true)
-    const updated = await attempt(() => api.skills.registryInstall(skill.source!.id, true), `Updated ${skill.name}`)
-    setChecking(false)
+    setUpdating(true)
+    const updated = await attempt(() => api.skills.registryUpdate(skill.name), `Updated ${skill.name}`)
+    setUpdating(false)
     setUpdate(null)
-    if (updated) onChanged(updated)
+    if (updated) {
+      onChanged(updated)
+      void refreshStatus()
+    }
   }
 
   const save = async () => {
@@ -587,26 +604,28 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
           </span>
         }
         subtitle={
-          <span className="flex items-center gap-2">
-            {skill.source && (
-              <button onClick={() => void api.app.openExternal(skill.source!.url)} className="flex items-center gap-1 text-dim hover:text-crimson-hi" title={`Installed from skills.sh ${timeAgo(skill.source.installedAt)}`}>
-                <Store size={11} /> skills.sh · {skill.source.id.split('/').slice(0, 2).join('/')}
-                <span className="text-line-strong">|</span>
+          linked ? (
+            <span className="flex items-center gap-1">
+              <button onClick={() => void api.app.openExternal(linked.url)} className="flex items-center gap-1 text-dim hover:text-crimson-hi" title={linked.url}>
+                <Store size={11} /> {linked.id.split('/').slice(0, 2).join('/')} on skills.sh
               </button>
-            )}
-            {`Updated ${timeAgo(skill.updatedAt)}`}
-          </span>
+              {` · updated ${timeAgo(skill.updatedAt)}`}
+            </span>
+          ) : (
+            `Updated ${timeAgo(skill.updatedAt)}`
+          )
         }
         actions={
           <>
-            {skill.source && (
-              <Button icon={<RefreshCw size={13} />} loading={checking} onClick={() => void checkUpdate()} title="Compare with the latest snapshot on skills.sh">
-                Check for update
-              </Button>
-            )}
             <IconButton title="Open folder" onClick={() => void api.app.openPath(skill.dir)}>
               <FolderOpen size={14} />
             </IconButton>
+            {linked && (
+              <Button icon={<RefreshCw size={13} />} loading={updating} onClick={() => void startUpdate()} title={status?.updateAvailable ? 'Update available from skills.sh' : 'Up to date — check again'}>
+                Update
+                {status?.updateAvailable && <span className="h-1.5 w-1.5 rounded-full bg-crimson" aria-label="Update available" />}
+              </Button>
+            )}
             <Button icon={<Upload size={13} />} onClick={() => setInstallOpen(true)}>
               Install to…
             </Button>
@@ -637,7 +656,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         ]}
       />
       <div className="min-h-0 flex-1">
-        {tab === 'overview' && <SkillOverview skill={skill} onOpenTab={setTab} />}
+        {tab === 'overview' && <SkillOverview skill={skill} linked={linked} status={status} updating={updating} onUpdate={() => void startUpdate()} onLinkChanged={() => void refreshStatus()} onOpenTab={setTab} />}
         {tab === 'instructions' && (
           <div className="flex h-full flex-col">
             <div className="grid grid-cols-[240px_1fr] gap-3 border-b border-line px-5 py-3">
@@ -672,7 +691,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
             <Button variant="ghost" onClick={() => setUpdate(null)}>
               Keep mine
             </Button>
-            <Button variant="primary" loading={checking} onClick={() => void applyUpdate()}>
+            <Button variant="primary" loading={updating} onClick={() => void applyUpdate()}>
               Update
             </Button>
           </>
