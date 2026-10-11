@@ -243,8 +243,16 @@ export function McpPage() {
                 </div>
               )}
               <div className="grid gap-2">
-                <h3 className="text-[12px] font-medium text-muted">Any MCP server: a program Cloth starts, or one at a web address</h3>
-                <ServerForm onSave={(c) => void servers.add(c).then((id) => setOpen({ kind: 'server', id }))} onCancel={close} />
+                <h3 className="text-[12px] font-medium text-muted">Any MCP server, as JSON: a program Cloth starts, or one at a web address</h3>
+                <ServerForm
+                  taken={servers.configs.map((c) => c.name)}
+                  onSave={async (list) => {
+                    let id = ''
+                    for (const c of list) id = await servers.add({ ...c, enabled: true, defaultOn: false, approval: 'ask' })
+                    setOpen({ kind: 'server', id })
+                  }}
+                  onCancel={close}
+                />
               </div>
             </div>
           )}
