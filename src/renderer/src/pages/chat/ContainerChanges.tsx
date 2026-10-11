@@ -19,8 +19,8 @@ export function ContainerPill({ session, running }: { session: ChatSession; runn
   const [data, setData] = useState<ContainerChanges | null>(null)
   const [open, setOpen] = useState(false)
   const load = () => void api.containers.changes(session.id).then(setData, () => undefined)
-  // After every turn (the agent may have changed files) and when the sheet opens.
-  useEffect(load, [session.id, running, open])
+  // After every turn (the agent may have changed files), when the folder changes and when the sheet opens.
+  useEffect(load, [session.id, session.workspace, running, open])
 
   const count = data?.changes.length ?? 0
   const image = session.container?.image ?? ''
