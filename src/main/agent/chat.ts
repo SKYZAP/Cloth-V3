@@ -249,8 +249,11 @@ export class AgentRuntime {
       if (this.ws.approvals) lines.push('When you need a decision, a preference or information only the user has before you can continue, ask with the `ask_user` tool (offer options when you can) instead of guessing or ending your reply with questions — the user answers in the chat and you carry on with the answer. Ask one question per call; call it again for the next one. Do not ask about things you can find out yourself.')
     }
     if (scope.workspace) {
-      const writable = scope.fileAccess === 'write' && !!scope.sessionId
-      const shell = scope.shell && scope.sessionId ? (scope.container || process.platform !== 'win32' ? 'bash' : 'powershell') : null
+      // The same rules the tools are built with (buildTools): outside a chat, changes and commands need approval up front, an allowlist or a container.
+      const unattended = !scope.sessionId
+      const autoEdits = !!scope.autoApprove && scope.autoApprove() !== 'none'
+      const writable = scope.fileAccess === 'write' && (!!scope.sessionId || autoEdits)
+      const shell = scope.shell && (scope.sessionId || scope.commandAllow?.length || scope.container) ? (scope.container || process.platform !== 'win32' ? 'bash' : 'powershell') : null
       lines.push(
         '',
         '## Workspace',
@@ -259,14 +262,18 @@ export class AgentRuntime {
           : `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
         'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`.',
         writable
-          ? 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
+          ? unattended
+            ? 'You can change files: use ast_edit for mechanical refactors across many places, edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. Nobody is watching this run, so changes are made without asking: keep them minimal and focused on the task, and say what you changed when you finish.'
+            : 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
           : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
         ...(scope.codeIntel !== false ? ['Use `lsp` for TypeScript/JavaScript/Python code intelligence: go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
         ...(shell
           ? [
               scope.container
-                ? `You can run commands with bash in the container (working directory /workspace). It is Linux: use its package manager or language tools to install what you need. Unless the user auto-approves commands, they approve each one, so explain why a command is needed.`
-                : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`
+                ? `You can run commands with bash in the container (working directory /workspace). It is Linux: use its package manager or language tools to install what you need. ${unattended ? 'Nobody is watching this run, so commands run without asking.' : 'Unless the user auto-approves commands, they approve each one, so explain why a command is needed.'}`
+                : scope.commandAllow?.length
+                  ? `You can run only these commands with ${shell} (working directory = the workspace), each on its own and with any arguments: ${scope.commandAllow.map((c) => `\`${c}\``).join(', ')}. Anything else, or chaining commands with ; && | or redirects, is refused.`
+                  : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`
             ]
           : [])
       )

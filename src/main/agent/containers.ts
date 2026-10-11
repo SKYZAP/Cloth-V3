@@ -171,6 +171,20 @@ export class ContainerService {
 
   /** Start (or create) the chat's container. Settings changed since it was made: it is recreated. */
   async ensureRunning(sessionId: string, settings: ContainerSettings): Promise<void> {
+    // Commands run in parallel (several in one turn) would each try to create the same container: one at a time.
+    const prev = this.starting.get(sessionId) ?? Promise.resolve()
+    const next = prev.catch(() => undefined).then(() => this.startOne(sessionId, settings))
+    this.starting.set(sessionId, next)
+    try {
+      await next
+    } finally {
+      if (this.starting.get(sessionId) === next) this.starting.delete(sessionId)
+    }
+  }
+
+  private starting = new Map<string, Promise<void>>()
+
+  private async startOne(sessionId: string, settings: ContainerSettings): Promise<void> {
     const status = await this.status()
     if (!status.available) throw new Error(status.error ?? 'Docker is not available')
     const name = this.name(sessionId)
