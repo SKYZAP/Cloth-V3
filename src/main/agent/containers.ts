@@ -108,6 +108,16 @@ async function clear(dir: string, keep: Set<string>, rel = ''): Promise<void> {
   }
 }
 
+/** Told when a chat's container starts, runs a command and stops (port forwarding follows it). */
+export interface ContainerWatcher {
+  started(sessionId: string, name: string, settings: ContainerSettings): void
+  ran(sessionId: string): void
+  /** No session: every container stopped. */
+  stopped(sessionId?: string): void
+  /** Still serving something: don't stop the container for idling. */
+  busy(sessionId: string): boolean
+}
+
 const hashOf = async (abs: string): Promise<string | null> => (existsSync(abs) ? sha1(await readFile(abs)) : null)
 
 /**
@@ -118,6 +128,7 @@ const hashOf = async (abs: string): Promise<string | null> => (existsSync(abs) ?
 export class ContainerService {
   private idle = new Map<string, NodeJS.Timeout>()
   private cached: { at: number; status: ContainerStatus } | null = null
+  watcher: ContainerWatcher | null = null
 
   constructor(
     private ctx: Ctx,
@@ -257,6 +268,7 @@ export class ContainerService {
         if (started.code !== 0) throw new Error(`Couldn't start the container: ${started.stderr.trim()}`)
       }
     } else {
+      this.watcher?.stopped(sessionId)
       if (inspect.code === 0) await this.docker(['rm', '-f', '-v', name])
       // --init reaps what the agent's commands leave behind (PID 1 is otherwise `sleep`, which never does).
       const args = ['run', '-d', '--init', '--name', name, '--label', `cloth.session=${sessionId}`, '-v', `${this.copyDir(sessionId)}:/workspace`]
@@ -270,6 +282,7 @@ export class ContainerService {
       await writeFile(settingsFile, want)
     }
     this.touch(sessionId)
+    this.watcher?.started(sessionId, name, settings)
   }
 
   /** Run a shell command in the chat's container, with `cwd` relative to /workspace. */
@@ -309,6 +322,7 @@ export class ContainerService {
       if (timer) clearTimeout(timer)
       opts.signal?.removeEventListener('abort', stop)
       this.touch(sessionId)
+      this.watcher?.ran(sessionId)
     }
   }
 
@@ -427,6 +441,7 @@ export class ContainerService {
 
   /** Throw the container away (the copy is kept); the next command starts a fresh one. */
   async reset(sessionId: string): Promise<void> {
+    this.watcher?.stopped(sessionId)
     await this.docker(['rm', '-f', '-v', this.name(sessionId)]).catch(() => undefined)
     await rm(join(this.root(sessionId), 'container.json'), { force: true })
   }
@@ -434,6 +449,7 @@ export class ContainerService {
   /** The chat was deleted: remove its container and copy. */
   async remove(sessionId: string): Promise<void> {
     this.clearIdle(sessionId)
+    this.watcher?.stopped(sessionId)
     if (existsSync(this.root(sessionId))) await this.docker(['rm', '-f', '-v', this.name(sessionId)]).catch(() => undefined)
     await rm(this.root(sessionId), { recursive: true, force: true })
   }
@@ -442,6 +458,7 @@ export class ContainerService {
   async stopAll(): Promise<void> {
     for (const t of this.idle.values()) clearTimeout(t)
     this.idle.clear()
+    this.watcher?.stopped()
     const r = await this.docker(['ps', '-q', '--filter', 'label=cloth.session']).catch(() => null)
     const ids = r?.stdout.split(/\s+/).filter(Boolean) ?? []
     if (ids.length) await this.docker(['stop', '-t', '2', ...ids]).catch(() => undefined)
@@ -461,6 +478,8 @@ export class ContainerService {
     this.clearIdle(sessionId)
     const t = setTimeout(() => {
       this.idle.delete(sessionId)
+      if (this.watcher?.busy(sessionId)) return this.touch(sessionId)
+      this.watcher?.stopped(sessionId)
       void this.docker(['stop', '-t', '2', this.name(sessionId)]).catch(() => undefined)
     }, this.idleMs)
     t.unref?.()

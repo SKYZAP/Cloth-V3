@@ -19,6 +19,7 @@ import type {
   WorkspaceRoot,
   Project,
   ContainerChanges,
+  ContainerPort,
   ContainerStatus,
   ProjectInput,
   GeneratedImage,
@@ -256,6 +257,8 @@ export interface ClothApi {
     discard(sessionId: string, paths?: string[]): Promise<ContainerChanges>
     /** Throw away the container (the copy stays); the next command starts a fresh one. */
     reset(sessionId: string): Promise<void>
+    /** Servers listening in the chat's container, opened on this PC. */
+    ports(sessionId: string): Promise<ContainerPort[]>
   }
   design: {
     list(): Promise<DesignSystem[]>
@@ -385,4 +388,5 @@ export type EventMap = {
   mcpClients: { type: 'changed' }
   agents: { type: 'changed' }
   mcpCalls: import('./types').McpCallLog
+  containers: { sessionId: string; ports: import('./types').ContainerPort[] }
 }

@@ -552,6 +552,16 @@ export interface ContainerChanges {
   changes: ContainerChange[]
 }
 
+/** A server listening inside a chat's container, opened on this PC. */
+export interface ContainerPort {
+  /** Port inside the container. */
+  port: number
+  /** Port on this PC's 127.0.0.1 (null when it couldn't be opened). */
+  hostPort: number | null
+  url: string | null
+  error?: string
+}
+
 /** Chat settings a project gives the chats started in it. */
 export type ProjectDefaults = Partial<
   Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container' | 'mcpServers'>

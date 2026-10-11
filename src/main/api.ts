@@ -209,7 +209,8 @@ export function createApi(s: Services): ClothApi {
       changes: async (sessionId) => s.containers.changes(sessionId, s.chat.get(sessionId).workspace),
       apply: async (sessionId, paths) => s.containers.apply(sessionId, paths, s.chat.get(sessionId).workspace),
       discard: async (sessionId, paths) => s.containers.discard(sessionId, paths, s.chat.get(sessionId).workspace),
-      reset: (sessionId) => s.containers.reset(sessionId)
+      reset: (sessionId) => s.containers.reset(sessionId),
+      ports: async (sessionId) => s.ports.list(sessionId)
     },
     design: {
       list: async () => s.designs.list(),
