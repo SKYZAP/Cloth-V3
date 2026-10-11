@@ -16,7 +16,7 @@ import { ContainerService, dockerCli, type DockerRun } from './agent/containers'
 import { PortService, dockerSpawn, type DockerSpawn } from './agent/ports'
 import { PanelService } from './panel/panel'
 import { McpClientService } from './mcp/client'
-import { TerminalService } from './panel/terminals'
+import { TerminalService, type PtySpawn } from './panel/terminals'
 import { ApprovalService, CheckpointStore } from './agent/workspace'
 import { LspManager } from './agent/lsp'
 import { BUILTIN_NAMES } from './agent/tools'
@@ -77,6 +77,8 @@ export function createServices(opts: {
   dockerSpawn?: DockerSpawn
   /** How local model runners spawn, fetch and probe (tests pass stand-ins). */
   run?: Partial<RunDeps>
+  /** How the side panel's terminals start their shells (tests pass a stand-in). */
+  pty?: PtySpawn
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -114,7 +116,7 @@ export function createServices(opts: {
   // A stand-in docker without a stand-in spawn (tests): no port forwarding.
   if (!opts.docker || opts.dockerSpawn) containers.watcher = ports
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
-  const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)
+  const panel = new PanelService(chat, providers, new TerminalService(ctx, containers, opts.pty), containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents, containers })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
