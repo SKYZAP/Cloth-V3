@@ -41,6 +41,7 @@ import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { SidePanel, usePanelState } from './chat/SidePanel'
+import { showTab, shownTabs } from '@shared/panel-stack'
 import { StatusLine } from './chat/StatusLine'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
@@ -515,7 +516,7 @@ function ChatView({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '`' || !(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
-      setPanel(panel.open && panel.tab === 'terminal' ? { open: false } : { open: true, tab: 'terminal' })
+      setPanel(panel.open && shownTabs(panel, isMobile).includes('terminal') ? { open: false } : { open: true, ...showTab(panel, 'terminal', isMobile) })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
