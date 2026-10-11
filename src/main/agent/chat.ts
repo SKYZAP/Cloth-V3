@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { GeneratedImage, ImageSize } from '@shared/types'
+import type { ContainerSettings, GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
@@ -143,6 +143,10 @@ export interface AgentRunOptions {
   onEvent?: (turn: UiMessage) => void
 }
 
+/** Built-in tools the Tools page can run on their own: they only read. */
+export const TRYABLE = ['web_search', 'web_fetch', 'rag_search', 'skill_list', 'read', 'ls', 'find', 'grep', 'ast_grep']
+const FOLDER_TOOLS = ['read', 'ls', 'find', 'grep', 'ast_grep']
+
 export class AgentRuntime {
   constructor(
     readonly providers: ProviderService,
@@ -269,6 +273,19 @@ export class AgentRuntime {
     }
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
     return lines.join('\n')
+  }
+
+  /**
+   * Run one built-in tool outside any chat, for the Tools page's Try it. Only tools that read are
+   * offered: nobody is there to approve a change or a command.
+   */
+  async tryTool(name: string, args: Record<string, unknown>, folder: string | null): Promise<string> {
+    if (!TRYABLE.includes(name)) throw new Error(`${name} changes things or needs a chat, so it can't be tried here`)
+    const scope: ToolScope = { collectionIds: [], knowledgeEnabled: true, skillsEnabled: false, webEnabled: true, customTools: false, workspace: folder, fileAccess: 'read', shell: false, codeIntel: false, subagents: false }
+    const tool = this.toolset({ model: { providerId: '', modelId: '' }, scope }).find((t) => t.name === name)
+    if (!tool) throw new Error(folder || !FOLDER_TOOLS.includes(name) ? `${name} isn't available` : 'Pick a folder for this tool to look in')
+    const out = await tool.execute(`try_${Date.now()}`, args)
+    return out.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n')
   }
 
   /** The tools an agent with this scope gets, without the ones switched off by name. */
@@ -499,8 +516,7 @@ export class ChatService {
     return toSession(this.row(id))
   }
 
-  create(config: Partial<SessionConfig> = {}): ChatSession {
-    const id = newId('ses_')
+  create(config: Partial<SessionConfig> = {}, id = newId('ses_')): ChatSession {
     const now = Date.now()
     const s = this.settings.get()
     // A chat started in a project begins with the project's folder and settings.
@@ -789,8 +805,9 @@ export class ChatService {
   }
 
   /** A new chat holding a finished run's conversation (an automation's result), to read and reply to. */
-  fromTranscript(input: { title: string; workspace: string | null; agentId: string | null; messages: AgentMessage[] }): ChatSession {
-    const s = this.create({ workspace: input.workspace, fileAccess: 'read' })
+  fromTranscript(input: { id?: string; title: string; workspace: string | null; agentId: string | null; messages: AgentMessage[]; container?: ContainerSettings | null }): ChatSession {
+    // A run that worked in a container hands its copy over: the chat shows its changes to apply.
+    const s = this.create({ workspace: input.workspace, fileAccess: input.container ? 'write' : 'read', container: input.container ?? null }, input.id)
     if (input.agentId && this.agents?.find(input.agentId)) this.useAgent(s.id, input.agentId)
     this.saveMessages(s.id, input.messages)
     const chat = this.update(s.id, { title: input.title.slice(0, 80), titleSource: 'user' })

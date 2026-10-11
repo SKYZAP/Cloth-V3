@@ -103,7 +103,7 @@ export function createServices(opts: {
   const containers = new ContainerService(ctx, opts.docker)
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)
-  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents })
+  const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents, containers })
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
   const tc = opts.exportToolchain ?? {}
@@ -131,7 +131,7 @@ export function createServices(opts: {
   })
 
   // An automation's result becomes a chat you can reply to, or a note in a Knowledge collection.
-  workflows.deliver = async (wf, run, transcript) => {
+  workflows.deliver = async (wf, run, transcript, chatId) => {
     const a = wf.automation
     if (!a) return null
     const text = typeof run.output === 'string' ? run.output : JSON.stringify(run.output, null, 2)
@@ -139,7 +139,8 @@ export function createServices(opts: {
       await rag.ingestText(a.collectionId, `${wf.name}, ${new Date(run.startedAt).toLocaleString()}`, text)
       return null
     }
-    if (a.deliver === 'chat' && transcript.length) return chat.fromTranscript({ title: wf.name, workspace: wf.workspace, agentId: a.agentId, messages: transcript }).id
+    const container = a.commands?.mode === 'container' ? { image: a.commands.image, network: a.commands.network } : null
+    if (a.deliver === 'chat' && transcript.length) return chat.fromTranscript({ id: chatId ?? undefined, title: wf.name, workspace: wf.workspace, agentId: a.agentId, messages: transcript, container }).id
     return null
   }
 

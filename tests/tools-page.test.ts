@@ -44,7 +44,7 @@ describe('tools page', () => {
     const notes = services.rag.createCollection({ name: 'Notes' })
     services.workflows.createAutomation({
       name: 'Morning brief',
-      automation: { prompt: 'Brief me', agentId: null, tools: ['web_search'], servers: [], collectionIds: [notes.id], skills: [], deliver: 'notify', collectionId: null }
+      automation: { prompt: 'Brief me', agentId: null, tools: ['web_search'], servers: [], collectionIds: [notes.id], skills: [], deliver: 'notify', collectionId: null, watch: null, commands: null }
     })
     const used = await api.tools.usedBy()
     expect(used.web_search).toEqual(expect.arrayContaining(['Researcher', 'Morning brief']))

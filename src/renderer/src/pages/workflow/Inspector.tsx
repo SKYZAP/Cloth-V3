@@ -6,6 +6,7 @@ import { useApp } from '@/lib/store'
 import { Button, Field, Input, Select, Switch, Textarea } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { META, type FlowNodeData } from './nodes'
+import { AccessPicker, useAccessItems, type Picked } from '../automation/Access'
 
 export function Inspector({
   type,
@@ -150,7 +151,8 @@ export function Inspector({
           {model(data.agentId ? "Model (empty = the agent's)" : undefined)}
           {template('prompt', 'Task', 6)}
           {template('system', 'Extra instructions', 3)}
-          {!data.agentId && (
+          {!!data.automation && <AutomationStepAccess data={data} onChange={onChange} />}
+          {!data.agentId && !data.automation && (
           <>
           {collectionPicker}
           <Switch checked={data.skillsEnabled !== false} onChange={(v) => onChange({ skillsEnabled: v })} label="Skills available" />
@@ -337,6 +339,31 @@ export function Inspector({
           Delete node
         </Button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * A step that came from an automation may use exactly what was picked for it: built-in and your own tools,
+ * MCP servers (or some of their tools), collections and skills. Shown with the automation screen's picker.
+ */
+function AutomationStepAccess({ data, onChange }: { data: FlowNodeData; onChange(patch: Partial<FlowNodeData>): void }) {
+  const { items } = useAccessItems()
+  const list = (v: unknown) => (Array.isArray(v) ? (v as string[]) : [])
+  const value: Picked = { tools: list(data.tools), servers: Array.isArray(data.servers) ? (data.servers as Picked['servers']) : [], collectionIds: list(data.collectionIds), skills: list(data.skills) }
+  const commands = data.commands as { mode: string; allow?: string[] } | null | undefined
+  return (
+    <div className="grid gap-2">
+      <p className="text-[11.5px] text-dim">This step came from an automation: it may use exactly what’s picked here, whoever it runs as.</p>
+      <AccessPicker items={items} value={value} onChange={(p) => onChange({ ...p })} commands={!!commands} />
+      {commands && (
+        <p className="text-[11.5px] text-dim">
+          {commands.mode === 'container' ? 'It runs commands in a container, on a copy of its folder.' : `It may run only: ${(commands.allow ?? []).join(', ')}.`}{' '}
+          <button className="text-crimson-hi hover:underline" onClick={() => onChange({ commands: undefined })}>
+            Stop it running commands
+          </button>
+        </p>
+      )}
     </div>
   )
 }
