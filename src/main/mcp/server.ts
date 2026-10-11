@@ -195,7 +195,7 @@ export class McpHost {
         logged('skill_list', args, async () => {
           const q = args.query?.toLowerCase()
           const list = (await skills.list()).filter((s) => !q || s.name.includes(q) || s.description.toLowerCase().includes(q))
-          const items = list.map((s) => ({ name: s.name, description: s.description, health: s.health?.verdict ?? 'untested', files: s.files }))
+          const items = list.map((s) => ({ name: s.name, description: s.description, health: null, files: s.files }))
           return {
             content: [{ type: 'text', text: items.map((s) => `- ${s.name}: ${s.description}`).join('\n') || 'No skills installed.' }],
             structuredContent: { skills: items }

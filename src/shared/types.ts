@@ -162,21 +162,6 @@ export interface IngestProgress {
 
 // ─── Skills ───────────────────────────────────────────────────────────────────
 
-export interface SkillEvalCase {
-  id: string
-  prompt: string
-  expectations: string[]
-}
-
-export type SkillVerdict = 'fresh' | 'stale' | 'failing' | 'redundant' | 'untested'
-
-export interface SkillHealth {
-  verdict: SkillVerdict
-  lastRunAt: number
-  lastScore: number | null
-  model: ModelRef
-}
-
 export interface SkillSource {
   registry: 'skills.sh'
   /** owner/repo/skill */
@@ -184,6 +169,39 @@ export interface SkillSource {
   hash: string | null
   installedAt: number
   url: string
+  /** How the link was made: installed through Cloth, matched from the `skills` CLI lock file, or linked by the user. Absent means 'install'. */
+  linkedBy?: 'install' | 'lock' | 'user'
+}
+
+export type SkillAuditStatus = 'pass' | 'warn' | 'fail' | 'pending' | 'unknown'
+
+/** Security audits skills.sh shows for a registry skill. */
+export interface SkillAudits {
+  fetchedAt: number
+  /** 'page' = parsed from the skill's skills.sh page; 'api' = from the audit API fallback. */
+  source: 'page' | 'api'
+  audits: { provider: string; status: SkillAuditStatus; reportUrl: string; analyzedAt?: string; alerts?: number }[]
+}
+
+/** A hub skill's link to skills.sh and whether a newer snapshot exists. */
+export interface SkillRegistryStatus {
+  linked: SkillSource | null
+  updateAvailable: boolean
+  latest: string | null
+}
+
+/** A skills.sh entry that may be where a local skill came from. */
+export interface SkillLinkCandidate {
+  id: string
+  installs: number
+  /** Every file in the snapshot equals the local file (ignoring CRLF and BOM). */
+  identical: boolean
+}
+
+export interface SkillUpdateFile {
+  path: string
+  kind: 'added' | 'changed' | 'removed'
+  diff: string
 }
 
 export interface RegistrySkill {
@@ -216,8 +234,6 @@ export interface Skill {
   dir: string
   files: string[]
   updatedAt: number
-  evals: SkillEvalCase[]
-  health: SkillHealth | null
   /** Set when the skill was installed from the skills.sh registry. */
   source: SkillSource | null
 }
@@ -277,55 +293,6 @@ export interface SkillInput {
   description: string
   body: string
   frontmatter?: Record<string, unknown>
-}
-
-export interface SkillExpectationResult {
-  expectation: string
-  pass: boolean
-  reason: string
-}
-
-export interface SkillCaseResult {
-  caseId: string
-  prompt: string
-  output: string
-  expectations: SkillExpectationResult[]
-  score: number
-  baselineOutput?: string
-  baselineScore?: number
-}
-
-export interface SkillAuditIssue {
-  severity: 'high' | 'medium' | 'low'
-  excerpt: string
-  problem: string
-  suggestion: string
-}
-
-export interface SkillRun {
-  id: string
-  skillName: string
-  kind: 'eval' | 'audit'
-  model: ModelRef
-  judge: ModelRef
-  status: 'running' | 'done' | 'error'
-  score: number | null
-  baselineScore: number | null
-  cases: SkillCaseResult[]
-  issues: SkillAuditIssue[]
-  summary: string
-  verdict: SkillVerdict
-  error: string | null
-  createdAt: number
-  finishedAt: number | null
-}
-
-export interface SkillTestInput {
-  name: string
-  model: ModelRef
-  judge?: ModelRef
-  baseline?: boolean
-  audit?: boolean
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
@@ -1205,7 +1172,7 @@ export interface DashboardStats {
     lastUsed: number
   }[]
   tools: { name: string; kind: string; calls: number; errors: number; avgMs: number | null; lastUsed: number }[]
-  skills: { name: string; uses: number; via: Record<string, number>; lastUsed: number; verdict: SkillVerdict | null }[]
+  skills: { name: string; uses: number; via: Record<string, number>; lastUsed: number }[]
   sources: { source: UsageSource; calls: number; tokens: number; cost: number }[]
   /** Model + tool calls by local hour of day, 0–23. */
   hours: number[]
@@ -1217,7 +1184,6 @@ export interface DashboardStats {
     scheduled: number
     top: { id: string; name: string; runs: number; errors: number; avgMs: number | null; lastRun: number }[]
   }
-  skillHealth: { total: number; tested: number; passing: number; failing: number; outdated: number; redundant: number }
   inventory: { providers: number; models: number; collections: number; documents: number; chunks: number; skills: number; customTools: number; workflows: number; chats: number }
   recent: { at: number; kind: 'llm' | 'embed' | 'tool' | 'skill'; source: UsageSource; label: string; detail: string; ok: boolean }[]
 }

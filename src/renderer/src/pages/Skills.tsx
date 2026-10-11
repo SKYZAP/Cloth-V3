@@ -1,29 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import clsx from 'clsx'
-import { AlertTriangle, CheckCircle2, ChevronRight, Download, ExternalLink, FileCode2, FlaskConical, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2, XCircle } from 'lucide-react'
-import type { ModelRef, RegistryPreview, RegistrySkill, Skill, SkillEvalCase, SkillRun, SkillVerdict } from '@shared/types'
+import { Download, ExternalLink, FileCode2, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2 } from 'lucide-react'
+import type { ModelRef, RegistryPreview, RegistrySkill, Skill } from '@shared/types'
 import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { bytes, compact, duration, timeAgo } from '@/lib/format'
-import { Badge, Button, Card, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Switch, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { bytes, compact, timeAgo } from '@/lib/format'
+import { Badge, Button, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Tabs, Textarea, confirmAction } from '@/components/ui'
 import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
 import { DiffView } from '@/components/DiffView'
-import { lintExpectation } from '@shared/skillEvals'
 import { SkillOverview } from './skills/Overview'
 
-const VERDICT: Record<SkillVerdict, { tone: 'ok' | 'warn' | 'crimson' | 'info' | 'dim'; label: string; help: string }> = {
-  fresh: { tone: 'ok', label: 'Fresh', help: 'Passes its evals and the audit found nothing outdated' },
-  stale: { tone: 'warn', label: 'Stale', help: 'Score dropped, below 80%, or the audit flagged high-severity outdated content' },
-  failing: { tone: 'crimson', label: 'Failing', help: 'Under 50% of expectations met with this model' },
-  redundant: { tone: 'info', label: 'Redundant', help: 'The model scores as well without the skill — it may no longer be needed' },
-  untested: { tone: 'dim', label: 'Untested', help: 'No completed test run yet' }
-}
-
-type Tab = 'overview' | 'instructions' | 'files' | 'tests'
+type Tab = 'overview' | 'instructions' | 'files'
 
 export function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
@@ -51,7 +41,7 @@ export function SkillsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEvent('skills', (e) => {
-    if (e.type === 'changed' || e.run.status !== 'running') void load(activeName ?? undefined)
+    if (e.type === 'changed') void load(activeName ?? undefined)
   })
 
   const active = skills.find((s) => s.name === activeName)
@@ -643,8 +633,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         items={[
           { value: 'overview', label: 'Overview' },
           { value: 'instructions', label: 'SKILL.md' },
-          { value: 'files', label: `Files (${skill.files.length})` },
-          { value: 'tests', label: `Examples${skill.evals.length ? ` (${skill.evals.length})` : ''}` }
+          { value: 'files', label: `Files (${skill.files.length})` }
         ]}
       />
       <div className="min-h-0 flex-1">
@@ -671,7 +660,6 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
           </div>
         )}
         {tab === 'files' && <SkillFiles skill={skill} onChanged={() => onChanged(skill.name)} />}
-        {tab === 'tests' && <SkillTests skill={skill} onChanged={() => onChanged(skill.name)} />}
       </div>
       <InstallModal open={installOpen} onClose={() => setInstallOpen(false)} skill={skill} />
       <Modal
@@ -691,7 +679,7 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
         }
       >
         <p className="mb-3 text-[12px] text-dim">
-          {update?.length ? `${update.length} file${update.length === 1 ? '' : 's'} would change. Red is what you have; green is the new version. Your examples (evals.json) are kept.` : 'Only the version number changed: the files are the same.'}
+          {update?.length ? `${update.length} file${update.length === 1 ? '' : 's'} would change. Red is what you have; green is the new version.` : 'Only the version number changed: the files are the same.'}
         </p>
         <div className="grid gap-3">
           {update?.map((f) => (
@@ -812,231 +800,6 @@ function SkillFiles({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
           <Empty title="Bundled files">Skills can ship references, scripts and templates. The agent loads them on demand with skill_use(name, file).</Empty>
         )}
       </div>
-    </div>
-  )
-}
-
-function SkillTests({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
-  const settings = useApp((s) => s.settings)
-  const [cases, setCases] = useState<SkillEvalCase[]>(skill.evals)
-  const [model, setModel] = useState<ModelRef | null>(settings?.defaultModel ?? null)
-  // Settings can arrive after this tab mounts; adopt the default model once it does.
-  useEffect(() => {
-    if (!model && settings?.defaultModel) setModel(settings.defaultModel)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.defaultModel])
-  const [judge, setJudge] = useState<ModelRef | null>(null)
-  const [baseline, setBaseline] = useState(true)
-  const [audit, setAudit] = useState(true)
-  const [runs, setRuns] = useState<SkillRun[]>([])
-  const [openRun, setOpenRun] = useState<string | null>(null)
-  const [drafting, setDrafting] = useState(false)
-  const dirty = JSON.stringify(cases) !== JSON.stringify(skill.evals)
-
-  useEffect(() => {
-    void api.skills.runs(skill.name).then((r) => {
-      setRuns(r)
-      setOpenRun(r[0]?.id ?? null)
-    })
-  }, [skill.name])
-  useEvent('skills', (e) => {
-    if (e.type !== 'run' || e.run.skillName !== skill.name) return
-    const run = e.run
-    setRuns((rs) => {
-      const i = rs.findIndex((r) => r.id === run.id)
-      if (i < 0) return [run, ...rs]
-      const next = rs.slice()
-      next[i] = run
-      return next
-    })
-  })
-
-  const saveCases = async () => {
-    await attempt(() => api.skills.saveEvals(skill.name, cases), 'Eval cases saved')
-    onChanged()
-  }
-
-  const run = async () => {
-    if (!model) return
-    if (dirty) await api.skills.saveEvals(skill.name, cases)
-    const r = await attempt(() => api.skills.test({ name: skill.name, model, judge: judge ?? undefined, baseline, audit }))
-    if (r) setOpenRun(r.id)
-  }
-
-  const running = runs.some((r) => r.status === 'running')
-
-  return (
-    <div className="grid h-full grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      {/* Cases */}
-      <div className="flex min-h-0 flex-col border-r border-line">
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <div>
-            <div className="text-[12.5px] font-semibold">Examples</div>
-            <div className="text-[11px] text-dim">Optional: prompts with what a good answer must do, graded by a model. Useful as regression checks after editing.</div>
-          </div>
-          <div className="flex gap-1.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Wand2 size={12} />}
-              loading={drafting}
-              disabled={!model}
-              title={model ? 'Draft cases with the selected model' : 'Pick a model first'}
-              onClick={async () => {
-                setDrafting(true)
-                const drafted = await attempt(() => api.skills.draftEvals(skill.name, model!))
-                setDrafting(false)
-                if (drafted) setCases((c) => [...c, ...drafted])
-              }}
-            >
-              Draft with AI
-            </Button>
-            <Button size="sm" icon={<Plus size={12} />} onClick={() => setCases((c) => [...c, { id: `case_${Date.now()}`, prompt: '', expectations: [''] }])}>
-              Case
-            </Button>
-            <Button size="sm" variant="primary" disabled={!dirty} onClick={() => void saveCases()}>
-              Save
-            </Button>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-          {!cases.length && <div className="text-[12px] text-dim">No eval cases yet. Each case is one prompt and a single reply (no tools), so expect things the reply itself can show — or draft them with AI.</div>}
-          {cases.map((c, i) => (
-            <Card key={c.id} className="p-3">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-dim">CASE {i + 1}</span>
-                <IconButton onClick={() => setCases(cases.filter((x) => x.id !== c.id))}>
-                  <Trash2 size={12} />
-                </IconButton>
-              </div>
-              <Textarea rows={2} placeholder="User prompt" value={c.prompt} onChange={(e) => setCases(cases.map((x) => (x.id === c.id ? { ...x, prompt: e.target.value } : x)))} />
-              <div className="mt-2 text-[11px] font-medium text-dim">Expectations — one per line</div>
-              <Textarea
-                rows={Math.max(2, c.expectations.length)}
-                className="mt-1 text-[12px]"
-                value={c.expectations.join('\n')}
-                onChange={(e) => setCases(cases.map((x) => (x.id === c.id ? { ...x, expectations: e.target.value.split('\n') } : x)))}
-              />
-              <ExpectationWarnings expectations={c.expectations} />
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Runner + history */}
-      <div className="flex min-h-0 flex-col">
-        <div className="space-y-3 border-b border-line p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Model under test">
-              <ModelPicker value={model} onChange={setModel} />
-            </Field>
-            <Field label="Judge model">
-              <ModelPicker value={judge} onChange={setJudge} allowNone noneLabel="Same as model under test" />
-            </Field>
-          </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <Switch checked={baseline} onChange={setBaseline} label="Baseline without skill" />
-            <Switch checked={audit} onChange={setAudit} label="Freshness audit" />
-            <div className="flex-1" />
-            <Button variant="primary" icon={<FlaskConical size={13} />} disabled={!model || running || (!cases.length && !audit)} loading={running} onClick={() => void run()}>
-              Run test
-            </Button>
-          </div>
-          <div className="text-[11px] leading-relaxed text-dim">
-            The skill is loaded as system context and each case is graded by the judge. Baseline reruns without the skill: if the model does as well, the skill is <b className="text-info">redundant</b>. The audit reviews the skill text for deprecated APIs and outdated advice.
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {!runs.length && <div className="text-[12px] text-dim">No runs yet.</div>}
-          <div className="space-y-2">
-            {runs.map((r) => (
-              <RunCard key={r.id} run={r} open={openRun === r.id} onToggle={() => setOpenRun(openRun === r.id ? null : r.id)} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RunCard({ run, open, onToggle }: { run: SkillRun; open: boolean; onToggle(): void }) {
-  const v = VERDICT[run.verdict]
-  return (
-    <Card className={clsx(run.status === 'error' && 'border-crimson-line')}>
-      <button onClick={onToggle} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
-        <ChevronRight size={13} className={clsx('text-dim transition-transform', open && 'rotate-90')} />
-        {run.status === 'running' ? <Spinner size={13} className="text-crimson" /> : run.status === 'error' ? <XCircle size={13} className="text-crimson-hi" /> : <Badge tone={v.tone}>{v.label}</Badge>}
-        <span className="font-mono text-[11.5px]">{run.model.modelId}</span>
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-dim">{run.status === 'running' ? `running… ${run.cases.length} case(s) done` : run.error ?? run.summary}</span>
-        <span className="shrink-0 text-[11px] text-dim">{run.finishedAt ? duration(run.finishedAt - run.createdAt) : timeAgo(run.createdAt)}</span>
-      </button>
-      {open && (
-        <div className="space-y-3 border-t border-line p-3">
-          {run.cases.map((c, i) => (
-            <div key={c.caseId}>
-              <div className="mb-1 flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-dim">CASE {i + 1}</span>
-                <Badge tone={c.score >= 0.8 ? 'ok' : c.score >= 0.5 ? 'warn' : 'crimson'}>{Math.round(c.score * 100)}%</Badge>
-                {c.baselineScore !== undefined && <Badge tone="dim">baseline {Math.round(c.baselineScore * 100)}%</Badge>}
-              </div>
-              <div className="mb-1.5 text-[12px] text-muted">{c.prompt}</div>
-              <div className="space-y-1">
-                {c.expectations.map((e, j) => (
-                  <div key={j} className="flex gap-2 text-[11.5px]">
-                    {e.pass ? <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-ok" /> : <XCircle size={13} className="mt-0.5 shrink-0 text-crimson-hi" />}
-                    <div>
-                      <div>{e.expectation}</div>
-                      <div className="text-dim">{e.reason}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <details className="mt-1.5">
-                <summary className="cursor-default text-[11px] text-dim hover:text-muted">Model output</summary>
-                <div className="mt-1 max-h-72 overflow-y-auto rounded border border-line bg-bg p-2.5">
-                  <Markdown text={c.output} />
-                </div>
-              </details>
-            </div>
-          ))}
-          {run.issues.length > 0 && (
-            <div>
-              <div className="mb-1.5 text-[11px] font-semibold text-dim">AUDIT FINDINGS</div>
-              <div className="space-y-1.5">
-                {run.issues.map((i, k) => (
-                  <div key={k} className="rounded-md border border-line bg-bg p-2.5 text-[11.5px]">
-                    <div className="mb-1 flex items-center gap-2">
-                      <Badge tone={i.severity === 'high' ? 'crimson' : i.severity === 'medium' ? 'warn' : 'dim'}>{i.severity}</Badge>
-                      {i.excerpt && <code className="truncate font-mono text-[11px] text-muted">“{i.excerpt}”</code>}
-                    </div>
-                    <div>{i.problem}</div>
-                    {i.suggestion && <div className="mt-0.5 text-ok">→ {i.suggestion}</div>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {run.status === 'done' && !run.issues.length && run.kind === 'audit' && <div className="text-[12px] text-ok">Audit found nothing outdated.</div>}
-        </div>
-      )}
-    </Card>
-  )
-}
-
-/** Expectations that a single text reply can't show (or that graders would disagree on). */
-function ExpectationWarnings({ expectations }: { expectations: string[] }) {
-  const issues = expectations.map((e, i) => ({ i, e, issues: lintExpectation(e) })).filter((x) => x.issues.length)
-  if (!issues.length) return null
-  return (
-    <div className="mt-2 space-y-1">
-      {issues.map((x) => (
-        <div key={x.i} className="flex gap-1.5 text-[11px] leading-snug text-warn">
-          <AlertTriangle size={12} className="mt-px shrink-0" />
-          <span>
-            <span className="font-semibold">Line {x.i + 1}:</span> {x.issues[0].message}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }
