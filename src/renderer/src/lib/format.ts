@@ -35,6 +35,19 @@ export function compact(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`
 }
 
+/** Token counts for reply footers: 950, 1.2k, 48k, 1.3M. */
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 10_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  if (n < 999_500) return `${Math.round(n / 1000)}k`
+  return `${(n / 1_000_000).toFixed(1)}M`
+}
+
+/** USD: four decimals under a cent, so tiny local-ish costs don't read as $0.00. */
+export function formatCost(usd: number): string {
+  return `$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)}`
+}
+
 export function preview(value: unknown, max = 160): string {
   const s = typeof value === 'string' ? value : JSON.stringify(value)
   if (!s) return ''

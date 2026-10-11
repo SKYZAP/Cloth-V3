@@ -677,8 +677,11 @@ export type UiBlock =
   | { type: 'tool'; trace: ToolTrace }
 
 export interface UiUsage {
+  /** New (uncached) input tokens. */
   input: number
   output: number
+  /** Input tokens read from the provider's cache. */
+  cached?: number
   cost: number
 }
 
@@ -726,6 +729,8 @@ export interface ContextUsage {
   threshold: number | null
   /** What the tokens are spent on (estimates, scaled to `tokens`). */
   breakdown: ContextSlice[]
+  /** USD spent in this chat so far, including agents it handed work to. */
+  cost: number
 }
 
 export type ContextSliceKey = 'system' | 'tools' | 'skills' | 'summary' | 'user' | 'assistant' | 'toolResults'

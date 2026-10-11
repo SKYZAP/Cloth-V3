@@ -81,6 +81,16 @@ export class UsageService {
     this.insert({ kind: 'skill', name, detail: via })
   }
 
+  /** USD spent under one origin so far, e.g. a chat with everything it delegated. */
+  costFor(source: UsageSource, ref: string): number {
+    try {
+      const row = this.ctx.db.prepare('SELECT COALESCE(SUM(cost), 0) AS cost FROM usage_events WHERE source = ? AND ref = ?').get(source, ref) as { cost: number }
+      return row.cost
+    } catch {
+      return 0
+    }
+  }
+
   /** Record every assistant message an agent produces, with its latency. */
   track(agent: Agent): void {
     let started = 0

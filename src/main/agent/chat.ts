@@ -653,7 +653,7 @@ export class ChatService {
     const breakdown: ContextSlice[] = (Object.keys(SLICE_LABELS) as ContextSliceKey[])
       .map((key) => ({ key, label: SLICE_LABELS[key], tokens: Math.round(parts[key] * scale) }))
       .filter((s) => s.tokens > 0)
-    return { tokens, window, estimated: session.model ? this.contextEstimated(session.model) : false, threshold: window ? budget(window).threshold : null, breakdown }
+    return { tokens, window, estimated: session.model ? this.contextEstimated(session.model) : false, threshold: window ? budget(window).threshold : null, breakdown, cost: this.usage?.costFor('chat', id) ?? 0 }
   }
 
   /**
@@ -1118,7 +1118,7 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
     if (m.role !== 'assistant') continue
     const a = m as AssistantMessage
     if (!turn) {
-      turn = { id: `m${a.timestamp}`, role: 'assistant', blocks: [], createdAt: a.timestamp, model: a.model, usage: { input: 0, output: 0, cost: 0 } }
+      turn = { id: `m${a.timestamp}`, role: 'assistant', blocks: [], createdAt: a.timestamp, model: a.model, usage: { input: 0, output: 0, cached: 0, cost: 0 } }
       out.push(turn)
     }
     for (const block of a.content) {
@@ -1147,6 +1147,7 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
     if (a.usage) {
       turn.usage!.input += a.usage.input
       turn.usage!.output += a.usage.output
+      turn.usage!.cached = (turn.usage!.cached ?? 0) + (a.usage.cacheRead ?? 0)
       turn.usage!.cost += a.usage.cost?.total ?? 0
     }
     if (a.stopReason === 'error') turn.error = a.errorMessage || 'The model returned an error'
