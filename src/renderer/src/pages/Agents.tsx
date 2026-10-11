@@ -11,7 +11,7 @@ import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
 
 /** Two letters for an agent's tile. */
-const initials = (name: string) =>
+export const initials = (name: string) =>
   name
     .split(/\s+/)
     .filter(Boolean)

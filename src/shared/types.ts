@@ -672,6 +672,8 @@ export interface UiMessage {
   error?: string
   /** Skills the user invoked with /name for this message. */
   skills?: string[]
+  /** Saved agents the user tagged with @name for this message (their names). */
+  agents?: string[]
   /** Files and images the user attached to this message. */
   attachments?: UiAttachment[]
   /** Set on the first message after a compaction: the summary of everything before it. */

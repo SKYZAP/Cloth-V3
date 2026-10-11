@@ -177,7 +177,7 @@ export function createApi(s: Services): ClothApi {
         s.chat.remove(id)
       },
       messages: async (id) => s.chat.messages(id),
-      send: (id, text, skills, attachments) => s.chat.send(id, text, skills ?? [], attachments ?? []),
+      send: (id, text, skills, attachments, agents) => s.chat.send(id, text, skills ?? [], attachments ?? [], agents ?? []),
       resend: (id, messageId) => s.chat.resend(id, messageId),
       abort: async (id) => s.chat.abort(id),
       rewind: async (id, messageId) => s.chat.rewind(id, messageId),

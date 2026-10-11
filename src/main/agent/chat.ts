@@ -4,6 +4,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
 import type { ContainerSettings, GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
+import { agentSlug } from '@shared/mention'
 import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
 import { ROLE_BUILTINS, type AgentService } from './agents'
@@ -69,6 +70,10 @@ export function cleanTitle(raw: string): string {
 
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
+const AGENT_OPEN = '<agent-mention name="'
+const AGENT_CLOSE = '</agent-mention>'
+/** Blocks the user message carries for the model only (never shown as the user's text). */
+const hidden = (text: string) => text.startsWith(SKILL_OPEN) || text.startsWith(AGENT_OPEN) || text.startsWith(FILE_OPEN)
 
 type SessionConfig = Omit<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt'>
 
@@ -162,7 +167,7 @@ export class AgentRuntime {
   }
 
   /** Saved agents other agents may hand work to by name. */
-  private delegates(self?: string | null): SavedAgent[] {
+  delegates(self?: string | null): SavedAgent[] {
     return (this.ws.agents?.list() ?? []).filter((a) => (!a.builtin || !ROLE_BUILTINS.includes(a.builtin)) && a.id !== self)
   }
 
@@ -762,10 +767,10 @@ export class ChatService {
     return this.messages(id)
   }
 
-  /** Build the user message; skills invoked with /name and attached files ride along as tagged blocks. */
-  private async userMessage(text: string, skillNames: string[], attachments: ChatAttachment[] = []): Promise<UserMessage> {
+  /** Build the user message; skills invoked with /name, agents tagged with @name and attached files ride along as tagged blocks. */
+  private async userMessage(text: string, skillNames: string[], attachments: ChatAttachment[] = [], agents: SavedAgent[] = []): Promise<UserMessage> {
     const attached = await attachmentContent(attachments)
-    if (!skillNames.length && !attached.length) return { role: 'user', content: text, timestamp: Date.now() }
+    if (!skillNames.length && !attached.length && !agents.length) return { role: 'user', content: text, timestamp: Date.now() }
     const blocks: (TextContent | ImageContent)[] = []
     for (const name of [...new Set(skillNames)]) {
       const skill = await this.skills.get(name)
@@ -780,6 +785,14 @@ export class ChatService {
         this.skills.instructions(skill),
         ...(extra.length ? ['', `Bundled files (load with skill_use + file): ${extra.join(', ')}`] : []),
         SKILL_CLOSE
+      ]
+      blocks.push({ type: 'text', text: lines.join('\n') })
+    }
+    for (const agent of agents) {
+      const lines = [
+        `${AGENT_OPEN}${agent.name.replace(/"/g, '&quot;')}">`,
+        `The user tagged @${agentSlug(agent.name)}. Hand this request to the ${agent.name} agent now with the task tool (agent: "${agent.name}"), giving it the user's request and the context it needs (files, folder, earlier findings). When it finishes, relay its findings; don't redo its work yourself.`,
+        AGENT_CLOSE
       ]
       blocks.push({ type: 'text', text: lines.join('\n') })
     }
@@ -889,11 +902,14 @@ export class ChatService {
     }
   }
 
-  async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = []): Promise<void> {
+  async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = [], agentNames: string[] = []): Promise<void> {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
-    const message = await this.userMessage(text, skillNames, attachments)
+    // Tagged agents that are gone (or can't take work from this chat) are dropped; the text stays as written.
+    const delegates = this.runtime.delegates(this.get(id).agentId)
+    const agents = [...new Set(agentNames.map((n) => n.toLowerCase()))].map((n) => delegates.find((a) => a.name.toLowerCase() === n)).filter((a): a is SavedAgent => !!a)
+    const message = await this.userMessage(text, skillNames, attachments, agents)
     const names = attachments.map((a) => a.name).join(', ')
-    const title = (text.trim() ? text : skillNames.length ? skillNames.map((n) => `/${n}`).join(' ') : names).replace(/\s+/g, ' ').trim().slice(0, 60)
+    const title = (text.trim() ? text : skillNames.length ? skillNames.map((n) => `/${n}`).join(' ') : agents.length ? agents.map((a) => `@${agentSlug(a.name)}`).join(' ') : names).replace(/\s+/g, ' ').trim().slice(0, 60)
     await this.run(id, message, title)
     for (const name of new Set(skillNames)) this.usage?.skill(name, 'slash')
   }
@@ -912,6 +928,8 @@ export class ChatService {
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
     const scope = await this.runScope(id)
+    // A message tagging an agent hands it the work with `task`, even in a chat that doesn't use subagents otherwise.
+    if (typeof prepared.content !== 'string' && prepared.content.some((c) => c.type === 'text' && c.text.startsWith(AGENT_OPEN))) scope.subagents = true
     // External MCP servers this chat uses: started on demand so their tools are there for the agent.
     const mcp = this.runtime.mcpClients
     if (mcp) {
@@ -1015,7 +1033,7 @@ export class ChatService {
     const raw = this.rawMessages(id)
     const said = (m: AgentMessage) => {
       const c = (m as { content?: unknown }).content
-      const parts = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN) && !String(b.text).startsWith(FILE_OPEN)).map((b) => String(b.text)) : []
+      const parts = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((b) => b?.type === 'text' && !hidden(String(b.text))).map((b) => String(b.text)) : []
       return parts.join('\n').replace(/\s+/g, ' ').trim()
     }
     const users = raw.filter((m) => m.role === 'user').map(said).filter(Boolean)
@@ -1078,7 +1096,7 @@ export function previewOf(messages: AgentMessage[]): string {
     if (typeof c === 'string') return c
     if (!Array.isArray(c)) return ''
     return c
-      .filter((b) => b?.type === 'text' && !String(b.text).startsWith(SKILL_OPEN) && !String(b.text).startsWith(FILE_OPEN) && !String(b.text).startsWith(SUMMARY_OPEN))
+      .filter((b) => b?.type === 'text' && !hidden(String(b.text)) && !String(b.text).startsWith(SUMMARY_OPEN))
       .map((b) => String(b.text))
       .join(' ')
   }
@@ -1109,8 +1127,9 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
   for (const m of messages) {
     if (m.role === 'user') {
       turn = null
-      // Skill blocks from /name invocations become chips; only the user's own text is shown.
+      // Skill blocks from /name invocations and agent blocks from @name tags are listed; only the user's own text is shown.
       const skills: string[] = []
+      const agents: string[] = []
       const parts: string[] = []
       const attachments: UiAttachment[] = []
       let summary: string | undefined
@@ -1119,9 +1138,10 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
         else if (c.text.startsWith(FILE_OPEN)) attachments.push(parseFileBlock(c.text)!)
         else if (c.text.startsWith(SUMMARY_OPEN)) summary = splitSummary({ role: 'user', content: [c], timestamp: 0 }).summary ?? ''
         else if (c.text.startsWith(SKILL_OPEN)) skills.push(c.text.slice(SKILL_OPEN.length, c.text.indexOf('"', SKILL_OPEN.length)))
+        else if (c.text.startsWith(AGENT_OPEN)) agents.push(c.text.slice(AGENT_OPEN.length, c.text.indexOf('"', AGENT_OPEN.length)).replace(/&quot;/g, '"'))
         else parts.push(c.text)
       }
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}) })
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(agents.length ? { agents } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue
