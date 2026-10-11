@@ -12,7 +12,8 @@ import { ProjectService } from './agent/projects'
 import { AgentService } from './agent/agents'
 import { SkillInsights } from './skills/insights'
 import { DesignService } from './design/designs'
-import { ContainerService, type DockerRun } from './agent/containers'
+import { ContainerService, dockerCli, type DockerRun } from './agent/containers'
+import { PortService, dockerSpawn, type DockerSpawn } from './agent/ports'
 import { PanelService } from './panel/panel'
 import { McpClientService } from './mcp/client'
 import { TerminalService } from './panel/terminals'
@@ -45,6 +46,7 @@ export interface Services {
   agents: AgentService
   projects: ProjectService
   containers: ContainerService
+  ports: PortService
   mcpClients: McpClientService
   panel: PanelService
   designs: DesignService
@@ -69,6 +71,8 @@ export function createServices(opts: {
   exportToolchain?: Partial<ExportToolchain>
   /** How the docker CLI is run (tests pass a stand-in). */
   docker?: DockerRun
+  /** How `docker exec -i` streams are started for port forwarding (tests pass a stand-in). */
+  dockerSpawn?: DockerSpawn
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -101,6 +105,9 @@ export function createServices(opts: {
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)
+  const ports = new PortService(ctx, opts.docker ?? dockerCli(), opts.dockerSpawn ?? dockerSpawn())
+  // A stand-in docker without a stand-in spawn (tests): no port forwarding.
+  if (!opts.docker || opts.dockerSpawn) containers.watcher = ports
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers), containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents, containers })
@@ -146,5 +153,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
 }

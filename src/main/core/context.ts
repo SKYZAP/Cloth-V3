@@ -8,7 +8,7 @@ export interface Secrets {
   decrypt(data: Uint8Array): string
 }
 
-export type EventChannel = 'chat' | 'workflow' | 'ingest' | 'mcp' | 'skills' | 'tools' | 'web' | 'remote' | 'export' | 'terminal' | 'mcpClients' | 'agents' | 'mcpCalls'
+export type EventChannel = 'chat' | 'workflow' | 'ingest' | 'mcp' | 'skills' | 'tools' | 'web' | 'remote' | 'export' | 'terminal' | 'mcpClients' | 'agents' | 'mcpCalls' | 'containers'
 
 export interface Ctx {
   db: Db
