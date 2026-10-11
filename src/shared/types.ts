@@ -1332,9 +1332,15 @@ export interface McpClientConfig {
   id: string
   /** Short name; also the prefix of its tools (mcp__name__tool). */
   name: string
+  /** How Cloth reaches it: a program it starts (stdio, the default) or a server at a web address (HTTP). */
+  transport?: 'stdio' | 'http'
+  /** stdio: the program and its arguments. */
   command: string
   args: string[]
   env: Record<string, string>
+  /** http: the server's address, and headers sent with every request (e.g. Authorization). */
+  url?: string
+  headers?: Record<string, string>
   /** Connect at all. */
   enabled: boolean
   /** Available in chats that haven't chosen their servers. */

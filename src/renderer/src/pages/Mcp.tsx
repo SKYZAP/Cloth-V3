@@ -114,7 +114,15 @@ export function McpPage() {
                   </button>
                 )
               })}
-              {!servers.configs.length && <p className="rounded-[12px] border border-dashed border-line px-3.5 py-3 text-[12.5px] text-dim">No servers yet. Playwright lets chats open pages in a real browser and check the UI they build.</p>}
+              {!servers.configs.length && <p className="px-0.5 text-[12.5px] text-dim">No servers yet. Playwright lets chats open pages in a real browser and check the UI they build.</p>}
+              <button
+                onClick={() => setOpen({ kind: 'add' })}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-[12px] border border-dashed border-line-strong px-3.5 py-2.5 text-[13px] text-muted transition-colors hover:border-muted/50 hover:bg-elev hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson-line"
+              >
+                <Plus size={14} aria-hidden="true" />
+                Add server
+                <span className="text-[12px] text-dim">a program or a web address</span>
+              </button>
               <div className="flex flex-wrap gap-2">
                 {servers.unused.map((p) => (
                   <Button key={p.name} size="sm" icon={<Plus size={12} />} onClick={() => void addPreset(p)}>
@@ -235,7 +243,7 @@ export function McpPage() {
                 </div>
               )}
               <div className="grid gap-2">
-                <h3 className="text-[12px] font-medium text-muted">Any MCP server that runs as a command</h3>
+                <h3 className="text-[12px] font-medium text-muted">Any MCP server: a program Cloth starts, or one at a web address</h3>
                 <ServerForm onSave={(c) => void servers.add(c).then((id) => setOpen({ kind: 'server', id }))} onCancel={close} />
               </div>
             </div>
