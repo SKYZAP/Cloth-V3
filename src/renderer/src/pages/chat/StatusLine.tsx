@@ -7,6 +7,7 @@ import type { AutoApprove, ChatSession, ContainerStatus, ContextUsage, Project, 
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
+import { formatCost } from '@/lib/format'
 import { Button } from '@/components/ui'
 import { ModelMenu } from '@/components/ModelPicker'
 import { ContextMeter } from '@/components/Planning'
@@ -60,6 +61,11 @@ export function StatusLine({ session, update, usage, compacting, onCompact }: { 
         {(close) => <ModelEffortMenu session={session} update={update} reasoning={!!model?.reasoning} onPicked={close} />}
       </StatusButton>
       <div className="flex-1" />
+      {usage && usage.cost > 0 && (
+        <span className="hidden shrink-0 whitespace-nowrap px-1 text-[12px] tabular-nums text-dim @[420px]:inline" title="Spent in this chat so far, including agents it handed work to">
+          {formatCost(usage.cost)}
+        </span>
+      )}
       <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} />
     </div>
   )

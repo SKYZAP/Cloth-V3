@@ -23,7 +23,7 @@ import {
   Trash,
   type Icon
 } from '@phosphor-icons/react'
-import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage } from '@shared/types'
+import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
@@ -36,6 +36,7 @@ import { QuestionCard } from '@/components/QuestionCard'
 import { latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
+import { formatCost, formatTokens } from '@/lib/format'
 import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
@@ -1196,10 +1197,9 @@ function AssistantTurn({
         {message.error && <div className="mt-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
         {!streaming && (
           <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
-            {message.model && (
-              <span title={message.usage && message.usage.input + message.usage.output > 0 ? `${message.usage.input.toLocaleString()} tokens sent (new, not cached) · ${message.usage.output.toLocaleString()} written` : undefined}>{message.model}</span>
-            )}
-            {message.usage && message.usage.cost > 0 && <span title="Cost of this reply">${message.usage.cost < 0.01 ? message.usage.cost.toFixed(4) : message.usage.cost.toFixed(2)}</span>}
+            {message.model && <span>{message.model}</span>}
+            {message.usage && message.usage.input + message.usage.output > 0 && <TokenCounts usage={message.usage} />}
+            {message.usage && message.usage.cost > 0 && <span title="Cost of this reply">{formatCost(message.usage.cost)}</span>}
             {allRefs.length > 0 && (
               <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted transition-colors hover:text-fg">
                 <Books size={13} /> {allRefs.length} sources
@@ -1242,6 +1242,18 @@ function AssistantTurn({
         </AnimatePresence>
       </div>
     </motion.div>
+  )
+}
+
+/** Tokens read and written by one reply; read counts cached input too. */
+function TokenCounts({ usage }: { usage: UiUsage }) {
+  const cached = usage.cached ?? 0
+  const read = usage.input + cached
+  const title = `${read.toLocaleString()} tokens read${cached ? ` (${usage.input.toLocaleString()} new, ${cached.toLocaleString()} cached)` : ''} · ${usage.output.toLocaleString()} written`
+  return (
+    <span className="tabular-nums" title={title}>
+      {formatTokens(read)} in, {formatTokens(usage.output)} out
+    </span>
   )
 }
 
