@@ -4,7 +4,9 @@ import { Trash } from '@phosphor-icons/react'
 import type { McpClientConfig, McpClientStatus } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Button, Input, Segmented, Switch, confirmAction } from '@/components/ui'
+import { Button, Segmented, Switch, confirmAction } from '@/components/ui'
+import { Editor } from '@/components/Editor'
+import { mcpServerJson, parseMcpServers, type McpServerEntry } from '@shared/mcp-config'
 
 const newId = () => `mcs_${Math.random().toString(36).slice(2, 10)}`
 export const STATE: Record<McpClientStatus['state'], { label: string; dot: string }> = {
@@ -14,23 +16,10 @@ export const STATE: Record<McpClientStatus['state'], { label: string; dot: strin
   error: { label: 'Failed', dot: 'bg-crimson' }
 }
 
-/** Split a command line into words, keeping "quoted parts" together. */
-function words(s: string): string[] {
-  return [...s.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3])
-}
 const quote = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
 /** What a server is: its command line, or its address for a server reached over HTTP. */
 export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args' | 'transport' | 'url'>) => (c.transport === 'http' ? (c.url ?? '') : [c.command, ...c.args].map(quote).join(' '))
 
-const lines = (o: Record<string, string> | undefined, sep: string) => Object.entries(o ?? {}).map(([k, v]) => `${k}${sep}${v}`).join('\n')
-function parseLines(text: string, sep: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const l of text.split('\n')) {
-    const i = l.indexOf(sep)
-    if (i > 0) out[l.slice(0, i).trim()] = l.slice(i + sep.length).trim()
-  }
-  return out
-}
 
 /** External MCP servers Cloth connects to (configs live in settings), with their live status. */
 export function useExternalServers() {
@@ -119,7 +108,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
       </div>
       <div className="grid gap-2">
         <h3 className="text-[12px] font-medium text-muted">Connection</h3>
-        <ServerForm initial={c} onSave={(next) => servers.patch(c.id, next)} />
+        <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
       </div>
       <div className="grid gap-2">
         <h3 className="text-[12px] font-medium text-muted">Tools{st?.state === 'ready' ? ` (${st.tools.length})` : ''}</h3>
@@ -147,93 +136,54 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
   )
 }
 
-/** A server's name and how Cloth reaches it: a program it starts (stdio) or a web address (HTTP). */
-export function ServerForm({ initial, onSave, onCancel }: { initial?: McpClientConfig; onSave(c: Omit<McpClientConfig, 'id'>): void; onCancel?(): void }) {
-  const [kind, setKind] = useState<'stdio' | 'http'>(initial?.transport ?? 'stdio')
-  const [name, setName] = useState(initial?.name ?? '')
-  const [line, setLine] = useState(initial && initial.transport !== 'http' ? commandLine(initial) : '')
-  const [env, setEnv] = useState(lines(initial?.env, '='))
-  const [url, setUrl] = useState(initial?.url ?? '')
-  const [headers, setHeaders] = useState(lines(initial?.headers, ': '))
-  // Follow changes made elsewhere (another window, the phone, an import).
-  useEffect(() => {
-    if (!initial) return
-    setKind(initial.transport ?? 'stdio')
-    setName(initial.name)
-    setLine(initial.transport !== 'http' ? commandLine(initial) : '')
-    setEnv(lines(initial.env, '='))
-    setUrl(initial.url ?? '')
-    setHeaders(lines(initial.headers, ': '))
-  }, [initial?.name, initial?.transport, initial?.command, initial?.args.join('\u0000'), JSON.stringify(initial?.env), initial?.url, JSON.stringify(initial?.headers)])
-  const parsed = words(line)
-  const urlOk = /^https?:\/\/\S+$/i.test(url.trim())
-  const valid = /^[a-zA-Z0-9_-]{1,32}$/.test(name) && (kind === 'http' ? urlOk : parsed.length > 0)
-  const dirty =
-    !initial ||
-    name !== initial.name ||
-    kind !== (initial.transport ?? 'stdio') ||
-    (kind === 'http' ? url !== (initial.url ?? '') || headers !== lines(initial.headers, ': ') : line !== commandLine(initial) || env !== lines(initial.env, '='))
-  const submit = () => {
-    if (!valid) return
-    const base = { name, enabled: initial?.enabled ?? true, defaultOn: initial?.defaultOn ?? false, approval: initial?.approval ?? ('ask' as const) }
-    if (kind === 'http') onSave({ ...base, transport: 'http', url: url.trim(), headers: parseLines(headers, ':'), command: '', args: [], env: {} })
-    else onSave({ ...base, transport: 'stdio', command: parsed[0], args: parsed.slice(1), env: parseLines(env, '=') })
+const EXAMPLE = `{
+  "playwright": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["@playwright/mcp@latest"]
   }
-  const field = 'resize-none rounded-[10px] border border-line bg-panel px-3 py-1.5 font-mono text-[12px] outline-none placeholder:text-dim focus:border-crimson-line'
+}`
+
+/**
+ * A server as standard JSON, the way Claude Desktop, Cursor and VS Code write it: a program
+ * (`"type": "stdio"`, command, args, env) or a web address (`"type": "http"`, url, headers).
+ * Adding takes one server or several pasted at once, including a whole "mcpServers" block.
+ */
+export function ServerForm({ initial, taken, onSave, onCancel }: { initial?: McpClientConfig; taken: string[]; onSave(servers: McpServerEntry[]): void; onCancel?(): void }) {
+  const saved = initial ? mcpServerJson(initial) : ''
+  const [text, setText] = useState(saved)
+  // Follow changes made elsewhere (another window, the phone, an import).
+  useEffect(() => setText(saved), [saved])
+  const parsed = parseMcpServers(text)
+  const clash = parsed.servers.find((x) => taken.includes(x.name))
+  const error = !text.trim() ? null : (parsed.error ?? (clash ? `There’s already a server called “${clash.name}”. Pick another name.` : initial && parsed.servers.length > 1 ? 'Edit one server here. Add the others with Add server.' : null))
+  const valid = !!text.trim() && !error
+  const dirty = text !== saved
+  const tidy = () => {
+    try {
+      const src = text.trim().startsWith('"') ? `{${text.trim().replace(/,\s*$/, '')}}` : text
+      setText(JSON.stringify(JSON.parse(src), null, 2))
+    } catch {
+      /* not JSON yet: leave it as written */
+    }
+  }
+  const kinds = parsed.servers.map((x) => `${x.name} (${x.transport === 'http' ? 'web address' : 'program'})`)
   return (
     <div className="grid gap-2">
-      <div role="radiogroup" aria-label="How Cloth reaches it" className="grid grid-cols-2 gap-2">
-        {(
-          [
-            ['stdio', 'A program', 'Cloth starts it on this computer (npx, uvx, docker…)'],
-            ['http', 'A web address', 'A server already running, here or online (HTTP)']
-          ] as const
-        ).map(([k, label, sub]) => (
-          <button
-            key={k}
-            role="radio"
-            aria-checked={kind === k}
-            onClick={() => setKind(k)}
-            className={clsx('grid content-start gap-0.5 rounded-[10px] border px-3 py-2 text-left', kind === k ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
-          >
-            <span className="text-[12.5px] font-semibold">{label}</span>
-            <span className="text-[11.5px] text-dim">{sub}</span>
-          </button>
-        ))}
+      <div className="h-[220px] overflow-hidden rounded-[10px] border border-line bg-bg focus-within:border-crimson-line" onBlur={tidy}>
+        <Editor value={text} onChange={setText} lang="json" placeholder={EXAMPLE} />
       </div>
-      <div className="grid gap-2 sm:grid-cols-[160px_1fr]">
-        <Input value={name} onChange={(e) => setName(e.target.value.replace(/\s+/g, '-'))} placeholder="name" aria-label="Server name" spellCheck={false} className="h-8 font-mono text-[12px]" />
-        {kind === 'http' ? (
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/mcp" aria-label="Server address" spellCheck={false} autoComplete="off" className="h-8 font-mono text-[12px]" />
+      <div aria-live="polite" className="min-h-4 text-[11.5px]">
+        {error ? (
+          <span className="text-crimson-hi">{error}</span>
+        ) : valid && !initial ? (
+          <span className="text-dim">Adds {kinds.join(', ')}.</span>
         ) : (
-          <Input value={line} onChange={(e) => setLine(e.target.value)} placeholder="npx -y @playwright/mcp@latest" aria-label="Command" spellCheck={false} className="h-8 font-mono text-[12px]" />
+          <span className="text-dim">
+            A program: <code className="font-mono">{'"type": "stdio"'}</code> with <code className="font-mono">command</code>, <code className="font-mono">args</code> and <code className="font-mono">env</code>. A web address: <code className="font-mono">{'"type": "http"'}</code> with <code className="font-mono">url</code> and <code className="font-mono">headers</code>. Paste a whole <code className="font-mono">mcpServers</code> block to add several.
+          </span>
         )}
       </div>
-      {kind === 'http' ? (
-        <>
-          <textarea
-            value={headers}
-            onChange={(e) => setHeaders(e.target.value)}
-            rows={Math.max(1, Math.min(4, headers.split('\n').length))}
-            placeholder="Headers, one per line (optional), e.g. Authorization: Bearer <token>"
-            aria-label="Headers"
-            spellCheck={false}
-            className={field}
-          />
-          {url.trim() && !urlOk && <p className="text-[11.5px] text-warn">Give the full address, starting with https:// (or http:// on this computer).</p>}
-          <p className="text-[11.5px] text-dim">Cloth tries Streamable HTTP first, then the older HTTP + SSE transport. Headers are saved with Cloth’s settings on this computer.</p>
-        </>
-      ) : (
-        <textarea
-          value={env}
-          onChange={(e) => setEnv(e.target.value)}
-          rows={Math.max(1, Math.min(4, env.split('\n').length))}
-          placeholder="Environment variables, one KEY=value per line (optional)"
-          aria-label="Environment variables"
-          spellCheck={false}
-          className={field}
-        />
-      )}
       {dirty && (
         <div className="flex justify-end gap-2">
           {onCancel && (
@@ -241,8 +191,13 @@ export function ServerForm({ initial, onSave, onCancel }: { initial?: McpClientC
               Cancel
             </Button>
           )}
-          <Button size="sm" variant="primary" disabled={!valid} onClick={submit}>
-            {initial ? 'Save' : 'Add server'}
+          {initial && (
+            <Button size="sm" variant="ghost" onClick={() => setText(saved)}>
+              Undo changes
+            </Button>
+          )}
+          <Button size="sm" variant="primary" disabled={!valid} onClick={() => onSave(parsed.servers)}>
+            {initial ? 'Save' : parsed.servers.length > 1 ? `Add ${parsed.servers.length} servers` : 'Add server'}
           </Button>
         </div>
       )}
