@@ -29,6 +29,7 @@ import { ImageService } from './images'
 import { RemoteHost } from './remote/server'
 import { FlowExporter, type ExportToolchain } from './export/exporter'
 import { existsSync } from 'node:fs'
+import { RunService, type RunDeps } from './run/run'
 
 export interface Services {
   ctx: Ctx
@@ -57,6 +58,7 @@ export interface Services {
   images: ImageService
   remote: RemoteHost
   exporter: FlowExporter
+  runs: RunService
 }
 
 export function createServices(opts: {
@@ -73,6 +75,8 @@ export function createServices(opts: {
   docker?: DockerRun
   /** How `docker exec -i` streams are started for port forwarding (tests pass a stand-in). */
   dockerSpawn?: DockerSpawn
+  /** How local model runners spawn, fetch and probe (tests pass stand-ins). */
+  run?: Partial<RunDeps>
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -88,6 +92,7 @@ export function createServices(opts: {
   }
   const settings = new SettingsService(ctx)
   const providers = new ProviderService(ctx)
+  const runs = new RunService(ctx, providers, opts.run)
   const web = new WebService(ctx, settings)
   const rag = new RagService(ctx, providers, settings, () => (web.obscura.path() ? (url, signal) => web.obscura.renderHtml(url, signal) : null))
   const examples = new ExamplesService(ctx, rag, settings)
@@ -153,5 +158,5 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs }
 }

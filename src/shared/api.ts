@@ -251,6 +251,35 @@ export interface ClothApi {
     /** The instructions with a change applied (not saved). */
     rewrite(instructions: string, request: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<string>
   }
+  /** Run page: local models served by llama.cpp's llama-server. Events arrive on the 'runs' channel. */
+  runs: {
+    /** Every runner; the built-in Bonsai runner first (its paths filled in when found on disk). */
+    list(): Promise<import('./types').Runner[]>
+    status(): Promise<import('./types').RunnerStatus[]>
+    create(input: import('./types').RunnerInput): Promise<import('./types').Runner>
+    /** Server settings apply on the next start; name, alias and "use in chats" at once. */
+    update(id: string, patch: import('./types').RunnerPatch): Promise<import('./types').Runner>
+    /** Stops it first. The built-in runner can't be removed. */
+    remove(id: string): Promise<void>
+    /** Returns at once ('starting', or 'error' with a reason); 'running' arrives as a status event once /health is ok. */
+    start(id: string): Promise<import('./types').RunnerStatus>
+    stop(id: string): Promise<import('./types').RunnerStatus>
+    /** The last ~2000 lines of llama-server output (kept after it stops). */
+    logs(id: string): Promise<string[]>
+    /** `llama-server --list-devices` for this runner's server. */
+    devices(id: string): Promise<import('./types').RunDevice[]>
+    /** PrismML's llama.cpp and the Bonsai model on this PC. */
+    detect(): Promise<import('./types').RunDetection>
+    /** PrismML's latest Windows builds with sizes (reads GitHub; nothing is downloaded). */
+    runtimeOptions(): Promise<import('./types').RuntimeOptions>
+    /** Download and unpack a build, then set the runner's serverPath. Progress: 'progress' events (kind 'runtime'). */
+    downloadRuntime(id: string, backend: import('./types').RuntimeBackend): Promise<import('./types').Runner>
+    /** Bonsai's files on Hugging Face with sizes and what's already downloaded (HEAD only). */
+    modelDownloadInfo(): Promise<import('./types').ModelDownloadInfo>
+    /** Download (resuming a partial file) and set the runner's model and projector. Progress: kind 'model'. */
+    downloadModel(id: string): Promise<import('./types').Runner>
+    cancelDownload(id: string): Promise<void>
+  }
   containers: {
     status(force?: boolean): Promise<ContainerStatus>
     /** What a container chat changed in its copy, against the real folder. */
@@ -393,4 +422,5 @@ export type EventMap = {
   agents: { type: 'changed' }
   mcpCalls: import('./types').McpCallLog
   containers: { sessionId: string; ports: import('./types').ContainerPort[] }
+  runs: import('./types').RunEvent
 }

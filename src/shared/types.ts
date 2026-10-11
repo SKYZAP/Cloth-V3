@@ -36,6 +36,10 @@ export interface Provider {
   models: ModelInfo[]
   enabled: boolean
   createdAt: number
+  /** Served on this PC by a runner on the Run page: free (no cost), not saved, gone when it stops. */
+  local?: boolean
+  /** The runner serving it (Run page); such a provider can't be edited on the Models page. */
+  runnerId?: string
 }
 
 export interface ProviderInput {
@@ -1344,3 +1348,110 @@ export interface McpClientStatus {
   error: string | null
   tools: { name: string; description: string; inputSchema?: Record<string, unknown> }[]
 }
+
+// ─── Run (local models with llama.cpp's llama-server) ────────────────────────
+
+export type RunnerBuiltin = 'bonsai-2-27b'
+
+export interface RunnerSampling {
+  temp?: number
+  topP?: number
+  topK?: number
+  minP?: number
+}
+
+export interface Runner {
+  id: string
+  name: string
+  builtin: RunnerBuiltin | null
+  /** llama-server(.exe), or the folder holding it. */
+  serverPath: string | null
+  /** The .gguf model file. */
+  modelPath: string | null
+  /** Vision projector (.gguf), if any. */
+  mmprojPath: string | null
+  /** e.g. 'ROCm0', 'Vulkan0'; null = llama.cpp's default. */
+  device: string | null
+  gpuLayers: number
+  contextSize: number
+  port: number
+  flashAttention: boolean
+  sampling: RunnerSampling
+  /** More llama-server arguments; quotes group words ("a b" or 'a b'). */
+  extraArgs: string
+  /** The model id the server answers to (and chats use). */
+  alias: string
+  /** Offer it in the chat model picker while it runs. */
+  useInChats: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export type RunnerInput = Partial<Omit<Runner, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>> & { name: string }
+export type RunnerPatch = Partial<Omit<Runner, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>>
+
+export interface RunnerStatus {
+  id: string
+  state: 'stopped' | 'starting' | 'running' | 'error'
+  pid?: number
+  /** http://127.0.0.1:<port> while starting or running. */
+  url?: string
+  error?: string
+  startedAt?: number
+  lastTokensPerSecond?: number
+}
+
+/** A device from `llama-server --list-devices`. */
+export interface RunDevice {
+  /** What --device takes, e.g. 'ROCm0'. */
+  id: string
+  description: string
+  totalMiB: number
+  freeMiB: number
+}
+
+export interface RunDetection {
+  runtime: { found: boolean; path: string | null; version?: string }
+  model: { found: boolean; path: string | null; mmprojPath: string | null }
+}
+
+export type RuntimeBackend = 'hip-radeon' | 'vulkan' | 'cuda-12.4' | 'cpu'
+
+export interface RuntimeOptions {
+  /** Release tag, e.g. 'b6500'. */
+  tag: string
+  /** Where the files come from (the release page). */
+  source: string
+  assets: { backend: RuntimeBackend; name: string; size: number; url: string }[]
+}
+
+export interface ModelDownloadInfo {
+  /** Folder the files go into. */
+  dir: string
+  source: string
+  files: {
+    name: string
+    url: string
+    /** Bytes; 0 when the server didn't say. */
+    size: number
+    /** Bytes already downloaded (a partial download resumes from here). */
+    present: number
+    /** The vision projector: downloaded when it exists. */
+    optional: boolean
+  }[]
+}
+
+export type RunEvent =
+  | { type: 'status'; status: RunnerStatus }
+  | { type: 'log'; id: string; lines: string[] }
+  | {
+      type: 'progress'
+      kind: 'runtime' | 'model'
+      id: string
+      /** File being fetched or unpacked. */
+      file?: string
+      received: number
+      total: number
+      state: 'downloading' | 'extracting' | 'done' | 'error' | 'cancelled'
+      error?: string
+    }

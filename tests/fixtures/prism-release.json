@@ -1,0 +1,14 @@
+{
+  "tag_name": "b6810",
+  "html_url": "https://github.com/PrismML-Eng/llama.cpp/releases/tag/b6810",
+  "assets": [
+    { "name": "llama-prism-b6810-bin-macos-arm64.zip", "size": 11000000, "browser_download_url": "https://example.invalid/macos.zip" },
+    { "name": "llama-prism-b6810-bin-ubuntu-x64.zip", "size": 12000000, "browser_download_url": "https://example.invalid/ubuntu.zip" },
+    { "name": "llama-prism-b6810-bin-win-cpu-x64.zip", "size": 14500000, "browser_download_url": "https://example.invalid/cpu.zip" },
+    { "name": "llama-prism-b6810-bin-win-cuda-12.4-x64.zip", "size": 152000000, "browser_download_url": "https://example.invalid/cuda.zip" },
+    { "name": "cudart-llama-bin-win-cuda-12.4-x64.zip", "size": 391000000, "browser_download_url": "https://example.invalid/cudart.zip" },
+    { "name": "llama-prism-b6810-bin-win-hip-radeon-x64.zip", "size": 287000000, "browser_download_url": "https://example.invalid/hip.zip" },
+    { "name": "llama-prism-b6810-bin-win-vulkan-x64.zip", "size": 27000000, "browser_download_url": "https://example.invalid/vulkan.zip" },
+    { "name": "llama-prism-b6810-bin-win-vulkan-arm64.zip", "size": 26000000, "browser_download_url": "https://example.invalid/vulkan-arm.zip" }
+  ]
+}

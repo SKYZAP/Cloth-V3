@@ -57,6 +57,10 @@ export interface CompleteInput {
 export class ProviderService {
   /** "providerId/modelId" for models that rejected a custom temperature this session. */
   private noTemperature = new Set<string>()
+  /** Providers that exist only while something serves them (runners on the Run page); never saved. */
+  private transient = new Map<string, Provider>()
+  /** Why an unknown provider id can't be used right now (e.g. its runner is stopped), or null. */
+  missingHint: (id: string) => string | null = () => null
 
   constructor(
     private ctx: Ctx,
@@ -84,12 +88,20 @@ export class ProviderService {
 
   list(): Provider[] {
     const rows = this.ctx.db.prepare('SELECT * FROM providers ORDER BY created_at').all() as unknown as ProviderRow[]
-    return rows.map(toProvider)
+    return [...rows.map(toProvider), ...this.transient.values()]
   }
 
   get(id: string): Provider {
-    const row = this.row(id)
-    return toProvider(row)
+    return this.transient.get(id) ?? toProvider(this.row(id))
+  }
+
+  /** Add or replace a provider that lives only in memory (a running local model). */
+  setTransient(provider: Provider): void {
+    this.transient.set(provider.id, provider)
+  }
+
+  removeTransient(id: string): void {
+    this.transient.delete(id)
   }
 
   create(input: ProviderInput): Provider {
@@ -114,6 +126,7 @@ export class ProviderService {
   }
 
   update(id: string, input: Partial<ProviderInput>): Provider {
+    this.notTransient(id)
     const cur = this.row(id)
     const apiKey =
       input.apiKey === undefined ? cur.api_key : input.apiKey === '' ? null : this.ctx.secrets.encrypt(input.apiKey)
@@ -132,11 +145,17 @@ export class ProviderService {
   }
 
   remove(id: string): void {
+    this.notTransient(id)
     this.ctx.db.prepare('DELETE FROM providers WHERE id = ?').run(id)
   }
 
   /** Save a model list edited by hand (e.g. flagging a model as embedding). */
   setModels(id: string, models: ModelInfo[]): Provider {
+    const live = this.transient.get(id)
+    if (live) {
+      this.transient.set(id, { ...live, models })
+      return this.get(id)
+    }
     this.row(id)
     this.ctx.db.prepare('UPDATE providers SET models = ? WHERE id = ?').run(JSON.stringify(models), id)
     return this.get(id)
@@ -188,15 +207,15 @@ export class ProviderService {
   }
 
   apiKey(id: string): string {
+    if (this.transient.has(id)) return ''
     const row = this.row(id)
     return row.api_key ? this.ctx.secrets.decrypt(row.api_key) : ''
   }
 
   /** Build a pi-ai Model for a registered provider + model id. */
   resolve(ref: ModelRef): { model: Model<Api>; apiKey: string } {
-    const row = this.row(ref.providerId)
-    if (!row.enabled) throw new Error(`Provider "${row.name}" is disabled`)
-    const provider = toProvider(row)
+    const provider = this.get(ref.providerId)
+    if (!provider.enabled) throw new Error(`Provider "${provider.name}" is disabled`)
     const info = provider.models.find((m) => m.id === ref.modelId) ?? guessModelInfo(provider.kind, ref.modelId)
     const api = API_FOR_KIND[provider.kind]
     const model: Model<Api> = {
@@ -370,8 +389,13 @@ export class ProviderService {
 
   private row(id: string): ProviderRow {
     const row = this.ctx.db.prepare('SELECT * FROM providers WHERE id = ?').get(id) as ProviderRow | undefined
-    if (!row) throw new Error(`Unknown provider ${id}`)
+    if (!row) throw new Error(this.missingHint(id) ?? `Unknown provider ${id}`)
     return row
+  }
+
+  private notTransient(id: string): void {
+    const live = this.transient.get(id)
+    if (live) throw new Error(`${live.name} runs on this PC; change it on the Run page`)
   }
 }
 

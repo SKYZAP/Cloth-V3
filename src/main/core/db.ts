@@ -205,6 +205,16 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  `,
+  /* 12 — local model runners (llama-server); Bonsai is a built-in row */ `
+  CREATE TABLE runners (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    builtin TEXT,
+    config TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
   `
 ]
 
