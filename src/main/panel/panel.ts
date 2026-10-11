@@ -4,7 +4,7 @@ import type { ChatService } from '../agent/chat'
 import type { ContainerService } from '../agent/containers'
 import type { ProviderService } from '../providers/providers'
 import { inside, listDir, readWorkspaceFile } from './files'
-import { diffForMessage, gitCommit, gitDiff, gitDiscard, gitLog, gitPull, gitPush, gitStage, gitStatus, gitUnstage } from './git'
+import { diffForMessage, gitCommit, gitDiff, gitDiscard, gitInit, gitLog, gitPull, gitPush, gitStage, gitStatus, gitUnstage } from './git'
 import type { TerminalService } from './terminals'
 
 const COMMIT_SYSTEM = `You write git commit messages. Given a diff, answer with ONLY the message:
@@ -71,6 +71,14 @@ export class PanelService {
     const folder = this.root(sessionId).folder
     if (!folder) return { repo: false, root: null, branch: null, upstream: null, ahead: 0, behind: 0, files: [] }
     return gitStatus(folder)
+  }
+
+  /** `git init` in the chat's real folder (the same folder git status reads; never a container's copy). */
+  async gitInit(sessionId: string): Promise<GitStatus> {
+    const folder = this.root(sessionId).folder
+    if (!folder) throw new Error('This chat has no folder')
+    await gitInit(folder)
+    return this.gitStatus(sessionId)
   }
 
   private async file(sessionId: string, path: string) {

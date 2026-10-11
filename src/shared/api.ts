@@ -195,6 +195,8 @@ export interface ClothApi {
     resizeTerminal(id: string, cols: number, rows: number): Promise<void>
     closeTerminal(id: string): Promise<void>
     gitStatus(sessionId: string): Promise<GitStatus>
+    /** `git init` in the chat's folder (default branch main where supported); nothing is committed. */
+    gitInit(sessionId: string): Promise<GitStatus>
     gitDiff(sessionId: string, path: string, staged: boolean): Promise<string>
     gitStage(sessionId: string, paths: string[]): Promise<GitStatus>
     gitUnstage(sessionId: string, paths: string[]): Promise<GitStatus>

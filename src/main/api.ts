@@ -154,6 +154,7 @@ export function createApi(s: Services): ClothApi {
       resizeTerminal: async (id, cols, rows) => s.panel.terminals.resize(id, cols, rows),
       closeTerminal: async (id) => s.panel.terminals.kill(id),
       gitStatus: (id) => s.panel.gitStatus(id),
+      gitInit: (id) => s.panel.gitInit(id),
       gitDiff: (id, path, staged) => s.panel.gitDiff(id, path, staged),
       gitStage: (id, paths) => s.panel.gitStage(id, paths),
       gitUnstage: (id, paths) => s.panel.gitUnstage(id, paths),

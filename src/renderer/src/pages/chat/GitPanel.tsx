@@ -88,13 +88,28 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
     void api.panel.gitLog(sessionId).then(setLog)
     useApp.getState().toast(`Committed ${r.hash}`, 'ok')
   }
+  const init = async () => {
+    const s = await act('init', () => api.panel.gitInit(sessionId), 'Initialized a git repository')
+    if (s) await refresh()
+  }
   const suggest = async () => {
     const text = await act('message', () => api.panel.commitMessage(sessionId, all))
     if (text) setMessage(text)
   }
 
   if (root && !root.folder) return <Empty>This chat has no folder.</Empty>
-  if (status && !status.repo) return <Empty>{root?.folder} is not a git repository.</Empty>
+  if (status && !status.repo)
+    return (
+      <Empty>
+        <div className="flex flex-col items-center gap-3">
+          <div>{root?.folder} is not a git repository.</div>
+          <Button size="sm" icon={<GitBranch size={13} />} loading={busy === 'init'} disabled={!!busy} onClick={() => void init()}>
+            Initialize git repository
+          </Button>
+          <div className="text-[11px] text-dim">Runs git init in this folder. Nothing is committed.</div>
+        </div>
+      </Empty>
+    )
   if (!status) return <Empty>Reading git status…</Empty>
 
   if (diff)
