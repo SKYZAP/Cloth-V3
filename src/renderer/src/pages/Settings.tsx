@@ -11,6 +11,7 @@ import {
   GlobeHemisphereWest,
   Info,
   MagnifyingGlass,
+  Palette,
   PlugsConnected,
   Robot,
   X,
@@ -27,7 +28,7 @@ import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
 
-type SectionId = 'models' | 'chat' | 'subagents' | 'web' | 'knowledge' | 'phone' | 'mcp' | 'about'
+type SectionId = 'models' | 'chat' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -45,6 +46,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Delegation with the task tool', keywords: 'task delegate scout worker parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Search engine and page fetching', keywords: 'searxng obscura web_fetch internet results' },
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split for search', keywords: 'chunk chunking overlap rag index' },
+  { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Use Cloth from the Android app', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
   { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Expose skills and knowledge to other tools', keywords: 'mcp port server claude cursor' },
   { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and version', keywords: 'data folder version database about' }
@@ -197,6 +199,17 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           <Row label="Overlap" hint="Characters shared between neighbouring chunks.">
             <NumberInput value={settings.chunkOverlap} min={0} max={2000} step={50} suffix="chars" onCommit={(chunkOverlap) => void update({ chunkOverlap })} />
           </Row>
+        </Group>
+      )
+    case 'design':
+      return (
+        <Group>
+          <div className="flex items-center gap-3 p-4 text-[12.5px] text-muted">
+            <span className="flex-1">Palettes, type and shape that projects follow; written into a project as DESIGN.md and theme files.</span>
+            <Button size="sm" onClick={() => useApp.getState().openDesign(null)}>
+              Open design systems
+            </Button>
+          </div>
         </Group>
       )
     case 'phone':

@@ -5,10 +5,8 @@ import { join } from 'node:path'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
-import { listRules, ensureRule, mergeRules, restingSelector, setDeclaration } from '../src/shared/cssEdit'
 import { DEFAULT_KIT, kitCss, sanitizeKit } from '../src/shared/kit'
-import { repairTokens, unknownTokens } from '../src/shared/design'
-import { applyPaletteColor, buildDesign, componentLint, coolorsUrl, paletteToDesign, parsePalette, toDesignMd, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, parseComponentAnswer, PRESETS, sanitizeComponentCss, sanitizeComponentHtml, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
+import { applyPaletteColor, buildDesign, componentLint, coolorsUrl, paletteToDesign, parsePalette, toDesignMd, contrast, DEFAULT_DESIGN, designFiles, hexToOklch, oklchToHex, PRESETS, sanitizeComponentCss, sanitizeComponentHtml, sanitizeDesign, scaleFrom, STEPS, type DesignInput } from '../src/shared/design'
 
 describe('design systems', () => {
   it('converts colours through OKLCH and back', () => {
@@ -129,6 +127,18 @@ describe('design service', () => {
     expect(await services.projects.instructions(p.id)).not.toContain('design system')
   })
 
+  it('leaves components saved by earlier versions out of the files and DESIGN.md', () => {
+    const { services } = makeServices()
+    const d = services.designs.create({ name: 'Harbor' })
+    const before = services.designs.files(d.id)
+    services.ctx.db
+      .prepare('INSERT INTO design_components (id, design_id, name, description, html, css, usage, prompt, history, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('cmp_old', d.id, 'Buttons', 'Old', '<button class="c-button">Save</button>', '.c-button { color: var(--color-text); }', '', 'buttons', '[]', 1, 1)
+    expect(services.designs.files(d.id)).toEqual(before)
+    expect(services.designs.markdown(d.id)).not.toContain('Component library')
+    expect(Object.keys(services.designs.files(services.designs.duplicate(d.id).id))).toEqual(Object.keys(before))
+  })
+
   it('turns a description into a design with a model, cleaning up what comes back', async () => {
     const { services } = makeServices()
     const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
@@ -142,105 +152,8 @@ describe('design service', () => {
     await expect(services.designs.generate({ prompt: ' ', model: { providerId: provider.id, modelId: 'faux-1' } })).rejects.toThrow(/Describe/)
   })
 })
-describe('component library', () => {
-  afterEach(() => {
-    faux?.unregister()
-    faux = null
-  })
-
-  const answer = (name: string, color: string) =>
-    `Sure!\nNAME: ${name}\nDESCRIPTION: Buttons for actions.\n=== CSS ===\n\`\`\`css\n.c-button { background: var(--color-primary); color: ${color}; border-radius: var(--radius-md); }\n\`\`\`\n=== HTML ===\n<div class="specimen"><section class="specimen-section"><div class="specimen-label">Primary</div><div class="specimen-row"><button class="c-button" onclick="alert(1)">Save</button><script>alert(2)</script></div></section></div>\n=== USAGE ===\n<button class="c-button">Save</button>`
-
-  it('changes one selected element and splices it back, leaving the rest untouched', async () => {
-    const { services } = makeServices()
-    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
-    const model = { providerId: provider.id, modelId: 'faux-1' }
-    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
-    let scopedPrompt = ''
-    faux.setResponses([
-      fauxAssistantMessage(answer('Button', 'var(--color-on-primary)')),
-      (ctx) => {
-        scopedPrompt = JSON.stringify(ctx.messages)
-        // Only the part and the rules it changes, as asked.
-        return fauxAssistantMessage('NAME: Button\nDESCRIPTION: x\n=== CSS ===\n.c-button { background: var(--color-accent); color: var(--color-on-accent); }\n.c-button__icon { width: 16px; }\n=== HTML ===\n<button class="c-button">Save <span class="c-button__icon"></span></button>\n=== USAGE ===\n')
-      }
-    ])
-    const d = services.designs.create({ name: 'Harbor' })
-    const c = await services.designs.generateComponent({ designId: d.id, prompt: 'buttons', model })
-    services.designs.updateComponent(c.id, { css: `${c.css}\n.c-keep { color: var(--color-text); }` })
-    // specimen > section > row > button
-    const changed = await services.designs.generateComponent({ designId: d.id, prompt: 'accent fill with an icon', model, componentId: c.id, scope: [0, 0, 1, 0] })
-    expect(scopedPrompt).toContain('ONLY the new markup that replaces this one element')
-    expect(scopedPrompt).toContain('class=\\"c-button\\">Save</button>')
-    expect(changed.html).toContain('<div class="specimen-label">Primary</div>')
-    expect(changed.html).toContain('<span class="c-button__icon"></span>')
-    expect(changed.css).toContain('background: var(--color-accent)')
-    expect(changed.css).not.toContain('var(--color-primary)')
-    expect(changed.css).toContain('.c-keep { color: var(--color-text); }')
-    expect(changed.css).toContain('.c-button__icon { width: 16px; }')
-    expect(changed.usage).toBe(c.usage)
-    expect(changed.prompt).toBe('accent fill with an icon')
-    expect(changed.description).toBe('Buttons for actions.')
-    await expect(services.designs.generateComponent({ designId: d.id, prompt: 'x', model, componentId: c.id, scope: [9, 9] })).rejects.toThrow(/no longer in the component/)
-  })
-
-  it('builds, refines, undoes and exports components that stay on the system', async () => {
-    const { services } = makeServices()
-    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
-    const model = { providerId: provider.id, modelId: 'faux-1' }
-    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
-    let refinePrompt = ''
-    faux.setResponses([
-      fauxAssistantMessage(answer('Button', '#ffffff')),
-      (ctx) => {
-        refinePrompt = JSON.stringify(ctx.messages)
-        return fauxAssistantMessage(answer('Button', 'var(--color-on-primary)'))
-      }
-    ])
-    const d = services.designs.create({ name: 'Harbor' })
-    const c = await services.designs.generateComponent({ designId: d.id, prompt: 'buttons', model })
-    expect(c).toMatchObject({ name: 'Button', description: 'Buttons for actions.', usage: '<button class="c-button">Save</button>' })
-    expect(c.css.startsWith('.c-button')).toBe(true)
-    expect(c.html).not.toMatch(/script|onclick/)
-    expect(componentLint(c.css, c.html)).toEqual(['#ffffff'])
-
-    const fixed = await services.designs.generateComponent({ designId: d.id, prompt: 'use tokens for the text colour', model, componentId: c.id })
-    expect(refinePrompt).toContain('Change the \\"Button\\" component: use tokens for the text colour')
-    expect(refinePrompt).toContain('color: #ffffff')
-    expect(componentLint(fixed.css, fixed.html)).toEqual([])
-    expect(fixed.history.map((h) => h.prompt)).toEqual(['buttons'])
-    expect(services.designs.undoComponent(c.id).css).toContain('#ffffff')
-
-    const edited = services.designs.updateComponent(c.id, { css: '.c-button { color: var(--color-text); } @import url(http://x.test/a.css);', name: 'Buttons' })
-    expect(edited.name).toBe('Buttons')
-    expect(edited.css).not.toContain('@import')
-    expect(edited.prompt).toBe('Edited by hand')
-
-    // Inspector edits in a burst share one history step.
-    const steps = edited.history.length
-    services.designs.updateComponent(c.id, { css: '.c-button { color: var(--color-primary); }' }, { label: 'Edited in the inspector' })
-    const burst = services.designs.updateComponent(c.id, { css: '.c-button { color: var(--color-accent); }' }, { label: 'Edited in the inspector' })
-    expect(burst.history.length).toBe(steps + 1)
-    expect(services.designs.undoComponent(c.id).css).toContain('var(--color-text)')
-
-    const folder = mkdtempSync(join(tmpdir(), 'cloth-components-'))
-    const written = (await services.designs.export(d.id, folder)).map((p) => p.slice(folder.length + 1).replace(/\\/g, '/'))
-    expect(written).toEqual(expect.arrayContaining(['components.css', 'components/buttons.html', 'DESIGN.md']))
-    expect(readFileSync(join(folder, 'components', 'buttons.html'), 'utf8')).toContain('href="../tokens.css"')
-    const md = readFileSync(join(folder, 'DESIGN.md'), 'utf8')
-    expect(md).toContain('## Component library')
-    expect(md).toContain('### Buttons')
-    // Projects that follow the design get the library in their chats' instructions.
-    const p = services.projects.create({ name: 'Site', designId: d.id })
-    expect(await services.projects.instructions(p.id)).toContain('### Buttons')
-    // A copy of the design brings its library.
-    expect(services.designs.components(services.designs.duplicate(d.id).id).map((x) => x.name)).toEqual(['Buttons'])
-    services.designs.remove(d.id)
-    expect(services.designs.components(d.id)).toEqual([])
-  })
-
-  it('reads answers and keeps model markup safe', () => {
-    expect(parseComponentAnswer('no sections here')).toBeNull()
+describe('component pages', () => {
+  it('keeps markup and styles safe', () => {
     expect(sanitizeComponentHtml('<a href="javascript:alert(1)" onmouseover="x()">x</a><iframe src="https://e.test"></iframe><img src=x onerror=alert(1)>')).toBe('<a href="#">x</a><img src=x>')
     expect(sanitizeComponentCss('.a{background:url(https://e.test/p.png)} .b{background:url(data:image/png;base64,AAA)} </style><script>')).toBe('.a{background:none} .b{background:url(data:image/png;base64,AAA)} <script>')
     expect(componentLint('.a{color:var(--color-text, #000);background:rgb(1 2 3)}', '<i style="color:#abc"></i>')).toEqual(['rgb(1 2 3)', '#abc'])
@@ -283,56 +196,7 @@ describe('palettes', () => {
   })
 })
 
-describe('component editing', () => {
-  const css = `/* buttons */
-.c-btn {
-  color: var(--color-text);
-  padding: var(--space-2);
-}
-.c-btn:hover, .c-btn.is-hover { color: var(--color-primary); }
-@media (max-width: 600px) {
-  .c-btn { padding: 0; }
-}
-@keyframes spin { from { opacity: 0 } to { opacity: 1 } }`
-
-  it('lists rules with their context and edits one declaration, keeping the rest', () => {
-    const rules = listRules(css)
-    expect(rules.map((r) => [r.selector, r.context])).toEqual([
-      ['.c-btn', ''],
-      ['.c-btn:hover, .c-btn.is-hover', ''],
-      ['.c-btn', '@media (max-width: 600px)']
-    ])
-    const next = setDeclaration(css, 0, 'padding', 'var(--space-4)')
-    expect(next).toContain('/* buttons */')
-    expect(next).toContain('  padding: var(--space-4);')
-    expect(listRules(next)[2].decls).toEqual([{ prop: 'padding', value: '0', important: false }])
-    const added = setDeclaration(next, 1, 'background', 'var(--color-primary-soft) !important')
-    expect(listRules(added)[1].decls.at(-1)).toEqual({ prop: 'background', value: 'var(--color-primary-soft)', important: true })
-    expect(listRules(setDeclaration(added, 0, 'color', null))[0].decls.map((d) => d.prop)).toEqual(['padding'])
-    expect(listRules('not { css')).toEqual([])
-  })
-
-  it('merges changed rules into a sheet by selector and media query', () => {
-    const base = '.a { color: red; }\n@media (max-width: 600px) {\n  .a { padding: 0; }\n}\n.b { margin: 0; }'
-    const out = mergeRules(base, '.a { color: blue; }\n@media (max-width:600px) { .a { padding: 4px; } .c { gap: 0; } }\n.d { top: 0; }')
-    expect(listRules(out).map((r) => `${r.context}${r.selector}:${r.decls.map((x) => x.value).join(',')}`)).toEqual(['.a:blue', '@media (max-width: 600px).a:4px', '@media (max-width: 600px).c:0', '.b:0', '.d:0'])
-  })
-
-  it('creates rules once and strips states for matching', () => {
-    const a = ensureRule(css, '.c-btn__icon')
-    expect(a.css).toMatch(/\.c-btn__icon \{\r?\n\}/)
-    expect(ensureRule(a.css, '.c-btn__icon')).toEqual(a)
-    expect(restingSelector('.c-btn:hover .c-btn__icon')).toEqual({ base: '.c-btn .c-btn__icon', states: ['hover'] })
-    expect(restingSelector('.c-btn.is-focus:focus-visible')).toEqual({ base: '.c-btn', states: ['focus-visible', 'focus'] })
-  })
-
-  it('finds variables the system does not define and repairs named weights', () => {
-    const css = '.a { --c-gap: 4px; gap: var(--c-gap); font: var(--weight-bold) var(--text-h1) / 1 var(--font-heading); color: var(--color-nope); margin: var(--space-99, 8px); }'
-    expect(unknownTokens(css, '<i style="padding: var(--pad-x)"></i>', DEFAULT_DESIGN)).toEqual(['--weight-bold', '--color-nope', '--pad-x'])
-    expect(repairTokens(css)).toContain('font: 700 var(--text-h1)')
-    expect(repairTokens('b { font-weight: var(--weight-h1); }')).toBe('b { font-weight: var(--weight-h1); }')
-  })
-
+describe('built-in components', () => {
   it('keeps built-in component settings valid and turns them into CSS', () => {
     const kit = sanitizeKit({ button: { radius: 'full', weight: 650, primary: 'neon', tracking: 0.0300001 }, card: { border: 'yes', padding: 99 }, nope: {} })
     expect(kit.button).toMatchObject({ radius: 'full', weight: 700, primary: 'solid', tracking: 0.03 })
