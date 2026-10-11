@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inside, listDir, readWorkspaceFile } from '../src/main/panel/files'
-import { parseStatus } from '../src/main/panel/git'
+import { gitInit, parseStatus } from '../src/main/panel/git'
 import { makeServices } from './helpers'
 
 function repo(): string {
@@ -21,7 +21,52 @@ function repo(): string {
   return dir
 }
 
+const hasGit = (() => {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'pipe' })
+    return true
+  } catch {
+    return false
+  }
+})()
+
 describe('chat side panel', () => {
+  it.skipIf(!hasGit)('initialises a folder as a git repository without committing', async () => {
+    const { services } = makeServices()
+    const dir = mkdtempSync(join(tmpdir(), 'cloth-init-'))
+    writeFileSync(join(dir, 'a.txt'), 'hi\n')
+    const chat = services.chat.create({ workspace: dir })
+    expect(await services.panel.gitStatus(chat.id)).toMatchObject({ repo: false })
+    const status = await services.panel.gitInit(chat.id)
+    expect(status).toMatchObject({ repo: true })
+    expect(existsSync(join(dir, '.git'))).toBe(true)
+    expect(existsSync(join(dir, '.gitignore'))).toBe(false)
+    expect(status.files.map((f) => [f.path, f.untracked])).toEqual([['a.txt', true]])
+    const head = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir, stdio: 'pipe' }).toString().trim()
+    const [maj, min] = /(\d+)\.(\d+)/.exec(execFileSync('git', ['--version']).toString())!.slice(1).map(Number)
+    if (maj > 2 || (maj === 2 && min >= 28)) expect(head).toBe('main')
+    expect(() => execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: dir, stdio: 'pipe' })).toThrow()
+  })
+
+  it.skipIf(!hasGit)('leaves an existing repository alone when asked to initialise it', async () => {
+    const dir = repo()
+    const { services } = makeServices()
+    const chat = services.chat.create({ workspace: dir })
+    const status = await services.panel.gitInit(chat.id)
+    expect(status).toMatchObject({ repo: true, branch: 'main', files: [] })
+    expect((await services.panel.gitLog(chat.id)).map((c) => c.subject)).toEqual(['first'])
+  })
+
+  it('refuses to initialise without a folder', async () => {
+    const { services } = makeServices()
+    const none = services.chat.create({})
+    await expect(services.panel.gitInit(none.id)).rejects.toThrow(/no folder/)
+    const file = join(mkdtempSync(join(tmpdir(), 'cloth-init-')), 'file.txt')
+    writeFileSync(file, 'x')
+    await expect(gitInit(file)).rejects.toThrow(/is not a folder/)
+    await expect(gitInit(join(tmpdir(), 'cloth-missing-' + Date.now()))).rejects.toThrow(/is not a folder/)
+  })
+
   it('lists and reads workspace files without leaving the folder', async () => {
     const dir = repo()
     mkdirSync(join(dir, 'dist'))

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, stat } from 'node:fs/promises'
 import type { GitCommit, GitFile, GitStatus } from '@shared/types'
 import { inside } from './files'
 
@@ -37,6 +37,28 @@ async function must(cwd: string, args: string[], opts?: { timeoutMs?: number }):
 export async function repoRoot(folder: string): Promise<string | null> {
   const r = await git(folder, ['rev-parse', '--show-toplevel']).catch(() => null)
   return r && r.code === 0 ? r.stdout.trim() : null
+}
+
+const NO_GIT = "Git isn't installed or isn't on PATH."
+
+/** The installed git's [major, minor], or null when git can't be run. */
+export async function gitVersion(cwd: string): Promise<[number, number] | null> {
+  const r = await git(cwd, ['--version'], { timeoutMs: 10_000 }).catch(() => null)
+  const m = r && r.code === 0 ? /(\d+)\.(\d+)/.exec(r.stdout) : null
+  return m ? [Number(m[1]), Number(m[2])] : null
+}
+
+/** `git init` in `folder` (default branch `main` when git supports `-b`, i.e. 2.28+). Nothing is committed. */
+export async function gitInit(folder: string): Promise<void> {
+  const info = await stat(folder).catch(() => null)
+  if (!info?.isDirectory()) throw new Error(`${folder} is not a folder`)
+  const version = await gitVersion(folder)
+  if (!version) throw new Error(NO_GIT)
+  // Already inside a repository (initialised elsewhere meanwhile): nothing to do.
+  if (await repoRoot(folder)) return
+  const [major, minor] = version
+  const modern = major > 2 || (major === 2 && minor >= 28)
+  await must(folder, ['init', '-q', ...(modern ? ['-b', 'main'] : [])], { timeoutMs: 30_000 })
 }
 
 /** `git status --porcelain=v2 -z`, read into files and branch info. */
