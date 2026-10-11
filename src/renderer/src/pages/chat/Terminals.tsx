@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalInfo } from '@shared/types'
+import { autoStart, terminalsAfter, withTerminal } from '@shared/terminal-tabs'
 import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { Button } from '@/components/ui'
@@ -62,7 +63,10 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
     fit.current = f
     const input = t.onData((d) => void api.panel.writeTerminal(info.id, d))
     const resize = t.onResize(({ cols, rows }) => void api.panel.resizeTerminal(info.id, cols, rows))
+    // A view torn down before its scrollback arrives (StrictMode remounts) leaves the replay to the next one.
+    let live = true
     void api.panel.terminalBuffer(info.id).then((buf) => {
+      if (!live) return
       t.write(buf)
       replayed.current = true
     })
@@ -77,6 +81,8 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
     })
     ro.observe(host.current!)
     return () => {
+      live = false
+      replayed.current = false
       ro.disconnect()
       input.dispose()
       resize.dispose()
@@ -110,35 +116,42 @@ export function Terminals({ sessionId, visible, hasFolder, container }: { sessio
   const [opening, setOpening] = useState(false)
 
   useEffect(() => {
+    let live = true
     setList(null)
     void api.panel.terminals(sessionId).then((ts) => {
+      if (!live) return
       setList(ts)
       setActive(ts.at(-1)?.id ?? null)
     })
+    return () => {
+      live = false
+    }
   }, [sessionId])
 
   useEvent('terminal', (e) => {
-    if (e.type === 'opened' && e.terminal.sessionId === sessionId) setList((cur) => (cur && !cur.some((t) => t.id === e.terminal.id) ? [...cur, e.terminal] : cur))
-    if (e.type === 'closed' && e.sessionId === sessionId) setList((cur) => cur?.filter((t) => t.id !== e.id) ?? cur)
-    if (e.type === 'exit') setList((cur) => cur?.map((t) => (t.id === e.id ? { ...t, running: false, exitCode: e.code } : t)) ?? cur)
+    if (e.type !== 'data') setList((cur) => terminalsAfter(cur, sessionId, e))
   })
 
+  // One shell per click, however the clicks and the first-show start overlap.
+  const pending = useRef(false)
   const open = async () => {
+    if (pending.current) return
+    pending.current = true
     setOpening(true)
     const t = await attempt(() => api.panel.openTerminal(sessionId, { cols: 100, rows: 30 }))
+    pending.current = false
     setOpening(false)
     if (t) {
-      setList((cur) => (cur?.some((x) => x.id === t.id) ? cur : [...(cur ?? []), t]))
+      setList((cur) => withTerminal(cur, sessionId, t))
       setActive(t.id)
     }
   }
-  // The first time the tab is shown, start a shell.
-  const started = useRef(false)
+  // The first time the tab is shown, start a shell if the chat has none (closing the last one doesn't start another).
+  const decided = useRef(false)
   useEffect(() => {
-    if (visible && list && !list.length && !started.current) {
-      started.current = true
-      void open()
-    }
+    const next = autoStart(decided.current, visible, list)
+    decided.current = next.decided
+    if (next.start) void open()
   }, [visible, list])
   useEffect(() => {
     if (list && active && !list.some((t) => t.id === active)) setActive(list.at(-1)?.id ?? null)
@@ -153,6 +166,7 @@ export function Terminals({ sessionId, visible, hasFolder, container }: { sessio
           <div
             key={t.id}
             onClick={() => setActive(t.id)}
+            title={t.cwd}
             className={clsx('group/tab flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1 text-[12px]', t.id === active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}
           >
             <TerminalWindow size={13} className={t.running ? 'text-ok' : 'text-dim'} />

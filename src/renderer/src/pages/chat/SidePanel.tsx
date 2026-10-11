@@ -70,6 +70,9 @@ export function SidePanel({
   // Clicking Setup again goes back to its overview from a section.
   const [setupKey, setSetupKey] = useState(0)
   useEffect(() => setSeen((s) => (s.has(state.tab) ? s : new Set([...s, state.tab]))), [state.tab])
+  // Files and git start afresh on another folder (files also when the chat moves in or out of a container).
+  const folder = session.workspace ?? ''
+  const filesKey = `${folder}|${!!session.container}`
 
   // Drag the left edge to resize.
   const drag = useRef<{ x: number; w: number } | null>(null)
@@ -126,12 +129,12 @@ export function SidePanel({
         )}
         {seen.has('files') && (
           <div className={clsx('absolute inset-0', state.tab !== 'files' && 'hidden')}>
-            <Files sessionId={session.id} visible={state.tab === 'files'} onAttach={onAttach} onInsert={onInsert} onPickFolder={onPickFolder} />
+            <Files key={filesKey} sessionId={session.id} visible={state.tab === 'files'} onAttach={onAttach} onInsert={onInsert} onPickFolder={onPickFolder} />
           </div>
         )}
         {seen.has('git') && (
           <div className={clsx('absolute inset-0', state.tab !== 'git' && 'hidden')}>
-            <GitPanel sessionId={session.id} visible={state.tab === 'git'} />
+            <GitPanel key={folder} sessionId={session.id} visible={state.tab === 'git'} />
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename } from 'node:path'
-import type { IPty } from '@lydell/node-pty'
+import type { IPty, IWindowsPtyForkOptions } from '@lydell/node-pty'
 import type { ContainerSettings, TerminalInfo } from '@shared/types'
 import { newId, type Ctx } from '../core/context'
 import type { ContainerService } from '../agent/containers'
@@ -10,9 +10,18 @@ import type { ContainerService } from '../agent/containers'
 /** Kept per terminal so a panel that opens later can replay what it missed. */
 const SCROLLBACK = 256 * 1024
 
+/** What the service uses of a pseudo-terminal. */
+export type Pty = Pick<IPty, 'onData' | 'onExit' | 'write' | 'resize' | 'kill'>
+
+/** Starts a process in a pseudo-terminal (tests pass a stand-in). */
+export type PtySpawn = (file: string, args: string[], options: IWindowsPtyForkOptions) => Pty | Promise<Pty>
+
+// Loaded on first use: a native module, and most sessions never open a terminal.
+const nodePty: PtySpawn = async (file, args, options) => (await import('@lydell/node-pty')).spawn(file, args, options)
+
 interface Term {
   info: TerminalInfo
-  pty: IPty
+  pty: Pty
   buffer: string
 }
 
@@ -51,7 +60,8 @@ export class TerminalService {
 
   constructor(
     private ctx: Ctx,
-    private containers?: ContainerService
+    private containers?: ContainerService,
+    private spawn: PtySpawn = nodePty
   ) {}
 
   list(sessionId: string): TerminalInfo[] {
@@ -59,8 +69,6 @@ export class TerminalService {
   }
 
   async create(target: TerminalTarget, size: { cols: number; rows: number }): Promise<TerminalInfo> {
-    // Loaded on first use: a native module, and most sessions never open a terminal.
-    const pty = await import('@lydell/node-pty')
     const n = (this.counter.get(target.sessionId) ?? 0) + 1
     this.counter.set(target.sessionId, n)
     const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Cloth' } as Record<string, string>
@@ -85,7 +93,7 @@ export class TerminalService {
       cwd = target.folder && existsSync(target.folder) ? target.folder : homedir()
       title = `${basename(shell.file).replace(/\.exe$/i, '')} ${n}`
     }
-    const proc = pty.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true })
+    const proc = await this.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true })
     const info: TerminalInfo = { id: newId('term_'), sessionId: target.sessionId, title, cwd: target.container ? '/workspace' : cwd, container: !!target.container, running: true, exitCode: null }
     const term: Term = { info, pty: proc, buffer: '' }
     this.terms.set(info.id, term)
