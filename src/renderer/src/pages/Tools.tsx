@@ -206,6 +206,7 @@ export function ToolsPage() {
 
   const details = sel && (
     <ToolDetails
+      key={sel.key}
       item={sel}
       usage={usage[sel.name]}
       usedBy={usedBy[sel.name] ?? []}
@@ -258,14 +259,16 @@ export function ToolsPage() {
           </div>
 
           <div className={clsx('grid items-start gap-5', wide && 'grid-cols-[minmax(0,1fr)_380px]')}>
-            <div className="grid min-w-0 gap-5">
+            <div className="grid min-w-0 gap-6">
               {sections.map((s) => (
-                <section key={s.title} aria-label={s.title} className="grid gap-0.5">
-                  <h2 className="mb-1 ml-3 text-[12px] font-medium text-dim">{s.title}</h2>
-                  {s.items.map((i) => (
-                    <ToolRow key={i.key} item={i} selected={selKey === i.key} onOpen={() => setSelKey(i.key)} />
-                  ))}
-                  {s.note}
+                <section key={s.title} aria-label={s.title}>
+                  <h2 className="mb-3 border-b border-line pb-2 text-[12px] font-semibold text-fg/90">{s.title}</h2>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2.5">
+                    {s.items.map((i) => (
+                      <ToolCard key={i.key} item={i} usage={usage[i.name]} selected={selKey === i.key} onOpen={() => setSelKey(i.key)} />
+                    ))}
+                    {s.note && <div className="col-span-full">{s.note}</div>}
+                  </div>
                 </section>
               ))}
               {!shown.length && builtins.length > 0 && (
@@ -295,29 +298,39 @@ export function ToolsPage() {
   )
 }
 
-function ToolRow({ item: i, selected, onOpen }: { item: Item; selected: boolean; onOpen(): void }) {
+function ToolCard({ item: i, usage, selected, onOpen }: { item: Item; usage?: ToolUsage; selected: boolean; onOpen(): void }) {
   const pending = i.custom && waiting(i.custom)
   return (
     <button
       data-focus-key={i.key}
       onClick={onOpen}
       aria-pressed={selected}
-      className={clsx('flex min-h-[56px] w-full items-center gap-3 rounded-[11px] border px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-line-strong bg-elev' : 'border-transparent hover:bg-elev/60')}
+      className={clsx('flex flex-col overflow-hidden rounded-[12px] border text-left transition-colors focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-line-strong bg-elev' : 'border-line bg-panel hover:border-line-strong')}
     >
-      <span aria-hidden="true" className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px]', SOURCE_TILE[i.source])}>
-        <i.icon size={16} />
-      </span>
-      <span className="grid min-w-0 flex-1 gap-0.5">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 text-[13.5px] font-semibold">{i.label}</span>
-          <span className="truncate font-mono text-[11.5px] text-dim" translate="no">
-            {i.source === 'mcp' ? i.name.replace(/^mcp__/, '').replace('__', ' / ') : i.name}
-          </span>
+      <span className="flex gap-3 p-3.5">
+        <span aria-hidden="true" className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]', SOURCE_TILE[i.source])}>
+          <i.icon size={15} />
         </span>
-        <span className="truncate text-[12.5px] text-dim">{i.description}</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 text-[13.5px] font-semibold">{i.label}</span>
+            <span className="truncate font-mono text-[11px] text-dim" translate="no">
+              {i.source === 'mcp' ? i.name.replace(/^mcp__/, '').replace('__', ' / ') : i.name}
+            </span>
+          </span>
+          <span className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-muted">{i.description}</span>
+        </span>
       </span>
-      {pending && <span className="shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Needs your OK</span>}
-      {i.source !== 'builtin' && !pending && <span className={clsx('shrink-0 rounded-full px-2 py-0.5 text-[11px] mobile:hidden', SOURCE_TILE[i.source])}>{i.source === 'mcp' ? i.server : i.kindLabel}</span>}
+      <span className="mt-auto flex items-center gap-2 border-t border-line px-3.5 py-2 text-[11.5px] text-dim">
+        <span className="min-w-0 truncate">{i.source === 'builtin' ? 'Built in' : i.source === 'mcp' ? i.server : i.kindLabel}</span>
+        {pending ? (
+          <span className="ml-auto shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Needs your OK</span>
+        ) : usage ? (
+          <span className="ml-auto shrink-0 tabular-nums">
+            {usage.calls} use{usage.calls === 1 ? '' : 's'} this month
+          </span>
+        ) : null}
+      </span>
     </button>
   )
 }
@@ -339,6 +352,7 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
         : null
   const origin = t && t.createdBy !== 'user' ? (t.createdBy === 'chat' ? 'in a chat' : 'for an app connected over MCP') : null
   const runsCode = t && (t.kind === 'command' || t.kind === 'javascript')
+  const [trying, setTrying] = useState(false)
   return (
     <div className="grid gap-5 px-5 py-5">
       <div className="flex items-center gap-3">
@@ -383,48 +397,57 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
         </div>
       )}
 
-      <section aria-labelledby="needs" className="grid gap-1.5">
-        <h3 id="needs" className="text-[12px] font-medium text-muted">
-          It needs
+      <div className="grid gap-2">
+        <div className={clsx('grid gap-2', onEdit && 'grid-cols-2')}>
+          <Button variant="primary" icon={<Play size={13} />} disabled={!run} aria-expanded={run ? trying : undefined} onClick={() => setTrying((v) => !v)}>
+            {trying && run ? 'Hide try' : 'Try tool'}
+          </Button>
+          {onEdit && <Button onClick={onEdit}>Edit tool</Button>}
+        </div>
+        {!run && <p className="text-[12px] text-dim">{i.builtin ? 'This tool changes things or needs a chat, so it can’t be tried here.' : 'Start its server to try it.'}</p>}
+      </div>
+      {run && trying && <TryIt fields={params} run={run} folder={i.builtin?.group === 'workspace'} />}
+
+      <section aria-labelledby="tool-inputs" className="grid gap-2 border-t border-line pt-4">
+        <h3 id="tool-inputs" className="text-[12.5px] font-semibold">
+          Inputs
         </h3>
         {params.length ? (
-          params.map((p) => (
-            <div key={p.name} className="flex items-baseline gap-2.5 rounded-lg bg-elev px-2.5 py-1.5">
-              <span className="font-mono text-[12px]" translate="no">
+          <div className="flex flex-wrap gap-1.5">
+            {params.map((p) => (
+              <span
+                key={p.name}
+                translate="no"
+                title={`${PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase() ?? p.type} · ${p.required ? 'needed' : 'optional'}${p.description ? ` — ${p.description}` : ''}`}
+                className={clsx('rounded-md border border-line px-2 py-0.5 font-mono text-[11.5px]', p.required ? 'text-fg' : 'text-muted')}
+              >
                 {p.name}
               </span>
-              <span className="min-w-0 flex-1 text-[12px] text-muted">{p.description}</span>
-              <span className="shrink-0 text-[11px] text-dim">{PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase()}</span>
-              <span className="shrink-0 text-[11px] text-dim">{p.required ? 'needed' : 'optional'}</span>
-            </div>
-          ))
+            ))}
+          </div>
         ) : (
           <p className="text-[12px] text-dim">Nothing; it runs as it is.</p>
         )}
       </section>
 
-      {run ? (
-        <TryIt key={i.key} fields={params} run={run} folder={i.builtin?.group === 'workspace'} />
-      ) : (
-        <p className="border-t border-line pt-4 text-[12px] text-dim">{i.builtin ? 'This tool changes things or needs a chat, so it can’t be tried here.' : 'Start its server to try it.'}</p>
-      )}
-
-      <section aria-labelledby="usedby" className="grid gap-1.5 border-t border-line pt-4">
-        <h3 id="usedby" className="text-[12px] font-medium text-muted">
+      <section aria-labelledby="usedby" className="grid gap-2">
+        <h3 id="usedby" className="text-[12.5px] font-semibold">
           Used by
         </h3>
-        <p className="text-[13px] leading-relaxed">{users.length ? users.join(', ') : 'No agent or automation has it yet.'}</p>
+        {users.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {users.map((u) => (
+              <span key={u} className="rounded-md border border-line px-2 py-0.5 text-[12px]">
+                {u}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] leading-relaxed">No agent or automation has it yet.</p>
+        )}
+        <p className="text-[11.5px] text-dim">{usage ? `Used ${usage.calls} time${usage.calls === 1 ? '' : 's'} in 30 days${usage.errors ? `, ${usage.errors} failed` : ''}, last ${timeAgo(usage.lastAt)}` : 'Not used in the last 30 days'}</p>
         <p className="text-[11.5px] text-dim">Each agent and automation chooses its own tools. Change it there.</p>
       </section>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {onEdit && (
-          <Button size="sm" onClick={onEdit}>
-            Edit tool
-          </Button>
-        )}
-        <span className="ml-auto text-[11.5px] text-dim">{usage ? `Used ${usage.calls} time${usage.calls === 1 ? '' : 's'} in 30 days${usage.errors ? `, ${usage.errors} failed` : ''}, last ${timeAgo(usage.lastAt)}` : 'Not used in the last 30 days'}</span>
-      </div>
 
       {i.builtin && (
         <details>
@@ -432,6 +455,14 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
           <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(i.builtin.schema, null, 2)}</pre>
         </details>
       )}
+
+      <div className="flex items-center border-t border-line pt-3 text-[11.5px] text-dim">
+        <span className="min-w-0 truncate">Provided by {i.source === 'builtin' ? 'Cloth' : i.source === 'mine' ? 'you' : i.server}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span aria-hidden="true" className={clsx('h-1.5 w-1.5 rounded-full', t && waiting(t) ? 'bg-warn' : 'bg-ok')} />
+          {t && waiting(t) ? 'Waiting for your OK' : 'Available to agents'}
+        </span>
+      </div>
     </div>
   )
 }
