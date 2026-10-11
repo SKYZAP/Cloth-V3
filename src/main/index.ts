@@ -109,7 +109,8 @@ else {
   })
 
   void app.whenReady().then(async () => {
-    app.setAppUserModelId('dev.cloth.app')
+    // Runs from source get their own id, so Windows never mixes them (and Electron's icon) up with the installed Cloth on the taskbar.
+    app.setAppUserModelId(app.isPackaged ? 'dev.cloth.app' : 'dev.cloth.app.source')
     // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
     const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({
