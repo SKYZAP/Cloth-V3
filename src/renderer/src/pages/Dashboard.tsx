@@ -54,14 +54,6 @@ const VIA: Record<string, { label: string; color: string }> = {
   workflow: { label: 'flow', color: '#fb923c' }
 }
 
-const VERDICT: Record<string, { label: string; tone: 'ok' | 'crimson' | 'warn' | 'info' | 'dim' }> = {
-  fresh: { label: 'passing', tone: 'ok' },
-  failing: { label: 'failing', tone: 'crimson' },
-  stale: { label: 'outdated', tone: 'warn' },
-  redundant: { label: 'redundant', tone: 'info' },
-  untested: { label: 'untested', tone: 'dim' }
-}
-
 const INPUT = '#4b4b56'
 const OUTPUT = '#dc2645'
 
@@ -175,14 +167,11 @@ export function DashboardPage() {
               </Panel>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Panel delay={0.3}>
                 <Flows stats={stats} onOpen={() => setPage('workflows')} />
               </Panel>
               <Panel delay={0.32}>
-                <SkillHealth stats={stats} onOpen={() => setPage('skills')} />
-              </Panel>
-              <Panel delay={0.34}>
                 <Library stats={stats} go={setPage} />
               </Panel>
             </div>
@@ -707,7 +696,6 @@ function Skills({ stats }: { stats: DashboardStats }) {
           key={s.name}
           rank={i + 1}
           name={s.name}
-          sub={s.verdict && s.verdict !== 'untested' ? <Badge tone={VERDICT[s.verdict]?.tone}>{VERDICT[s.verdict]?.label}</Badge> : null}
           right={<span className="w-10 text-right font-mono text-[11px] text-muted tabular-nums">{s.uses}</span>}
         >
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-elev-2">
@@ -783,47 +771,6 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
           </div>
         ))}
         {!w.top.length && <div className="text-[12px] text-dim">No runs in this period.</div>}
-      </div>
-    </div>
-  )
-}
-
-function SkillHealth({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
-  const h = stats.skillHealth
-  const untested = h.total - h.tested
-  const parts = [
-    { k: 'passing', n: h.passing, c: '#3fb97a' },
-    { k: 'failing', n: h.failing, c: '#dc2645' },
-    { k: 'outdated', n: h.outdated, c: '#e0a43a' },
-    { k: 'redundant', n: h.redundant, c: '#6b9cf0' },
-    { k: 'untested', n: untested, c: '#303036' }
-  ]
-  return (
-    <div className="pb-3">
-      <Heading icon={Sparkle} title="Skill health" right={<LinkButton onClick={onOpen}>open</LinkButton>} />
-      <div className="flex items-center gap-4 px-4">
-        <Ring value={h.total ? h.passing / h.total : 0}>{h.total ? `${h.passing}/${h.total}` : '—'}</Ring>
-        <div className="flex-1 text-[11.5px] text-dim">
-          {h.total ? (
-            <>
-              <span className="text-muted">{h.tested}</span> of {h.total} skills tested against a model.{' '}
-              {h.failing + h.outdated > 0 ? <span className="text-crimson-hi">{h.failing + h.outdated} need attention.</span> : h.tested ? 'All tested skills look healthy.' : 'Run a test from the skill’s Tests tab.'}
-            </>
-          ) : (
-            'No skills in the hub yet.'
-          )}
-        </div>
-      </div>
-      <div className="mt-3.5 px-4">
-        <SplitBar parts={parts.map((p) => ({ v: p.n, c: p.c }))} />
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-dim">
-          {parts.map((p) => (
-            <span key={p.k} className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.c }} />
-              {p.k} <span className="font-mono text-muted">{p.n}</span>
-            </span>
-          ))}
-        </div>
       </div>
     </div>
   )

@@ -3,24 +3,10 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import YAML from 'yaml'
-import type {
-  ModelRef,
-  Skill,
-  SkillAuditIssue,
-  SkillCaseResult,
-  SkillEvalCase,
-  SkillHealth,
-  SkillInput,
-  SkillRun,
-  SkillSource,
-  SkillTestInput,
-  SkillVerdict
-} from '@shared/types'
+import type { ModelRef, Skill, SkillInput, SkillSource } from '@shared/types'
 import { json } from '../core/db'
-import { errorMessage, newId, type Ctx } from '../core/context'
-import { parseJsonLoose } from '../core/llm-json'
+import type { Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
-import { EVAL_HARNESS, lintExpectation } from '@shared/skillEvals'
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 
@@ -91,8 +77,6 @@ export function slugify(name: string): string {
 }
 
 export class SkillService {
-  private pending = new Map<string, Promise<void>>()
-
   constructor(
     private ctx: Ctx,
     private providers: ProviderService
@@ -150,8 +134,6 @@ export class SkillService {
       dir,
       files: await listFiles(dir),
       updatedAt: s.mtimeMs,
-      evals: await readEvalsFile(dir),
-      health: this.health(name),
       source: await readSourceFile(dir)
     }
   }
@@ -235,52 +217,6 @@ export class SkillService {
     await writeFile(full, content)
   }
 
-  async saveEvals(name: string, cases: SkillEvalCase[]): Promise<Skill> {
-    const clean = cases
-      .filter((c) => c.prompt.trim())
-      .map((c) => ({ id: c.id || newId('case_'), prompt: c.prompt, expectations: c.expectations.map((e) => e.trim()).filter(Boolean) }))
-    await writeFile(join(this.dir(name), 'evals.json'), JSON.stringify({ cases: clean }, null, 2))
-    return this.get(name)
-  }
-
-  /** Ask a model to draft eval cases for a skill. */
-  async draftEvals(name: string, model: ModelRef): Promise<SkillEvalCase[]> {
-    const skill = await this.get(name)
-    const { text } = await this.providers.complete(model, {
-      system: 'You write evaluation cases for AI agent skills. Reply with JSON only.',
-      prompt: `Skill "${skill.name}": ${skill.description}
-
-${skill.body.slice(0, 12_000)}
-
-${EVAL_HARNESS}
-
-Write 4 cases:
-- 3 realistic user prompts that should make the model use this skill, covering different parts of it.
-- 1 prompt that sounds related but should NOT use the skill (to catch a skill that fires too eagerly), expecting the model to just answer it.
-
-Each case has 2-4 expectations. Every expectation must be:
-- one single check (no lists of several things),
-- unconditional (never "if …, then …" — one reply can't show which branch applies),
-- visible in the reply text (what it says, recommends, includes or avoids — never "searches", "runs" or "installs"; write "tells the user to run \`…\`" instead),
-- backed by a specific instruction in the skill, and something a model WITHOUT the skill would likely miss — not generic helpfulness,
-- concrete: name the exact command, flag, wording, step or format that must appear.
-
-JSON: {"cases": [{"prompt": "...", "expectations": ["..."], "basis": ["the skill sentence each expectation comes from, same order"]}]}`,
-      maxTokens: 3500,
-      temperature: 0.3
-    })
-    const parsed = parseJsonLoose<{ cases: { prompt: string; expectations: string[] }[] }>(text)
-    if (!parsed?.cases?.length) throw new Error('Model did not return eval cases')
-    return parsed.cases
-      .map((c) => ({
-        id: newId('case_'),
-        prompt: String(c.prompt ?? '').trim(),
-        // Drop the ones a single reply can't show (conditionals, actions); keep the rest for the user to review.
-        expectations: (c.expectations ?? []).map(String).map((e) => e.trim()).filter((e) => e && !lintExpectation(e).some((i) => i.kind === 'conditional' || i.kind === 'action'))
-      }))
-      .filter((c) => c.prompt && c.expectations.length)
-  }
-
   // ─── External sources ─────────────────────────────────────────────────────
 
   knownSources(): string[] {
@@ -333,169 +269,10 @@ JSON: {"cases": [{"prompt": "...", "expectations": ["..."], "basis": ["the skill
     await cp(this.dir(name), target, { recursive: true })
     return target
   }
-
-  // ─── Testing ──────────────────────────────────────────────────────────────
-
-  runs(name: string, limit = 20): SkillRun[] {
-    const rows = this.ctx.db
-      .prepare('SELECT data FROM skill_runs WHERE skill_name = ? ORDER BY created_at DESC LIMIT ?')
-      .all(name, limit) as { data: string }[]
-    return rows.map((r) => json<SkillRun>(r.data, null as unknown as SkillRun)).filter(Boolean)
-  }
-
-  private health(name: string): SkillHealth | null {
-    const last = this.runs(name, 1)[0]
-    if (!last || last.status !== 'done') return null
-    return { verdict: last.verdict, lastRunAt: last.finishedAt ?? last.createdAt, lastScore: last.score, model: last.model }
-  }
-
-  private saveRun(run: SkillRun): void {
-    this.ctx.db
-      .prepare('INSERT INTO skill_runs (id, skill_name, data, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data')
-      .run(run.id, run.skillName, JSON.stringify(run), run.createdAt)
-    this.ctx.emit('skills', { type: 'run', run })
-  }
-
-  /** Starts a test run in the background; returns the run immediately. */
-  startTest(input: SkillTestInput): SkillRun {
-    const run: SkillRun = {
-      id: newId('run_'),
-      skillName: input.name,
-      kind: 'eval',
-      model: input.model,
-      judge: input.judge ?? input.model,
-      status: 'running',
-      score: null,
-      baselineScore: null,
-      cases: [],
-      issues: [],
-      summary: '',
-      verdict: 'untested',
-      error: null,
-      createdAt: Date.now(),
-      finishedAt: null
-    }
-    this.saveRun(run)
-    const done = this.executeTest(run, input)
-      .catch((err) => {
-        run.status = 'error'
-        run.error = errorMessage(err)
-        run.finishedAt = Date.now()
-        this.saveRun(run)
-      })
-      .finally(() => this.pending.delete(run.id))
-    this.pending.set(run.id, done)
-    return run
-  }
-
-  /** Runs a test to completion (used by workflows and MCP). */
-  async test(input: SkillTestInput): Promise<SkillRun> {
-    const run = this.startTest(input)
-    await this.pending.get(run.id)
-    return run
-  }
-
-  private async executeTest(run: SkillRun, input: SkillTestInput): Promise<void> {
-    const skill = await this.get(input.name)
-    if (!skill.evals.length && !input.audit) throw new Error('This skill has no eval cases — add some, or run the freshness audit')
-    run.kind = skill.evals.length ? 'eval' : 'audit'
-    const judge = run.judge
-    const previous = this.runs(skill.name, 10).find((r) => r.id !== run.id && r.status === 'done' && r.score !== null && sameModel(r.model, run.model))
-
-    for (const c of skill.evals) {
-      const result: SkillCaseResult = { caseId: c.id, prompt: c.prompt, output: '', expectations: [], score: 0 }
-      result.output = (await this.providers.complete(run.model, { system: skillSystemPrompt(skill), prompt: c.prompt, maxTokens: 4000, temperature: 0 })).text
-      result.expectations = await this.grade(judge, c, result.output)
-      result.score = ratio(result.expectations)
-      if (input.baseline) {
-        result.baselineOutput = (await this.providers.complete(run.model, { system: 'You are a helpful assistant.', prompt: c.prompt, maxTokens: 4000, temperature: 0 })).text
-        result.baselineScore = ratio(await this.grade(judge, c, result.baselineOutput))
-      }
-      run.cases.push(result)
-      this.saveRun(run)
-    }
-
-    if (input.audit) {
-      run.issues = await this.audit(skill, judge)
-      this.saveRun(run)
-    }
-
-    run.score = run.cases.length ? avg(run.cases.map((c) => c.score)) : null
-    run.baselineScore = input.baseline && run.cases.length ? avg(run.cases.map((c) => c.baselineScore ?? 0)) : null
-    const { verdict, summary } = computeVerdict(run, previous?.score ?? null, !!input.audit)
-    run.verdict = verdict
-    run.summary = summary
-    run.status = 'done'
-    run.finishedAt = Date.now()
-    this.saveRun(run)
-  }
-
-  private async grade(judge: ModelRef, c: SkillEvalCase, output: string) {
-    if (!c.expectations.length) return []
-    const { text } = await this.providers.complete(judge, {
-      system: `You are a strict grader. Judge only what the response actually contains. ${EVAL_HARNESS} Treat an expectation about an action as met when the reply clearly tells the user to do it (or says it would) with the specifics the expectation asks for. Reply with JSON only.`,
-      prompt: `User prompt:\n${c.prompt}\n\nResponse:\n${output.slice(0, 16_000)}\n\nExpectations:\n${c.expectations.map((e, i) => `${i + 1}. ${e}`).join('\n')}\n\nFor each expectation decide pass/fail with a one-sentence reason. JSON: {"results": [{"i": 1, "pass": true, "reason": "..."}]}`,
-      maxTokens: 1200,
-      temperature: 0
-    })
-    const parsed = parseJsonLoose<{ results: { i: number; pass: boolean; reason: string }[] }>(text)
-    return c.expectations.map((expectation, i) => {
-      const r = parsed?.results?.find((x) => x.i === i + 1)
-      return { expectation, pass: !!r?.pass, reason: r?.reason ?? 'Grader gave no verdict' }
-    })
-  }
-
-  /** Freshness audit: the model reviews the skill for outdated APIs, versions and advice. */
-  private async audit(skill: Skill, model: ModelRef): Promise<SkillAuditIssue[]> {
-    const { text } = await this.providers.complete(model, {
-      system: `You audit AI agent skills for staleness. Today is ${new Date().toISOString().slice(0, 10)}. Flag only concrete problems: deprecated or renamed APIs, outdated version numbers or install commands, removed CLI flags, advice superseded by current best practice, broken assumptions. Do not nitpick style. Reply with JSON only.`,
-      prompt: `Skill "${skill.name}": ${skill.description}\n\n${skill.body.slice(0, 20_000)}\n\nJSON: {"issues": [{"severity": "high|medium|low", "excerpt": "exact short quote", "problem": "...", "suggestion": "..."}]}  — empty list if nothing is outdated.`,
-      maxTokens: 2000,
-      temperature: 0
-    })
-    const parsed = parseJsonLoose<{ issues: SkillAuditIssue[] }>(text)
-    return (parsed?.issues ?? []).map((i) => ({
-      severity: (['high', 'medium', 'low'].includes(i.severity) ? i.severity : 'low') as SkillAuditIssue['severity'],
-      excerpt: String(i.excerpt ?? ''),
-      problem: String(i.problem ?? ''),
-      suggestion: String(i.suggestion ?? '')
-    }))
-  }
 }
 
 export function skillSystemPrompt(skill: Pick<Skill, 'name' | 'description' | 'body'>): string {
   return `You are a helpful assistant. The following skill has been loaded — follow its instructions when relevant.\n\n<skill name="${skill.name}">\n${skill.description}\n\n${skill.body}\n</skill>`
-}
-
-export function computeVerdict(
-  run: Pick<SkillRun, 'score' | 'baselineScore' | 'issues' | 'cases'>,
-  previousScore: number | null,
-  audited: boolean
-): { verdict: SkillVerdict; summary: string } {
-  const high = run.issues.filter((i) => i.severity === 'high').length
-  const parts: string[] = []
-  if (run.score !== null) parts.push(`${Math.round(run.score * 100)}% of expectations met`)
-  if (run.baselineScore !== null) parts.push(`baseline without skill ${Math.round(run.baselineScore * 100)}%`)
-  if (audited) parts.push(run.issues.length ? `${run.issues.length} audit issue(s), ${high} high` : 'audit found nothing outdated')
-  if (previousScore !== null && run.score !== null) parts.push(`previous run ${Math.round(previousScore * 100)}%`)
-  const summary = parts.join(' · ') || 'Nothing to test — add eval cases or enable the audit'
-
-  if (run.score === null && !audited) return { verdict: 'untested', summary }
-  if (run.score !== null && run.score < 0.5) return { verdict: 'failing', summary }
-  const regressed = previousScore !== null && run.score !== null && previousScore - run.score >= 0.2
-  if (high > 0 || regressed || (run.score !== null && run.score < 0.8)) return { verdict: 'stale', summary }
-  if (run.baselineScore !== null && run.score !== null && run.baselineScore >= run.score) return { verdict: 'redundant', summary }
-  return { verdict: 'fresh', summary }
-}
-
-function ratio(results: { pass: boolean }[]): number {
-  return results.length ? results.filter((r) => r.pass).length / results.length : 0
-}
-function avg(xs: number[]): number {
-  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
-}
-function sameModel(a: ModelRef, b: ModelRef): boolean {
-  return a.providerId === b.providerId && a.modelId === b.modelId
 }
 
 async function listFiles(dir: string): Promise<string[]> {
@@ -535,12 +312,4 @@ async function readSourceFile(dir: string): Promise<SkillSource | null> {
   const file = join(dir, '.cloth-source.json')
   if (!existsSync(file)) return null
   return json<SkillSource | null>(await readFile(file, 'utf8'), null)
-}
-
-async function readEvalsFile(dir: string): Promise<SkillEvalCase[]> {
-  const file = join(dir, 'evals.json')
-  if (!existsSync(file)) return []
-  const parsed = json<{ cases?: SkillEvalCase[] } | SkillEvalCase[]>(await readFile(file, 'utf8'), [])
-  const cases = Array.isArray(parsed) ? parsed : (parsed.cases ?? [])
-  return cases.map((c, i) => ({ id: c.id || `case_${i + 1}`, prompt: String(c.prompt ?? ''), expectations: (c.expectations ?? []).map(String) }))
 }

@@ -424,9 +424,6 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     note(`hybrid top hit: ${search.hits[0]?.title} (bm25 ${search.hits[0]?.bm25Rank}, vec ${search.hits[0]?.vectorRank})`)
 
     await s.skills.create({ name: 'nestjs-guards', description: 'Write NestJS guards and role-based authorization. Use when protecting routes.', body: '# NestJS guards\n\n## Instructions\n\n1. Implement `CanActivate`.\n2. Register with `@UseGuards()` or `APP_GUARD`.\n3. Read role metadata with `Reflector`.' })
-    await s.skills.saveEvals('nestjs-guards', [{ id: 'c1', prompt: 'Protect an admin route in NestJS', expectations: ['uses CanActivate', 'uses Reflector for roles'] }])
-    const run = await s.skills.test({ name: 'nestjs-guards', model: chat, baseline: true, audit: true })
-    note(`skill test: ${run.status} verdict=${run.verdict} ${run.error ?? run.summary}`)
 
     const wf = s.workflows.create({ name: 'Docs digest', template: 'rag-digest' })
     s.workflows.save(wf.id, { cron: '0 9 * * 1-5', cronEnabled: true })
@@ -652,14 +649,6 @@ async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note
   writeFileSync(join(outDir, 'registry-installed.png'), await screenshot(win))
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
   await wait(600)
-  await clickText(win, 'Tests (')
-  await wait(600)
-  const t0 = Date.now()
-  await clickText(win, 'Draft with AI')
-  for (let i = 0; i < 240 && (await js(`document.querySelectorAll('textarea').length`)) < 2; i++) await wait(500)
-  const drafted = await js(`document.querySelectorAll('textarea').length / 2`)
-  note(`draft with AI: ${drafted} case(s) in the editor after ${((Date.now() - t0) / 1000).toFixed(1)}s`)
-  writeFileSync(join(outDir, 'draft-evals.png'), await screenshot(win))
 }
 
 /** A real chat against LM Studio that edits files in a workspace, approved through the UI. */

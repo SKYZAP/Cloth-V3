@@ -51,10 +51,7 @@ import type {
   RagSearchResult,
   Settings,
   Skill,
-  SkillEvalCase,
   SkillInput,
-  SkillRun,
-  SkillTestInput,
   UiMessage,
   Workflow,
   WorkflowRun,
@@ -150,22 +147,28 @@ export interface ClothApi {
     remove(name: string): Promise<void>
     readFile(name: string, path: string): Promise<string>
     writeFile(name: string, path: string, content: string): Promise<void>
-    saveEvals(name: string, cases: SkillEvalCase[]): Promise<Skill>
-    draftEvals(name: string, model: ModelRef): Promise<SkillEvalCase[]>
     /** Write a new skill with a model from a plain-language request, and save it. */
     generate(input: { request: string; model: ModelRef; name?: string }): Promise<Skill>
     discover(extra?: string[]): Promise<ExternalSkillInfo[]>
     importFrom(path: string, overwrite?: boolean): Promise<string[]>
     exportTo(name: string, targetRoot: string): Promise<string>
     knownSources(): Promise<string[]>
-    test(input: SkillTestInput): Promise<SkillRun>
-    runs(name: string): Promise<SkillRun[]>
     registrySearch(query: string): Promise<RegistrySkill[]>
     registryPreview(id: string): Promise<RegistryPreview>
     registryInstall(id: string, overwrite?: boolean): Promise<string>
     registryCheckUpdate(name: string): Promise<{ updateAvailable: boolean; current: string | null; latest: string | null }>
-    /** Each file an update from skills.sh would add, change or remove, with a diff. */
-    registryUpdateDiff(name: string): Promise<{ path: string; kind: 'added' | 'changed' | 'removed'; diff: string }[]>
+    /** Each file an update from skills.sh would add, change or remove, with a diff (CRLF and BOM ignored). */
+    registryUpdateDiff(name: string): Promise<import('./types').SkillUpdateFile[]>
+    /** The skill's skills.sh link (linking it from the `skills` CLI lock file when that matches) and whether an update is available. */
+    registryStatus(name: string): Promise<import('./types').SkillRegistryStatus>
+    /** Security audits skills.sh shows for a linked skill (cached 24 h; refresh bypasses the cache). Null when not linked or unavailable. */
+    registryAudits(name: string, refresh?: boolean): Promise<import('./types').SkillAudits | null>
+    /** Search skills.sh for where a local skill may have come from (up to 3 candidates). */
+    registryLinkCandidates(name: string): Promise<import('./types').SkillLinkCandidate[]>
+    registryLink(name: string, id: string): Promise<import('./types').SkillSource>
+    registryUnlink(name: string): Promise<void>
+    /** Write the latest snapshot into the skill's own folder, keeping evals.json and the link. Returns the skill name. */
+    registryUpdate(name: string): Promise<string>
     /** Usage, local checks, a safety scan and the trigger check for the Overview tab. */
     insight(name: string): Promise<import('./types').SkillInsight>
     saveTriggers(name: string, triggers: import('./types').SkillTrigger[]): Promise<import('./types').SkillTrigger[]>
@@ -379,7 +382,7 @@ export type EventMap = {
   workflow: import('./types').WorkflowEvent
   ingest: import('./types').IngestProgress
   mcp: McpStatus
-  skills: { type: 'run'; run: SkillRun } | { type: 'changed'; name: string }
+  skills: { type: 'changed'; name: string }
   tools: { type: 'changed'; id: string }
   export: import('./flow-bundle').ExportEvent
   web: { type: 'status' }

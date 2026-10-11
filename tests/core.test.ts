@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxText, fauxToolCall, Type } from '@earendil-wo
 import { registerFauxProvider, streamSimple } from '@earendil-works/pi-ai/compat'
 import { chunkText, cleanHeading } from '../src/main/rag/chunker'
 import { executeGraph, renderTemplate, topoSort } from '../src/main/workflows/engine'
-import { computeVerdict, parseSkillMd, serializeSkillMd } from '../src/main/skills/skills'
+import { parseSkillMd, serializeSkillMd } from '../src/main/skills/skills'
 import { toUiMessages } from '../src/main/agent/chat'
 import { parseJsonLoose } from '../src/main/core/llm-json'
 import { extractHtml, loadUrl, needsRendering } from '../src/main/rag/extract'
@@ -117,16 +117,6 @@ describe('skills', () => {
     const parsed = parseSkillMd(md)
     expect(parsed.frontmatter).toMatchObject({ name: 'x', description: 'Does: things', version: 2 })
     expect(parsed.body).toBe('# Body')
-  })
-
-  it('computes verdicts', () => {
-    const base = { cases: [], issues: [], baselineScore: null }
-    expect(computeVerdict({ ...base, score: 0.3 }, null, false).verdict).toBe('failing')
-    expect(computeVerdict({ ...base, score: 1 }, null, false).verdict).toBe('fresh')
-    expect(computeVerdict({ ...base, score: 0.7 }, 1, false).verdict).toBe('stale')
-    expect(computeVerdict({ ...base, score: 1, baselineScore: 1 }, null, false).verdict).toBe('redundant')
-    expect(computeVerdict({ ...base, score: null, issues: [{ severity: 'high', excerpt: '', problem: '', suggestion: '' }] }, null, true).verdict).toBe('stale')
-    expect(computeVerdict({ ...base, score: null }, null, true).verdict).toBe('fresh')
   })
 
   it('creates, lists and imports skills on disk', async () => {

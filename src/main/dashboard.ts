@@ -113,14 +113,13 @@ export class DashboardService {
     ).map((r) => ({ name: r.name, kind: r.kinds ?? '', calls: r.calls, errors: r.errors, avgMs: r.avg === null ? null : Math.round(r.avg), lastUsed: r.last }))
 
     const hub = await this.deps.skills.list().catch(() => [])
-    const verdicts = new Map(hub.map((s) => [s.name, s.health?.verdict ?? 'untested']))
     const skillRows = this.q<{ name: string; detail: string; uses: number; last: number }>(
       `SELECT name, detail, COUNT(*) AS uses, MAX(at) AS last FROM usage_events WHERE at >= ? AND kind = 'skill' GROUP BY name, detail`,
       from
     )
     const skillMap = new Map<string, DashboardStats['skills'][number]>()
     for (const r of skillRows) {
-      const s = skillMap.get(r.name) ?? { name: r.name, uses: 0, via: {}, lastUsed: 0, verdict: (verdicts.get(r.name) as DashboardStats['skills'][number]['verdict']) ?? null }
+      const s = skillMap.get(r.name) ?? { name: r.name, uses: 0, via: {}, lastUsed: 0 }
       s.uses += r.uses
       s.via[r.detail] = (s.via[r.detail] ?? 0) + r.uses
       s.lastUsed = Math.max(s.lastUsed, r.last)
@@ -175,16 +174,7 @@ export class DashboardService {
         .slice(0, 6)
     }
 
-    // Skill health & inventory
-    const count = (v: string) => hub.filter((s) => s.health?.verdict === v).length
-    const skillHealth = {
-      total: hub.length,
-      tested: hub.filter((s) => s.health && s.health.verdict !== 'untested').length,
-      passing: count('fresh'),
-      failing: count('failing'),
-      outdated: count('stale'),
-      redundant: count('redundant')
-    }
+    // Inventory
     const providers = this.deps.providers.list()
     const collections = this.deps.rag.listCollections()
     const inventory = {
@@ -216,7 +206,7 @@ export class DashboardService {
       ok: !!r.ok
     }))
 
-    return { range, since, generatedAt: now, totals, previous, bucket: bucketSize === HOUR ? 'hour' : 'day', timeline: [...buckets.values()], models, tools, skills, sources, hours, workflows, skillHealth, inventory, recent }
+    return { range, since, generatedAt: now, totals, previous, bucket: bucketSize === HOUR ? 'hour' : 'day', timeline: [...buckets.values()], models, tools, skills, sources, hours, workflows, inventory, recent }
   }
 
   private totals(from: number, to: number): DashboardTotals {
