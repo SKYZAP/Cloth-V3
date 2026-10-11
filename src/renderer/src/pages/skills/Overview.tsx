@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ChatCircleDots, CheckCircle, Info, Plus, ShieldCheck, Sparkle, Warning, X } from '@phosphor-icons/react'
-import type { ModelRef, Skill, SkillInsight, SkillSafetyFinding, SkillTrigger } from '@shared/types'
+import { ArrowClockwise, ChatCircleDots, CheckCircle, Info, Plus, ShieldCheck, Sparkle, Warning, X } from '@phosphor-icons/react'
+import type { ModelRef, Skill, SkillAuditStatus, SkillAudits, SkillInsight, SkillLinkCandidate, SkillRegistryStatus, SkillSafetyFinding, SkillSource, SkillTrigger } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { timeAgo } from '@/lib/format'
-import { Button, Spinner } from '@/components/ui'
+import { Button, IconButton, Spinner, confirmAction } from '@/components/ui'
+import { Markdown } from '@/components/Markdown'
 import { ModelPicker } from '@/components/ModelPicker'
 
 const KIND: Record<SkillSafetyFinding['kind'], string> = {
@@ -16,7 +17,26 @@ const KIND: Record<SkillSafetyFinding['kind'], string> = {
 }
 
 /** What matters about a skill day to day: does it load when it should, is it used, is it sound and safe. */
-export function SkillOverview({ skill, onOpenTab }: { skill: Skill; onOpenTab(tab: 'instructions' | 'files'): void }) {
+export function SkillOverview({
+  skill,
+  linked,
+  status,
+  updating,
+  onUpdate,
+  onLinkChanged,
+  onOpenTab
+}: {
+  skill: Skill
+  /** The skills.sh link, or null for a local skill. */
+  linked: SkillSource | null
+  status: SkillRegistryStatus | null
+  updating: boolean
+  /** Starts the same update flow as the header's Update button. */
+  onUpdate(): void
+  /** Called after linking or unlinking so the parent refreshes the status and the skill. */
+  onLinkChanged(): void
+  onOpenTab(tab: 'instructions' | 'files'): void
+}) {
   const settings = useApp((s) => s.settings)
   const [info, setInfo] = useState<SkillInsight | null>(null)
   const [model, setModel] = useState<ModelRef | null>(settings?.defaultModel ?? null)
@@ -34,14 +54,18 @@ export function SkillOverview({ skill, onOpenTab }: { skill: Skill; onOpenTab(ta
     )
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto grid w-[min(980px,calc(100%-40px))] grid-cols-2 gap-3 py-5 mobile:grid-cols-1">
-        <div className="col-span-2 mobile:col-span-1">
+      <div className="mx-auto grid w-[min(980px,calc(100%-40px))] grid-cols-[minmax(0,1fr)_300px] items-start gap-4 py-5 max-[1000px]:grid-cols-1">
+        <div className="grid min-w-0 gap-4">
+          <SummaryCard info={info} onOpenTab={onOpenTab} />
           <TriggerCheck skill={skill} info={info} model={model} onModel={setModel} onChanged={load} />
+          <SkillMdCard skill={skill} onEdit={() => onOpenTab('instructions')} />
         </div>
-        <UsageCard info={info} />
-        <ChecksCard info={info} onOpenTab={onOpenTab} />
-        <SafetyCard skill={skill} info={info} onChanged={load} />
-        <TryCard skill={skill} />
+        <div className="sticky top-4 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 max-[1000px]:static">
+          <UsageCard info={info} />
+          <AuditsCard skill={skill} linked={linked} info={info} onChanged={load} />
+          <SourceCard skill={skill} linked={linked} status={status} updating={updating} onUpdate={onUpdate} onLinkChanged={onLinkChanged} />
+          <TryCard skill={skill} />
+        </div>
       </div>
     </div>
   )
@@ -173,11 +197,11 @@ const LEVEL = {
   warn: { icon: Warning, cls: 'text-warn' }
 }
 
-function ChecksCard({ info, onOpenTab }: { info: SkillInsight; onOpenTab(tab: 'instructions' | 'files'): void }) {
+function SummaryCard({ info, onOpenTab }: { info: SkillInsight; onOpenTab(tab: 'instructions' | 'files'): void }) {
   const warn = info.checks.filter((c) => c.level === 'warn').length
   const ok = info.checks.filter((c) => c.level === 'ok').length
   return (
-    <Card title="Checks" meta={`${ok} pass${warn ? ` · ${warn} to fix` : ''}`}>
+    <Card title="Summary" meta={`${ok} pass${warn ? ` · ${warn} to fix` : ''}`}>
       <ul className="grid gap-1.5">
         {info.checks.map((c) => {
           const L = LEVEL[c.level]
@@ -206,7 +230,246 @@ function ChecksCard({ info, onOpenTab }: { info: SkillInsight; onOpenTab(tab: 'i
   )
 }
 
-function SafetyCard({ skill, info, onChanged }: { skill: Skill; info: SkillInsight; onChanged(): void }) {
+function SkillMdCard({ skill, onEdit }: { skill: Skill; onEdit(): void }) {
+  return (
+    <Card
+      title="SKILL.md"
+      meta={
+        <button onClick={onEdit} className="text-dim hover:text-crimson-hi">
+          Edit
+        </button>
+      }
+    >
+      <div className="max-h-[520px] overflow-y-auto">
+        <Markdown text={skill.body} />
+      </div>
+    </Card>
+  )
+}
+
+const AUDIT: Record<SkillAuditStatus, { label: string; cls: string }> = {
+  pass: { label: 'Pass', cls: 'bg-ok/15 text-ok' },
+  warn: { label: 'Warn', cls: 'bg-warn/15 text-warn' },
+  fail: { label: 'Fail', cls: 'bg-crimson-soft text-crimson-hi' },
+  pending: { label: 'Pending', cls: 'bg-elev-2 text-dim' },
+  unknown: { label: 'Unknown', cls: 'bg-elev-2 text-dim' }
+}
+
+/** skills.sh security audits for linked skills, with Cloth's own local scan alongside (or instead, for local skills). */
+function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: SkillSource | null; info: SkillInsight; onChanged(): void }) {
+  // undefined = loading, null = could not load
+  const [audits, setAudits] = useState<SkillAudits | null | undefined>(undefined)
+  const [refreshing, setRefreshing] = useState(false)
+  const linkedId = linked?.id ?? null
+  const fetchAudits = (refresh = false) => {
+    let live = true
+    if (refresh) setRefreshing(true)
+    else setAudits(undefined)
+    api.skills
+      .registryAudits(skill.name, refresh)
+      .then(
+        (a) => live && setAudits(a),
+        () => live && setAudits(null)
+      )
+      .finally(() => live && setRefreshing(false))
+    return () => {
+      live = false
+    }
+  }
+  useEffect(() => {
+    if (!linkedId) return
+    return fetchAudits()
+  }, [skill.name, linkedId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!linked)
+    return (
+      <Card title="Security audits" meta={<ReviewMeta info={info} />}>
+        <div className="text-[12px] text-dim">Not linked to skills.sh, so there are no audits. Cloth's own scan:</div>
+        <LocalScan skill={skill} info={info} onChanged={onChanged} />
+      </Card>
+    )
+  return (
+    <Card title="Security audits">
+      {audits === undefined ? (
+        <div className="grid gap-1.5" aria-label="Loading audits">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-6 animate-pulse rounded bg-elev-2" />
+          ))}
+        </div>
+      ) : audits === null ? (
+        <div className="flex items-center justify-between gap-2 text-[12px] text-dim">
+          <span>Couldn't load audits from skills.sh.</span>
+          <Button size="sm" variant="ghost" onClick={() => void fetchAudits()}>
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid">
+            {audits.audits.map((a) => {
+              const st = AUDIT[a.status] ?? AUDIT.unknown
+              return (
+                <div key={a.provider} className="flex items-center justify-between gap-2 py-1.5 text-[12.5px]">
+                  <button onClick={() => void api.app.openExternal(a.reportUrl)} className="min-w-0 truncate text-left text-fg hover:text-crimson-hi" title="Open the report on skills.sh">
+                    {a.provider}
+                  </button>
+                  <span className={clsx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium', st.cls)}>{st.label}</span>
+                </div>
+              )
+            })}
+            {!audits.audits.length && <div className="py-1.5 text-[12px] text-dim">skills.sh lists no audits for this skill yet.</div>}
+          </div>
+          <div className="flex items-center justify-between gap-2 text-[11.5px] text-dim">
+            <span>From skills.sh, checked {timeAgo(audits.fetchedAt)}</span>
+            <IconButton title="Check again" aria-label="Refresh audits" disabled={refreshing} onClick={() => void fetchAudits(true)}>
+              <ArrowClockwise size={13} className={clsx(refreshing && 'animate-spin')} />
+            </IconButton>
+          </div>
+        </>
+      )}
+      <details className="rounded-[10px] border border-line bg-bg">
+        <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12px]">
+          <span className="flex-1">Cloth's local scan</span>
+          <span className="text-[11px] text-dim">
+            <ReviewMeta info={info} />
+          </span>
+        </summary>
+        <div className="grid gap-2.5 border-t border-line px-2.5 py-2">
+          <LocalScan skill={skill} info={info} onChanged={onChanged} />
+        </div>
+      </details>
+    </Card>
+  )
+}
+
+function ReviewMeta({ info }: { info: SkillInsight }) {
+  const s = info.safety
+  if (s.reviewed)
+    return (
+      <span className="flex items-center gap-1 text-ok">
+        <ShieldCheck size={13} weight="fill" /> reviewed {timeAgo(s.reviewedAt)}
+      </span>
+    )
+  return <>{s.reviewedAt ? 'changed since your review' : 'not reviewed'}</>
+}
+
+const LINKED_BY: Record<NonNullable<SkillSource['linkedBy']>, string> = {
+  install: 'Installed from skills.sh',
+  lock: 'Linked through the skills CLI',
+  user: 'Linked by you'
+}
+
+/** Where the skill comes from: its skills.sh link with update and unlink, or a way to link a local skill. */
+function SourceCard({
+  skill,
+  linked,
+  status,
+  updating,
+  onUpdate,
+  onLinkChanged
+}: {
+  skill: Skill
+  linked: SkillSource | null
+  status: SkillRegistryStatus | null
+  updating: boolean
+  onUpdate(): void
+  onLinkChanged(): void
+}) {
+  const [cands, setCands] = useState<SkillLinkCandidate[] | null>(null)
+  const [finding, setFinding] = useState(false)
+  const [linking, setLinking] = useState<string | null>(null)
+  const [unlinking, setUnlinking] = useState(false)
+  useEffect(() => setCands(null), [skill.name, linked?.id])
+
+  const find = async () => {
+    setFinding(true)
+    const c = await attempt(() => api.skills.registryLinkCandidates(skill.name))
+    setFinding(false)
+    if (c) setCands(c)
+  }
+  const link = async (id: string) => {
+    setLinking(id)
+    const ok = await attempt(() => api.skills.registryLink(skill.name, id), `Linked ${skill.name} to skills.sh`)
+    setLinking(null)
+    if (ok) onLinkChanged()
+  }
+  const unlink = async () => {
+    if (!(await confirmAction("Cloth stops showing audits and updates for it. The skill's files stay as they are.", { title: 'Unlink from skills.sh?', confirmLabel: 'Unlink' }))) return
+    setUnlinking(true)
+    const ok = await attempt(async () => {
+      await api.skills.registryUnlink(skill.name)
+      return true
+    })
+    setUnlinking(false)
+    if (ok) onLinkChanged()
+  }
+
+  if (linked)
+    return (
+      <Card title="Source">
+        <div className="grid gap-0.5 text-[12.5px]">
+          <span className="text-fg">skills.sh</span>
+          <button onClick={() => void api.app.openExternal(linked.url)} className="min-w-0 truncate text-left font-mono text-[11.5px] text-dim hover:text-crimson-hi" title={linked.url}>
+            {linked.id}
+          </button>
+          <span className="text-[12px] text-muted">{LINKED_BY[linked.linkedBy ?? 'install']}</span>
+        </div>
+        {status?.updateAvailable ? (
+          <div className="flex items-center justify-between gap-2 text-[12px]">
+            <span className="text-warn">Update available</span>
+            <Button size="sm" loading={updating} onClick={onUpdate}>
+              Update
+            </Button>
+          </div>
+        ) : status ? (
+          <div className="flex items-center gap-1.5 text-[12px] text-ok">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok" /> Up to date
+          </div>
+        ) : null}
+        <div>
+          <Button size="sm" variant="ghost" loading={unlinking} onClick={() => void unlink()}>
+            Unlink
+          </Button>
+        </div>
+      </Card>
+    )
+  return (
+    <Card title="Source">
+      <div className="text-[12.5px] text-fg">Local skill</div>
+      {!cands ? (
+        <div>
+          <Button size="sm" loading={finding} onClick={() => void find()}>
+            Link to skills.sh…
+          </Button>
+        </div>
+      ) : !cands.length ? (
+        <div className="text-[12px] text-dim">No match on skills.sh.</div>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-1">
+          {cands.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 rounded-[10px] border border-line bg-bg px-2 py-1.5">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-mono text-[11.5px] text-fg" title={c.id}>
+                  {c.id}
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-dim">
+                  {c.installs.toLocaleString()} installs
+                  {c.identical && <span className="rounded bg-ok/15 px-1.5 py-px text-[10.5px] font-medium text-ok">Identical</span>}
+                </div>
+              </div>
+              <Button size="sm" loading={linking === c.id} disabled={!!linking && linking !== c.id} onClick={() => void link(c.id)}>
+                Link
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/** Cloth's own scan: what the skill's scripts touch, and instructions that read like prompt injection. */
+function LocalScan({ skill, info, onChanged }: { skill: Skill; info: SkillInsight; onChanged(): void }) {
   const s = info.safety
   const groups = (Object.keys(KIND) as SkillSafetyFinding['kind'][]).map((k) => ({ k, items: s.findings.filter((f) => f.kind === k) })).filter((g) => g.items.length)
   const mark = async (reviewed: boolean) => {
@@ -214,11 +477,8 @@ function SafetyCard({ skill, info, onChanged }: { skill: Skill; info: SkillInsig
     onChanged()
   }
   return (
-    <Card
-      title="Safety review"
-      meta={s.reviewed ? <span className="flex items-center gap-1 text-ok"><ShieldCheck size={13} weight="fill" /> reviewed {timeAgo(s.reviewedAt)}</span> : s.reviewedAt ? 'changed since your review' : 'not reviewed'}
-    >
-      <div className="text-[12px] text-dim">{skill.source ? `From skills.sh (${skill.source.id.split('/').slice(0, 2).join('/')}).` : 'A local skill.'} What its scripts touch, and instructions that read like prompt injection. A list to read, not a verdict.</div>
+    <>
+      <div className="text-[12px] text-dim">What its scripts touch, and instructions that read like prompt injection. A list to read, not a verdict.</div>
       {groups.length ? (
         <div className="grid gap-2">
           {groups.map(({ k, items }) => (
@@ -257,7 +517,7 @@ function SafetyCard({ skill, info, onChanged }: { skill: Skill; info: SkillInsig
           </Button>
         )}
       </div>
-    </Card>
+    </>
   )
 }
 
