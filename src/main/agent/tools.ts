@@ -65,6 +65,8 @@ export interface ToolScope {
   skillsAlways?: string[]
   /** Tools switched off by name. */
   disabledTools?: string[]
+  /** Commands may run without asking, but only these (an automation's allowlist; anything else is refused). */
+  commandAllow?: string[] | null
   /** Only these tools, by name (an automation's exact list); null/undefined = no such limit. */
   onlyTools?: string[] | null
   /** The saved agent this agent is (it doesn't delegate to itself). */
@@ -454,7 +456,9 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         root: scope.workspace,
         sessionId: scope.sessionId ?? null,
         access: writable ? 'write' : 'read',
-        shell: !!scope.shell && !!scope.sessionId,
+        // Commands need someone to approve them, an allowlist, or a container to run in.
+        shell: !!scope.shell && (!!scope.sessionId || !!scope.commandAllow?.length || !!scope.container),
+        commandAllow: scope.commandAllow ?? null,
         approvals: deps.approvals ?? null,
         checkpoints: deps.checkpoints ?? null,
         autoApprove: scope.autoApprove ?? (() => 'none'),

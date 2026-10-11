@@ -1,3 +1,4 @@
+import { commandAllowed } from '@shared/types'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { glob, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
@@ -253,6 +254,8 @@ export interface WorkspaceOptions {
   onAlways?(scope: 'edits' | 'all'): void
   /** Language servers for the `lsp` tool and post-edit type checking; null = off. */
   lsp?: LspManager | null
+  /** Commands that run without asking; any other command is refused (unattended automations). */
+  commandAllow?: string[] | null
   /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
   shellExec?: (command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]) => Promise<{ exitCode: number | null }>
 }
@@ -284,6 +287,10 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
 export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   const inside = (p: string) => confine(o.root, p)
   const ask = async (input: Omit<PendingApproval, 'id' | 'createdAt' | 'sessionId' | 'toolCallId'>): Promise<void> => {
+    if (input.kind === 'command' && o.commandAllow?.length) {
+      if (commandAllowed(input.command ?? '', o.commandAllow)) return
+      throw new Error(`This automation may only run these commands, one at a time: ${o.commandAllow.join(', ')}. Use one of them, or do without.`)
+    }
     const policy = o.autoApprove()
     const auto = policy === 'all' || (policy === 'edits' && input.kind !== 'command')
     if (auto) return

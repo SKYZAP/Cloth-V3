@@ -813,6 +813,28 @@ export interface Automation {
   deliver: AutomationDelivery
   /** Where results are saved when `deliver` is 'knowledge'. */
   collectionId: string | null
+  /** Also run when this changes (null = only on its schedule or when run by hand). */
+  watch: AutomationWatch | null
+  /** May run commands: in a container on a copy of its folder, or here but only these commands (null = no commands). */
+  commands: AutomationCommands | null
+}
+
+/** What an automation watches: files in its folder, or a cheap check (a web page, an MCP tool's answer) every few minutes. */
+export type AutomationWatch =
+  | { kind: 'files' }
+  | { kind: 'url'; url: string; everyMinutes: number }
+  | { kind: 'mcp'; serverId: string; tool: string; args: Record<string, unknown>; everyMinutes: number }
+
+export type AutomationCommands = { mode: 'container'; image: string; network: boolean } | { mode: 'allowlist'; allow: string[] }
+
+/** A command an allowlisted automation may run: it starts with an allowed command and chains nothing else. */
+export function commandAllowed(command: string, allow: string[]): boolean {
+  const c = command.trim().replace(/\s+/g, ' ')
+  if (!c || /[;&|`<>\n]|\$\(/.test(c)) return false
+  return allow.some((a) => {
+    const p = a.trim().replace(/\s+/g, ' ')
+    return !!p && (c === p || c.startsWith(`${p} `))
+  })
 }
 
 export interface AutomationInput {
@@ -842,7 +864,7 @@ export interface NodeRunTrace {
 export interface WorkflowRun {
   id: string
   workflowId: string
-  trigger: 'manual' | 'cron' | 'mcp'
+  trigger: 'manual' | 'cron' | 'mcp' | 'change'
   status: 'running' | 'ok' | 'error'
   input: unknown
   output: unknown
@@ -1331,5 +1353,5 @@ export interface McpClientStatus {
   id: string
   state: 'off' | 'starting' | 'ready' | 'error'
   error: string | null
-  tools: { name: string; description: string }[]
+  tools: { name: string; description: string; inputSchema?: Record<string, unknown> }[]
 }

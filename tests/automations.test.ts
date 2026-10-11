@@ -13,7 +13,7 @@ afterEach(() => {
 const toolsOffered = (ctx: TranscriptContext) =>
   (ctx.messages as unknown as { role: string; toolsAdded?: { name: string }[] }[]).filter((m) => m.role === 'system').flatMap((m) => (m.toolsAdded ?? []).map((t) => t.name))
 
-const base: Automation = { prompt: 'Write my morning brief.', agentId: null, tools: [], servers: [], collectionIds: [], skills: [], deliver: 'chat', collectionId: null }
+const base: Automation = { prompt: 'Write my morning brief.', agentId: null, tools: [], servers: [], collectionIds: [], skills: [], deliver: 'chat', collectionId: null, watch: null, commands: null }
 
 describe('automations', () => {
   it('saves as a one-step flow on a schedule, and turns into an ordinary flow on request', () => {

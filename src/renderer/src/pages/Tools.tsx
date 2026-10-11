@@ -61,6 +61,10 @@ interface Item {
   builtin?: BuiltinToolInfo
   custom?: CustomTool
   server?: string
+  /** An external tool: its server's id, its own name, and its input schema. */
+  serverId?: string
+  rawName?: string
+  schema?: Record<string, unknown>
 }
 
 const SOURCE_TILE: Record<Source, string> = {
@@ -98,6 +102,8 @@ export function ToolsPage() {
   const [custom, setCustom] = useState<CustomTool[]>([])
   const [usage, setUsage] = useState<Record<string, ToolUsage>>({})
   const [usedBy, setUsedBy] = useState<Record<string, string[]>>({})
+  const [tryable, setTryable] = useState<string[]>([])
+  const [agentNames, setAgentNames] = useState<string[]>([])
   const [servers, setServers] = useState<McpClientStatus[]>([])
   const [selKey, setSelKey] = useState<string | null>(null)
   const [making, setMaking] = useState<{ id: string | null } | null>(null)
@@ -117,6 +123,8 @@ export function ToolsPage() {
   }
   useEffect(() => {
     void load()
+    void api.tools.tryable().then(setTryable, () => undefined)
+    void api.agents.list().then((a) => setAgentNames(a.map((x) => x.name)), () => undefined)
   }, [])
   // Tools made by a model (chat or MCP) appear without a reload.
   useEvent('tools', () => void load())
@@ -141,7 +149,7 @@ export function ToolsPage() {
     for (const c of configs) {
       const st = servers.find((s) => s.id === c.id)
       for (const t of st?.state === 'ready' ? st.tools : [])
-        out.push({ key: `m:${c.id}:${t.name}`, source: 'mcp', name: mcpToolName(c.name, t.name), label: humanize(t.name), description: t.description || `A tool from the ${c.name} server.`, icon: Plug, kindLabel: `From ${c.name}`, server: c.name })
+        out.push({ key: `m:${c.id}:${t.name}`, source: 'mcp', name: mcpToolName(c.name, t.name), label: humanize(t.name), description: t.description || `A tool from the ${c.name} server.`, icon: Plug, kindLabel: `From ${c.name}`, server: c.name, serverId: c.id, rawName: t.name, schema: t.inputSchema })
     }
     return out
   }, [builtins, custom, configs, servers])
@@ -201,6 +209,8 @@ export function ToolsPage() {
       item={sel}
       usage={usage[sel.name]}
       usedBy={usedBy[sel.name] ?? []}
+      agentNames={agentNames}
+      tryable={tryable.includes(sel.name)}
       onEdit={sel.custom ? () => setMaking({ id: sel.custom!.id }) : undefined}
       onChanged={() => void load()}
       onClose={wide ? undefined : close}
@@ -314,16 +324,19 @@ function ToolRow({ item: i, selected, onOpen }: { item: Item; selected: boolean;
 
 type SchemaProps = { properties?: Record<string, { type?: string; description?: string; anyOf?: { const?: string }[]; items?: { type?: string } }>; required?: string[] }
 
-function ToolDetails({ item: i, usage, usedBy, onEdit, onChanged, onClose }: { item: Item; usage?: ToolUsage; usedBy: string[]; onEdit?: () => void; onChanged(): void; onClose?: () => void }) {
+function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onChanged, onClose }: { item: Item; usage?: ToolUsage; usedBy: string[]; agentNames: string[]; tryable: boolean; onEdit?: () => void; onChanged(): void; onClose?: () => void }) {
   const t = i.custom
-  const params: { name: string; description: string; required: boolean; type: string }[] = t
-    ? t.params.map((p) => ({ name: p.name, description: p.description, required: p.required, type: PARAM_TYPES.find((x) => x.value === p.type)?.label ?? p.type }))
-    : Object.entries((i.builtin?.schema as SchemaProps | undefined)?.properties ?? {}).map(([name, p]) => ({
-        name,
-        description: p.description ?? '',
-        required: !!(i.builtin?.schema as SchemaProps).required?.includes(name),
-        type: p.type ?? (p.anyOf ? 'one of' : 'any')
-      }))
+  const params: Field[] = t ? t.params : fieldsOf((i.builtin?.schema ?? i.schema) as SchemaProps | undefined)
+  // Every agent having it reads better as one phrase than as a list of all of them.
+  const everyAgent = agentNames.length > 1 && agentNames.every((n) => usedBy.includes(n))
+  const users = everyAgent ? ['Every agent', ...usedBy.filter((n) => !agentNames.includes(n))] : usedBy
+  const run: ((args: Record<string, unknown>, folder: string | null) => Promise<ToolRunResult>) | null = t
+    ? (args) => api.tools.test({ kind: t.kind, config: t.config, params: t.params }, args)
+    : i.source === 'mcp' && i.serverId && i.rawName
+      ? (args) => api.mcp.callTool(i.serverId!, i.rawName!, args)
+      : i.builtin && tryable
+        ? (args, folder) => api.tools.tryBuiltin(i.name, args, folder)
+        : null
   const origin = t && t.createdBy !== 'user' ? (t.createdBy === 'chat' ? 'in a chat' : 'for an app connected over MCP') : null
   const runsCode = t && (t.kind === 'command' || t.kind === 'javascript')
   return (
@@ -381,21 +394,26 @@ function ToolDetails({ item: i, usage, usedBy, onEdit, onChanged, onClose }: { i
                 {p.name}
               </span>
               <span className="min-w-0 flex-1 text-[12px] text-muted">{p.description}</span>
+              <span className="shrink-0 text-[11px] text-dim">{PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase()}</span>
               <span className="shrink-0 text-[11px] text-dim">{p.required ? 'needed' : 'optional'}</span>
             </div>
           ))
         ) : (
-          <p className="text-[12px] text-dim">{i.source === 'mcp' ? 'The server describes its inputs to the agent when it runs.' : 'Nothing; it runs as it is.'}</p>
+          <p className="text-[12px] text-dim">Nothing; it runs as it is.</p>
         )}
       </section>
 
-      {t && <TryIt tool={t} />}
+      {run ? (
+        <TryIt key={i.key} fields={params} run={run} folder={i.builtin?.group === 'workspace'} />
+      ) : (
+        <p className="border-t border-line pt-4 text-[12px] text-dim">{i.builtin ? 'This tool changes things or needs a chat, so it can’t be tried here.' : 'Start its server to try it.'}</p>
+      )}
 
       <section aria-labelledby="usedby" className="grid gap-1.5 border-t border-line pt-4">
         <h3 id="usedby" className="text-[12px] font-medium text-muted">
           Used by
         </h3>
-        <p className="text-[13px] leading-relaxed">{usedBy.length ? usedBy.join(', ') : 'No agent or automation has it yet.'}</p>
+        <p className="text-[13px] leading-relaxed">{users.length ? users.join(', ') : 'No agent or automation has it yet.'}</p>
         <p className="text-[11.5px] text-dim">Each agent and automation chooses its own tools. Change it there.</p>
       </section>
 
@@ -418,14 +436,27 @@ function ToolDetails({ item: i, usage, usedBy, onEdit, onChanged, onClose }: { i
   )
 }
 
-/** Fill in a tool's inputs and run it, without the JSON. */
-function TryIt({ tool, title = 'Try it' }: { tool: Pick<CustomTool, 'kind' | 'config' | 'params'>; title?: string }) {
+type Field = Pick<ToolParam, 'name' | 'type' | 'required' | 'description'>
+
+/** A JSON schema's properties as plain inputs: text, number, yes or no, or JSON for lists and objects. */
+function fieldsOf(schema: SchemaProps | undefined): Field[] {
+  return Object.entries(schema?.properties ?? {}).map(([name, p]) => ({
+    name,
+    description: p.description ?? '',
+    required: !!schema?.required?.includes(name),
+    type: p.type === 'number' || p.type === 'integer' ? 'number' : p.type === 'boolean' ? 'boolean' : p.type === 'array' || p.type === 'object' ? 'json' : 'string'
+  }))
+}
+
+/** Fill in a tool's inputs and run it, without the JSON. File tools also get a folder to look in. */
+function TryIt({ fields, run: runTool, folder: needsFolder, title = 'Try it' }: { fields: Field[]; run(args: Record<string, unknown>, folder: string | null): Promise<ToolRunResult>; folder?: boolean; title?: string }) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [result, setResult] = useState<ToolRunResult | null>(null)
   const [running, setRunning] = useState(false)
+  const [folder, setFolder] = useState<string | null>(null)
   const run = async () => {
     const args: Record<string, unknown> = {}
-    for (const p of tool.params) {
+    for (const p of fields) {
       const v = values[p.name] ?? ''
       if (!v.trim()) continue
       if (p.type === 'number') args[p.name] = Number(v)
@@ -440,13 +471,28 @@ function TryIt({ tool, title = 'Try it' }: { tool: Pick<CustomTool, 'kind' | 'co
       } else args[p.name] = v
     }
     setRunning(true)
-    setResult(await api.tools.test({ kind: tool.kind, config: tool.config, params: tool.params }, args))
+    setResult(await runTool(args, folder))
     setRunning(false)
   }
   return (
     <section aria-label={title} className="grid gap-2.5 border-t border-line pt-4">
       <h3 className="text-[12px] font-medium text-muted">{title}</h3>
-      {tool.params.map((p) => (
+      {needsFolder && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+          Look in
+          <Button
+            size="sm"
+            onClick={async () => {
+              const [dir] = await api.app.pickPaths({ directory: true, title: 'Folder to try it in' })
+              if (dir) setFolder(dir)
+            }}
+          >
+            {folder ? folder.split(/[\\/]/).filter(Boolean).pop() : 'Choose a folder'}
+          </Button>
+          <span className="text-dim">It only reads; nothing is changed.</span>
+        </div>
+      )}
+      {fields.map((p) => (
         <label key={p.name} className="grid gap-1">
           <span className="font-mono text-[11.5px] text-muted" translate="no">
             {p.name}
@@ -623,7 +669,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
 
           <aside aria-label="Test" className="grid gap-3 min-[1000px]:sticky min-[1000px]:top-4">
             <div className="rounded-[16px] border border-line bg-panel px-4 pb-4">
-              <TryIt key={draft.params.map((p) => p.name).join()} tool={draft} title="Test it" />
+              <TryIt key={draft.params.map((p) => p.name).join()} fields={draft.params} run={(args) => api.tools.test({ kind: draft.kind, config: draft.config, params: draft.params }, args)} title="Test it" />
               <p className="mt-2 text-[11.5px] text-dim">Runs what’s on screen, saved or not.</p>
             </div>
             <details className="rounded-[16px] border border-line bg-panel px-4 py-3">

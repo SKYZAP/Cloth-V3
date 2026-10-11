@@ -1,74 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Cron } from 'croner'
-import { AlertTriangle, ArrowLeft, BookOpen, Check, ChevronDown, Code2, FileText, FolderOpen, Globe, Link2, MessageSquareText, Minus, Pencil, Plug, Plus, Search, Sparkles, SquareTerminal, Trash2, X } from 'lucide-react'
-import type { Agent, Automation, AutomationDelivery, BuiltinToolInfo, Collection, CustomTool, McpClientStatus, Skill, Workflow, WorkflowRun } from '@shared/types'
+import { AlertTriangle, ArrowLeft, Box, FolderOpen, Pencil, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import type { Agent, Automation, AutomationCommands, AutomationDelivery, AutomationWatch, ContainerStatus, McpClientConfig, McpClientStatus, Workflow, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { timeAgo } from '@/lib/format'
-import { Button, IconButton, Input, Select, confirmAction } from '@/components/ui'
-
-type Kind = 'tools' | 'mcp' | 'knowledge' | 'skills'
-type Icon = typeof Globe
-
-interface AccessItem {
-  kind: Kind
-  /** Tool name, server id, collection id or skill name. */
-  id: string
-  label: string
-  desc: string
-  meta: string
-  warn?: string
-  icon: Icon
-  /** An external server's tools, for picking some of them. */
-  serverTools?: string[]
-}
-
-const KIND: Record<Kind, { label: string; one: string; tile: string; dot: string; on: string }> = {
-  tools: { label: 'Tools', one: 'Tool', tile: 'bg-crimson-soft text-crimson-hi', dot: 'bg-crimson', on: 'border-transparent bg-crimson-soft text-crimson-hi' },
-  mcp: { label: 'MCP servers', one: 'MCP server', tile: 'bg-info/15 text-info', dot: 'bg-info', on: 'border-transparent bg-info/15 text-info' },
-  knowledge: { label: 'Knowledge', one: 'Knowledge', tile: 'bg-ok/15 text-ok', dot: 'bg-ok', on: 'border-transparent bg-ok/15 text-ok' },
-  skills: { label: 'Skills', one: 'Skill', tile: 'bg-skill-soft text-skill', dot: 'bg-skill-dot', on: 'border-transparent bg-skill-soft text-skill' }
-}
-const KINDS: Kind[] = ['tools', 'mcp', 'knowledge', 'skills']
-
-const READS = ['read', 'ls', 'find', 'grep', 'ast_grep']
-const WRITES = ['write', 'edit', 'ast_edit']
-const WEB = ['web_search', 'web_fetch']
-
-const CUSTOM_ICON: Record<CustomTool['kind'], Icon> = { http: Link2, javascript: Code2, command: SquareTerminal, prompt: MessageSquareText }
-
-const PRESETS: { label: string; does: string; pick(items: AccessItem[]): Picked }[] = [
-  {
-    label: 'Read-only',
-    does: 'reads files, searches the web and all your Knowledge',
-    pick: (items) => ({ ...none(), tools: [...READS, ...WEB].filter((n) => items.some((i) => i.kind === 'tools' && i.id === n)), collectionIds: items.filter((i) => i.kind === 'knowledge').map((i) => i.id) })
-  },
-  {
-    label: 'Research',
-    does: 'searches the web and all your Knowledge',
-    pick: (items) => ({ ...none(), tools: WEB.filter((n) => items.some((i) => i.id === n)), collectionIds: items.filter((i) => i.kind === 'knowledge').map((i) => i.id) })
-  },
-  {
-    label: 'Hands-on',
-    does: 'reads and changes files in its folder and searches the web',
-    pick: (items) => ({ ...none(), tools: [...READS, ...WRITES, ...WEB].filter((n) => items.some((i) => i.kind === 'tools' && i.id === n)) })
-  }
-]
-
-interface Picked {
-  tools: string[]
-  servers: Automation['servers']
-  collectionIds: string[]
-  skills: string[]
-}
-const none = (): Picked => ({ tools: [], servers: [], collectionIds: [], skills: [] })
+import { Button, IconButton, Input, Select, Textarea, confirmAction } from '@/components/ui'
+import { AccessPicker, KIND, isOnIn, none, toggleIn, useAccessItems, type AccessItem, type Picked } from './Access'
 
 // ─── How often ─────────────────────────────────────────────────────────────────
 
-type Cadence = 'once' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom'
+type Cadence = 'once' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom' | 'change'
 const CADENCES: { value: Cadence; label: string }[] = [
   { value: 'once', label: 'Only when I run it' },
+  { value: 'change', label: 'When something changes' },
   { value: 'hourly', label: 'Every hour' },
   { value: 'daily', label: 'Every day' },
   { value: 'weekdays', label: 'Weekdays' },
@@ -102,6 +48,7 @@ function cronOf(s: Schedule): string | null {
   const [h, m] = s.time.split(':').map((x) => Number(x) || 0)
   switch (s.cadence) {
     case 'once':
+    case 'change':
       return null
     case 'hourly':
       return '0 * * * *'
@@ -120,6 +67,8 @@ function describe(s: Schedule): string {
   switch (s.cadence) {
     case 'once':
       return 'Runs when you press Run now'
+    case 'change':
+      return 'Runs when something changes'
     case 'hourly':
       return 'Runs every hour, on the hour'
     case 'daily':
@@ -163,36 +112,32 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   const [picked, setPicked] = useState<Picked>(() => (a ? { tools: a.tools, servers: a.servers, collectionIds: a.collectionIds, skills: a.skills } : none()))
   const [deliver, setDeliver] = useState<AutomationDelivery>(a?.deliver ?? 'chat')
   const [collectionId, setCollectionId] = useState<string | null>(a?.collectionId ?? null)
-  const [schedule, setSchedule] = useState<Schedule>(() => (workflow ? readSchedule(workflow.cron, workflow.cronEnabled) : { cadence: 'weekdays', time: '09:00', day: 1, custom: '' }))
+  const [schedule, setSchedule] = useState<Schedule>(() => (a?.watch ? { cadence: 'change', time: '09:00', day: 1, custom: '' } : workflow ? readSchedule(workflow.cron, workflow.cronEnabled) : { cadence: 'weekdays', time: '09:00', day: 1, custom: '' }))
+  const [watch, setWatch] = useState<AutomationWatch>(() => a?.watch ?? { kind: 'files' })
+  const [commands, setCommands] = useState<AutomationCommands | null>(a?.commands ?? null)
   const [saving, setSaving] = useState(false)
-  const [preset, setPreset] = useState<string | null>(null)
 
-  const [builtins, setBuiltins] = useState<BuiltinToolInfo[]>([])
-  const [custom, setCustom] = useState<CustomTool[]>([])
-  const [status, setStatus] = useState<McpClientStatus[]>([])
-  const [collections, setCollections] = useState<Collection[]>([])
-  const [skills, setSkills] = useState<Skill[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [lastChat, setLastChat] = useState<string | null>(null)
+  const [checked, setChecked] = useState<{ checkedAt: number | null; error: string | null } | null>(null)
+  const [docker, setDocker] = useState<ContainerStatus | null>(null)
   const settings = useApp((s) => s.settings)
   const setPage = useApp((s) => s.setPage)
+  const { items, collections, status } = useAccessItems()
 
   useEffect(() => {
-    void Promise.all([api.tools.builtins(), api.tools.list(), api.mcp.clients().catch(() => []), api.rag.collections().catch(() => []), api.skills.list().catch(() => []), api.agents.list().catch(() => [])]).then(([b, c, m, k, s, ag]) => {
-      setBuiltins(b)
-      setCustom(c)
-      setStatus(m)
-      setCollections(k)
-      setSkills(s)
-      setAgents(ag)
-    })
+    void api.agents.list().then(setAgents, () => undefined)
   }, [])
-  useEvent('mcpClients', () => void api.mcp.clients().then(setStatus, () => undefined))
+  useEffect(() => {
+    if (commands?.mode === 'container' && !docker) void api.containers.status().then(setDocker, () => undefined)
+  }, [commands?.mode]) // eslint-disable-line react-hooks/exhaustive-deps
   const loadRuns = () => {
-    if (workflow) void api.workflows.runs(workflow.id).then(setRuns, () => undefined)
+    if (!workflow) return
+    void api.workflows.runs(workflow.id).then(setRuns, () => undefined)
+    if (workflow.automation?.watch && workflow.automation.watch.kind !== 'files') void api.workflows.watchState(workflow.id).then(setChecked, () => undefined)
   }
-  useEffect(loadRuns, [workflow?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(loadRuns, [workflow?.id, workflow?.updatedAt]) // eslint-disable-line react-hooks/exhaustive-deps
   useEvent('workflow', (e) => {
     if (!workflow) return
     if (e.type === 'run' && e.run.workflowId === workflow.id) setRuns((rs) => [e.run, ...rs.filter((r) => r.id !== e.run.id)].sort((x, y) => y.startedAt - x.startedAt))
@@ -200,60 +145,33 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   })
 
   const configs = settings?.mcpClients ?? []
-  const items: AccessItem[] = useMemo(() => {
-    const out: AccessItem[] = []
-    for (const b of builtins) {
-      // Only what an automation's agent can actually call: files and the web.
-      if (!b.where.flows || (b.group !== 'workspace' && b.group !== 'web')) continue
-      out.push({
-        kind: 'tools',
-        id: b.name,
-        label: b.label,
-        desc: b.description.split(/(?<=\.)\s/)[0],
-        meta: 'Built in',
-        warn: WRITES.includes(b.name) ? 'Can change files in its folder' : undefined,
-        icon: b.group === 'web' ? Globe : FileText
-      })
-    }
-    for (const t of custom)
-      out.push({
-        kind: 'tools',
-        id: t.name,
-        label: t.name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()),
-        desc: t.description,
-        meta: t.enabled ? 'Made by you' : 'Waiting for your OK on the Tools page',
-        warn: t.kind === 'command' || t.kind === 'javascript' ? 'Runs on your computer' : undefined,
-        icon: CUSTOM_ICON[t.kind]
-      })
-    for (const c of configs) {
-      const st = status.find((s) => s.id === c.id)
-      const tools = st?.state === 'ready' ? st.tools.map((t) => t.name) : undefined
-      out.push({ kind: 'mcp', id: c.id, label: c.name, desc: `Tools from the ${c.name} server.`, meta: tools ? `${tools.length} tools` : c.enabled ? 'Starts when it runs' : 'Turned off on the MCP page', icon: Plug, serverTools: tools })
-    }
-    for (const k of collections) out.push({ kind: 'knowledge', id: k.id, label: k.name, desc: k.description || 'A Knowledge collection.', meta: `${k.docCount} document${k.docCount === 1 ? '' : 's'}`, icon: BookOpen })
-    for (const s of skills) out.push({ kind: 'skills', id: s.name, label: s.name, desc: s.description, meta: 'Skill', icon: Sparkles })
-    return out
-  }, [builtins, custom, configs, status, collections, skills])
-
-  const isOn = (i: AccessItem) =>
-    i.kind === 'tools' ? picked.tools.includes(i.id) : i.kind === 'mcp' ? picked.servers.some((s) => s.id === i.id) : i.kind === 'knowledge' ? picked.collectionIds.includes(i.id) : picked.skills.includes(i.id)
-  const toggle = (i: AccessItem, on = !isOn(i)) => {
-    setPreset(null)
-    setPicked((p) => {
-      const flip = (arr: string[]) => (on ? [...new Set([...arr, i.id])] : arr.filter((x) => x !== i.id))
-      if (i.kind === 'tools') return { ...p, tools: flip(p.tools) }
-      if (i.kind === 'knowledge') return { ...p, collectionIds: flip(p.collectionIds) }
-      if (i.kind === 'skills') return { ...p, skills: flip(p.skills) }
-      return { ...p, servers: on ? (p.servers.some((s) => s.id === i.id) ? p.servers : [...p.servers, { id: i.id, tools: null }]) : p.servers.filter((s) => s.id !== i.id) }
-    })
-  }
+  const isOn = (i: AccessItem) => isOnIn(picked, i)
+  const toggle = (i: AccessItem, on = !isOn(i)) => setPicked((p) => toggleIn(p, i, on))
 
   const cron = cronOf(schedule)
   const upcoming = nextRuns(cron)
-  const automation: Automation = { prompt, agentId, ...picked, deliver, collectionId: deliver === 'knowledge' ? collectionId : null }
+  const watching = schedule.cadence === 'change' ? watch : null
+  const finalDeliver = commands?.mode === 'container' ? 'chat' : deliver
+  const automation: Automation = { prompt, agentId, ...picked, deliver: finalDeliver, collectionId: finalDeliver === 'knowledge' ? collectionId : null, watch: watching, commands }
   const saved = workflow ? JSON.stringify({ n: workflow.name, a: workflow.automation, c: workflow.cronEnabled ? workflow.cron : null, w: workflow.workspace }) : null
   const dirty = saved !== JSON.stringify({ n: name.trim(), a: automation, c: cron, w: workspace })
-  const problem = !prompt.trim() ? 'Say what should happen first.' : !upcoming.ok ? 'The custom schedule isn’t a valid cron expression.' : deliver === 'knowledge' && !collectionId ? 'Pick the collection to save results to.' : null
+  const problem = !prompt.trim()
+    ? 'Say what should happen first.'
+    : !upcoming.ok
+      ? 'The custom schedule isn’t a valid cron expression.'
+      : watching?.kind === 'files' && !workspace
+        ? 'Choose the folder to watch.'
+        : watching?.kind === 'url' && !/^https?:\/\/\S+$/i.test(watching.url)
+          ? 'Give the address of the page to watch, starting with https://.'
+          : watching?.kind === 'mcp' && (!watching.serverId || !watching.tool)
+            ? 'Pick the server and tool to check.'
+            : commands && !workspace
+              ? 'Choose a folder for its commands to run in.'
+              : commands?.mode === 'allowlist' && !commands.allow.length
+                ? 'List the commands it may run.'
+                : finalDeliver === 'knowledge' && !collectionId
+                  ? 'Pick the collection to save results to.'
+                  : null
 
   const save = async (): Promise<Workflow | null> => {
     if (problem) {
@@ -289,8 +207,9 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   const pickedItems = items.filter(isOn)
   const names = pickedItems.map((i) => i.label)
   const agent = agents.find((x) => x.id === agentId)
-  const runsCode = custom.some((t) => picked.tools.includes(t.name) && (t.kind === 'command' || t.kind === 'javascript'))
-  const sentence = `${describe(schedule)}. ${agent ? agent.name : 'Cloth'} follows the prompt${names.length ? ` and may use ${list(names)}` : ' with nothing extra'}. ${deliver === 'chat' ? 'The result arrives as a new chat you can reply to.' : deliver === 'notify' ? 'You get a notification with the result.' : `The result is saved to ${collections.find((c) => c.id === collectionId)?.name ?? 'a Knowledge collection'}.`}`
+  const when = schedule.cadence === 'change' ? watchSentence(watch, configs.find((c) => watch.kind === 'mcp' && c.id === watch.serverId)?.name) : describe(schedule)
+  const runs_ = commands ? (commands.mode === 'container' ? ' It can run commands in a container, on a copy of its folder.' : ` It can run ${list(commands.allow.map((c) => `“${c}”`))} and nothing else.`) : ''
+  const sentence = `${when}. ${agent ? agent.name : 'Cloth'} follows the prompt${names.length ? ` and may use ${list(names)}` : ' with nothing extra'}.${runs_} ${finalDeliver === 'chat' ? (commands?.mode === 'container' ? 'The result arrives as a new chat, with its changes for you to apply.' : 'The result arrives as a new chat you can reply to.') : finalDeliver === 'notify' ? 'You get a notification with the result.' : `The result is saved to ${collections.find((c) => c.id === collectionId)?.name ?? 'a Knowledge collection'}.`}`
   const lastRun = runs[0]
 
   return (
@@ -403,11 +322,18 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
                     <Input value={schedule.custom} onChange={(e) => setSchedule((s) => ({ ...s, custom: e.target.value }))} placeholder="0 9 * * 1-5…" spellCheck={false} autoComplete="off" className="w-44 font-mono" />
                   </label>
                 )}
-                <span className={clsx(upcoming.ok ? 'text-fg/80' : 'text-crimson-hi')}>{upcoming.ok ? describe(schedule) : 'That isn’t a valid cron schedule.'}</span>
+                {schedule.cadence !== 'change' && <span className={clsx(upcoming.ok ? 'text-fg/80' : 'text-crimson-hi')}>{upcoming.ok ? describe(schedule) : 'That isn’t a valid cron schedule.'}</span>}
               </div>
+              {schedule.cadence === 'change' && <WatchPicker value={watch} onChange={setWatch} folder={workspace} configs={configs} status={status} />}
             </Block>
 
-            <AccessPicker items={items} picked={picked} setPicked={setPicked} isOn={isOn} toggle={toggle} preset={preset} setPreset={setPreset} folder={!!workspace} runsCode={runsCode} />
+            <div className="border-b border-line py-5">
+              <AccessPicker items={items} value={picked} onChange={setPicked} folder={!!workspace} commands={!!commands} />
+            </div>
+
+            <Block title="Can it run commands?">
+              <CommandsPicker value={commands} onChange={setCommands} folder={!!workspace} docker={docker} />
+            </Block>
 
             <Block title="Where should the result go?" last>
               <div role="radiogroup" aria-label="Where the result goes" className="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
@@ -418,13 +344,14 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
                     ['knowledge', 'Save it to Knowledge']
                   ] as [AutomationDelivery, string][]
                 ).map(([v, label]) => (
-                  <label key={v} className="flex min-h-8 cursor-pointer items-center gap-2">
-                    <input type="radio" name="deliver" checked={deliver === v} onChange={() => setDeliver(v)} className="accent-[#dc2645]" />
+                  <label key={v} className={clsx('flex min-h-8 items-center gap-2', commands?.mode === 'container' && v !== 'chat' ? 'opacity-50' : 'cursor-pointer')}>
+                    <input type="radio" name="deliver" checked={finalDeliver === v} disabled={commands?.mode === 'container' && v !== 'chat'} onChange={() => setDeliver(v)} className="accent-[#dc2645]" />
                     {label}
                   </label>
                 ))}
               </div>
-              {deliver === 'knowledge' && (
+              {commands?.mode === 'container' && <p className="text-[12px] text-dim">Runs in a container always go to a chat, where you review and apply what they changed.</p>}
+              {finalDeliver === 'knowledge' && (
                 <Select aria-label="Collection to save to" value={collectionId ?? ''} onChange={(e) => setCollectionId(e.target.value || null)} className="max-w-xs">
                   <option value="">Pick a collection…</option>
                   {collections.map((c) => (
@@ -442,6 +369,20 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
             <Card title="In plain words">
               <p className="text-[13px] leading-relaxed text-fg/85">{sentence}</p>
             </Card>
+            {watching ? (
+              <Card title="Watching">
+                <p className="text-[12.5px] leading-relaxed">{watchSentence(watching, configs.find((c) => watching.kind === 'mcp' && c.id === watching.serverId)?.name)}.</p>
+                {watching.kind !== 'files' && workflow?.automation?.watch && (
+                  <>
+                    <p className={clsx('text-[12px]', checked?.error ? 'text-crimson-hi' : 'text-dim')}>{checked?.error ? `Last check failed: ${checked.error}` : checked?.checkedAt ? `Last checked ${timeAgo(checked.checkedAt)}.` : 'Not checked yet.'}</p>
+                    <Button size="sm" className="justify-self-start" icon={<RefreshCw size={12} />} onClick={async () => setChecked((await attempt(() => api.workflows.checkNow(workflow.id))) ?? checked)}>
+                      Check now
+                    </Button>
+                  </>
+                )}
+                {watching.kind === 'files' && <p className="text-[12px] text-dim">Changes to .git, node_modules and build folders, and its own changes while it runs, are ignored.</p>}
+              </Card>
+            ) : (
             <Card title="Next runs">
               {upcoming.runs.length ? (
                 upcoming.runs.map((d) => (
@@ -454,6 +395,7 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
                 <p className="text-[12.5px] text-dim">{schedule.cadence === 'once' ? 'Only when you press Run now.' : 'None scheduled.'}</p>
               )}
             </Card>
+            )}
             <Card title="Runs as">
               <Select aria-label="Runs as" value={agentId ?? ''} onChange={(e) => setAgentId(e.target.value || null)}>
                 <option value="">Cloth</option>
@@ -576,230 +518,189 @@ function PromptBox({ value, onChange, items, onMention }: { value: string; onCha
   )
 }
 
-/**
- * What the automation may use: a line of plain abilities ("It can read your files"), what's allowed
- * so far grouped by kind, and a searchable list to add more. External servers can be narrowed to some tools.
- */
-function AccessPicker({
-  items,
-  picked,
-  setPicked,
-  isOn,
-  toggle,
-  preset,
-  setPreset,
-  folder,
-  runsCode
-}: {
-  items: AccessItem[]
-  picked: Picked
-  setPicked(p: Picked | ((p: Picked) => Picked)): void
-  isOn(i: AccessItem): boolean
-  toggle(i: AccessItem, on?: boolean): void
-  preset: string | null
-  setPreset(p: string | null): void
-  folder: boolean
-  runsCode: boolean
-}) {
-  const [kind, setKind] = useState<'all' | Kind>('all')
-  const [q, setQ] = useState('')
-  const [open, setOpen] = useState<Record<string, boolean>>({})
-  const has = (n: string[]) => n.some((x) => picked.tools.includes(x))
-  const abilities: { label: string; on: boolean; risky?: boolean }[] = [
-    { label: 'Read your files', on: has(READS) },
-    { label: 'Search the internet', on: has(WEB) },
-    { label: 'Use other apps', on: picked.servers.length > 0 },
-    { label: 'Look things up in Knowledge', on: picked.collectionIds.length > 0 },
-    { label: 'Change files', on: has(WRITES), risky: true },
-    { label: 'Run programs', on: runsCode, risky: true }
+const EVERY = [5, 15, 30, 60, 180, 720, 1440]
+const everyLabel = (m: number) => (m < 60 ? `${m} minutes` : m === 60 ? 'hour' : m < 1440 ? `${m / 60} hours` : 'day')
+
+function watchSentence(w: AutomationWatch, server?: string): string {
+  if (w.kind === 'files') return 'Runs when a file in its folder changes'
+  const every = `checking every ${everyLabel(w.everyMinutes)}`
+  if (w.kind === 'url') return `Runs when the page at ${w.url || '…'} changes, ${every}`
+  return `Runs when ${server ?? 'the server'}’s ${w.tool || 'tool'} answers differently, ${every}`
+}
+
+/** What "something changes" means: files in its folder, a web page, or an MCP tool's answer. */
+function WatchPicker({ value, onChange, folder, configs, status }: { value: AutomationWatch; onChange(w: AutomationWatch): void; folder: string | null; configs: McpClientConfig[]; status: McpClientStatus[] }) {
+  const every = value.kind === 'files' ? 15 : value.everyMinutes
+  const [argsText, setArgsText] = useState(() => (value.kind === 'mcp' && Object.keys(value.args).length ? JSON.stringify(value.args, null, 2) : ''))
+  const [argsError, setArgsError] = useState<string | null>(null)
+  const server = value.kind === 'mcp' ? status.find((s) => s.id === value.serverId) : undefined
+  const kinds: [AutomationWatch['kind'], string][] = [
+    ['files', 'A file in its folder'],
+    ['url', 'A web page'],
+    ['mcp', 'An MCP tool’s answer']
   ]
-  const allowed = items.filter(isOn)
-  const query = q.trim().toLowerCase()
-  const visible = items.filter((i) => (kind === 'all' || i.kind === kind) && (!query || `${i.label} ${i.desc}`.toLowerCase().includes(query)))
-  const pre = PRESETS.find((p) => p.label === preset)
-
-  const serverPick = (id: string) => picked.servers.find((s) => s.id === id)
-  const setServerTools = (id: string, tools: string[] | null) => setPicked((p) => ({ ...p, servers: p.servers.map((s) => (s.id === id ? { ...s, tools } : s)) }))
-
   return (
-    <section aria-label="What it may use" className="grid gap-3.5 border-b border-line py-5">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="flex-1 text-[14px] font-semibold">What it may use</h2>
-        <span className="text-[12px] text-dim">Start from</span>
-        <div role="group" aria-label="Start from a preset" className="inline-flex rounded-[10px] border border-line bg-panel p-0.5">
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              aria-pressed={preset === p.label}
-              onClick={() => {
-                setPicked(p.pick(items))
-                setPreset(p.label)
-              }}
-              className={clsx('h-[30px] rounded-lg px-3 text-[12.5px]', preset === p.label ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:text-fg')}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {pre && (
-        <p className="-mt-1.5 text-[12px] text-dim" aria-live="polite">
-          {pre.label}: {pre.does}. Change anything below.
-        </p>
-      )}
-
-      <div role="list" aria-label="What this lets it do" className="flex flex-wrap items-center gap-1.5 rounded-[14px] border border-line bg-panel p-2.5">
-        <span className="px-1.5 text-[12px] text-muted">It can</span>
-        {abilities.map((ab) => (
-          <span
-            key={ab.label}
-            role="listitem"
-            className={clsx(
-              'inline-flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors motion-reduce:transition-none',
-              ab.on ? (ab.risky ? 'border-warn/45 bg-warn/10 text-warn' : 'border-ok/40 bg-ok/10 text-ok') : 'border-line text-dim'
-            )}
-          >
-            {ab.on ? <Check size={13} aria-hidden="true" /> : <Minus size={13} aria-hidden="true" />}
-            {ab.label}
-            <span className="sr-only">{ab.on ? ': yes' : ': no'}</span>
-          </span>
+    <div className="grid gap-3 rounded-[12px] border border-line bg-panel p-3.5">
+      <div role="radiogroup" aria-label="What to watch" className="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
+        {kinds.map(([k, label]) => (
+          <label key={k} className="flex min-h-8 cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="watch"
+              className="accent-[#dc2645]"
+              checked={value.kind === k}
+              onChange={() => onChange(k === 'files' ? { kind: 'files' } : k === 'url' ? { kind: 'url', url: '', everyMinutes: every } : { kind: 'mcp', serverId: configs[0]?.id ?? '', tool: '', args: {}, everyMinutes: every })}
+            />
+            {label}
+          </label>
         ))}
       </div>
-      {has([...READS, ...WRITES]) && !folder && (
-        <p className="-mt-1 flex items-center gap-2 text-[12px] text-warn">
-          <AlertTriangle size={13} aria-hidden="true" />
-          File tools need a folder. Choose one under “What should happen?”.
-        </p>
+      {value.kind === 'files' && (
+        <p className={clsx('text-[12.5px]', folder ? 'text-muted' : 'text-warn')}>{folder ? `Runs a few seconds after files in ${folder.split(/[\\/]/).filter(Boolean).pop()} change. It’s told which files.` : 'Choose its folder under “What should happen?” first.'}</p>
       )}
-
-      <div className="flex flex-wrap overflow-hidden rounded-[16px] border border-line bg-panel">
-        <div className="grid min-w-0 flex-[1_1_270px] content-start gap-3 border-r border-line bg-bg/40 p-3.5 mobile:border-b mobile:border-r-0">
-          <div className="flex items-baseline gap-2">
-            <h3 className="text-[13px] font-semibold">Allowed</h3>
-            <span className="text-[12px] tabular-nums text-dim">{allowed.length}</span>
-          </div>
-          {!allowed.length && <p className="py-4 text-[12.5px] text-dim">Nothing yet. It can only read the prompt and write an answer. Add things from the list.</p>}
-          {KINDS.map((k) => {
-            const group = allowed.filter((i) => i.kind === k)
-            if (!group.length) return null
-            return (
-              <div key={k} className="grid gap-0.5">
-                <div className="flex items-center gap-1.5 px-1 pb-0.5 text-[11.5px] text-dim">
-                  <span aria-hidden="true" className={clsx('h-[7px] w-[7px] rounded-full', KIND[k].dot)} />
-                  {KIND[k].label}
-                </div>
-                {group.map((i) => {
-                  const sp = i.kind === 'mcp' ? serverPick(i.id) : undefined
-                  const all = i.serverTools ?? []
-                  const chosen = sp?.tools ?? all
-                  const isOpen = !!open[i.id]
-                  return (
-                    <div key={`${i.kind}:${i.id}`} className="grid">
-                      <div className="flex min-h-10 items-center gap-2 rounded-[9px] py-0.5 pl-1.5 pr-1 hover:bg-elev">
-                        <span aria-hidden="true" className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', KIND[i.kind].tile)}>
-                          <i.icon size={14} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{i.label}</span>
-                        {i.kind === 'mcp' && all.length > 0 && (
-                          <button aria-expanded={isOpen} onClick={() => setOpen((o) => ({ ...o, [i.id]: !isOpen }))} className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-line-strong px-2 text-[11.5px] text-info">
-                            {sp?.tools === null || chosen.length === all.length ? 'All tools' : `${chosen.length} of ${all.length} tools`}
-                            <ChevronDown size={11} aria-hidden="true" className={clsx('transition-transform motion-reduce:transition-none', isOpen && 'rotate-180')} />
-                          </button>
-                        )}
-                        <button aria-label={`Remove ${i.label}`} title="Remove" onClick={() => toggle(i, false)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg">
-                          <X size={12} />
-                        </button>
-                      </div>
-                      {isOpen && (
-                        <div className="mb-1.5 ml-10 grid gap-0.5 border-l-2 border-info/35 py-1 pl-2.5">
-                          {all.map((t) => (
-                            <label key={t} className="flex min-h-[30px] cursor-pointer items-center gap-2 text-[12.5px]">
-                              <input
-                                type="checkbox"
-                                className="h-[15px] w-[15px] accent-[#6b9cf0]"
-                                checked={sp?.tools === null || chosen.includes(t)}
-                                onChange={(e) => {
-                                  const cur = sp?.tools ?? all
-                                  const next = e.target.checked ? [...new Set([...cur, t])] : cur.filter((x) => x !== t)
-                                  setServerTools(i.id, next.length === all.length ? null : next)
-                                }}
-                              />
-                              <span className="truncate font-mono text-[12px]" translate="no">
-                                {t}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+      {value.kind === 'url' && (
+        <label className="grid gap-1 text-[12.5px] text-muted">
+          Page address
+          <Input value={value.url} onChange={(e) => onChange({ ...value, url: e.target.value })} placeholder="https://example.com/pricing…" spellCheck={false} autoComplete="off" className="font-mono" />
+          <span className="text-[11.5px] text-dim">Only the page’s text counts, so ads and scripts changing don’t trigger it. It’s told what the page says now.</span>
+        </label>
+      )}
+      {value.kind === 'mcp' && (
+        <div className="grid gap-2.5">
+          {!configs.length ? (
+            <p className="text-[12.5px] text-warn">Add an MCP server on the MCP page first.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Select aria-label="Server" value={value.serverId} onChange={(e) => onChange({ ...value, serverId: e.target.value, tool: '' })} className="w-48">
+                {configs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Select aria-label="Tool" value={value.tool} onChange={(e) => onChange({ ...value, tool: e.target.value })} className="min-w-48 flex-1">
+                <option value="">{server?.state === 'ready' ? 'Pick a tool…' : 'Start the server to list its tools…'}</option>
+                {(server?.tools ?? []).map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name}
+                  </option>
+                ))}
+                {value.tool && !server?.tools.some((t) => t.name === value.tool) && <option value={value.tool}>{value.tool}</option>}
+              </Select>
+              {server?.state !== 'ready' && value.serverId && (
+                <Button size="sm" onClick={() => void attempt(() => api.mcp.startClient(value.serverId))}>
+                  Start it
+                </Button>
+              )}
+            </div>
+          )}
+          <label className="grid gap-1 text-[12.5px] text-muted">
+            What to ask it (optional, JSON)
+            <Textarea
+              rows={2}
+              className="font-mono text-[11.5px]"
+              spellCheck={false}
+              value={argsText}
+              placeholder='{ "repo": "owner/name", "state": "open" }…'
+              onChange={(e) => {
+                setArgsText(e.target.value)
+                try {
+                  const v = e.target.value.trim() ? JSON.parse(e.target.value) : {}
+                  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Give an object, like { "repo": "owner/name" }')
+                  setArgsError(null)
+                  onChange({ ...value, args: v })
+                } catch (err) {
+                  setArgsError(err instanceof Error ? err.message : 'Not valid JSON')
+                }
+              }}
+            />
+            {argsError && <span className="text-[11.5px] text-crimson-hi">{argsError}</span>}
+          </label>
         </div>
-
-        <div className="grid min-w-0 flex-[999_1_340px] content-start gap-2.5 p-3.5">
-          <h3 className="text-[13px] font-semibold">Add more</h3>
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
-            <Input className="pl-8" aria-label="Search tools, servers, Knowledge and skills" placeholder="Search tools, servers, Knowledge and skills…" spellCheck={false} autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div role="tablist" aria-label="Kind" className="flex flex-wrap gap-1">
-            {(['all', ...KINDS] as ('all' | Kind)[]).map((k) => (
-              <button
-                key={k}
-                role="tab"
-                aria-selected={kind === k}
-                onClick={() => setKind(k)}
-                className={clsx('flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px]', kind === k ? 'border-line-strong bg-elev-2 font-medium text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg')}
-              >
-                <span aria-hidden="true" className={clsx('h-[7px] w-[7px] rounded-full', k === 'all' ? 'bg-muted' : KIND[k].dot)} />
-                {k === 'all' ? 'Everything' : KIND[k].label}
-                <span className="text-[11px] tabular-nums text-dim">{items.filter((i) => k === 'all' || i.kind === k).length}</span>
-              </button>
+      )}
+      {value.kind !== 'files' && (
+        <label className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+          Check every
+          <Select aria-label="How often to check" value={String(value.everyMinutes)} onChange={(e) => onChange({ ...value, everyMinutes: Number(e.target.value) })} className="w-32">
+            {EVERY.map((m) => (
+              <option key={m} value={m}>
+                {everyLabel(m)}
+              </option>
             ))}
-          </div>
-          <div className="-mx-1 grid max-h-[340px] gap-0.5 overflow-y-auto px-1">
-            {visible.map((i) => {
-              const on = isOn(i)
-              return (
-                <div key={`${i.kind}:${i.id}`} className="flex min-h-14 items-center gap-3 rounded-[11px] py-1.5 pl-2 pr-1.5 hover:bg-elev/60">
-                  <span aria-hidden="true" className={clsx('flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px]', KIND[i.kind].tile)}>
-                    <i.icon size={16} />
-                  </span>
-                  <span className="grid min-w-0 flex-1 gap-px">
-                    <span className="flex flex-wrap items-baseline gap-x-2">
-                      <span className="text-[13.5px] font-semibold">{i.label}</span>
-                      <span className="text-[11.5px] text-dim">{kind === 'all' ? `${KIND[i.kind].one}, ${i.meta.charAt(0).toLowerCase()}${i.meta.slice(1)}` : i.meta}</span>
-                    </span>
-                    <span className="line-clamp-2 text-[12px] text-dim">
-                      {i.desc}
-                      {i.warn && <span className="text-warn"> {i.warn}.</span>}
-                    </span>
-                  </span>
-                  <button
-                    aria-pressed={on}
-                    aria-label={`${on ? 'Remove' : 'Add'} ${i.label}`}
-                    onClick={() => toggle(i)}
-                    className={clsx('flex h-8 min-w-[84px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] transition-colors motion-reduce:transition-none', on ? KIND[i.kind].on : 'border-line-strong bg-elev hover:border-muted/40')}
-                  >
-                    {on ? <Check size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
-                    {on ? 'Added' : 'Add'}
-                  </button>
-                </div>
-              )
-            })}
-            {!visible.length && (
-              <p className="px-1 py-4 text-[12.5px] text-dim">
-                {query ? `Nothing matches “${q.trim()}”.` : 'Nothing of this kind yet.'} Make tools on the Tools page and add servers on the MCP page.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
+          </Select>
+          <span className="text-dim">Checking is cheap: the agent only runs when the answer changes.</span>
+        </label>
+      )}
+    </div>
   )
 }
 
-
+/** Whether the agent may run commands: not at all, in a container on a copy of its folder, or only listed commands. */
+function CommandsPicker({ value, onChange, folder, docker }: { value: AutomationCommands | null; onChange(c: AutomationCommands | null): void; folder: boolean; docker: ContainerStatus | null }) {
+  const [allowText, setAllowText] = useState(() => (value?.mode === 'allowlist' ? value.allow.join('\n') : ''))
+  const mode = value?.mode ?? 'off'
+  const options: { v: 'off' | 'container' | 'allowlist'; label: string; sub: string; icon?: typeof Box }[] = [
+    { v: 'off', label: 'No', sub: 'It can’t run commands.' },
+    { v: 'container', label: 'In a container', sub: 'On a copy of its folder. You apply its changes after.', icon: Box },
+    { v: 'allowlist', label: 'Only these commands', sub: 'On this computer, nothing else allowed.', icon: ShieldCheck }
+  ]
+  return (
+    <div className="grid gap-3">
+      <div role="radiogroup" aria-label="Running commands" className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+        {options.map((o) => (
+          <button
+            key={o.v}
+            role="radio"
+            aria-checked={mode === o.v}
+            onClick={() => onChange(o.v === 'off' ? null : o.v === 'container' ? { mode: 'container', image: 'node:22', network: true } : { mode: 'allowlist', allow: allowText.split('\n').map((x) => x.trim()).filter(Boolean) })}
+            className={clsx('grid content-start gap-0.5 rounded-[11px] border p-3 text-left', mode === o.v ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+          >
+            <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+              {o.icon && <o.icon size={14} aria-hidden="true" />}
+              {o.label}
+            </span>
+            <span className="text-[12px] text-dim">{o.sub}</span>
+          </button>
+        ))}
+      </div>
+      {value && !folder && (
+        <p className="flex items-center gap-2 text-[12px] text-warn">
+          <AlertTriangle size={13} aria-hidden="true" />
+          Commands run in its folder. Choose one under “What should happen?”.
+        </p>
+      )}
+      {value?.mode === 'container' && (
+        <div className="grid gap-2.5 rounded-[12px] border border-line bg-panel p-3.5">
+          {docker && !docker.available && <p className="text-[12.5px] text-warn">{docker.error ?? 'Docker isn’t available.'} Runs will fail until it is.</p>}
+          <label className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+            Image
+            <Input value={value.image} onChange={(e) => onChange({ ...value, image: e.target.value })} spellCheck={false} autoComplete="off" className="w-44 font-mono" />
+            <span className="text-dim">The Linux system it runs in, such as node:22 or python:3.12.</span>
+          </label>
+          <label className="flex min-h-8 cursor-pointer items-center gap-2 text-[12.5px]">
+            <input type="checkbox" className="accent-[#dc2645]" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
+            Can reach the internet (to install packages)
+          </label>
+          <p className="text-[12px] text-dim">Its commands and edits only touch the copy. The result chat lists what changed, for you to apply to the real folder or throw away.</p>
+        </div>
+      )}
+      {value?.mode === 'allowlist' && (
+        <label className="grid gap-1 text-[12.5px] text-muted">
+          Commands it may run, one per line
+          <Textarea
+            rows={3}
+            className="font-mono text-[12px]"
+            spellCheck={false}
+            value={allowText}
+            placeholder={'git log\nnpm test…'}
+            onChange={(e) => {
+              setAllowText(e.target.value)
+              onChange({ mode: 'allowlist', allow: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })
+            }}
+          />
+          <span className="text-[11.5px] text-dim">Each line is how an allowed command starts: “git log” allows “git log --oneline” too. Anything else, or two commands chained together, is refused and the agent is told why.</span>
+        </label>
+      )}
+    </div>
+  )
+}

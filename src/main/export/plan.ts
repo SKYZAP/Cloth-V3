@@ -1,5 +1,6 @@
 import type { Collection, CustomTool, Skill, Workflow } from '@shared/types'
 import type { ExportPlan } from '@shared/flow-bundle'
+import { BUILTIN_NAMES } from '../agent/tools'
 
 type Inventory = { tools: CustomTool[]; skills: Pick<Skill, 'name'>[]; collections: Pick<Collection, 'id' | 'name'>[] }
 
@@ -37,7 +38,11 @@ export function planExport(wf: Pick<Workflow, 'nodes'>, inv: Inventory): ExportP
         web = true
         break
       case 'agent':
-        if (d.customTools !== false) for (const t of Array.isArray(d.tools) ? d.tools : enabledTools) tools.add(String(t))
+        // An automation's step lists built-in tools beside your own; only your own are bundled.
+        if (d.customTools !== false) for (const t of Array.isArray(d.tools) ? d.tools : enabledTools) if (!BUILTIN_NAMES.includes(String(t))) tools.add(String(t))
+        if (Array.isArray(d.tools) && d.tools.some((t) => t === 'web_search' || t === 'web_fetch')) web = true
+        if (Array.isArray(d.servers) && d.servers.length) warnings.push(`Agent ${label(n)} uses MCP servers, which an exported app doesn't include; it runs without them`)
+        if (d.commands) warnings.push(`Agent ${label(n)} runs commands, which an exported app doesn't allow; it runs without them`)
         if (d.skillsEnabled !== false) for (const s of Array.isArray(d.skills) ? d.skills : allSkills) skills.add(String(s))
         if (d.webEnabled) web = true
         addCollections(d.collectionIds)

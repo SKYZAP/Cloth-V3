@@ -1,10 +1,12 @@
 import { app, dialog, shell, BrowserWindow } from 'electron'
 import { MCP_PRESETS, mcpToolName } from './mcp/client'
 import type { ClothApi } from '@shared/api'
+import type { ToolRunResult } from '@shared/types'
 import { copyFile } from 'node:fs/promises'
 import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
 import { describeBuiltins } from './agent/tools'
+import { TRYABLE } from './agent/chat'
 
 export function createApi(s: Services): ClothApi {
   return {
@@ -75,6 +77,8 @@ export function createApi(s: Services): ClothApi {
     tools: {
       usage: async () => s.dashboard.toolUsage(),
       draft: async (description) => s.custom.draft(description),
+      tryBuiltin: (name, args, folder) => timedRun(() => s.runtime.tryTool(name, args, folder)),
+      tryable: async () => TRYABLE,
       usedBy: async () => toolUsers(s),
       builtins: async () => describeBuiltins(),
       list: async () => s.custom.list(),
@@ -234,6 +238,8 @@ export function createApi(s: Services): ClothApi {
       createAutomation: async (input) => s.workflows.createAutomation(input),
       saveAutomation: async (id, input) => s.workflows.saveAutomation(id, input),
       toFlow: async (id) => s.workflows.toFlow(id),
+      watchState: async (id) => s.workflows.watchState(id),
+      checkNow: (id) => s.workflows.checkNow(id),
       overview: async () => s.workflows.overview(),
       list: async () => s.workflows.list(),
       get: async (id) => s.workflows.get(id),
@@ -286,6 +292,7 @@ export function createApi(s: Services): ClothApi {
     },
     mcp: {
       status: async () => s.mcp.status(),
+      callTool: (id, tool, args) => timedRun(() => s.mcpClients.call(id, tool, args)),
       restart: () => s.mcp.restart(),
       rotateToken: async () => s.mcp.rotateToken(),
       clients: async () => s.mcpClients.status(),
@@ -338,4 +345,14 @@ async function toolUsers(s: Services): Promise<Record<string, string[]>> {
     }
   }
   return out
+}
+
+/** Run a call and report it the way the Tools page's test panel shows results. */
+async function timedRun(fn: () => Promise<string>): Promise<ToolRunResult> {
+  const started = Date.now()
+  try {
+    return { ok: true, output: await fn(), durationMs: Date.now() - started }
+  } catch (err) {
+    return { ok: false, output: '', error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - started }
+  }
 }

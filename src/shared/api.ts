@@ -126,6 +126,10 @@ export interface ClothApi {
     setEnabled(id: string, enabled: boolean): Promise<CustomTool>
     remove(id: string): Promise<void>
     test(tool: Pick<CustomTool, 'kind' | 'config' | 'params'>, args: Record<string, unknown>): Promise<ToolRunResult>
+    /** Run a built-in tool that only reads, outside any chat. `folder` is where file tools look. */
+    tryBuiltin(name: string, args: Record<string, unknown>, folder: string | null): Promise<ToolRunResult>
+    /** The built-in tools tryBuiltin can run. */
+    tryable(): Promise<string[]>
     /** A tool written from a description, for the user to check and save. Not saved. */
     draft(description: string): Promise<CustomToolInput>
     /** Which agents and automations can call each tool, by tool name (external tools by their agent-facing name). */
@@ -322,6 +326,10 @@ export interface ClothApi {
     /** A new automation: a prompt, how often it runs and what it may use. */
     createAutomation(input: import('./types').AutomationInput & { name: string; automation: import('./types').Automation }): Promise<Workflow>
     saveAutomation(id: string, input: import('./types').AutomationInput): Promise<Workflow>
+    /** When an automation's check last looked (watching a page or an MCP tool), and its error. */
+    watchState(id: string): Promise<{ checkedAt: number | null; error: string | null }>
+    /** Run an automation's check now; it runs the automation if the answer changed. */
+    checkNow(id: string): Promise<{ checkedAt: number | null; error: string | null }>
     /** Turn an automation into an ordinary flow, edited step by step from then on. */
     toFlow(id: string): Promise<Workflow>
   }
@@ -346,6 +354,8 @@ export interface ClothApi {
     stopClient(id: string): Promise<void>
     /** Recent calls Cloth made to external servers, newest first. */
     externalCalls(): Promise<import('./types').McpCallLog[]>
+    /** Call one of a server's tools directly (the Tools page's Try it). */
+    callTool(id: string, tool: string, args: Record<string, unknown>): Promise<ToolRunResult>
   }
   /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
   remote: {

@@ -83,7 +83,7 @@ export class McpClientService {
   status(): McpClientStatus[] {
     return this.configs().map((c) => {
       const conn = this.conns.get(c.id)
-      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, tools: (conn?.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '' })) }
+      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, tools: (conn?.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema })) }
     })
   }
 
@@ -187,6 +187,17 @@ export class McpClientService {
 
   private changed(): void {
     this.ctx.emit('mcpClients', { type: 'changed' })
+  }
+
+  /** Call one tool on a server, outside any chat (the Tools page's Try it, an automation's check). Returns its text. */
+  async call(id: string, tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+    await this.ensure([id])
+    const c = this.conns.get(id)
+    if (c?.state !== 'ready') throw new Error(`The ${c?.config.name ?? 'MCP'} server isn't running${c?.error ? `: ${c.error}` : ''}`)
+    const t = c.tools.find((x) => x.name === tool)
+    if (!t) throw new Error(`The ${c.config.name} server has no tool called ${tool}`)
+    const result = await this.agentTool(c, t, { collectionIds: [], skillsEnabled: false, workspace: null, autoApprove: () => 'all' }).execute(`try_${Date.now()}`, args, signal)
+    return result.content.map((x) => (x.type === 'text' ? x.text : '[image]')).join('\n')
   }
 
   /** Agent tools for the chat's servers that are running. */

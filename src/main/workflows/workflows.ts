@@ -1,8 +1,10 @@
 import { runInNewContext } from 'node:vm'
-import { existsSync } from 'node:fs'
+import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { sep } from 'node:path'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { Automation, AutomationInput, WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
+import type { Automation, AutomationCommands, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
 import { describeChange, failureReport } from './history'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -12,6 +14,7 @@ import { formatHitsForModel, type RagService } from '../rag/rag'
 import { skillSystemPrompt, type SkillService } from '../skills/skills'
 import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { AgentService } from '../agent/agents'
+import type { ContainerService } from '../agent/containers'
 import type { ToolScope } from '../agent/tools'
 import { mcpToolName } from '../mcp/client'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
@@ -68,7 +71,7 @@ export class WorkflowService {
 
   constructor(
     private ctx: Ctx,
-    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService; web: WebService; custom: CustomToolService; agents?: AgentService }
+    private deps: { providers: ProviderService; rag: RagService; skills: SkillService; runtime: AgentRuntime; settings: SettingsService; web: WebService; custom: CustomToolService; agents?: AgentService; containers?: ContainerService }
   ) {}
 
   list(): Workflow[] {
@@ -122,7 +125,7 @@ export class WorkflowService {
   // ─── Automations ──────────────────────────────────────────────────────────
 
   /** Delivers an automation's result (a new chat, a Knowledge note); set up by the app. Returns the new chat's id. */
-  deliver: ((wf: Workflow, run: WorkflowRun, transcript: AgentMessage[]) => Promise<string | null>) | null = null
+  deliver: ((wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], chatId: string | null) => Promise<string | null>) | null = null
 
   createAutomation(input: AutomationInput & { name: string; automation: Automation }): Workflow {
     const wf = this.create({ name: input.name }, null)
@@ -136,6 +139,12 @@ export class WorkflowService {
     if (!automation) throw new Error('This flow is not an automation')
     if (!automation.prompt.trim()) throw new Error('Say what the automation should do')
     if (automation.deliver === 'knowledge' && !automation.collectionId) throw new Error('Pick the Knowledge collection to save results to')
+    const workspace = input.workspace === undefined ? cur.workspace : input.workspace
+    if (automation.watch?.kind === 'files' && !workspace) throw new Error('Choose the folder to watch')
+    if (automation.watch?.kind === 'url' && !/^https?:\/\/\S+$/i.test(automation.watch.url)) throw new Error('Give the address of the page to watch, starting with https://')
+    if (automation.watch?.kind === 'mcp' && (!automation.watch.serverId || !automation.watch.tool)) throw new Error('Pick the server and tool to check')
+    if (automation.commands && !workspace) throw new Error('Choose a folder for its commands to run in')
+    if (automation.commands?.mode === 'allowlist' && !automation.commands.allow.length) throw new Error('List the commands it may run')
     const name = input.name?.trim() || cur.name
     return this.save(
       id,
@@ -151,12 +160,12 @@ export class WorkflowService {
     return this.save(id, { automation: null }, { note: 'Turned into a flow' })
   }
 
-  private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[]): Promise<void> {
+  private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], runChat: string | null): Promise<void> {
     const a = wf.automation
     if (!a) return
     let chatId: string | null = null
     try {
-      chatId = run.status === 'ok' && this.deliver ? await this.deliver(wf, run, transcript) : null
+      chatId = run.status === 'ok' && this.deliver ? await this.deliver(wf, run, transcript, runChat) : null
     } catch (err) {
       this.ctx.log('automation', `Delivering ${wf.name} failed:`, errorMessage(err))
     }
@@ -343,6 +352,7 @@ export class WorkflowService {
   private schedule(id: string): void {
     this.unschedule(id)
     const wf = this.get(id)
+    this.watch(wf)
     if (!wf.cron || !wf.cronEnabled) {
       this.ctx.emit('workflow', { type: 'schedule', workflowId: id, nextRunAt: null })
       return
@@ -362,6 +372,122 @@ export class WorkflowService {
   private unschedule(id: string): void {
     this.jobs.get(id)?.stop()
     this.jobs.delete(id)
+    this.watchers.get(id)?.()
+    this.watchers.delete(id)
+  }
+
+  // ─── Watching (automations that run when something changes) ──────────────
+
+  private watchers = new Map<string, () => void>()
+  /** When each flow's last run ended (Infinity while one runs): its own writes don't trigger it again. */
+  private active = new Map<string, number>()
+  /** Waits before a folder change runs the automation, and how long after a run its own writes are ignored. */
+  watchTiming = { debounceMs: 4000, quietMs: 5000 }
+
+  private watch(wf: Workflow): void {
+    const w = wf.automation?.watch
+    if (!w) return
+    const id = wf.id
+    const busy = () => {
+      const at = this.active.get(id)
+      return at === Infinity || (at !== undefined && Date.now() - at < this.watchTiming.quietMs)
+    }
+    if (w.kind === 'files') {
+      const root = wf.workspace
+      if (!root || !existsSync(root)) return this.ctx.log('automation', `${wf.name}: the folder to watch is missing`)
+      const pending = new Set<string>()
+      let timer: NodeJS.Timeout | undefined
+      const fire = () => {
+        if (busy() || !pending.size) return pending.clear()
+        const changed = [...pending].sort()
+        pending.clear()
+        void this.run(id, { changed }, 'change').catch((err) => this.ctx.log('automation', `${wf.name}: run on change failed`, errorMessage(err)))
+      }
+      let watcher: FSWatcher
+      try {
+        watcher = fsWatch(root, { recursive: true }, (_event, file) => {
+          if (!file) return
+          const rel = String(file).split(sep).join('/')
+          if (IGNORED.test(rel) || busy()) return
+          pending.add(rel)
+          clearTimeout(timer)
+          timer = setTimeout(fire, this.watchTiming.debounceMs)
+        })
+      } catch (err) {
+        return this.ctx.log('automation', `${wf.name}: can't watch ${root}`, errorMessage(err))
+      }
+      watcher.on('error', (err) => this.ctx.log('automation', `${wf.name}: watching stopped`, errorMessage(err)))
+      this.watchers.set(id, () => {
+        clearTimeout(timer)
+        watcher.close()
+      })
+      return
+    }
+    // A cheap check on an interval: run only when its answer differs from last time.
+    const key = `automation.watch.${id}.${createHash('sha1').update(JSON.stringify(w)).digest('hex').slice(0, 12)}`
+    const what = w.kind === 'url' ? `the page at ${w.url}` : `the answer from ${w.tool}`
+    let stopped = false
+    const tick = async () => {
+      if (stopped || busy()) return
+      let text: string
+      try {
+        text = await this.probe(w)
+      } catch (err) {
+        this.ctx.kv.set(key, { ...this.ctx.kv.get(key, {}), checkedAt: Date.now(), error: errorMessage(err) })
+        return
+      }
+      const hash = createHash('sha1').update(text).digest('hex')
+      const prev = this.ctx.kv.get<{ hash?: string }>(key, {})
+      this.ctx.kv.set(key, { hash, checkedAt: Date.now(), error: null })
+      if (stopped || !prev.hash || prev.hash === hash) return
+      await this.run(id, { changed: what, now: text.slice(0, 4000) }, 'change').catch((err) => this.ctx.log('automation', `${wf.name}: run on change failed`, errorMessage(err)))
+    }
+    void tick()
+    const timer = setInterval(() => void tick(), w.everyMinutes * 60_000)
+    this.checks.set(id, tick)
+    this.watchers.set(id, () => {
+      stopped = true
+      clearInterval(timer)
+      this.checks.delete(id)
+    })
+  }
+
+  private checks = new Map<string, () => Promise<void>>()
+
+  /** Run an automation's check now instead of waiting for its interval (runs it if the answer changed). */
+  async checkNow(id: string): Promise<{ checkedAt: number | null; error: string | null }> {
+    await this.checks.get(id)?.()
+    return this.watchState(id)
+  }
+
+  /** What a check-based watch looks at, as text. */
+  private async probe(w: Exclude<AutomationWatch, { kind: 'files' }>): Promise<string> {
+    if (w.kind === 'mcp') {
+      const mcp = this.deps.runtime.mcpClients
+      if (!mcp) throw new Error('MCP servers are not available here')
+      return mcp.call(w.serverId, w.tool, w.args)
+    }
+    const res = await fetch(w.url, { signal: AbortSignal.timeout(30_000), headers: { 'user-agent': 'Cloth automation' } })
+    if (!res.ok) throw new Error(`${w.url} answered ${res.status}`)
+    const body = await res.text()
+    // A page's text, without scripts, styles and markup that change on every load.
+    return /<html|<body|<div/i.test(body)
+      ? body
+          .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      : body.trim()
+  }
+
+  /** When a check-based watch last looked, and what went wrong if it failed. */
+  watchState(id: string): { checkedAt: number | null; error: string | null } {
+    const w = this.get(id).automation?.watch
+    if (!w || w.kind === 'files') return { checkedAt: null, error: null }
+    const key = `automation.watch.${id}.${createHash('sha1').update(JSON.stringify(w)).digest('hex').slice(0, 12)}`
+    const v = this.ctx.kv.get<{ checkedAt?: number; error?: string | null }>(key, {})
+    return { checkedAt: v.checkedAt ?? null, error: v.error ?? null }
   }
 
   private defaultInput(wf: Workflow): unknown {
@@ -405,6 +531,9 @@ export class WorkflowService {
     this.running.set(run.id, controller)
     this.persist(run)
     let transcript: AgentMessage[] = []
+    // A container run's copy belongs to the chat its result goes to, made with this id.
+    const chatId = wf.automation?.commands?.mode === 'container' ? newId('ses_') : null
+    this.active.set(id, Infinity)
     const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
       executeGraph(
         wf,
@@ -415,7 +544,8 @@ export class WorkflowService {
             files.add(abs)
             run.files = [...files]
           },
-          onTranscript: (messages) => (transcript = messages)
+          onTranscript: (messages) => (transcript = messages),
+          chatId
         }),
         controller.signal,
         {
@@ -440,11 +570,12 @@ export class WorkflowService {
       .finally(() => {
         run.finishedAt = Date.now()
         this.running.delete(run.id)
+        this.active.set(id, Date.now())
         this.persist(run)
         this.prune(id)
       })
       .then(async (r) => {
-        if (wf.automation) await this.afterAutomation(wf, r, transcript)
+        if (wf.automation) await this.afterAutomation(wf, r, transcript, chatId)
         return r
       })
     return { run: { ...run }, done }
@@ -497,7 +628,7 @@ export class WorkflowService {
     return m
   }
 
-  private executor(env: { workspace: string | null; onFile(abs: string): void; onTranscript?(messages: AgentMessage[]): void }): Executor {
+  private executor(env: { workspace: string | null; onFile(abs: string): void; onTranscript?(messages: AgentMessage[]): void; chatId?: string | null }): Executor {
     const { providers, rag, skills, runtime, web, custom } = this.deps
     /** Tool-like nodes count as tool calls on the dashboard. */
     const timed = async <T>(name: string, kind: string, fn: () => Promise<T>): Promise<T> => {
@@ -513,6 +644,7 @@ export class WorkflowService {
     }
     return async (node, { scope, prev, signal }) => {
       const d = node.data
+      const values = scope
       const t = (s: unknown) => renderTemplate(String(s ?? ''), scope)
       switch (node.type) {
         case 'trigger':
@@ -566,10 +698,11 @@ export class WorkflowService {
             system = [`You are the "${saved.name}" agent. ${saved.purpose}`, saved.instructions.trim(), system].filter(Boolean).join('\n\n')
           }
           // An automation's step may use exactly what was picked for it, whoever it runs as.
-          if (d.automation) scope = await this.automationScope(d, scope)
+          if (d.automation) scope = await this.automationScope(d, scope, env.chatId ?? null)
+          const why = d.automation ? changeNote(values.input) : ''
           const res = await runtime.run({
             model: d.model?.providerId ? d.model : (saved?.model ?? this.modelFor(null)),
-            prompt: t(d.prompt) || String(prev ?? ''),
+            prompt: (t(d.prompt) || String(prev ?? '')) + why,
             systemPrompt: system,
             scope,
             thinking: saved?.thinking ?? undefined,
@@ -657,7 +790,7 @@ export class WorkflowService {
   }
 
   /** The scope of an automation's agent step: its picked tools, servers, collections and skills, and nothing else. */
-  private async automationScope(d: Record<string, any>, scope: ToolScope): Promise<ToolScope> {
+  private async automationScope(d: Record<string, any>, scope: ToolScope, chatId: string | null): Promise<ToolScope> {
     const tools: string[] = Array.isArray(d.tools) ? d.tools : []
     const collectionIds: string[] = Array.isArray(d.collectionIds) ? d.collectionIds : []
     const skills: string[] = Array.isArray(d.skills) ? d.skills : []
@@ -676,6 +809,32 @@ export class WorkflowService {
       for (const n of names) only.add(mcpToolName(config.name, n))
     }
     const writes = ['write', 'edit', 'ast_edit'].some((n) => only.has(n))
+    const commands = (d.commands ?? null) as AutomationCommands | null
+    const shellTool = process.platform === 'win32' ? 'powershell' : 'bash'
+    let extra: Partial<ToolScope> = {}
+    if (commands && scope.workspace) {
+      if (commands.mode === 'allowlist') {
+        only.add(shellTool)
+        extra = { shell: true, commandAllow: commands.allow }
+      } else {
+        // In a container: it works on a copy of its folder, so changes and commands need no approval.
+        const containers = this.deps.containers
+        if (!containers) throw new Error('Containers are not available here')
+        const status = await containers.status(true)
+        if (!status.available) throw new Error(status.error ?? 'Docker is not available')
+        const id = chatId ?? newId('ses_')
+        const settings = { image: commands.image, network: commands.network }
+        const copy = await containers.prepare(id, scope.workspace)
+        only.add('bash')
+        extra = {
+          workspace: copy,
+          shell: true,
+          fileAccess: 'write',
+          autoApprove: () => 'all',
+          container: { image: settings.image, folder: scope.workspace, exec: (command, cwd, options) => containers.exec(id, settings, command, cwd, options) }
+        }
+      }
+    }
     return {
       ...scope,
       collectionIds,
@@ -692,7 +851,8 @@ export class WorkflowService {
       onlyTools: [...only],
       fileAccess: writes && scope.workspace ? 'write' : 'read',
       shell: false,
-      subagents: false
+      subagents: false,
+      ...extra
     }
   }
 
@@ -724,7 +884,7 @@ export function automationGraph(a: Automation): { nodes: WorkflowNode[]; edges: 
         id: 'n_agent',
         type: 'agent',
         position: { x: 320, y: 100 },
-        data: { key: 'result', label: 'Do the task', automation: true, prompt: a.prompt, agentId: a.agentId, tools: a.tools, servers: a.servers, collectionIds: a.collectionIds, skills: a.skills, maxTurns: 24 }
+        data: { key: 'result', label: 'Do the task', automation: true, prompt: a.prompt, agentId: a.agentId, tools: a.tools, servers: a.servers, collectionIds: a.collectionIds, skills: a.skills, commands: a.commands, maxTurns: 24 }
       },
       { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'output', label: 'Output', value: '{{result}}' } }
     ],
@@ -745,10 +905,40 @@ function cleanAutomation(a: Automation | null | undefined): Automation | null {
     servers: (Array.isArray(a.servers) ? a.servers : []).filter((s) => s && typeof s.id === 'string').map((s) => ({ id: s.id, tools: Array.isArray(s.tools) ? list(s.tools) : null })),
     collectionIds: list(a.collectionIds),
     skills: list(a.skills),
-    deliver: a.deliver === 'notify' || a.deliver === 'knowledge' ? a.deliver : 'chat',
-    collectionId: a.collectionId || null
+    // A run in a container hands its changes over in a chat, so its result always goes to one.
+    deliver: a.commands?.mode === 'container' ? 'chat' : a.deliver === 'notify' || a.deliver === 'knowledge' ? a.deliver : 'chat',
+    collectionId: a.collectionId || null,
+    watch: cleanWatch(a.watch),
+    commands: cleanCommands(a.commands)
   }
 }
+
+function cleanWatch(w: AutomationWatch | null | undefined): AutomationWatch | null {
+  if (!w) return null
+  const every = (n: unknown) => Math.min(24 * 60, Math.max(1, Math.round(Number(n) || 15)))
+  if (w.kind === 'files') return { kind: 'files' }
+  if (w.kind === 'url') return { kind: 'url', url: String(w.url ?? '').trim(), everyMinutes: every(w.everyMinutes) }
+  if (w.kind === 'mcp') return { kind: 'mcp', serverId: String(w.serverId ?? ''), tool: String(w.tool ?? ''), args: w.args && typeof w.args === 'object' ? w.args : {}, everyMinutes: every(w.everyMinutes) }
+  return null
+}
+
+function cleanCommands(c: AutomationCommands | null | undefined): AutomationCommands | null {
+  if (!c) return null
+  if (c.mode === 'container') return { mode: 'container', image: String(c.image ?? '').trim() || 'node:22', network: c.network !== false }
+  if (c.mode === 'allowlist') return { mode: 'allowlist', allow: [...new Set((Array.isArray(c.allow) ? c.allow : []).map((x) => String(x).trim().replace(/\s+/g, ' ')).filter(Boolean))] }
+  return null
+}
+
+/** Why a run started, for the agent, when a watched thing changed. */
+function changeNote(input: unknown): string {
+  const i = input as { changed?: unknown; now?: unknown } | null
+  if (!i?.changed) return ''
+  if (Array.isArray(i.changed)) return `\n\nThis run started because these files changed in its folder: ${i.changed.slice(0, 50).join(', ')}.`
+  return `\n\nThis run started because ${String(i.changed)} changed. What it says now:\n\n${String(i.now ?? '').slice(0, 4000)}`
+}
+
+/** Paths a folder watch ignores: version control, dependencies, build output and editor scratch files. */
+const IGNORED = /(^|\/)(\.git|node_modules|\.cache|dist|out|build|\.next|\.venv|__pycache__)(\/|$)|~$|\.(swp|tmp|crdownload)$/
 
 function blankTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
   return {
