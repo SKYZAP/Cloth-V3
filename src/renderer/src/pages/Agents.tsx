@@ -55,13 +55,6 @@ export function AgentsPage() {
   const q = filter.trim().toLowerCase()
   const shown = agents.filter((a) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q))
   const open = agents.find((a) => a.id === openId) ?? null
-  // Templates you haven't added yet fill the team until you have a few agents of your own.
-  const templates = AGENT_TEMPLATES.filter((t) => !agents.some((a) => a.name.toLowerCase() === t.agent.name?.toLowerCase())).slice(0, q ? 0 : Math.max(0, 2 - agents.filter((a) => !a.builtin).length))
-
-  const fromTemplate = async (template: string) => {
-    const a = await attempt(() => api.agents.create({ template }))
-    if (a) void load().then(() => setOpenId(a.id))
-  }
   const close = () => {
     const id = openId
     setOpenId(null)
@@ -108,15 +101,6 @@ export function AgentsPage() {
           <Lane title="Team" hint="Chat with any of them, or let Cloth hand them work by name">
             {shown.map((a) => (
               <AgentCard key={a.id} agent={a} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
-            ))}
-            {templates.map((t) => (
-              <div key={t.id} className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
-                <span className="text-[13px] font-semibold">{t.name}</span>
-                <span className="text-[12px] text-muted">{t.summary}</span>
-                <Button size="sm" className="mt-1 justify-self-start" onClick={() => void fromTemplate(t.id)}>
-                  Add {t.name}
-                </Button>
-              </div>
             ))}
             {!q && (
               <div className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
