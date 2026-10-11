@@ -35,6 +35,11 @@
   --color-skill: #dcb6ff;
   --color-skill-dot: #c084fc;
   --color-skill-soft: rgb(192 132 252 / 0.15);
+
+  /* Agents: saved agents tagged with @ in the message box, sent messages and subagent runs. */
+  --color-agent: #9cdcff;
+  --color-agent-dot: #38bdf8;
+  --color-agent-soft: rgb(56 189 248 / 0.15);
 }
 
 /* Base rules live in the base layer so Tailwind utilities (outline-none, [scrollbar-width:none], …)

@@ -53,6 +53,7 @@ const ICONS: Record<string, Icon> = {
   powershell: TerminalWindow,
   todo_write: ListChecks,
   task: Robot,
+  agent_mention: Robot,
   lsp: Code,
   ast_grep: TreeStructure,
   ast_edit: TreeStructure,
@@ -78,6 +79,7 @@ function summarize(t: Trace): string {
     return `${todos.filter((x) => x.status === 'completed').length}/${todos.length} done${current ? ` · ${current.content}` : ''}`
   }
   if (t.name === 'task') return String(a.description ?? '')
+  if (t.name === 'agent_mention') return String(a.name ?? '')
   if (t.name === 'generate_image') return String(a.prompt ?? '')
   if (t.name === 'ask_user') return String(a.question ?? '')
   if (t.name === 'rag_index') return `→ ${a.collection ?? ''}${a.title ? ` · ${a.title}` : Array.isArray(a.urls) && a.urls.length ? ` · ${a.urls[0]}` : ''}`
@@ -124,7 +126,8 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
         {trace.subagent && (
           <span className={clsx('shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium', trace.subagent.role === 'worker' ? 'bg-warn/10 text-warn' : 'bg-info/10 text-info')}>{trace.subagent.role}</span>
         )}
-        <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : 'text-dim')}>{summarize(trace)}</span>
+        {trace.subagent?.agent && <span className="shrink-0 text-[12px] text-agent">{trace.subagent.agent}</span>}
+        <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : trace.name === 'agent_mention' ? 'text-agent' : 'text-dim')}>{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
           {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
           {refs.length > 0 && <span>{refs.length} refs</span>}
@@ -394,10 +397,12 @@ export function describeTools(traces: Trace[]): string {
   if (count((t) => t.name === 'rag_search')) parts.push('searched your knowledge')
   const skills = new Set(traces.filter((t) => t.name === 'skill_use').map((t) => String((t.args as { name?: unknown })?.name ?? '')))
   if (skills.size) parts.push(`used the ${[...skills].join(', ')} skill${skills.size > 1 ? 's' : ''}`)
+  const tagged = new Set(traces.filter((t) => t.name === 'agent_mention').map((t) => String((t.args as { name?: unknown })?.name ?? '')))
+  if (tagged.size) parts.push(`handed it to the ${[...tagged].join(', ')} agent${tagged.size > 1 ? 's' : ''}`)
   const external = new Map<string, number>()
   for (const t of traces) if (t.name.startsWith('mcp__')) external.set(t.name.split('__')[1], (external.get(t.name.split('__')[1]) ?? 0) + 1)
   for (const [server, n] of external) parts.push(`${plural(n, `${server} step`)}`)
-  const known = new Set(['read', 'read_file', 'grep', 'find', 'ls', 'list_dir', 'ast_grep', 'lsp', 'edit', 'write', 'ast_edit', 'bash', 'powershell', 'web_search', 'web_fetch', 'rag_search', 'skill_use', 'todo_write'])
+  const known = new Set(['read', 'read_file', 'grep', 'find', 'ls', 'list_dir', 'ast_grep', 'lsp', 'edit', 'write', 'ast_edit', 'bash', 'powershell', 'web_search', 'web_fetch', 'rag_search', 'skill_use', 'agent_mention', 'todo_write'])
   const other = count((t) => !known.has(t.name) && !t.name.startsWith('mcp__'))
   if (other) parts.push(`${plural(other, 'other step')}`)
   const text = parts.join(', ') || `${plural(traces.length, 'step')}`

@@ -42,7 +42,8 @@ import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { SidePanel, usePanelState } from './chat/SidePanel'
 import { StatusLine } from './chat/StatusLine'
-import { invokedSkills, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
+import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
+import { initials } from './Agents'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
@@ -366,6 +367,9 @@ function ChatView({
   const [skills, setSkills] = useState<Skill[]>([])
   const [slash, setSlash] = useState<{ query: string; start: number; end: number } | null>(null)
   const [slashIndex, setSlashIndex] = useState(0)
+  const [savedAgents, setSavedAgents] = useState<Agent[]>([])
+  const [mention, setMention] = useState<{ query: string; start: number; end: number } | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
   const [attachments, setAttachments] = useState<Pending[]>([])
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -388,6 +392,10 @@ function ChatView({
     if (!session.agentId) return setAgent(null)
     void api.agents.list().then((list) => setAgent(list.find((a) => a.id === session.agentId) ?? null), () => undefined)
   }, [session.agentId])
+  // Saved agents the message can tag with @name.
+  const loadAgents = () => void api.agents.list().then(setSavedAgents, () => undefined)
+  useEffect(loadAgents, [])
+  useEvent('agents', loadAgents)
 
   useEffect(() => {
     void api.chat.messages(session.id).then((ms) => {
@@ -462,18 +470,25 @@ function ChatView({
   // Skills are invoked inline: every "/name" in the message that names an installed skill.
   const known = useMemo(() => new Set(skills.map((sk) => sk.name)), [skills])
   const inline = useMemo(() => invokedSkills(draft, known), [draft, known])
+  // Agents are tagged inline: every "@slug" that names a saved agent (not the one this chat runs as, nor the plain scout and worker).
+  const taggable = useMemo(() => savedAgents.filter((a) => a.id !== session.agentId && a.builtin !== 'scout' && a.builtin !== 'worker'), [savedAgents, session.agentId])
+  const agentsBySlug = useMemo(() => new Map(taggable.map((a) => [agentSlug(a.name), a.name] as const)), [taggable])
+  const slugs = useMemo(() => new Set(agentsBySlug.keys()), [agentsBySlug])
+  const tagged = useMemo(() => mentionedAgents(draft, slugs), [draft, slugs])
 
   const send = async (text = draft) => {
     const t = text.trim()
     const files = attachments
     const withSkills = invokedSkills(t, known)
+    const withAgents = mentionedAgents(t, slugs).map((slug) => agentsBySlug.get(slug)!)
     if ((!t && !files.length) || running) return
     stick.current = true
     setDraft('')
     setSlash(null)
+    setMention(null)
     setAttachments([])
     const sent = await attempt(async () => {
-      await api.chat.send(session.id, t, withSkills, files.map(({ name, mimeType, data }) => ({ name, mimeType, data })))
+      await api.chat.send(session.id, t, withSkills, files.map(({ name, mimeType, data }) => ({ name, mimeType, data })), withAgents)
       return true
     })
     // Keep what the user wrote and attached when the send is refused (an unreadable file, no model).
@@ -540,11 +555,43 @@ function ChatView({
   const unknown = useMemo(() => (slash || !skills.length ? [] : unknownSkills(draft, known)), [slash, skills.length, draft, known])
 
   const detectSlash = (value: string, caret: number) => {
+    detectMention(value, caret)
     const at = slashAt(value, caret)
     if (!at) return setSlash(null)
     if (!slash) void api.skills.list().then(setSkills).catch(() => undefined)
     setSlash(at)
     setSlashIndex(0)
+  }
+
+  // Mentions: "@name" at the start of a word opens the agent picker.
+  const agentMatches = useMemo(() => {
+    if (!mention) return []
+    const q = mention.query
+    return taggable
+      .map((a) => ({ agent: a, slug: agentSlug(a.name) }))
+      .filter(({ agent: a, slug }) => (slug === q || !tagged.includes(slug)) && (!q || slug.includes(q) || a.name.toLowerCase().includes(q)))
+      .sort((a, b) => Number(b.slug.startsWith(q)) - Number(a.slug.startsWith(q)) || a.agent.name.localeCompare(b.agent.name))
+      .slice(0, 8)
+  }, [mention, taggable, tagged])
+
+  const detectMention = (value: string, caret: number) => {
+    const at = mentionAt(value, caret)
+    if (!at) return setMention(null)
+    setMention(at)
+    setMentionIndex(0)
+  }
+
+  const pickAgent = (slug: string) => {
+    if (!mention) return
+    const head = `${draft.slice(0, mention.start)}@${slug} `
+    setDraft(head + draft.slice(mention.end).replace(/^\s/, ''))
+    setMention(null)
+    requestAnimationFrame(() => {
+      const el = textarea.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(head.length, head.length)
+    })
   }
 
   const pickSkill = (sk: Skill) => {
@@ -764,7 +811,7 @@ function ChatView({
                 <UserBubble message={m} fresh={fresh} />
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
             )
           })}
           <AnimatePresence>
@@ -829,12 +876,13 @@ function ChatView({
         >
           <AnimatePresence>
             {slash && <SlashMenu key="slash" skills={matches} total={skills.length} index={slashIndex} query={slash.query} onPick={pickSkill} onHover={setSlashIndex} />}
+            {mention && <AgentMenu key="mention" agents={agentMatches} total={taggable.length} index={mentionIndex} query={mention.query} onPick={pickAgent} onHover={setMentionIndex} />}
           </AnimatePresence>
           <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
           <div className="relative">
-          {inline.length > 0 && (
+          {(inline.length > 0 || tagged.length > 0) && (
             <div ref={mirror} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg [scrollbar-gutter:stable]">
-              <SkillText text={`${draft}\u200b`} known={known} />
+              <SkillText text={`${draft}\u200b`} known={known} agents={agentsBySlug} />
             </div>
           )}
           <textarea
@@ -854,9 +902,32 @@ function ChatView({
             onSelect={(e) => {
               const el = e.currentTarget
               if (slash && (el.selectionStart < slash.start || el.selectionStart !== el.selectionEnd)) setSlash(null)
+              if (mention && (el.selectionStart < mention.start || el.selectionStart !== el.selectionEnd)) setMention(null)
             }}
-            onBlur={() => setTimeout(() => setSlash(null), 120)}
+            onBlur={() =>
+              setTimeout(() => {
+                setSlash(null)
+                setMention(null)
+              }, 120)
+            }
             onKeyDown={(e) => {
+              if (mention && agentMatches.length) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setMentionIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : agentMatches.length - 1)) % agentMatches.length)
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  pickAgent(agentMatches[Math.min(mentionIndex, agentMatches.length - 1)].slug)
+                  return
+                }
+              }
+              if (mention && e.key === 'Escape') {
+                e.preventDefault()
+                setMention(null)
+                return
+              }
               if (slash && matches.length) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault()
@@ -881,10 +952,10 @@ function ChatView({
               }
             }}
             rows={1}
-            placeholder={!session.model ? 'Pick a model below to start' : 'Ask anything — type / to invoke a skill'}
+            placeholder={!session.model ? 'Pick a model below to start' : 'Ask anything — / for a skill, @ for an agent'}
             className={clsx(
               'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
-              inline.length > 0 && 'text-transparent caret-fg'
+              (inline.length > 0 || tagged.length > 0) && 'text-transparent caret-fg'
             )}
           />
           </div>
@@ -952,6 +1023,50 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
         </LayoutGroup>
       ) : (
         <div className="px-4 py-4 text-[12px] text-dim">{total ? `No skill matches “/${query}”.` : 'No skills yet — create or import one on the Skills page.'}</div>
+      )}
+      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-[11px] text-dim">
+        <Key>↑</Key> <Key>↓</Key> to choose · <Key>Tab</Key> or <Key>Enter</Key> to insert · <Key>Esc</Key> to close
+      </div>
+    </motion.div>
+  )
+}
+
+function AgentMenu({ agents, total, index, query, onPick, onHover }: { agents: { agent: Agent; slug: string }[]; total: number; index: number; query: string; onPick(slug: string): void; onHover(i: number): void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.98, transition: { duration: 0.12 } }}
+      transition={{ type: 'spring', stiffness: 520, damping: 34 }}
+      style={{ transformOrigin: 'bottom left' }}
+      className="sheet-glass absolute bottom-full left-0 z-30 mb-2 w-[min(480px,100%)] overflow-hidden rounded-[14px] border border-line-strong"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {agents.length ? (
+        <LayoutGroup id="mention">
+          <div className="px-3.5 pb-0.5 pt-2 text-[11px] font-medium text-dim">Agents</div>
+          <div role="listbox" aria-label="Agents" className="max-h-72 overflow-y-auto p-1.5 pt-1">
+            {agents.map(({ agent: a, slug }, i) => (
+              <button
+                key={a.id}
+                role="option"
+                aria-selected={i === index}
+                onMouseEnter={() => onHover(i)}
+                onClick={() => onPick(slug)}
+                className="relative grid w-full grid-cols-[auto_auto_1fr] items-center gap-3 rounded-[10px] px-2.5 py-2 text-left"
+              >
+                {i === index && <motion.span layoutId="mention-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-[10px] bg-elev-2" />}
+                <span aria-hidden="true" className="relative flex h-6 w-6 items-center justify-center rounded-[7px] bg-agent-soft text-[10px] font-semibold tracking-tight text-agent">
+                  {initials(a.name)}
+                </span>
+                <span className="relative text-[12.5px] text-agent">{a.name}</span>
+                <span className="relative truncate text-[11.5px] text-dim">{a.purpose || 'No purpose given'}</span>
+              </button>
+            ))}
+          </div>
+        </LayoutGroup>
+      ) : (
+        <div className="px-4 py-4 text-[12px] text-dim">{total ? `No agent matches “@${query}”.` : 'No agents yet — make one on the Agents page.'}</div>
       )}
       <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-[11px] text-dim">
         <Key>↑</Key> <Key>↓</Key> to choose · <Key>Tab</Key> or <Key>Enter</Key> to insert · <Key>Esc</Key> to close
@@ -1088,6 +1203,7 @@ const enterProps = (fresh: boolean) =>
 function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) {
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
   const used = useMemo(() => new Set(message.skills ?? []), [message.skills])
+  const agents = useMemo(() => new Map((message.agents ?? []).map((n) => [agentSlug(n), n] as const)), [message.agents])
   // Messages from before skills were written inline carry them only as a list: show those first.
   const leading = (message.skills ?? []).filter((n) => !invokedSkills(text, used).includes(n))
   return (
@@ -1100,7 +1216,7 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
               <SkillToken name={n} />{' '}
             </span>
           ))}
-          <SkillText text={text} known={used} />
+          <SkillText text={text} known={used} agents={agents} />
         </div>
       )}
     </motion.div>
@@ -1110,6 +1226,7 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
 function AssistantTurn({
   message,
   invoked,
+  tagged,
   streaming,
   fresh,
   onRegenerate,
@@ -1119,6 +1236,8 @@ function AssistantTurn({
   message: UiMessage
   /** Skills the user's message invoked with /name. */
   invoked?: string[]
+  /** Saved agents the user's message tagged with @name. */
+  tagged?: string[]
   streaming: boolean
   fresh: boolean
   onRegenerate(): void
@@ -1130,9 +1249,10 @@ function AssistantTurn({
   const all = useMemo<UiBlock[]>(
     () => [
       ...(invoked ?? []).map((name): UiBlock => ({ type: 'tool', trace: { id: `${message.id}:skill:${name}`, name: 'skill_use', args: { name }, status: 'ok', result: `Loaded with /${name} for this message.`, durationMs: null, references: [] } })),
+      ...(tagged ?? []).map((name): UiBlock => ({ type: 'tool', trace: { id: `${message.id}:agent:${name}`, name: 'agent_mention', args: { name }, status: 'ok', result: `Tagged with @${agentSlug(name)}: this message is handed to the ${name} agent.`, durationMs: null, references: [] } })),
       ...message.blocks
     ],
-    [invoked, message.blocks, message.id]
+    [invoked, tagged, message.blocks, message.id]
   )
   // Citations [n] refer to the most recent search before each text block.
   const blocks = useMemo(() => {
