@@ -205,6 +205,23 @@ export function createApi(s: Services): ClothApi {
       generate: (input) => s.agents.generate(input),
       rewrite: (instructions, request, model, thinking) => s.agents.rewrite(instructions, request, model, thinking)
     },
+    runs: {
+      list: async () => s.runs.list(),
+      status: async () => s.runs.status(),
+      create: async (input) => s.runs.create(input),
+      update: async (id, patch) => s.runs.update(id, patch),
+      remove: (id) => s.runs.remove(id),
+      start: (id) => s.runs.start(id),
+      stop: (id) => s.runs.stop(id),
+      logs: async (id) => s.runs.logsOf(id),
+      devices: (id) => s.runs.devices(id),
+      detect: async () => s.runs.detect(),
+      runtimeOptions: () => s.runs.runtimeOptions(),
+      downloadRuntime: (id, backend) => s.runs.downloadRuntime(id, backend),
+      modelDownloadInfo: () => s.runs.modelDownloadInfo(),
+      downloadModel: (id) => s.runs.downloadModel(id),
+      cancelDownload: async (id) => s.runs.cancelDownload(id)
+    },
     containers: {
       status: (force) => s.containers.status(force),
       // Against the chat's folder now: one picked or changed after the copy was made is where changes go.
