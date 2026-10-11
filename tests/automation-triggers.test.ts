@@ -68,6 +68,26 @@ describe('automation commands', () => {
     services.workflows.stopScheduler()
   }, 30_000)
 
+  it('tells an unattended agent what it may really do: change files, and which commands', async () => {
+    const { services } = setup()
+    const folder = mkdtempSync(join(tmpdir(), 'cloth-auto-'))
+    let system = ''
+    faux!.setResponses([
+      (ctx) => {
+        system = JSON.stringify(ctx.messages.filter((m) => (m.role as string) === 'system'))
+        return fauxAssistantMessage('Done.')
+      }
+    ])
+    const wf = services.workflows.createAutomation({ name: 'Writer', automation: { ...base, tools: ['read', 'write', 'edit'], commands: { mode: 'allowlist', allow: ['npm test'] } }, workspace: folder })
+    await services.workflows.run(wf.id, undefined)
+    expect(system).toContain('You can change files')
+    expect(system).toContain('changes are made without asking')
+    expect(system).not.toContain('Access is read-only')
+    expect(system).toContain('You can run only these commands')
+    expect(system).toContain('npm test')
+    services.workflows.stopScheduler()
+  })
+
   it('sends container runs to a chat, which keeps the container copy', () => {
     const { services } = setup()
     const folder = mkdtempSync(join(tmpdir(), 'cloth-auto-'))

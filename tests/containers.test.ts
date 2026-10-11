@@ -145,6 +145,16 @@ describe('container copies', () => {
     expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['src/extra.ts'])
   })
 
+  it('creates the container once when several commands start at the same time', async () => {
+    const docker = fakeDocker()
+    const { services } = makeServices({ docker: docker.run })
+    await services.containers.prepare('ses_par', null)
+    const settings = { image: 'node:22-alpine', network: false }
+    await Promise.all(['node index.js', 'uname -a', 'pwd'].map((cmd) => services.containers.exec('ses_par', settings, cmd, '', { onData: () => undefined })))
+    expect(docker.calls.filter((a) => a[0] === 'run')).toHaveLength(1)
+    expect(docker.calls.filter((a) => a[0] === 'exec')).toHaveLength(3)
+  })
+
   it('starts the container on first use, recreates it when its settings change, and explains a missing Docker', async () => {
     const docker = fakeDocker()
     const { services } = makeServices({ docker: docker.run })
