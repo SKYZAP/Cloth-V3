@@ -138,6 +138,7 @@
     "files": [
       "out/**",
       "package.json",
+      "resources/icon.png",
       "!**/*.map",
       "!out/runner/**"
     ],
