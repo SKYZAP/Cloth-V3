@@ -30,6 +30,7 @@ import {
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
 import { duration, formatCost, pretty } from '@/lib/format'
+import { runCardId } from '@/lib/workbar'
 import { DiffStat, DiffView } from './DiffView'
 import { TodoList, todosOf } from './Planning'
 import { Markdown } from './Markdown'
@@ -121,6 +122,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
   const refs = trace.references
   return (
     <motion.div
+      id={trace.subagent ? runCardId(trace.id) : undefined}
       initial={fresh ? { opacity: 0, y: 8, scale: 0.98 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 380, damping: 26 }}
@@ -135,6 +137,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
           <span className={clsx('shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium', trace.subagent.role === 'worker' ? 'bg-warn/10 text-warn' : 'bg-info/10 text-info')}>{trace.subagent.role}</span>
         )}
         {trace.subagent?.agent && <span className="shrink-0 text-[12px] text-agent">{trace.subagent.agent}</span>}
+        {trace.subagent?.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10px] font-medium text-agent">{trace.subagent.tierName}</span>}
         <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : trace.name === 'agent_mention' ? 'text-agent' : 'text-dim')}>{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
           {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
@@ -319,6 +322,11 @@ function SubagentBody({ trace }: { trace: Trace }) {
         {run.running && (
           <div className="flex items-center gap-2 pt-0.5 text-[11.5px] text-dim">
             <span className="shimmer-text">{steps.length ? 'Working' : 'Starting'}</span>
+            {run.current && (
+              <span className="min-w-0 truncate">
+                {run.current.tool} {run.current.summary}…
+              </span>
+            )}
           </div>
         )}
       </div>

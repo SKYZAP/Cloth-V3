@@ -33,7 +33,8 @@ import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
 import { QuestionCard } from '@/components/QuestionCard'
-import { latestTodos, PlanPanel } from '@/components/Planning'
+import { WorkBar } from '@/components/WorkBar'
+import { buildWorkBar } from '@/lib/workbar'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { formatCost, formatTokens } from '@/lib/format'
@@ -636,30 +637,8 @@ function ChatView({
   }
   const archived = useMemo(() => messages.filter((m) => m.archived), [messages])
   const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
-  const todos = useMemo(() => latestTodos(messages), [messages])
-  // The plan stays pinned while it has open items, then lingers briefly once finished and goes away
-  // (a finished plan doesn't come back when the next message starts a run).
-  const planActive = !!todos?.length && todos.some((t) => t.status !== 'completed')
-  const planDone = !!todos?.length && !planActive
-  const [planLingering, setPlanLingering] = useState(false)
-  const planWasActive = useRef(false)
-  useEffect(() => {
-    if (planActive) {
-      planWasActive.current = true
-      setPlanLingering(false)
-      return
-    }
-    if (!planWasActive.current) return
-    planWasActive.current = false
-    if (!planDone) return
-    setPlanLingering(true)
-    const t = setTimeout(() => setPlanLingering(false), 3000)
-    return () => {
-      clearTimeout(t)
-      setPlanLingering(false)
-    }
-  }, [planActive, planDone])
-  const showPlan = planActive || planLingering
+  // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.
+  const workBar = useMemo(() => buildWorkBar(messages), [messages])
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
   const regenerate = async (assistantId: string) => {
@@ -758,7 +737,7 @@ function ChatView({
           </Tooltip>
         )}
         {session.container && <ContainerPill session={session} running={running} />}
-        <Tooltip content={panel.open ? 'Hide the side panel' : 'Setup, files, terminal and git'}>
+        <Tooltip content={panel.open ? 'Hide the side panel' : 'Setup, files, terminal, git and agents'}>
           <motion.button
             whileTap={{ scale: 0.88 }}
             transition={SPRING_PRESS}
@@ -771,6 +750,17 @@ function ChatView({
           </motion.button>
         </Tooltip>
       </header>
+
+      <AnimatePresence>
+        {workBar && (
+          // A solid band behind the bar so the scrolling chat doesn't show around it.
+          <div key="workbar" className="absolute inset-x-0 top-14 z-10 bg-bg pb-2">
+            <div className="mx-auto w-[min(740px,calc(100%-64px))] mobile:w-[calc(100%-28px)]">
+              <WorkBar bar={workBar} />
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div
         ref={scroller}
@@ -788,7 +778,7 @@ function ChatView({
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
-        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="mx-auto w-[min(740px,calc(100%-64px))] pb-[250px] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pb-[190px] mobile:pt-[64px]">
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pb-[250px] mobile:w-[calc(100%-28px)] mobile:pb-[190px]', workBar ? 'pt-[108px] mobile:pt-[104px]' : 'pt-[84px] mobile:pt-[64px]')}>
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -869,7 +859,6 @@ function ChatView({
 
       {/* Composer: floats over a gradient fade — no divider line */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
-        <AnimatePresence>{showPlan && todos && <PlanPanel key="plan" todos={todos} />}</AnimatePresence>
         <div
           className={clsx(
             'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
@@ -985,7 +974,7 @@ function ChatView({
         <StatusLine session={session} update={update} usage={usage} compacting={compacting} onCompact={() => void compactNow()} />
       </div>
     </div>
-    {panel.open && <SidePanel session={session} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
+    {panel.open && <SidePanel session={session} messages={messages} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
     </div>
   )
 }
