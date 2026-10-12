@@ -93,52 +93,6 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       note(`search "parallel" shows: ${await js(`document.querySelector('h1')?.textContent`)}`)
       return
     }
-    if (process.env.CLOTH_PROBE === 'assemble') {
-      // Flows → AI: assemble a workflow with a scripted model and check the editor survives it.
-      const js = (code: string) => win.webContents.executeJavaScript(code)
-      const errors: string[] = []
-      win.webContents.on('console-message', (e) => e.level === 'error' && errors.push(e.message.slice(0, 2500)))
-      const { registerFauxProvider } = await import('@earendil-works/pi-ai/compat')
-      const { fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai')
-      const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-builder' })
-      const provider = s.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
-      s.providers.setModels(provider.id, [{ id: 'faux-1', name: 'faux-1', embedding: false, reasoning: false, vision: false, contextWindow: 32000, maxTokens: 4096 } as never])
-      s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
-      faux.setResponses([
-        fauxAssistantMessage(
-          [
-            fauxToolCall('add_node', { type: 'trigger', key: 'start', data: { defaultInput: '{"topic":"typescript"}' } }),
-            fauxToolCall('add_node', { type: 'web', key: 'news', data: { query: '{{input.topic}} release news' } }),
-            fauxToolCall('add_node', { type: 'llm', key: 'digest', data: { prompt: 'Summarize: {{news}}' } }),
-            fauxToolCall('add_node', { type: 'output', key: 'result', data: { value: '{{digest}}' } }),
-            fauxToolCall('connect', { from: 'start', to: 'news' }),
-            fauxToolCall('connect', { from: 'news', to: 'digest' }),
-            fauxToolCall('connect', { from: 'digest', to: 'result' })
-          ],
-          { stopReason: 'toolUse' }
-        ),
-        fauxAssistantMessage([fauxToolCall('finish', { name: 'News digest', description: 'Digest of release news' })], { stopReason: 'toolUse' })
-      ])
-      win.webContents.reload()
-      await wait(2500)
-      await clickNav(win, 'Flows')
-      await wait(900)
-      await js(`window.__errs = []; const ce = console.error; console.error = (...a) => { window.__errs.push(a.map((x) => typeof x === 'string' ? x : x && x.stack ? x.stack : String(x)).join(' | ').slice(0, 3000)); ce(...a) }; 1`)
-      await clickText(win, 'AI')
-      await wait(700)
-      await js(`(() => { const t = document.querySelector('textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, 'Search the web for TypeScript news and summarize it'); t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
-      await wait(600)
-      note(`assemble button: ${await js(`(() => { const b = [...document.querySelectorAll('button')].filter((x) => x.textContent.trim() === 'Assemble').at(-1); if (!b) return 'missing'; b.click(); return b.disabled ? 'disabled' : 'clicked' })()`)}`)
-      await wait(5000)
-      writeFileSync(join(outDir, 'assemble.png'), await screenshot(win))
-      const text = (await js(`document.getElementById('root')?.innerText.slice(0, 300)`)) as string
-      note(`root text: ${JSON.stringify(text)}`)
-      note(`workflows: ${JSON.stringify(s.workflows.list().map((w) => [w.name, w.nodes.length]))}`)
-      note(`console errors: ${errors.length ? errors.join(' || ') : 'none'}`)
-      note(`detailed: ${JSON.stringify(await js('window.__errs'))}`)
-      faux.unregister()
-      return
-    }
     if (process.env.CLOTH_PROBE === 'hub') {
       // ask_user in a chat (answered by clicking an option), tool_create → Tools page review, Skills → Generate with AI.
       const js = (code: string) => win.webContents.executeJavaScript(code)
@@ -269,7 +223,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       note(`quick run: ${run.status} ${run.error ?? ''} files=${JSON.stringify(run.files)}`)
       win.webContents.reload()
       await wait(2500)
-      await clickNav(win, 'Flows')
+      await clickNav(win, 'Automations')
       await wait(900)
       await js(`[...document.querySelectorAll('div.group')].find((b) => b.textContent.includes('Deck (tool only)'))?.click()`)
       await wait(1200)
@@ -425,9 +379,8 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
 
     await s.skills.create({ name: 'nestjs-guards', description: 'Write NestJS guards and role-based authorization. Use when protecting routes.', body: '# NestJS guards\n\n## Instructions\n\n1. Implement `CanActivate`.\n2. Register with `@UseGuards()` or `APP_GUARD`.\n3. Read role metadata with `Reflector`.' })
 
-    const wf = s.workflows.create({ name: 'Docs digest', template: 'rag-digest' })
-    s.workflows.save(wf.id, { cron: '0 9 * * 1-5', cronEnabled: true })
-    const wr = await s.workflows.run(wf.id, { question: 'guards' })
+    const wf = s.workflows.createAutomation({ name: 'Docs digest', automation: { prompt: 'Search my docs about guards and summarise what they say.', agentId: null, tools: [], servers: [], collectionIds: [col.id], skills: [], watch: null, commands: null }, cron: '0 9 * * 1-5', cronEnabled: true })
+    const wr = await s.workflows.run(wf.id, {})
     note(`workflow: ${wr.status} ${wr.error ?? JSON.stringify(wr.output).slice(0, 120)}`)
 
     // Bundled example knowledge.
@@ -453,12 +406,6 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
       note(`web ${engine}: ${res.results.length} results in ${res.tookMs}ms ${'error' in res ? res.error : res.results[0]?.url ?? ''}`)
     }
     s.settings.update({ webEngine: 'obscura' })
-
-    // Agent-assembled workflow.
-    const graph = await s.workflows.build({ description: 'Search my docs for a topic, fall back to the web, summarize', buildId: 'smoke' })
-    const built = s.workflows.createFromGraph(graph)
-    const builtRun = await s.workflows.run(built.id, { topic: 'full-text search' })
-    note(`builder: "${graph.name}" ${graph.nodes.length} nodes/${graph.edges.length} edges → run ${builtRun.status} ${builtRun.error ?? ''}`)
 
     const session = s.chat.create({ model: chat })
     const webSession = s.chat.create({ model: chat, webEnabled: true, collectionIds: [col.id] })
@@ -526,14 +473,9 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     const nestDocs = s.rag.listDocuments(nest.id)
     note(`nestjs crawl: ${nestDocs.filter((d) => d.status === 'ready').length}/${nestDocs.length} ready, ${nestDocs.reduce((a, d) => a + d.chunkCount, 0)} chunks in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 
-    for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Flows', 'Models', 'MCP', 'Settings']) {
+    for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Automations', 'Models', 'MCP', 'Settings']) {
       await clickNav(win, page)
-      await wait(page === 'Flows' ? 1500 : 900)
-      if (page === 'Flows')
-        note(
-          'flow geometry: ' +
-            (await win.webContents.executeJavaScript(`JSON.stringify({ rf: document.querySelector('.react-flow')?.getBoundingClientRect(), vp: document.querySelector('.react-flow__viewport')?.style.transform, nodes: [...document.querySelectorAll('.react-flow__node')].map(n => { const r = n.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)] }) })`))
-        )
+      await wait(page === 'Automations' ? 1500 : 900)
       if (page === 'Skills') await clickText(win, 'Tests (1)')
       if (page === 'Knowledge') await clickText(win, 'Search playground').then(() => typeSearch(win))
       await wait(700)
@@ -994,7 +936,7 @@ async function probeDashboard(win: BrowserWindow, s: Services, outDir: string, n
 
   win.webContents.reload()
   await wait(2500)
-  await clickNav(win, 'Flows')
+  await clickNav(win, 'Automations')
   await wait(1500)
   writeFileSync(join(outDir, 'flow-before-arrange.png'), await screenshot(win))
   await clickText(win, 'Arrange')
@@ -1053,7 +995,7 @@ async function probeFlowOutput(win: BrowserWindow, s: Services, outDir: string, 
   note(`run: ${run.status} ${run.error ?? typeof run.output}`)
   win.webContents.reload()
   await wait(2500)
-  await clickNav(win, 'Flows')
+  await clickNav(win, 'Automations')
   await wait(1200)
   await clickText(win, 'typescript-release-digest')
   await wait(1500)

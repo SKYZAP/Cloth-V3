@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
 @import '@fontsource-variable/jetbrains-mono';
-@import '@xyflow/react/dist/style.css';
 
 /* Phone app: `mobile:` utilities apply only inside the Android client (html.mobile). */
 @custom-variant mobile (&:where(.mobile, .mobile *));
@@ -219,51 +218,6 @@
   border: 0;
   border-top: 1px solid var(--color-line);
   margin: 1.2em 0;
-}
-
-/* ── React Flow theme ─────────────────────────────────────────────────── */
-.react-flow {
-  --xy-background-color: var(--color-bg);
-  --xy-edge-stroke: #3a3a42;
-  --xy-edge-stroke-selected: var(--color-crimson);
-  --xy-connectionline-stroke: var(--color-crimson);
-  --xy-handle-background-color: #2a2a30;
-  --xy-handle-border-color: #52525b;
-  --xy-minimap-background-color: var(--color-panel);
-  --xy-controls-button-background-color: var(--color-elev);
-  --xy-controls-button-background-color-hover: var(--color-hover);
-  --xy-controls-button-color: var(--color-muted);
-  --xy-controls-button-border-color: var(--color-line);
-  --xy-selection-background-color: rgb(220 38 69 / 0.08);
-  --xy-selection-border: 1px dashed var(--color-crimson-line);
-}
-/* Our "output" node type collides with React Flow's built-in one; drop its default box styles. */
-.react-flow__node-output,
-.react-flow__node-output.selected,
-.react-flow__node-output:hover {
-  width: auto;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  text-align: left;
-  font-size: inherit;
-  color: inherit;
-}
-.react-flow__handle {
-  width: 10px;
-  height: 10px;
-}
-.react-flow__handle:hover {
-  background: var(--color-crimson);
-  border-color: var(--color-crimson-hi);
-}
-.react-flow__edge.animated path {
-  stroke: var(--color-crimson);
-}
-.react-flow__attribution {
-  display: none;
 }
 
 /* ── CodeMirror ───────────────────────────────────────────────────────── */

@@ -87,7 +87,7 @@ describe('converting flows into automations', () => {
     expect(a).toMatchObject({ collectionIds: ['c1'], skills: ['summarise'] })
   })
 
-  it('backs up and converts graph flows at startup, keeps their schedule, and does it once', () => {
+  it('backs up and converts graph flows at every startup, keeps their schedule, and leaves automations alone', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'cloth-convert-'))
     const first = open(dataDir)
     const kb = first.rag.createCollection({ name: 'NestJS' })
@@ -95,8 +95,6 @@ describe('converting flows into automations', () => {
     first.workflows.save(flow.id, { ...nestjsRefresh(kb.id), cron: '0 6 * * *', cronEnabled: true })
     const auto = first.workflows.createAutomation({ name: 'Already one', automation: { prompt: 'Hi', agentId: null, tools: [], servers: [], collectionIds: [], skills: [], watch: null, commands: null } })
     first.workflows.stopScheduler()
-    // As if the profile came from before automations-only Flows.
-    first.ctx.kv.set('flows.convertedToAutomations', false)
     first.ctx.db.close()
 
     const next = open(dataDir)
@@ -108,7 +106,6 @@ describe('converting flows into automations', () => {
     expect(wf.nodes.map((n) => n.type)).toEqual(['trigger', 'agent', 'output'])
     expect(wf.nodes[1].data).toMatchObject({ automation: true, prompt: wf.automation?.prompt })
     expect(next.workflows.get(auto.id).automation?.prompt).toBe('Hi')
-    expect(next.workflows.versions(flow.id)[0].note).toBe('Converted from a flow into an automation')
 
     const dir = join(dataDir, 'backups', 'flows')
     expect(existsSync(dir)).toBe(true)
@@ -124,5 +121,22 @@ describe('converting flows into automations', () => {
     expect(readdirSync(dir)).toHaveLength(1)
     next.workflows.stopScheduler()
     next.ctx.db.close()
+  })
+
+  it("leaves an exported app's graph alone when conversion is off (the runner)", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'cloth-convert-'))
+    const first = open(dataDir)
+    const kb = first.rag.createCollection({ name: 'NestJS' })
+    const flow = first.workflows.create({ name: 'Exported' })
+    first.workflows.save(flow.id, nestjsRefresh(kb.id))
+    first.workflows.stopScheduler()
+    first.ctx.db.close()
+
+    const runner = createServices({ dataDir, secrets: plainSecrets, dbFile: join(dataDir, 'cloth.db'), sidecarsDir: join(REPO, 'sidecars'), examplesDir: join(REPO, 'resources', 'examples'), convertFlows: false })
+    const wf = runner.workflows.get(flow.id)
+    expect(wf.automation).toBeNull()
+    expect(wf.nodes).toHaveLength(6)
+    runner.workflows.stopScheduler()
+    runner.ctx.db.close()
   })
 })

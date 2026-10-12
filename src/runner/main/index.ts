@@ -155,6 +155,8 @@ else {
       sidecarsDir: resources,
       examplesDir: join(resources, 'examples'),
       secrets,
+      // The runner's one flow is the exported graph: it stays a graph.
+      convertFlows: false,
       emit: (channel, payload) => {
         if (channel === 'workflow' && (payload as { type?: string }).type === 'run') win?.webContents.send('runner:event', payload)
       }

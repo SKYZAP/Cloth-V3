@@ -33,16 +33,4 @@ describe('flows overview', () => {
     services.workflows.stopScheduler()
   })
 
-  it('has templates for watching a page and summarising a folder', async () => {
-    const { services } = makeServices()
-    const watch = services.workflows.create({ name: 'Watch', template: 'watch-page' })
-    expect(watch.nodes.map((n) => n.type)).toEqual(['trigger', 'http', 'transform', 'llm', 'output'])
-    // The "page as text" step turns HTML into plain text.
-    const code = String(watch.nodes.find((n) => n.type === 'transform')!.data.code)
-    const text = new Function('prev', code)({ body: '<html><style>p{}</style><body><h1>Pricing</h1><script>x()</script><p>Pro: $20</p></body></html>' })
-    expect(text.trim()).toBe('Pricing Pro: $20')
-    const folder = services.workflows.create({ name: 'Folder', template: 'summarise-folder' })
-    expect(folder.nodes.map((n) => n.type)).toEqual(['trigger', 'agent', 'output'])
-    services.workflows.stopScheduler()
-  })
 })

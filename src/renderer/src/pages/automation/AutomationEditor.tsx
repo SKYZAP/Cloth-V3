@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Cron } from 'croner'
-import { AlertTriangle, ArrowLeft, Box, FolderOpen, Pencil, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
-import type { Agent, Automation, AutomationCommands, AutomationDelivery, AutomationWatch, ContainerStatus, McpClientConfig, McpClientStatus, Workflow, WorkflowRun } from '@shared/types'
+import { AlertTriangle, ArrowLeft, Box, FolderOpen, MoreHorizontal, Package, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import type { Agent, Automation, AutomationCommands, AutomationWatch, ContainerStatus, McpClientConfig, McpClientStatus, Workflow, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { timeAgo } from '@/lib/format'
 import { Button, IconButton, Input, Select, Textarea, confirmAction } from '@/components/ui'
+import { isMobile } from '@/lib/platform'
 import { AccessPicker, KIND, isOnIn, none, toggleIn, useAccessItems, type AccessItem, type Picked } from './Access'
+import { ExportModal } from './ExportModal'
 
 // ─── How often ─────────────────────────────────────────────────────────────────
 
@@ -30,9 +32,10 @@ interface Schedule {
   custom: string
 }
 
-function readSchedule(cron: string | null, enabled: boolean): Schedule {
+/** The schedule a saved cron describes; a paused automation keeps its schedule (saving turns it back on). */
+function readSchedule(cron: string | null): Schedule {
   const base: Schedule = { cadence: 'once', time: '09:00', day: 1, custom: cron ?? '' }
-  if (!cron || !enabled) return base
+  if (!cron) return base
   const m = cron.trim().match(/^(\d{1,2}) (\d{1,2}|\*) \* \* (\*|1-5|[0-6])$/)
   if (m) {
     const time = m[2] === '*' ? '09:00' : `${m[2].padStart(2, '0')}:${m[1].padStart(2, '0')}`
@@ -100,31 +103,31 @@ function nextRuns(cron: string | null): { ok: boolean; runs: Date[] } {
 const list = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? ''))
 
 /**
- * An automation, Cursor style: say what should happen, pick how often, choose exactly what it may use,
- * and where the result goes. Saved as a one-step flow; "Edit as steps" hands it to the flow editor.
+ * An automation, Cursor style: say what should happen, pick how often and choose exactly what it may use.
+ * The agent decides how to report: a chat, a notification, or notes saved to the knowledge it may use.
  */
-export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConverted }: { workflow: Workflow | null; onBack(): void; onSaved(w: Workflow): void; onDeleted(): void; onConverted(w: Workflow): void }) {
+export function AutomationEditor({ workflow, onBack, onSaved, onDeleted }: { workflow: Workflow | null; onBack(): void; onSaved(w: Workflow): void; onDeleted(): void }) {
   const a = workflow?.automation
   const [name, setName] = useState(workflow?.name ?? 'New automation')
   const [prompt, setPrompt] = useState(a?.prompt ?? '')
   const [agentId, setAgentId] = useState<string | null>(a?.agentId ?? null)
   const [workspace, setWorkspace] = useState<string | null>(workflow?.workspace ?? null)
   const [picked, setPicked] = useState<Picked>(() => (a ? { tools: a.tools, servers: a.servers, collectionIds: a.collectionIds, skills: a.skills } : none()))
-  const [deliver, setDeliver] = useState<AutomationDelivery>(a?.deliver ?? 'chat')
-  const [collectionId, setCollectionId] = useState<string | null>(a?.collectionId ?? null)
-  const [schedule, setSchedule] = useState<Schedule>(() => (a?.watch ? { cadence: 'change', time: '09:00', day: 1, custom: '' } : workflow ? readSchedule(workflow.cron, workflow.cronEnabled) : { cadence: 'weekdays', time: '09:00', day: 1, custom: '' }))
+  const [schedule, setSchedule] = useState<Schedule>(() => (a?.watch ? { cadence: 'change', time: '09:00', day: 1, custom: '' } : workflow ? readSchedule(workflow.cron) : { cadence: 'weekdays', time: '09:00', day: 1, custom: '' }))
   const [watch, setWatch] = useState<AutomationWatch>(() => a?.watch ?? { kind: 'files' })
   const [commands, setCommands] = useState<AutomationCommands | null>(a?.commands ?? null)
   const [saving, setSaving] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
-  const [lastChat, setLastChat] = useState<string | null>(null)
   const [checked, setChecked] = useState<{ checkedAt: number | null; error: string | null } | null>(null)
   const [docker, setDocker] = useState<ContainerStatus | null>(null)
   const settings = useApp((s) => s.settings)
   const setPage = useApp((s) => s.setPage)
-  const { items, collections, status } = useAccessItems()
+  const { items, status } = useAccessItems()
 
   useEffect(() => {
     void api.agents.list().then(setAgents, () => undefined)
@@ -141,8 +144,24 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   useEvent('workflow', (e) => {
     if (!workflow) return
     if (e.type === 'run' && e.run.workflowId === workflow.id) setRuns((rs) => [e.run, ...rs.filter((r) => r.id !== e.run.id)].sort((x, y) => y.startedAt - x.startedAt))
-    if (e.type === 'automation' && e.workflowId === workflow.id) setLastChat(e.chatId)
   })
+  // The header's overflow menu: closes on a click elsewhere or Escape.
+  useEffect(() => {
+    if (!moreOpen) return
+    moreRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    const away = (e: PointerEvent) => !moreRef.current?.contains(e.target as Node) && setMoreOpen(false)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMoreOpen(false)
+      moreRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    }
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [moreOpen])
 
   const configs = settings?.mcpClients ?? []
   const isOn = (i: AccessItem) => isOnIn(picked, i)
@@ -151,9 +170,10 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   const cron = cronOf(schedule)
   const upcoming = nextRuns(cron)
   const watching = schedule.cadence === 'change' ? watch : null
-  const finalDeliver = commands?.mode === 'container' ? 'chat' : deliver
-  const automation: Automation = { prompt, agentId, ...picked, deliver: finalDeliver, collectionId: finalDeliver === 'knowledge' ? collectionId : null, watch: watching, commands }
-  const saved = workflow ? JSON.stringify({ n: workflow.name, a: workflow.automation, c: workflow.cronEnabled ? workflow.cron : null, w: workflow.workspace }) : null
+  const automation: Automation = { prompt, agentId, ...picked, watch: watching, commands }
+  // How it reported once (deliver, collectionId) no longer counts: the agent decides now.
+  const savedAutomation = workflow?.automation ? (({ deliver: _d, collectionId: _c, ...rest }) => rest)(workflow.automation) : null
+  const saved = workflow ? JSON.stringify({ n: workflow.name, a: savedAutomation, c: workflow.cron, w: workflow.workspace }) : null
   const dirty = saved !== JSON.stringify({ n: name.trim(), a: automation, c: cron, w: workspace })
   const problem = !prompt.trim()
     ? 'Say what should happen first.'
@@ -169,9 +189,7 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
               ? 'Choose a folder for its commands to run in.'
               : commands?.mode === 'allowlist' && !commands.allow.length
                 ? 'List the commands it may run.'
-                : finalDeliver === 'knowledge' && !collectionId
-                  ? 'Pick the collection to save results to.'
-                  : null
+                : null
 
   const save = async (): Promise<Workflow | null> => {
     if (problem) {
@@ -188,7 +206,6 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   const runNow = async () => {
     const w = dirty || !workflow ? await save() : workflow
     if (!w) return
-    setLastChat(null)
     void attempt(() => api.workflows.run(w.id))
   }
   const back = async () => {
@@ -209,8 +226,7 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
   const agent = agents.find((x) => x.id === agentId)
   const when = schedule.cadence === 'change' ? watchSentence(watch, configs.find((c) => watch.kind === 'mcp' && c.id === watch.serverId)?.name) : describe(schedule)
   const runs_ = commands ? (commands.mode === 'container' ? ' It can run commands in a container, on a copy of its folder.' : ` It can run ${list(commands.allow.map((c) => `“${c}”`))} and nothing else.`) : ''
-  const sentence = `${when}. ${agent ? agent.name : 'Cloth'} follows the prompt${names.length ? ` and may use ${list(names)}` : ' with nothing extra'}.${runs_} ${finalDeliver === 'chat' ? (commands?.mode === 'container' ? 'The result arrives as a new chat, with its changes for you to apply.' : 'The result arrives as a new chat you can reply to.') : finalDeliver === 'notify' ? 'You get a notification with the result.' : `The result is saved to ${collections.find((c) => c.id === collectionId)?.name ?? 'a Knowledge collection'}.`}`
-  const lastRun = runs[0]
+  const sentence = `${when}. ${agent ? agent.name : 'Cloth'} follows the prompt${names.length ? ` and may use ${list(names)}` : ' with nothing extra'}.${runs_} ${commands?.mode === 'container' ? 'Its changes arrive in a chat for you to apply, and it reports how it sees fit.' : 'It reports how it sees fit.'}`
 
   return (
     <div className="h-full overflow-y-auto">
@@ -218,7 +234,7 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={() => void back()} className="flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-[13px] text-muted hover:text-fg">
             <ArrowLeft size={15} aria-hidden="true" />
-            Flows
+            Automations
           </button>
           <span className="text-line-strong" aria-hidden="true">
             /
@@ -229,17 +245,28 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
           </label>
           {workflow && (
             <>
-              <Button
-                variant="ghost"
-                icon={<Pencil size={13} />}
-                onClick={async () => {
-                  if (!(await confirmAction('It becomes a flow you change step by step, with the same steps it has now. The automation screen won’t open it any more.', { title: 'Edit as steps?', confirmLabel: 'Edit as steps' }))) return
-                  const w = await attempt(() => api.workflows.toFlow(workflow.id))
-                  if (w) onConverted(w)
-                }}
-              >
-                Edit as steps
-              </Button>
+              {!isMobile && (
+                <div ref={moreRef} className="relative">
+                  <IconButton aria-label="More actions" title="More actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+                    <MoreHorizontal size={15} />
+                  </IconButton>
+                  {moreOpen && (
+                    <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-line-strong bg-panel p-1 shadow-lg shadow-black/40">
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreOpen(false)
+                          setExportOpen(true)
+                        }}
+                        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:bg-elev-2 focus-visible:text-fg focus-visible:outline-none"
+                      >
+                        <Package size={14} aria-hidden="true" />
+                        Export as app…
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <IconButton
                 aria-label="Delete automation"
                 title="Delete automation"
@@ -262,6 +289,7 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
           <div className="grid min-w-0">
             <Block title="What should happen?">
               <PromptBox value={prompt} onChange={setPrompt} items={items} onMention={(i) => toggle(i, true)} />
+              <p className="text-[12px] text-dim">It reports how it sees fit: a chat with the result, a notification, or notes saved to the knowledge you allow.</p>
               <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
                 <span>Works in</span>
                 <Button
@@ -331,37 +359,8 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
               <AccessPicker items={items} value={picked} onChange={setPicked} folder={!!workspace} commands={!!commands} />
             </div>
 
-            <Block title="Can it run commands?">
+            <Block title="Can it run commands?" last>
               <CommandsPicker value={commands} onChange={setCommands} folder={!!workspace} docker={docker} />
-            </Block>
-
-            <Block title="Where should the result go?" last>
-              <div role="radiogroup" aria-label="Where the result goes" className="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
-                {(
-                  [
-                    ['chat', 'A new chat I can reply to'],
-                    ['notify', 'Just notify me'],
-                    ['knowledge', 'Save it to Knowledge']
-                  ] as [AutomationDelivery, string][]
-                ).map(([v, label]) => (
-                  <label key={v} className={clsx('flex min-h-8 items-center gap-2', commands?.mode === 'container' && v !== 'chat' ? 'opacity-50' : 'cursor-pointer')}>
-                    <input type="radio" name="deliver" checked={finalDeliver === v} disabled={commands?.mode === 'container' && v !== 'chat'} onChange={() => setDeliver(v)} className="accent-[#dc2645]" />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              {commands?.mode === 'container' && <p className="text-[12px] text-dim">Runs in a container always go to a chat, where you review and apply what they changed.</p>}
-              {finalDeliver === 'knowledge' && (
-                <Select aria-label="Collection to save to" value={collectionId ?? ''} onChange={(e) => setCollectionId(e.target.value || null)} className="max-w-xs">
-                  <option value="">Pick a collection…</option>
-                  {collections.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              )}
-              <p className="text-[12px] text-dim">You always get a notification when a run fails.</p>
             </Block>
           </div>
 
@@ -407,25 +406,55 @@ export function AutomationEditor({ workflow, onBack, onSaved, onDeleted, onConve
               </Select>
               <p className="text-[12px] text-dim">{agent ? `Uses ${agent.name}’s instructions and model, with only what you pick here.` : 'The default assistant, with only what you pick here.'}</p>
             </Card>
-            {lastRun && (
-              <Card title="Last run">
-                <div className="flex items-center gap-2 text-[12.5px]">
-                  <span aria-hidden="true" className={clsx('h-2 w-2 rounded-full', lastRun.status === 'ok' ? 'bg-ok' : lastRun.status === 'error' ? 'bg-crimson' : 'bg-info')} />
-                  <span>{lastRun.status === 'running' ? 'Running…' : lastRun.status === 'ok' ? 'Worked' : 'Failed'}</span>
-                  <span className="text-dim">{timeAgo(lastRun.startedAt)}</span>
-                </div>
-                {lastRun.status === 'error' && lastRun.error && <p className="line-clamp-3 text-[12px] text-crimson-hi">{lastRun.error}</p>}
-                {lastRun.status === 'ok' && lastChat && (
-                  <Button size="sm" className="justify-self-start" onClick={() => openChat(lastChat)}>
-                    Open the result
-                  </Button>
-                )}
+            {runs.length > 0 && (
+              <Card title="Runs">
+                <ul className="grid gap-2.5">
+                  {runs.slice(0, 5).map((r) => (
+                    <RunRow key={r.id} run={r} onOpenChat={openChat} />
+                  ))}
+                </ul>
               </Card>
             )}
           </aside>
         </div>
       </div>
+      {workflow && <ExportModal open={exportOpen} workflow={workflow} onClose={() => setExportOpen(false)} beforeExport={async () => !dirty || !!(await save())} />}
     </div>
+  )
+}
+
+/** One run in the history: how it went, and how it reported (a chat, a notification, notes saved to Knowledge, or nothing). */
+function RunRow({ run, onOpenChat }: { run: WorkflowRun; onOpenChat(id: string): void }) {
+  const reports = run.reports
+  return (
+    <li className="grid gap-1">
+      <div className="flex items-center gap-2 text-[12.5px]">
+        <span aria-hidden="true" className={clsx('h-2 w-2 shrink-0 rounded-full', run.status === 'ok' ? 'bg-ok' : run.status === 'error' ? 'bg-crimson' : 'bg-info')} />
+        <span>{run.status === 'running' ? 'Running…' : run.status === 'ok' ? 'Worked' : 'Failed'}</span>
+        <span className="text-dim">{timeAgo(run.startedAt)}</span>
+      </div>
+      {run.status === 'error' && run.error && <p className="line-clamp-3 pl-4 text-[12px] text-crimson-hi">{run.error}</p>}
+      {run.status !== 'running' && reports && (
+        <div className="grid gap-0.5 pl-4 text-[12px] text-dim">
+          {reports.map((rep, i) =>
+            rep.kind === 'chat' ? (
+              <button key={i} onClick={() => onOpenChat(rep.chatId)} className="justify-self-start truncate text-left text-fg/85 underline-offset-2 hover:text-fg hover:underline">
+                Open the chat: {rep.title}
+              </button>
+            ) : rep.kind === 'notify' ? (
+              <span key={i} className="truncate">
+                Notified{rep.title ? `: ${rep.title}` : ''}
+              </span>
+            ) : (
+              <span key={i} className="truncate">
+                Saved to {rep.collection}: {rep.title}
+              </span>
+            )
+          )}
+          {run.status === 'ok' && !reports.length && <span>Nothing to report</span>}
+        </div>
+      )}
+    </li>
   )
 }
 

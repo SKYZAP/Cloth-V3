@@ -8,7 +8,6 @@ import type {
   WebSearchResult,
   WebStatus,
   WebEngine,
-  WorkflowGraph,
   ChatSession,
   ChatAttachment,
   GitCommit,
@@ -325,44 +324,26 @@ export interface ClothApi {
   workflows: {
     list(): Promise<Workflow[]>
     get(id: string): Promise<Workflow>
-    create(input: { name: string; description?: string; template?: import('./types').WorkflowTemplate }): Promise<Workflow>
-    /** Run history and upcoming schedule for every flow, for the overview. */
+    /** Run history and upcoming schedule for every automation, for the overview. */
     overview(): Promise<import('./types').WorkflowOverview>
-    save(
-      id: string,
-      patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace'>>,
-      meta?: { source?: import('./types').WorkflowVersionSource; note?: string }
-    ): Promise<Workflow>
     remove(id: string): Promise<void>
-    duplicate(id: string): Promise<Workflow>
     run(id: string, input?: unknown): Promise<WorkflowRun>
     cancel(runId: string): Promise<void>
     runs(id: string): Promise<WorkflowRun[]>
     validateCron(expr: string): Promise<{ ok: boolean; next: number | null; error?: string }>
-    /** `fixRunId`: repair the flow so that failed run would succeed (the builder gets the failure details). */
-    build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string; fixRunId?: string }): Promise<WorkflowGraph>
-    /** The failure report the builder gets for a failed run. */
-    failureReport(runId: string): Promise<string>
-    versions(id: string): Promise<import('./types').WorkflowVersion[]>
-    version(versionId: string): Promise<import('./types').WorkflowVersion>
-    /** Bring back an earlier version (saved as a new version; nothing is lost). */
-    restore(id: string, versionId: string): Promise<Workflow>
-    cancelBuild(buildId: string): Promise<void>
-    /** What exporting this flow as an app would include, and whether the toolchain is ready. */
+    /** What exporting this automation as an app would include, and whether the toolchain is ready. */
     exportPreview(id: string): Promise<import('./flow-bundle').ExportPreview>
     /** Start exporting; progress arrives as 'export' events. Returns the export id. */
     exportStart(input: import('./flow-bundle').ExportInput): Promise<string>
     exportCancel(exportId: string): Promise<void>
-    createFromGraph(graph: WorkflowGraph): Promise<Workflow>
     /** A new automation: a prompt, how often it runs and what it may use. */
     createAutomation(input: import('./types').AutomationInput & { name: string; automation: import('./types').Automation }): Promise<Workflow>
+    /** Saves an automation; also how it's turned on or off (`cronEnabled`). */
     saveAutomation(id: string, input: import('./types').AutomationInput): Promise<Workflow>
     /** When an automation's check last looked (watching a page or an MCP tool), and its error. */
     watchState(id: string): Promise<{ checkedAt: number | null; error: string | null }>
     /** Run an automation's check now; it runs the automation if the answer changed. */
     checkNow(id: string): Promise<{ checkedAt: number | null; error: string | null }>
-    /** Turn an automation into an ordinary flow, edited step by step from then on. */
-    toFlow(id: string): Promise<Workflow>
   }
   dashboard: {
     stats(range: UsageRange): Promise<DashboardStats>

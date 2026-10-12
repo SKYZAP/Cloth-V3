@@ -8,7 +8,7 @@ export const NAV: { page: Page; label: string; icon: Icon }[] = [
   { page: 'skills', label: 'Skills', icon: Sparkle },
   { page: 'agents', label: 'Agents', icon: Robot },
   { page: 'tools', label: 'Tools', icon: Wrench },
-  { page: 'workflows', label: 'Flows', icon: FlowArrow },
+  { page: 'workflows', label: 'Automations', icon: FlowArrow },
   { page: 'providers', label: 'Models', icon: Cpu },
   { page: 'run', label: 'Run', icon: Play },
   { page: 'mcp', label: 'MCP', icon: PlugsConnected },

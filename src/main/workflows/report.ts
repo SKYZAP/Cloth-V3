@@ -10,6 +10,8 @@ export interface RunReport {
   chatId: string | null
   chat: { title: string; markdown: string }[]
   notes: { title: string; body: string }[]
+  /** Notes it saved to Knowledge: the collection's name and the note's title. */
+  saved: { collection: string; title: string }[]
 }
 
 /** Added to an automation's system prompt: it decides how (and whether) to report. */
@@ -78,6 +80,7 @@ export function reportTools(report: RunReport, deps: { rag: RagService; collecti
         const col = allowed.find((c) => c.id === want) ?? allowed.find((c) => c.name.toLowerCase() === want.toLowerCase())
         if (!col) throw new Error(`"${want}" is not one of this automation's collections. Use one of: ${allowed.map((c) => c.name).join(', ') || '(none)'}`)
         const doc = await deps.rag.ingestText(col.id, String(p.title ?? '').trim() || 'Note', String(p.text ?? ''))
+        report.saved.push({ collection: col.name, title: doc.title })
         return done(`Saved "${doc.title}" to ${col.name}.`, { collection: col.name })
       }
     })
