@@ -8,6 +8,8 @@ interface Toast {
   id: number
   kind: 'ok' | 'error' | 'info'
   text: string
+  /** A button on the toast (it stays until dismissed). */
+  action?: { label: string; run(): void }
 }
 
 /** What the design page opens on: a project's design system, or the list with that project in mind. */
@@ -30,7 +32,7 @@ interface AppState {
   loadSettings(): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
   toasts: Toast[]
-  toast(text: string, kind?: Toast['kind']): void
+  toast(text: string, kind?: Toast['kind'], action?: Toast['action']): void
   dismissToast(id: number): void
 }
 
@@ -59,10 +61,10 @@ export const useApp = create<AppState>((set, get) => ({
   loadSettings: async () => set({ settings: await api.settings.get() }),
   updateSettings: async (patch) => set({ settings: await api.settings.update(patch) }),
   toasts: [],
-  toast: (text, kind = 'info') => {
+  toast: (text, kind = 'info', action) => {
     const id = ++toastSeq
-    set({ toasts: [...get().toasts, { id, kind, text }] })
-    setTimeout(() => get().dismissToast(id), kind === 'error' ? 7000 : 3500)
+    set({ toasts: [...get().toasts, { id, kind, text, ...(action ? { action } : {}) }] })
+    if (!action) setTimeout(() => get().dismissToast(id), kind === 'error' ? 7000 : 3500)
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) })
 }))

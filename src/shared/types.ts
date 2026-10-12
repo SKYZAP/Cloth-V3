@@ -327,6 +327,10 @@ export interface ChatSession {
   codeIntel: boolean
   /** Offer generate_image (needs an image model in Settings). */
   imagesEnabled: boolean
+  /** Offer the computer tool: screenshots, mouse and keyboard (needs a model that sees images). */
+  computerUse: boolean
+  /** The user allowed computer use for this chat (asked on its first action). */
+  computerConsent?: boolean
   thinking: ThinkingLevel
   /** Where the title came from: the first message, a model's summary, or the user (never overwritten). */
   titleSource?: 'first-message' | 'ai' | 'user'
@@ -579,7 +583,7 @@ export interface PendingApproval {
   id: string
   sessionId: string
   toolCallId: string | null
-  kind: 'write' | 'edit' | 'command' | 'tool'
+  kind: 'write' | 'edit' | 'command' | 'tool' | 'computer'
   /** For external tools: which one (server and tool), with its arguments in `command`. */
   tool?: { server: string; name: string }
   path?: string
@@ -621,6 +625,18 @@ export interface ToolTrace {
   subagent?: SubagentRun
   /** For `generate_image` calls. */
   image?: GeneratedImage
+  /** For `computer` calls: what was done and a small copy of the screenshot it returned. */
+  computer?: ComputerTrace
+}
+
+export interface ComputerTrace {
+  action: string
+  coordinate?: number[]
+  display: number
+  /** JPEG data URL. */
+  thumbnail?: string
+  width?: number
+  height?: number
 }
 
 export type ImageStatus = 'queued' | 'generating' | 'refining' | 'complete' | 'error'

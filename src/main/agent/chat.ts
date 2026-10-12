@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ContainerSettings, GeneratedImage, ImageSize } from '@shared/types'
+import type { ComputerTrace, ContainerSettings, GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import { agentSlug } from '@shared/mention'
 import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
@@ -26,6 +26,8 @@ import { allowedSkill, buildTools, type ToolDetails, type ToolScope } from './to
 import { runAsCall } from './workspace'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
+import { computerOffered, type ComputerController } from '../computer/tool'
+import { pruneScreenshots } from '../computer/prune'
 import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
 
@@ -103,6 +105,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   subagents: true,
   codeIntel: true,
   imagesEnabled: true,
+  computerUse: false,
   thinking: 'off',
   projectId: null,
   container: null,
@@ -161,8 +164,27 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null } = {}
   ) {}
+
+  /** Computer use on this machine (set by the app; absent in tests and on unsupported systems). */
+  attachComputer(computer: ComputerController | null): void {
+    this.ws.computer = computer
+  }
+
+  /** A run is over or waits for the user: give the mouse and keyboard back. */
+  releaseComputer(owner: string): void {
+    void this.ws.computer?.release(owner)
+  }
+
+  private computerAvailable(parent: Omit<AgentRunOptions, 'prompt'>): boolean {
+    if (!this.ws.computer || !parent.scope.computerUse) return false
+    try {
+      return computerOffered(parent.scope, this.providers.resolve(parent.model).model.input, true)
+    } catch {
+      return false
+    }
+  }
 
   get mcpClients(): McpClientService | undefined {
     return this.ws.mcp
@@ -320,6 +342,7 @@ export class AgentRuntime {
       ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...(usage ? { usage: this.providers.usage } : {}), ...this.ws }, scope),
       ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
+      ...(this.computerAvailable(parent) ? [this.computerTool(scope)] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
     ]
       .filter((t) => !off.has(t.name) && (!only || only.has(t.name)))
@@ -375,11 +398,37 @@ export class AgentRuntime {
       getApiKey: async (providerId) => this.providers.apiKey(providerId) || 'cloth-local',
       toolExecution: 'parallel'
     })
+    // Only the latest few screenshots go to the model.
+    agent.transformContext = async (messages) => pruneScreenshots(messages)
     this.providers.usage.track(agent)
     return agent
   }
 
-private imagesAvailable(scope: ToolScope): boolean {
+  /** computer: screenshots, mouse and keyboard, after the chat's one-time consent. */
+  private computerTool(scope: ToolScope): AgentTool<any, ToolDetails> {
+    const approvals = this.ws.approvals
+    const chat = scope.computer
+    const sessionId = scope.sessionId
+    const tool = this.ws.computer!.tool({
+      owner: scope.computerOwner ?? sessionId ?? 'run',
+      consent:
+        chat && sessionId && approvals
+          ? {
+              granted: () => chat.granted(),
+              ask: async (toolCallId, text, signal) => {
+                const d = await approvals.request({ sessionId, toolCallId, kind: 'computer', command: text }, signal)
+                if (d === 'deny') return false
+                chat.grant()
+                return true
+              }
+            }
+          : null,
+      onStop: () => chat?.stop()
+    })
+    return tool as unknown as AgentTool<any, ToolDetails>
+  }
+
+  private imagesAvailable(scope: ToolScope): boolean {
     return !!scope.images && !scope.depth && !!scope.sessionId && !!this.ws.images?.defaultModel()
   }
 
@@ -483,6 +532,17 @@ private imagesAvailable(scope: ToolScope): boolean {
 
   /** Headless agent run (workflows, MCP). Returns the final assistant text and the turn trace. */
   async run(opts: AgentRunOptions): Promise<{ text: string; turn: UiMessage; messages: AgentMessage[] }> {
+    // A run that may use the computer holds it under its own name until it ends.
+    const owner = opts.scope.computerUse && !opts.scope.depth ? (opts.scope.computerOwner ?? opts.scope.sessionId ?? newId('run_')) : null
+    if (owner) opts = { ...opts, scope: { ...opts.scope, computerOwner: owner } }
+    try {
+      return await this.runAgent(opts)
+    } finally {
+      if (owner) this.releaseComputer(owner)
+    }
+  }
+
+  private async runAgent(opts: AgentRunOptions): Promise<{ text: string; turn: UiMessage; messages: AgentMessage[] }> {
     const systemPrompt = await this.systemPrompt(opts.scope, opts.systemPrompt ?? '')
     const agent = this.createAgent({ ...opts, systemPrompt })
     const startIndex = agent.state.messages.length
@@ -570,6 +630,8 @@ export class ChatService {
       subagents: cur.subagents,
       codeIntel: cur.codeIntel,
       imagesEnabled: cur.imagesEnabled,
+      computerUse: cur.computerUse,
+      computerConsent: cur.computerConsent,
       thinking: cur.thinking,
       titleSource: cur.titleSource,
       titleTurns: cur.titleTurns,
@@ -582,6 +644,8 @@ export class ChatService {
       agentId: cur.agentId,
       ...config
     }
+    // Switching computer use off takes back the chat's consent: switched on again, it asks again.
+    if (config.computerUse === false) next.computerConsent = false
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
     if (title !== undefined && config.titleSource === undefined) next.titleSource = 'user'
     this.ctx.db.prepare('UPDATE sessions SET title = ?, config = ?, updated_at = ? WHERE id = ?').run(title ?? cur.title, JSON.stringify(next), Date.now(), id)
@@ -893,6 +957,12 @@ export class ChatService {
       subagents: session.subagents,
       codeIntel: session.codeIntel,
       images: session.imagesEnabled,
+      computerUse: session.computerUse,
+      computer: {
+        granted: () => !!this.get(id).computerConsent,
+        grant: () => void this.update(id, { computerConsent: true }),
+        stop: () => this.abort(id)
+      },
       disabledTools: session.disabledTools,
       skillsOff: session.skillsOff,
       skillsAlways: session.skillsAlways,
@@ -1040,6 +1110,7 @@ export class ChatService {
         pushTurn()
         this.saveMessages(id, agent.state.messages)
         this.active.delete(id)
+        this.runtime.releaseComputer(id)
         // Local servers (LM Studio) load a model on first use: its real context size is known now.
         const ref = this.get(id).model
         if (ref && this.runtime.providers.list().find((p) => p.id === ref.providerId)?.kind === 'openai-compatible') {
@@ -1105,7 +1176,8 @@ export class ChatService {
   }
 
   private saveMessages(id: string, messages: AgentMessage[]): void {
-    this.ctx.db.prepare('UPDATE sessions SET messages = ?, preview = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(messages), previewOf(messages), Date.now(), id)
+    // Screenshots beyond the latest few never go to the model again: don't keep them either.
+    this.ctx.db.prepare('UPDATE sessions SET messages = ?, preview = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(pruneScreenshots(messages)), previewOf(messages), Date.now(), id)
   }
 
   private row(id: string): SessionRow {
@@ -1198,7 +1270,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           references: r?.details?.references ?? [],
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
           ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
-          ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {})
+          ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {}),
+          ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })

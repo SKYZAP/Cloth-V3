@@ -55,6 +55,12 @@ export interface ToolScope {
   codeIntel?: boolean
   /** Offer generate_image (chat agents, when an image model is configured). */
   images?: boolean
+  /** Offer the computer tool (top-level agents on a model that sees images). */
+  computerUse?: boolean
+  /** The chat behind computer use: its consent, and stopping its run. Without it the tool refuses to start. */
+  computer?: { granted(): boolean; grant(): void; stop(): void }
+  /** Who holds the computer during this run (defaults to the chat). */
+  computerOwner?: string
   /** Only these custom tools (by name); null/undefined = every enabled one. */
   toolNames?: string[] | null
   /** Only these skills (by name); null/undefined = all. */

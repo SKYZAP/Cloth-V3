@@ -10,6 +10,8 @@ import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
 import type { UsageService } from './core/usage'
 import type { UsageSource, WorkflowEvent } from '@shared/types'
+import { createComputer } from './computer/host'
+import type { ComputerController } from './computer/tool'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -24,6 +26,7 @@ const firstExisting = (...paths: string[]) => paths.find((p) => existsSync(p)) ?
 
 let mainWindow: BrowserWindow | null = null
 let services: Services | null = null
+let computer: ComputerController | null = null
 
 const secrets: Secrets = {
   encrypt: (plain) => (safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(plain) : Buffer.from(`plain:${plain}`)),
@@ -132,6 +135,10 @@ else {
         if (channel === 'workflow') notifyAutomation(payload as WorkflowEvent)
       }
     })
+    // Computer use: the agent hands the screen back whenever a chat waits for the user.
+    computer = createComputer((notice) => services?.ctx.emit('computer', notice))
+    services.runtime.attachComputer(computer)
+    services.approvals.onWait = (sessionId) => void computer?.release(sessionId)
     const images = services.images
     protocol.handle('cloth-image', async (req) => {
       const id = new URL(req.url).pathname.replace(/^\/+/, '')
@@ -175,6 +182,7 @@ else {
     // Give sidecars (SearXNG's Python process tree) a chance to exit cleanly.
     e.preventDefault()
     quitting = true
+    void computer?.release()
     services.workflows.stopScheduler()
     services.lsp.disposeAll()
     services.panel.terminals.killAll()

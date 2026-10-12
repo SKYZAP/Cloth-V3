@@ -768,6 +768,8 @@ export class WorkflowService {
       fileAccess: writes && scope.workspace ? 'write' : 'read',
       shell: false,
       subagents: false,
+      // Computer use only when the automation's tools name it (it still needs the user's OK to start).
+      computerUse: only.has('computer'),
       ...extra
     }
   }

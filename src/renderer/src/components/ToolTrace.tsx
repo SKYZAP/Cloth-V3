@@ -25,6 +25,7 @@ import {
   Wrench,
   ChatCircleDots,
   BookmarkSimple,
+  Desktop,
   type Icon
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
@@ -61,7 +62,8 @@ const ICONS: Record<string, Icon> = {
   ask_user: ChatCircleDots,
   rag_index: BookmarkSimple,
   skill_create: Sparkle,
-  tool_create: Wrench
+  tool_create: Wrench,
+  computer: Desktop
 }
 
 function summarize(t: Trace): string {
@@ -81,6 +83,12 @@ function summarize(t: Trace): string {
   if (t.name === 'task') return String(a.description ?? '')
   if (t.name === 'agent_mention') return String(a.name ?? '')
   if (t.name === 'generate_image') return String(a.prompt ?? '')
+  if (t.name === 'computer') {
+    const at = Array.isArray(a.coordinate) ? ` [${a.coordinate.join(', ')}]` : ''
+    const from = Array.isArray(a.start_coordinate) ? ` from [${a.start_coordinate.join(', ')}]` : ''
+    const text = typeof a.text === 'string' ? ` “${a.text.length > 40 ? `${a.text.slice(0, 40)}…` : a.text}”` : ''
+    return `${String(a.action ?? '').replace(/_/g, ' ')}${from}${at}${a.scroll_direction ? ` ${a.scroll_direction}` : ''}${text}`
+  }
   if (t.name === 'ask_user') return String(a.question ?? '')
   if (t.name === 'rag_index') return `→ ${a.collection ?? ''}${a.title ? ` · ${a.title}` : Array.isArray(a.urls) && a.urls.length ? ` · ${a.urls[0]}` : ''}`
   if (t.name === 'skill_create' || t.name === 'tool_create') return String(a.name ?? '')
@@ -154,6 +162,12 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
       {trace.image && (
         <div className="pb-3.5 pl-12 pr-3">
           <GeneratedImageCard image={trace.image} className="max-w-[440px]" />
+        </div>
+      )}
+
+      {trace.computer?.thumbnail && (
+        <div className="pb-3.5 pl-12 pr-3">
+          <img src={trace.computer.thumbnail} alt={`Screen after ${trace.computer.action.replace(/_/g, ' ')}`} className="block max-w-[240px] rounded-lg border border-line" />
         </div>
       )}
 

@@ -45,6 +45,7 @@
     "diff": "^8.0.4",
     "docx": "^9.8.1",
     "ignore": "^7.0.8",
+    "koffi": "3.3.1",
     "linkedom": "^0.18.13",
     "mammoth": "^1.12.3",
     "postcss": "^8.5.28",
@@ -220,7 +221,9 @@
     "asarUnpack": [
       "node_modules/@ast-grep/**",
       "node_modules/@lydell/**",
-      "node_modules/pyright/**"
+      "node_modules/pyright/**",
+      "node_modules/koffi/**",
+      "node_modules/@koromix/**"
     ]
   }
 }
