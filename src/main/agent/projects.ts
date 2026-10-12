@@ -22,6 +22,11 @@ interface ProjectRow {
 const NOTE_FILES = ['AGENTS.md', 'CLAUDE.md']
 const NOTE_LIMIT = 12_000
 
+/** kv key holding the Automation project's id (its stable marker: the name may change). */
+const AUTOMATION_KEY = 'automation.projectId'
+const AUTOMATION_MIGRATED_KEY = 'automation.chatsMigrated'
+const AUTOMATION_COLOR = PROJECT_COLORS[6]
+
 const toProject = (r: ProjectRow): Project => ({
   id: r.id,
   name: r.name,
@@ -97,6 +102,36 @@ export class ProjectService {
       else this.chats().update(c.id, { projectId: null })
     }
     this.ctx.db.prepare('DELETE FROM projects WHERE id = ?').run(id)
+  }
+
+  /**
+   * The project automation chats are filed under, made on first use. Found by the id kept in kv, so a
+   * rename keeps it; deleted, it is made again.
+   */
+  automationProject(): Project {
+    const known = this.find(this.ctx.kv.get<string | null>(AUTOMATION_KEY, null))
+    if (known) return known
+    const p = this.create({ name: 'Automation', folder: null, color: AUTOMATION_COLOR, designId: null })
+    this.ctx.kv.set(AUTOMATION_KEY, p.id)
+    return p
+  }
+
+  /**
+   * Once: files chats automations made before they had a project (given by id, plus any marked with an
+   * automation origin) under the Automation project. Chats already in a project stay where they are.
+   */
+  migrateAutomationChats(chatIds: Iterable<string>): number {
+    if (this.ctx.kv.get(AUTOMATION_MIGRATED_KEY, false)) return 0
+    const ids = new Set(chatIds)
+    const loose = this.chats()
+      .list()
+      .filter((c) => !c.projectId && (ids.has(c.id) || c.origin?.kind === 'automation'))
+    if (loose.length) {
+      const projectId = this.automationProject().id
+      for (const c of loose) this.chats().update(c.id, { projectId })
+    }
+    this.ctx.kv.set(AUTOMATION_MIGRATED_KEY, true)
+    return loose.length
   }
 
   /** Settings for a new chat in this project: its defaults, plus the folder as the workspace. */

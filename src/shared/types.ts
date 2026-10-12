@@ -350,10 +350,17 @@ export interface ChatSession {
   skillsAlways: string[]
   /** The saved agent this chat was set up from (its instructions apply); null = Cloth's default assistant. */
   agentId: string | null
+  /** What made this chat when it wasn't the user (an automation's report). */
+  origin?: ChatOrigin
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
   preview?: string
   createdAt: number
   updatedAt: number
+}
+
+export interface ChatOrigin {
+  kind: 'automation'
+  workflowId: string
 }
 
 export type SkillMode = 'off' | 'auto' | 'always'

@@ -246,6 +246,16 @@ export class WorkflowService {
     return rows.map((r) => JSON.parse(r.data) as WorkflowRun)
   }
 
+  /** Every chat a kept run record says it reported in (older runs are pruned, so not always all of them). */
+  reportedChatIds(): string[] {
+    const ids: string[] = []
+    for (const r of this.ctx.db.prepare("SELECT data FROM workflow_runs WHERE data LIKE '%\"chatId\"%'").all() as { data: string }[]) {
+      const run = json<WorkflowRun | null>(r.data, null)
+      for (const rep of run?.reports ?? []) if (rep.kind === 'chat' && rep.chatId) ids.push(rep.chatId)
+    }
+    return ids
+  }
+
   cancel(runId: string): void {
     this.running.get(runId)?.abort()
   }

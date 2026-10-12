@@ -148,11 +148,17 @@ export function createServices(opts: {
   })
 
   // An automation that reports in a chat gets one you can reply to: its run, then what it reported.
+  // Every such chat is filed under the Automation project; the automation's folder stays its workspace.
   workflows.deliver = async (wf, report) => {
     const a = wf.automation
     const container = a?.commands?.mode === 'container' ? { image: a.commands.image, network: a.commands.network } : null
-    return chat.fromTranscript({ id: report.id, title: report.title, workspace: wf.workspace, agentId: a?.agentId ?? null, messages: report.messages, container }).id
+    const projectId = projects.automationProject().id
+    return chat.fromTranscript({ id: report.id, title: report.title, workspace: wf.workspace, agentId: a?.agentId ?? null, messages: report.messages, container, projectId, origin: { kind: 'automation', workflowId: wf.id } }).id
   }
+
+  // Chats automations made before the Automation project existed move into it, once.
+  const moved = projects.migrateAutomationChats(workflows.reportedChatIds())
+  if (moved) ctx.log('automation', `Filed ${moved} automation chat${moved === 1 ? '' : 's'} under the Automation project`)
 
   // Only automations remain: any graph flow left over becomes one (backed up first). Idempotent, so every startup.
   if (opts.convertFlows !== false) {
