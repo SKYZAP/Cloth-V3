@@ -350,6 +350,8 @@ export interface ChatSession {
   skillsAlways: string[]
   /** The saved agent this chat was set up from (its instructions apply); null = Cloth's default assistant. */
   agentId: string | null
+  /** The agent picks a tier (model and effort) for each job it delegates with `task`. */
+  autoTiers: boolean
   /** What made this chat when it wasn't the user (an automation's report). */
   origin?: ChatOrigin
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
@@ -423,6 +425,8 @@ export interface Agent extends AgentSetup {
   model: ModelRef | null
   /** null = the chat's effort. */
   thinking: ThinkingLevel | null
+  /** The tier (an AgentTier id) whose model and effort it uses when it has none of its own; null = none. */
+  tier: string | null
   builtin: AgentBuiltin | null
   createdAt: number
   updatedAt: number
@@ -671,8 +675,26 @@ export interface SubagentRun {
   description: string
   blocks: UiBlock[]
   running: boolean
+  /** The model it ran on (resolved: tier, agent, settings or the chat's). */
   model?: string
+  /** Input/output/cached tokens and cost so far (updated while it runs, final when done). */
   usage?: UiUsage
+  /** The tier it ran at (AgentTier id) and that tier's name at the time. */
+  tier?: string
+  tierName?: string
+  /** Which step of the chat's todo list it worked on (1-based) and that step's text at the time. */
+  step?: number
+  stepText?: string
+  /** While running: the tool it is executing now, with a short summary of its arguments. */
+  current?: SubagentActivity
+  /** Workspace files it has changed so far (kept when it finishes). */
+  files?: string[]
+}
+
+/** What a running subagent is doing: e.g. { tool: 'read', summary: 'src/auth/refresh.ts' }. */
+export interface SubagentActivity {
+  tool: string
+  summary: string
 }
 
 export type UiBlock =
@@ -927,6 +949,19 @@ export type WorkflowEvent =
 
 // ─── Settings & MCP ───────────────────────────────────────────────────────────
 
+/** A level of model and effort the chat agent can pick for delegated work. */
+export interface AgentTier {
+  /** Stable id: the defaults' are light/medium/careful/heavy; new ones are tier_<random>. */
+  id: string
+  name: string
+  /** null = the model of the chat that delegates. */
+  model: ModelRef | null
+  /** null = the chat's effort. */
+  thinking: ThinkingLevel | null
+  /** When to pick it (shown to the agent choosing a tier). */
+  purpose: string
+}
+
 export interface Settings {
   defaultModel: ModelRef | null
   /** The design system new projects follow (null = none). */
@@ -967,6 +1002,8 @@ export interface Settings {
   remoteKeepAwake: boolean
   /** Subagents (the chat agent's `task` tool). */
   subagents: SubagentSettings
+  /** Tiers the chat agent picks from when it delegates (cheapest first). */
+  agentTiers: AgentTier[]
 }
 
 export interface SubagentSettings {

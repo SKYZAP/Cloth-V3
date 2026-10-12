@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, TodoItem } from '@shared/types'
 import type { LspManager } from './lsp'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
 import type { JsonValue } from '@earendil-works/pi-ai'
@@ -83,6 +83,10 @@ export interface ToolScope {
   mcpServers?: string[]
   /** The workspace is a container copy: commands run there with bash. */
   container?: { image: string; folder: string | null; exec: NonNullable<WorkspaceOptions['shellExec']> }
+  /** The agent picks a tier for each job it hands to `task` (a chat's autoTiers). */
+  autoTiers?: boolean
+  /** The chat's current todo list (from its latest todo_write), for `task`'s step. */
+  todos?: () => TodoItem[]
 }
 
 /** Skills an agent with this scope may see and load. */
