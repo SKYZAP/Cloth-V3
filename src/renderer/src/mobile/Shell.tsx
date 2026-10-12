@@ -17,7 +17,7 @@ import { exitApp, onBackButton, onKeyboard } from './native'
 
 const TABS: { page: Page; label: string; icon: Icon }[] = [
   { page: 'chat', label: 'Chat', icon: ChatCircleDots },
-  { page: 'workflows', label: 'Flows', icon: FlowArrow },
+  { page: 'workflows', label: 'Automations', icon: FlowArrow },
   { page: 'knowledge', label: 'Knowledge', icon: Books },
   { page: 'dashboard', label: 'Dashboard', icon: ChartLineUp }
 ]

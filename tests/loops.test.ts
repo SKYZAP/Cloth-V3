@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkflowEdge, WorkflowNode } from '../src/shared/types'
 import { executeGraph, renderTemplate, resolveItems, topoSort, type Executor } from '../src/main/workflows/engine'
-import { layeredLayout } from '../src/shared/layout'
-import { DraftGraph } from '../src/main/workflows/builder'
 
 const node = (id: string, type: WorkflowNode['type'], data: Record<string, unknown> = {}, x = 0): WorkflowNode => ({ id, type, position: { x, y: 0 }, data: { key: id, ...data } })
 const edge = (source: string, target: string, sourceHandle: string | null = null, targetHandle: string | null = null): WorkflowEdge => ({ id: `${source}-${target}-${sourceHandle}`, source, target, sourceHandle, targetHandle })
@@ -93,37 +91,5 @@ describe('loop nodes', () => {
     expect(resolveItems('["a","b"]', {})).toEqual(['a', 'b'])
     expect(resolveItems('{{x}}', { x: 'one\ntwo\n\nthree' })).toEqual(['one', 'two', 'three'])
     expect(resolveItems('{{r}}', { r: { text: 'x', hits: [{ a: 1 }] } })).toEqual([{ a: 1 }])
-  })
-
-  it('the builder closes loops with a loop-back edge and validates branches', () => {
-    const g = new DraftGraph()
-    g.add('trigger', 'start', undefined, { defaultInput: '{"urls": []}' })
-    g.add('loop', 'each_url', undefined, { items: '{{input.urls}}' })
-    g.add('llm', 'summarize', undefined, { prompt: 'Summarize {{loop.item}}' })
-    g.add('output', 'result', undefined)
-    g.connect('start', 'each_url')
-    expect(() => g.connect('each_url', 'summarize')).toThrow(/body/)
-    g.connect('each_url', 'summarize', 'body')
-    expect(g.connect('summarize', 'each_url')).toMatch(/loop back/)
-    g.connect('each_url', 'result', 'done')
-    expect(g.validate({ collections: [], skills: [], tools: [] })).toEqual([])
-    expect(g.edges.find((e) => e.target === g.byKey('each_url').id && e.source === g.byKey('summarize').id)?.targetHandle).toBe('next')
-  })
-})
-
-describe('auto layout', () => {
-  it('lays nodes out left to right in dependency order without overlaps', () => {
-    const ids = ['t', 'a', 'b', 'c', 'out']
-    const nodes = ids.map((id, i) => ({ id, width: 230, height: 70, position: { x: 500 - i * 100, y: i * 37 } }))
-    const edges = [edge('t', 'a'), edge('a', 'b', 'true'), edge('a', 'c', 'false'), edge('b', 'out'), edge('c', 'out'), edge('b', 'a', null, 'next')]
-    const pos = layeredLayout(nodes, edges)
-    expect(pos.get('t')!.x).toBeLessThan(pos.get('a')!.x)
-    expect(pos.get('a')!.x).toBeLessThan(pos.get('b')!.x)
-    expect(pos.get('b')!.x).toBe(pos.get('c')!.x)
-    expect(pos.get('b')!.y).toBeLessThan(pos.get('c')!.y) // "true" branch above "false"
-    expect(Math.abs(pos.get('b')!.y - pos.get('c')!.y)).toBeGreaterThanOrEqual(70)
-    expect(pos.get('out')!.x).toBeGreaterThan(pos.get('b')!.x)
-    // A straight chain stays level.
-    expect(pos.get('t')!.y).toBe(pos.get('a')!.y)
   })
 })

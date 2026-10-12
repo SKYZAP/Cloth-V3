@@ -862,11 +862,14 @@ export interface WorkflowRun {
   /** The workspace this run used, and the files it created or changed there (absolute paths). */
   workspace?: string | null
   files?: string[]
+  /** How an automation's run reported, set when it ends (empty: it had nothing to report). Absent on older runs. */
+  reports?: WorkflowRunReport[]
   startedAt: number
   finishedAt: number | null
 }
 
-export type WorkflowTemplate = 'blank' | 'rag-digest' | 'watch-page' | 'summarise-folder'
+/** One way an automation's run reported: a chat it opened, a notification, or a note saved to Knowledge. */
+export type WorkflowRunReport = { kind: 'chat'; chatId: string; title: string } | { kind: 'notify'; title?: string } | { kind: 'knowledge'; collection: string; title: string }
 
 /** A run at a glance, for the Flows overview. */
 export interface WorkflowRunSummary {
@@ -898,7 +901,6 @@ export type WorkflowEvent =
    */
   | { type: 'automation'; workflowId: string; name: string; runId: string; ok: boolean; summary: string; chatId: string | null; notify: boolean; title?: string }
   | { type: 'schedule'; workflowId: string; nextRunAt: number | null }
-  | WorkflowBuildEvent
 
 // ─── Settings & MCP ───────────────────────────────────────────────────────────
 
@@ -1092,48 +1094,6 @@ export interface WebStatus {
   searxng: { bundled: boolean; external: string | null; running: boolean; starting: boolean; url: string | null; error: string | null; version: string | null }
   obscura: { available: boolean; path: string | null; version: string | null; error: string | null }
 }
-
-// ─── Workflow builder ─────────────────────────────────────────────────────────
-
-export interface WorkflowGraph {
-  name: string
-  description: string
-  nodes: WorkflowNode[]
-  edges: WorkflowEdge[]
-}
-
-/** How a saved version of a flow came about. */
-export type WorkflowVersionSource = 'original' | 'created' | 'edit' | 'ai-build' | 'ai-edit' | 'ai-fix' | 'restore'
-
-/** Everything a version restores. */
-export interface WorkflowSnapshot extends WorkflowGraph {
-  workspace: string | null
-}
-
-export interface WorkflowVersion {
-  id: string
-  workflowId: string
-  source: WorkflowVersionSource
-  /** Why it was saved, when known (e.g. the error an AI fix addressed). */
-  note: string | null
-  /** What changed from the version before, in a few words. */
-  summary: string
-  nodeCount: number
-  createdAt: number
-  /** Present when one version is fetched on its own. */
-  snapshot?: WorkflowSnapshot
-}
-
-export interface WorkflowBuildStep {
-  tool: string
-  args: unknown
-  result: string
-  ok: boolean
-}
-
-export type WorkflowBuildEvent =
-  | { type: 'build-step'; buildId: string; step: WorkflowBuildStep }
-  | { type: 'build-text'; buildId: string; text: string }
 
 // ─── Usage & dashboard ────────────────────────────────────────────────────────
 

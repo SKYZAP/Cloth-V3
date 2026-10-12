@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
+import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
-import { DraftGraph, buildWorkflow } from '../src/main/workflows/builder'
 import { executeGraph } from '../src/main/workflows/engine'
 import { parseDuckDuckGo } from '../src/main/web/obscura'
 import { isPrivateHost } from '../src/main/web/web'
@@ -58,53 +57,7 @@ describe('custom tools', () => {
   })
 })
 
-describe('workflow builder', () => {
-  it('draft graph enforces structure and validates references', () => {
-    const g = new DraftGraph()
-    g.add('trigger', 'start', 'Start', { defaultInput: '{"q":"x"}' })
-    g.add('condition', 'check', undefined, { expression: 'true' })
-    g.add('output', 'out', undefined, { value: '{{missing}}' })
-    expect(() => g.add('trigger', 't2', undefined)).toThrow(/already a trigger/)
-    expect(() => g.add('nope', 'n', undefined)).toThrow(/Unknown node type/)
-    g.connect('start', 'check')
-    expect(() => g.connect('check', 'out')).toThrow(/branch/)
-    g.connect('check', 'out', 'true')
-    expect(() => g.connect('out', 'check')).toThrow(/Output nodes/)
-    expect(() => g.connect('check', 'start', 'false')).toThrow(/into the trigger/)
-    expect(g.validate({ collections: [], skills: [], tools: [] })).toEqual(['"out".value references unknown {{missing}}'])
-  })
-
-  it('an agent assembles a runnable workflow through tool calls', async () => {
-    const { services } = makeServices()
-    const faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux-builder' })
-    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
-    faux.setResponses([
-      fauxAssistantMessage(
-        [
-          fauxToolCall('add_node', { type: 'trigger', key: 'start', data: { defaultInput: '{"name":"Ada"}' } }),
-          fauxToolCall('add_node', { type: 'transform', key: 'greet', data: { code: 'return "Hello " + input.name' } }),
-          fauxToolCall('add_node', { type: 'output', key: 'result', data: { value: '{{greet}}!' } }),
-          fauxToolCall('connect', { from: 'start', to: 'greet' }),
-          fauxToolCall('connect', { from: 'greet', to: 'result' })
-        ],
-        { stopReason: 'toolUse' }
-      ),
-      fauxAssistantMessage([fauxToolCall('finish', { name: 'Greeter', description: 'Greets someone' })], { stopReason: 'toolUse' })
-    ])
-    try {
-      const graph = await buildWorkflow(services.ctx, services, { description: 'greet a person', model: { providerId: provider.id, modelId: 'faux-1' }, buildId: 'b1' })
-      expect(graph.name).toBe('Greeter')
-      expect(graph.nodes.map((n) => n.data.key)).toEqual(['start', 'greet', 'result'])
-      expect(graph.nodes[2].position.x).toBe(640)
-      const wf = services.workflows.createFromGraph(graph)
-      const run = await services.workflows.run(wf.id, { name: 'Grace' })
-      expect(run.status).toBe('ok')
-      expect(run.output).toBe('Hello Grace!')
-    } finally {
-      faux.unregister()
-    }
-  })
-
+describe('workflow engine', () => {
   it('executes web and tool node types via the engine executor contract', async () => {
     const res = await executeGraph(
       {

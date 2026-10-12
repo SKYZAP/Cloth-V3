@@ -27,7 +27,7 @@ function setup() {
 }
 
 describe('automations', () => {
-  it('saves as a one-step flow on a schedule, and turns into an ordinary flow on request', () => {
+  it('saves as a one-step flow on a schedule, and can be paused', () => {
     const { services } = makeServices()
     const wf = services.workflows.createAutomation({ name: 'Morning brief', automation: { ...base, tools: ['web_search', 'web_search', ''] }, cron: '0 9 * * 1-5', cronEnabled: true })
     expect(wf.automation).toMatchObject({ prompt: 'Write my morning brief.', tools: ['web_search'] })
@@ -41,10 +41,9 @@ describe('automations', () => {
     // The old delivery choice still reads, but no longer needs (or checks) anything.
     expect(services.workflows.saveAutomation(wf.id, { automation: { ...base, deliver: 'knowledge' } }).automation?.deliver).toBe('knowledge')
 
-    const flow = services.workflows.toFlow(wf.id)
-    expect(flow.automation).toBeNull()
-    expect(flow.nodes).toHaveLength(3)
-    expect(() => services.workflows.saveAutomation(wf.id, {})).toThrow(/not an automation/)
+    const paused = services.workflows.saveAutomation(wf.id, { cronEnabled: false })
+    expect(paused).toMatchObject({ cron: '0 9 * * 1-5', cronEnabled: false, nextRunAt: null })
+    expect(services.workflows.saveAutomation(wf.id, { cronEnabled: true }).cronEnabled).toBe(true)
     services.workflows.stopScheduler()
   })
 
@@ -113,6 +112,8 @@ describe('automations', () => {
     expect(text).toContain('## Your morning')
     expect(text).toContain('**Standup** at 9')
     expect(text).toContain('Also: lunch at 12.')
+    // The run record says how it reported, for its run history.
+    expect(services.workflows.runs(wf.id)[0].reports).toEqual([{ kind: 'chat', chatId, title: 'Your morning' }])
     services.workflows.stopScheduler()
   })
 
@@ -128,6 +129,7 @@ describe('automations', () => {
     const first = automationEvents(events)
     expect(first).toHaveLength(1)
     expect(first[0]).toMatchObject({ ok: true, notify: true, chatId: null, title: 'Build broke', summary: 'main is red since 08:12.' })
+    expect(services.workflows.runs(wf.id)[0].reports).toEqual([{ kind: 'notify', title: 'Build broke' }])
 
     const runAs = services.agents.create({ name: 'Gone' })
     services.workflows.saveAutomation(wf.id, { automation: { ...base, agentId: runAs.id } })
@@ -165,6 +167,10 @@ describe('automations', () => {
     expect(results.join()).toContain("not one of this automation's collections")
     expect(services.rag.listDocuments(notes.id).map((d) => d.title).sort()).toEqual(['By id', 'NestJS 11'])
     expect(services.rag.listDocuments(secret.id)).toHaveLength(0)
+    expect(services.workflows.runs(wf.id)[0].reports).toEqual([
+      { kind: 'knowledge', collection: 'Notes', title: 'NestJS 11' },
+      { kind: 'knowledge', collection: 'Notes', title: 'By id' }
+    ])
 
     // Without collections of its own it isn't offered at all.
     let tools: string[] = []
@@ -178,6 +184,8 @@ describe('automations', () => {
     await services.workflows.run(wf.id, undefined)
     expect(tools).toEqual(expect.arrayContaining(['report_in_chat', 'notify']))
     expect(tools).not.toContain('save_to_knowledge')
+    // Nothing reported: an empty list (the run history says "nothing to report").
+    expect(services.workflows.runs(wf.id)[0].reports).toEqual([])
     services.workflows.stopScheduler()
   })
 })

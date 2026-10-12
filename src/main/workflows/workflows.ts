@@ -4,8 +4,7 @@ import { createHash } from 'node:crypto'
 import { sep } from 'node:path'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { Automation, AutomationCommands, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, WorkflowTemplate, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowGraph, WorkflowNode, WorkflowRun, WorkflowSnapshot, WorkflowVersion, WorkflowVersionSource } from '@shared/types'
-import { describeChange, failureReport } from './history'
+import type { Automation, AutomationCommands, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowNode, WorkflowRun, WorkflowRunReport } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -22,27 +21,12 @@ import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
 import { executeGraph, renderArgs, renderTemplate, type Executor } from './engine'
-import { buildWorkflow } from './builder'
 import { flowToAutomation } from './convert'
 import { REPORT_GUIDANCE, reportTools, reportTranscript, type RunReport } from './report'
 
 export interface RunOptions {
   /** Overrides the flow's workspace for this run (null = none). */
   workspace?: string | null
-}
-
-interface VersionRow {
-  id: string
-  workflow_id: string
-  source: WorkflowVersionSource
-  note: string | null
-  summary: string
-  node_count: number
-  created_at: number
-}
-
-function toVersion(r: VersionRow): WorkflowVersion {
-  return { id: r.id, workflowId: r.workflow_id, source: r.source, note: r.note, summary: r.summary, nodeCount: r.node_count, createdAt: r.created_at }
 }
 
 interface WorkflowRow {
@@ -87,28 +71,18 @@ export class WorkflowService {
     return this.toWorkflow(row)
   }
 
-  /** `source: null` skips the first version (the caller saves real content right after). */
-  create(input: { name: string; description?: string; template?: WorkflowTemplate }, source: WorkflowVersionSource | null = 'created'): Workflow {
+  /** A flow with no steps yet; the caller saves its content (an automation, or an exported app's graph). */
+  create(input: { name: string; description?: string }): Workflow {
     const id = newId('wf_')
     const now = Date.now()
-    const graph = (TEMPLATES[input.template ?? 'blank'] ?? blankTemplate)()
     this.ctx.db
       .prepare('INSERT INTO workflows (id, name, description, graph, cron, cron_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 0, ?, ?)')
-      .run(id, input.name.trim() || 'Untitled workflow', input.description ?? '', JSON.stringify(graph), now, now)
-    const wf = this.get(id)
-    if (source) this.recordVersion(wf, source)
-    else this.unversioned.add(id)
-    return wf
+      .run(id, input.name.trim() || 'Untitled workflow', input.description ?? '', JSON.stringify({ nodes: [], edges: [] }), now, now)
+    return this.get(id)
   }
 
-  save(
-    id: string,
-    patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace' | 'automation'>>,
-    meta: { source?: WorkflowVersionSource; note?: string } = {}
-  ): Workflow {
+  save(id: string, patch: Partial<Pick<Workflow, 'name' | 'description' | 'nodes' | 'edges' | 'cron' | 'cronEnabled' | 'workspace' | 'automation'>>): Workflow {
     const cur = this.get(id)
-    // Flows from before history existed: keep what they were, so the first change can be undone.
-    if (!this.unversioned.delete(id) && !this.lastVersion(id)) this.recordVersion(cur, 'original')
     const cron = patch.cron === undefined ? cur.cron : patch.cron?.trim() || null
     if (cron) {
       const v = validateCron(cron)
@@ -119,9 +93,7 @@ export class WorkflowService {
       .prepare('UPDATE workflows SET name = ?, description = ?, graph = ?, cron = ?, cron_enabled = ?, updated_at = ? WHERE id = ?')
       .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null, automation: next.automation ?? null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
     this.schedule(id)
-    const saved = this.get(id)
-    this.recordVersion(saved, meta.source ?? 'edit', meta.note)
-    return saved
+    return this.get(id)
   }
 
   // ─── Automations ──────────────────────────────────────────────────────────
@@ -130,12 +102,12 @@ export class WorkflowService {
   deliver: ((wf: Workflow, chat: { id: string; title: string; messages: AgentMessage[] }) => Promise<string>) | null = null
 
   createAutomation(input: AutomationInput & { name: string; automation: Automation }): Workflow {
-    const wf = this.create({ name: input.name }, null)
-    return this.saveAutomation(wf.id, input, 'created')
+    const wf = this.create({ name: input.name })
+    return this.saveAutomation(wf.id, input)
   }
 
   /** Saves an automation and rebuilds its one-step graph from it. */
-  saveAutomation(id: string, input: AutomationInput, source: WorkflowVersionSource = 'edit'): Workflow {
+  saveAutomation(id: string, input: AutomationInput): Workflow {
     const cur = this.get(id)
     const automation = cleanAutomation(input.automation ?? cur.automation)
     if (!automation) throw new Error('This flow is not an automation')
@@ -147,18 +119,7 @@ export class WorkflowService {
     if (automation.commands && !workspace) throw new Error('Choose a folder for its commands to run in')
     if (automation.commands?.mode === 'allowlist' && !automation.commands.allow.length) throw new Error('List the commands it may run')
     const name = input.name?.trim() || cur.name
-    return this.save(
-      id,
-      { name, ...automationGraph(automation), automation, cron: input.cron === undefined ? cur.cron : input.cron, cronEnabled: input.cronEnabled ?? cur.cronEnabled, workspace: input.workspace === undefined ? cur.workspace : input.workspace },
-      { source }
-    )
-  }
-
-  /** Keeps the graph and drops the automation, so the flow editor takes over. */
-  toFlow(id: string): Workflow {
-    const cur = this.get(id)
-    if (!cur.automation) return cur
-    return this.save(id, { automation: null }, { note: 'Turned into a flow' })
+    return this.save(id, { name, ...automationGraph(automation), automation, cron: input.cron === undefined ? cur.cron : input.cron, cronEnabled: input.cronEnabled ?? cur.cronEnabled, workspace })
   }
 
   /**
@@ -177,7 +138,7 @@ export class WorkflowService {
         mkdirSync(dir, { recursive: true })
         writeFileSync(join(dir, `${wf.id}-${Date.now()}.json`), JSON.stringify(row, null, 2))
         const automation = cleanAutomation(flowToAutomation(wf))!
-        converted.push(this.save(wf.id, { ...automationGraph(automation), automation }, { source: 'edit', note: 'Converted from a flow into an automation' }))
+        converted.push(this.save(wf.id, { ...automationGraph(automation), automation }))
         this.ctx.log('automation', `Converted the flow “${wf.name}” (${wf.id}) into an automation`)
       } catch (err) {
         this.ctx.log('automation', `Converting the flow “${wf.name}” (${wf.id}) failed:`, errorMessage(err))
@@ -186,16 +147,10 @@ export class WorkflowService {
     return converted
   }
 
-  /** convertFlows, once per profile (at startup). */
-  convertFlowsOnce(): void {
-    const key = 'flows.convertedToAutomations'
-    if (this.ctx.kv.get(key, false)) return
-    const done = this.convertFlows()
-    this.ctx.kv.set(key, true)
-    this.ctx.log('automation', `Converted ${done.length} flow${done.length === 1 ? '' : 's'} into automations`)
-  }
-
-  /** Hands over what the run reported: its chat (made now, with the run's transcript), and a notification. */
+  /**
+   * Hands over what the run reported: its chat (made now, with the run's transcript), and a notification.
+   * The run record keeps how it reported, for its run history.
+   */
   private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], report: RunReport): Promise<void> {
     const a = wf.automation
     if (!a) return
@@ -207,6 +162,13 @@ export class WorkflowService {
     } catch (err) {
       this.ctx.log('automation', `Delivering ${wf.name} failed:`, errorMessage(err))
     }
+    const reports: WorkflowRunReport[] = [
+      ...(chatId ? [{ kind: 'chat' as const, chatId, title: report.chat[0]?.title || wf.name }] : []),
+      ...report.notes.map((n) => ({ kind: 'notify' as const, title: n.title || undefined })),
+      ...report.saved.map((k) => ({ kind: 'knowledge' as const, collection: k.collection, title: k.title }))
+    ]
+    run.reports = reports
+    this.persist(run)
     const ok = run.status === 'ok'
     const note = report.notes.at(-1)
     const text = !ok ? (run.error ?? 'Failed') : note ? report.notes.map((n) => n.body).join(' ') : typeof run.output === 'string' ? run.output : JSON.stringify(run.output)
@@ -224,101 +186,9 @@ export class WorkflowService {
     })
   }
 
-  // ─── History ──────────────────────────────────────────────────────────────
-
-  /** Flows created empty on purpose, whose first save is their first version. */
-  private unversioned = new Set<string>()
-
-  private snapshot(wf: Workflow): WorkflowSnapshot {
-    return { name: wf.name, description: wf.description, nodes: wf.nodes, edges: wf.edges, workspace: wf.workspace }
-  }
-
-  private lastVersion(id: string): { snapshot: WorkflowSnapshot } | null {
-    const row = this.ctx.db.prepare('SELECT snapshot FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1').get(id) as { snapshot: string } | undefined
-    return row ? { snapshot: json<WorkflowSnapshot>(row.snapshot, { name: '', description: '', nodes: [], edges: [], workspace: null }) } : null
-  }
-
-  /** Store the flow as a version when its content changed (schedule changes alone don't count). */
-  private recordVersion(wf: Workflow, source: WorkflowVersionSource, note?: string): void {
-    const next = this.snapshot(wf)
-    const prev = this.lastVersion(wf.id)?.snapshot
-    const summary = prev ? describeChange(prev, next) : source === 'original' ? 'As it was before history was kept' : `${next.nodes.length} nodes`
-    if (prev && !summary) return
-    this.ctx.db
-      .prepare('INSERT INTO workflow_versions (id, workflow_id, snapshot, source, note, summary, node_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(newId('wfv_'), wf.id, JSON.stringify(next), source, note ?? null, summary, next.nodes.length, Date.now())
-    // Keep the most recent 100.
-    this.ctx.db
-      .prepare('DELETE FROM workflow_versions WHERE workflow_id = ? AND id NOT IN (SELECT id FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 100)')
-      .run(wf.id, wf.id)
-  }
-
-  versions(id: string): WorkflowVersion[] {
-    const rows = this.ctx.db.prepare('SELECT id, workflow_id, source, note, summary, node_count, created_at FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC, rowid DESC').all(id) as unknown as VersionRow[]
-    return rows.map(toVersion)
-  }
-
-  version(versionId: string): WorkflowVersion {
-    const row = this.ctx.db.prepare('SELECT * FROM workflow_versions WHERE id = ?').get(versionId) as (VersionRow & { snapshot: string }) | undefined
-    if (!row) throw new Error('That version no longer exists')
-    return { ...toVersion(row), snapshot: json<WorkflowSnapshot>(row.snapshot, { name: '', description: '', nodes: [], edges: [], workspace: null }) }
-  }
-
-  restore(id: string, versionId: string): Workflow {
-    const v = this.version(versionId)
-    if (v.workflowId !== id) throw new Error('That version belongs to another flow')
-    const s = v.snapshot!
-    return this.save(id, { name: s.name, description: s.description, nodes: s.nodes, edges: s.edges, workspace: s.workspace }, { source: 'restore', note: `Restored the version from ${new Date(v.createdAt).toLocaleString()}` })
-  }
-
-  /** A description of a failed run for the AI builder: where it broke, what that step got, and what came before. */
-  failureReport(runId: string): string {
-    const row = this.ctx.db.prepare('SELECT data FROM workflow_runs WHERE id = ?').get(runId) as { data: string } | undefined
-    if (!row) throw new Error('That run no longer exists')
-    const run = JSON.parse(row.data) as WorkflowRun
-    return failureReport(run, this.get(run.workflowId), { tools: this.deps.custom.list() })
-  }
-
   remove(id: string): void {
     this.unschedule(id)
     this.ctx.db.prepare('DELETE FROM workflows WHERE id = ?').run(id)
-  }
-
-  createFromGraph(graph: WorkflowGraph): Workflow {
-    const wf = this.create({ name: graph.name || 'Assembled workflow', description: graph.description }, null)
-    return this.save(wf.id, { nodes: graph.nodes, edges: graph.edges }, { source: 'ai-build' })
-  }
-
-  private builds = new Map<string, AbortController>()
-
-  /** Have an agent assemble (or modify) a workflow graph from a description. Not saved — the editor reviews it first. */
-  async build(input: { description: string; model?: ModelRef | null; workflowId?: string; buildId: string; fixRunId?: string }): Promise<WorkflowGraph> {
-    const model = this.modelFor(input.model)
-    const existing = input.workflowId ? this.get(input.workflowId) : undefined
-    const controller = new AbortController()
-    this.builds.set(input.buildId, controller)
-    try {
-      return await buildWorkflow(this.ctx, this.deps, {
-        description: input.description,
-        model,
-        buildId: input.buildId,
-        signal: controller.signal,
-        existing: existing && { name: existing.name, description: existing.description, nodes: existing.nodes, edges: existing.edges },
-        failure: input.fixRunId ? this.failureReport(input.fixRunId) : undefined
-      })
-    } finally {
-      this.builds.delete(input.buildId)
-    }
-  }
-
-  cancelBuild(buildId: string): void {
-    this.builds.get(buildId)?.abort()
-  }
-
-  duplicate(id: string): Workflow {
-    const cur = this.get(id)
-    const copy = this.create({ name: `${cur.name} (copy)`, description: cur.description }, null)
-    return this.save(copy.id, { nodes: cur.nodes, edges: cur.edges, cron: cur.cron, cronEnabled: false, workspace: cur.workspace }, { source: 'created', note: `Copied from “${cur.name}”` })
   }
 
   /** Every flow's last runs and upcoming schedule, and the latest runs overall. */
@@ -573,7 +443,7 @@ export class WorkflowService {
     this.persist(run)
     let transcript: AgentMessage[] = []
     // A container run's copy belongs to the chat its result goes to, made with this id.
-    const report: RunReport = { chatId: wf.automation?.commands?.mode === 'container' ? newId('ses_') : null, chat: [], notes: [] }
+    const report: RunReport = { chatId: wf.automation?.commands?.mode === 'container' ? newId('ses_') : null, chat: [], notes: [], saved: [] }
     this.active.set(id, Infinity)
     const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
       executeGraph(
@@ -739,7 +609,7 @@ export class WorkflowService {
             system = [`You are the "${saved.name}" agent. ${saved.purpose}`, saved.instructions.trim(), system].filter(Boolean).join('\n\n')
           }
           // An automation's step may use exactly what was picked for it, whoever it runs as, and decides how to report.
-          const report = d.automation ? (env.report ?? { chatId: null, chat: [], notes: [] }) : null
+          const report = d.automation ? (env.report ?? { chatId: null, chat: [], notes: [], saved: [] }) : null
           if (report) {
             scope = await this.automationScope(d, scope, report.chatId)
             system = [system, REPORT_GUIDANCE].filter(Boolean).join('\n\n')
@@ -985,88 +855,3 @@ function changeNote(input: unknown): string {
 
 /** Paths a folder watch ignores: version control, dependencies, build output and editor scratch files. */
 const IGNORED = /(^|\/)(\.git|node_modules|\.cache|dist|out|build|\.next|\.venv|__pycache__)(\/|$)|~$|\.(swp|tmp|crdownload)$/
-
-function blankTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  return {
-    nodes: [
-      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "topic": "hello"\n}' } },
-      { id: 'n_llm', type: 'llm', position: { x: 320, y: 100 }, data: { key: 'llm_1', label: 'LLM', system: '', prompt: 'Write one sentence about {{input.topic}}.', model: null } },
-      { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'result', label: 'Output', value: '{{llm_1}}' } }
-    ],
-    edges: [
-      { id: 'e1', source: 'n_trigger', target: 'n_llm' },
-      { id: 'e2', source: 'n_llm', target: 'n_out' }
-    ]
-  }
-}
-
-/** Fetch a page, turn it into text, and say what it says now. */
-function watchPageTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  return {
-    nodes: [
-      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "url": "https://example.com/pricing",\n  "watch_for": "price changes"\n}' } },
-      { id: 'n_http', type: 'http', position: { x: 300, y: 120 }, data: { key: 'page', label: 'Fetch the page', method: 'GET', url: '{{input.url}}', headers: '{}', body: '' } },
-      {
-        id: 'n_text',
-        type: 'transform',
-        position: { x: 600, y: 120 },
-        data: { key: 'text', label: 'Page as text', code: "return String(prev.body)\n  .replace(/<(script|style)[\\s\\S]*?<\\/\\1>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .slice(0, 12000)" }
-      },
-      { id: 'n_llm', type: 'llm', position: { x: 900, y: 120 }, data: { key: 'report', label: 'What it says now', system: 'Be brief and concrete.', prompt: 'Here is the text of {{input.url}}. Report anything about {{input.watch_for}}, quoting the page.\n\n{{text}}', model: null } },
-      { id: 'n_out', type: 'output', position: { x: 1200, y: 120 }, data: { key: 'result', label: 'Output', value: '{{report}}' } }
-    ],
-    edges: [
-      { id: 'e1', source: 'n_trigger', target: 'n_http' },
-      { id: 'e2', source: 'n_http', target: 'n_text' },
-      { id: 'e3', source: 'n_text', target: 'n_llm' },
-      { id: 'e4', source: 'n_llm', target: 'n_out' }
-    ]
-  }
-}
-
-/** An agent reads the flow's folder and answers a question about it. */
-function summariseFolderTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  return {
-    nodes: [
-      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 120 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "question": "What is in this folder, and what changed or needs attention?"\n}' } },
-      {
-        id: 'n_agent',
-        type: 'agent',
-        position: { x: 320, y: 100 },
-        data: { key: 'summary', label: 'Read the folder', prompt: 'Look through the files in your folder and answer: {{input.question}} Name the files you rely on.', system: '', collectionIds: [], skillsEnabled: false, webEnabled: false, customTools: false, fileAccess: 'read', maxTurns: 12 }
-      },
-      { id: 'n_out', type: 'output', position: { x: 640, y: 120 }, data: { key: 'result', label: 'Output', value: '{{summary}}' } }
-    ],
-    edges: [
-      { id: 'e1', source: 'n_trigger', target: 'n_agent' },
-      { id: 'e2', source: 'n_agent', target: 'n_out' }
-    ]
-  }
-}
-
-const TEMPLATES: Record<WorkflowTemplate, () => { nodes: WorkflowNode[]; edges: WorkflowEdge[] }> = {
-  blank: blankTemplate,
-  'rag-digest': ragDigestTemplate,
-  'watch-page': watchPageTemplate,
-  'summarise-folder': summariseFolderTemplate
-}
-
-function ragDigestTemplate(): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
-  return {
-    nodes: [
-      { id: 'n_trigger', type: 'trigger', position: { x: 0, y: 140 }, data: { key: 'trigger', label: 'Start', defaultInput: '{\n  "question": "What changed recently?"\n}' } },
-      { id: 'n_rag', type: 'rag', position: { x: 300, y: 40 }, data: { key: 'search', label: 'Search knowledge', query: '{{input.question}}', k: 6, mode: 'hybrid', collectionIds: [] } },
-      { id: 'n_cond', type: 'condition', position: { x: 600, y: 140 }, data: { key: 'has_hits', label: 'Any hits?', expression: 'prev.hits.length > 0' } },
-      { id: 'n_llm', type: 'llm', position: { x: 900, y: 40 }, data: { key: 'answer', label: 'Summarize', system: 'Answer from the context only. Cite [n].', prompt: 'Question: {{input.question}}\n\nContext:\n{{search.text}}', model: null } },
-      { id: 'n_none', type: 'output', position: { x: 900, y: 260 }, data: { key: 'empty', label: 'Nothing found', value: 'No matching documents.' } },
-      { id: 'n_out', type: 'output', position: { x: 1200, y: 40 }, data: { key: 'digest', label: 'Output', value: '{{answer}}' } }
-    ],
-    edges: [
-      { id: 'e1', source: 'n_trigger', target: 'n_rag' },
-      { id: 'e2', source: 'n_rag', target: 'n_cond' },
-      { id: 'e3', source: 'n_cond', target: 'n_llm', sourceHandle: 'true' },
-      { id: 'e4', source: 'n_cond', target: 'n_none', sourceHandle: 'false' },
-      { id: 'e5', source: 'n_llm', target: 'n_out' }
-    ]
-  }
-}

@@ -9,7 +9,7 @@ import { Button, Field, Input, Modal, Spinner } from '@/components/ui'
 
 type Phase = 'form' | 'running' | 'done' | 'failed'
 
-/** Export a flow as a standalone Windows app: review what goes in, then watch the build log. */
+/** Export an automation as a standalone Windows app: review what goes in, then watch the build log. */
 export function ExportModal({ open, workflow, onClose, beforeExport }: { open: boolean; workflow: Workflow; onClose(): void; beforeExport(): Promise<boolean> }) {
   const [preview, setPreview] = useState<ExportPreview | null>(null)
   const [name, setName] = useState(workflow.name)
@@ -113,7 +113,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
         ) : (
           <div className="space-y-4">
             <div className="text-[12.5px] leading-relaxed text-muted">
-              Packages this flow as a Windows app anyone can install. It asks for their own OpenAI key and a folder to save files in, then runs the flow — no Cloth needed.
+              Packages this automation as a Windows app anyone can install. It asks for their own OpenAI key and a folder to save files in, then runs it — no Cloth needed.
             </div>
             <div className="grid grid-cols-[1fr_120px] gap-3">
               <Field label="App name">

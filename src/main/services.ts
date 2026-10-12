@@ -79,6 +79,8 @@ export function createServices(opts: {
   run?: Partial<RunDeps>
   /** How the side panel's terminals start their shells (tests pass a stand-in). */
   pty?: PtySpawn
+  /** Turn leftover graph flows into automations at startup (default true; an exported app's runner keeps its graph). */
+  convertFlows?: boolean
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -151,8 +153,11 @@ export function createServices(opts: {
     return chat.fromTranscript({ id: report.id, title: report.title, workspace: wf.workspace, agentId: a?.agentId ?? null, messages: report.messages, container }).id
   }
 
-  // Flows holds automations only: graph flows from before become automations (backed up first).
-  workflows.convertFlowsOnce()
+  // Only automations remain: any graph flow left over becomes one (backed up first). Idempotent, so every startup.
+  if (opts.convertFlows !== false) {
+    const converted = workflows.convertFlows()
+    if (converted.length) ctx.log('automation', `Converted ${converted.length} flow${converted.length === 1 ? '' : 's'} into automations`)
+  }
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
