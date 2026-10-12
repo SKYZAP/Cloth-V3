@@ -73,6 +73,9 @@ function DesktopApp() {
     void api.mcp.status().then(setMcp)
   }, [loadProviders, loadCollections, loadSettings])
   useEvent('mcp', setMcp)
+  // Computer use is missing a macOS permission: say which and offer the settings pane.
+  const toast = useApp((s) => s.toast)
+  useEvent('computer', (n) => toast(n.text, 'error', { label: 'Open System Settings', run: () => void api.app.openPrivacySettings(n.kind) }))
 
   const isMac = window.cloth.platform === 'darwin'
 
@@ -149,7 +152,20 @@ export function Toasts() {
           )}
         >
           <span className={clsx('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', t.kind === 'error' ? 'bg-crimson' : t.kind === 'ok' ? 'bg-ok' : 'bg-info')} />
-          <span className="selectable flex-1 break-words">{t.text}</span>
+          <span className="selectable flex-1 break-words">
+            {t.text}
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action!.run()
+                  dismiss(t.id)
+                }}
+                className="mt-1.5 block font-medium text-crimson-hi hover:text-fg"
+              >
+                {t.action.label}
+              </button>
+            )}
+          </span>
           <button onClick={() => dismiss(t.id)} className="text-dim hover:text-fg">
             <X size={13} />
           </button>

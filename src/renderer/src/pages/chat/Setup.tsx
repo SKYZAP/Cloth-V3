@@ -122,6 +122,8 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
   useEffect(() => setView('overview'), [session.id])
   const loadAgents = () => void api.agents.list().then(setAgents, () => undefined)
   useEffect(loadAgents, [])
+  // Computer use runs on Windows and macOS only.
+  const computerSupported = window.cloth.platform === 'win32' || window.cloth.platform === 'darwin'
   useEvent('agents', loadAgents)
 
   const m = useCapabilities(session, update, setup)
@@ -194,6 +196,15 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         )}
         <SummaryLine label="Built-in tools" count={builtinOn} tokens={parts.builtin} onOpen={() => setView('tools')} />
         <SummaryLine label="Knowledge" count={selected.length} tokens={parts.knowledge} onOpen={() => setView('knowledge')} />
+        {computerSupported && (
+          <div className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-medium text-fg">Control this computer</div>
+              <div className="text-[11px] leading-snug text-dim">Sees your screen and uses the mouse and keyboard. Cloth steps aside while it works.</div>
+            </div>
+            <Toggle on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} label="Control this computer" />
+          </div>
+        )}
         <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'this chat has its own' : session.projectId ? 'from the project' : agent ? 'from the agent' : 'none'} />
       </div>
     </div>

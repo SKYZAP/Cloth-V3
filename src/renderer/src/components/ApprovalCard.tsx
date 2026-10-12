@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { FilePlus, NotePencil, Plugs, ShieldCheck, TerminalWindow } from '@phosphor-icons/react'
+import { Desktop, FilePlus, NotePencil, Plugs, ShieldCheck, TerminalWindow } from '@phosphor-icons/react'
 import type { ApprovalDecision, PendingApproval } from '@shared/types'
 import { DiffStat, DiffView } from './DiffView'
 
@@ -8,7 +8,8 @@ const KIND = {
   write: { icon: FilePlus, verb: 'Write file' },
   edit: { icon: NotePencil, verb: 'Edit file' },
   command: { icon: TerminalWindow, verb: 'Run command' },
-  tool: { icon: Plugs, verb: 'Use tool' }
+  tool: { icon: Plugs, verb: 'Use tool' },
+  computer: { icon: Desktop, verb: 'Use this computer' }
 } as const
 
 /** Inline request for the user's go-ahead on a write, edit or shell command. */
@@ -36,7 +37,7 @@ export function ApprovalCard({ approval, onDecide }: { approval: PendingApproval
           <k.icon size={14} weight="fill" />
         </span>
         <span className="text-[12.5px] font-semibold">{k.verb}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">{approval.kind === 'command' ? `in ${approval.path}` : approval.kind === 'tool' ? `${approval.tool?.server} · ${approval.tool?.name}` : approval.path}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">{approval.kind === 'command' ? `in ${approval.path}` : approval.kind === 'tool' ? `${approval.tool?.server} · ${approval.tool?.name}` : approval.kind === 'computer' ? '' : approval.path}</span>
         {(approval.kind === 'write' || approval.kind === 'edit') && <DiffStat added={approval.added ?? 0} removed={approval.removed ?? 0} />}
         <span className="ml-1 flex items-center gap-1 rounded-full bg-warn/10 px-2 py-0.5 text-[10.5px] font-medium text-warn">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warn" />
@@ -44,7 +45,9 @@ export function ApprovalCard({ approval, onDecide }: { approval: PendingApproval
         </span>
       </div>
       <div className="p-3">
-        {approval.kind === 'tool' ? (
+        {approval.kind === 'computer' ? (
+          <p className="text-[12.5px] leading-relaxed text-fg">{approval.command}</p>
+        ) : approval.kind === 'tool' ? (
           <pre className="selectable max-h-[220px] overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-[11.5px] text-muted">{approval.command}</pre>
         ) : approval.kind === 'command' ? (
           <pre className="selectable overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-[12px] text-fg">
@@ -60,7 +63,7 @@ export function ApprovalCard({ approval, onDecide }: { approval: PendingApproval
             onClick={() => void decide('allow')}
             className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:opacity-50"
           >
-            {approval.kind === 'command' ? 'Run' : approval.kind === 'tool' ? 'Allow' : 'Apply'}
+            {approval.kind === 'command' ? 'Run' : approval.kind === 'tool' || approval.kind === 'computer' ? 'Allow' : 'Apply'}
           </button>
           <button
             disabled={busy}
@@ -70,6 +73,7 @@ export function ApprovalCard({ approval, onDecide }: { approval: PendingApproval
             Decline
           </button>
           <div className="flex-1" />
+          {approval.kind !== 'computer' && (
           <button
             disabled={busy}
             onClick={() => void decide('always')}
@@ -79,6 +83,7 @@ export function ApprovalCard({ approval, onDecide }: { approval: PendingApproval
             <ShieldCheck size={14} />
             {approval.kind === 'tool' ? `Always allow ${approval.tool?.server} here` : approval.kind === 'command' ? 'Allow everything in this chat' : 'Allow all edits in this chat'}
           </button>
+          )}
         </div>
       </div>
     </motion.div>

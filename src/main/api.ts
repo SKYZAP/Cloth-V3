@@ -7,6 +7,7 @@ import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
 import { describeBuiltins } from './agent/tools'
 import { TRYABLE } from './agent/chat'
+import { openPermissionPane } from './computer/host'
 
 export function createApi(s: Services): ClothApi {
   return {
@@ -32,7 +33,8 @@ export function createApi(s: Services): ClothApi {
       },
       openExternal: async (url) => {
         if (/^https?:\/\//.test(url)) await shell.openExternal(url)
-      }
+      },
+      openPrivacySettings: async (kind) => openPermissionPane(kind === 'accessibility' ? 'accessibility' : 'screen')
     },
     settings: {
       get: async () => s.settings.get(),

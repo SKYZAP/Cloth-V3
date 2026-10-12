@@ -74,10 +74,14 @@ export class ApprovalService {
   private pending = new Map<string, { approval: PendingApproval; done: (d: ApprovalDecision) => void }>()
   private questions = new Map<string, { question: PendingQuestion; done: (answer: string | null, cancelled?: boolean) => void }>()
 
+  /** Called when a chat starts waiting for the user (computer use hands the screen back). */
+  onWait?: (sessionId: string) => void
+
   constructor(private emit: (e: ChatEvent) => void) {}
 
   request(input: Omit<PendingApproval, 'id' | 'createdAt'>, signal?: AbortSignal): Promise<ApprovalDecision> {
     const approval: PendingApproval = { ...input, id: newId('apr_'), createdAt: Date.now() }
+    this.onWait?.(input.sessionId)
     return new Promise((resolvePromise) => {
       const done = (d: ApprovalDecision) => {
         if (!this.pending.delete(approval.id)) return
@@ -106,6 +110,7 @@ export class ApprovalService {
   /** Ask the user a question. Resolves with the answer, or null when they skip it; rejects when the chat is stopped. */
   ask(input: Omit<PendingQuestion, 'id' | 'createdAt'>, signal?: AbortSignal): Promise<string | null> {
     const question: PendingQuestion = { ...input, id: newId('ask_'), createdAt: Date.now() }
+    this.onWait?.(input.sessionId)
     return new Promise((resolvePromise, reject) => {
       const done = (answer: string | null, cancelled = false) => {
         if (!this.questions.delete(question.id)) return

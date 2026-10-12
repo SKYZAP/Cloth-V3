@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { AlertTriangle, BookOpen, Check, ChevronDown, Code2, FileText, Globe, Link2, MessageSquareText, Minus, Plug, Plus, Search, Sparkles, SquareTerminal, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Check, ChevronDown, Code2, FileText, Globe, Link2, MessageSquareText, Minus, Monitor, Plug, Plus, Search, Sparkles, SquareTerminal, X } from 'lucide-react'
 import type { Automation, BuiltinToolInfo, Collection, CustomTool, McpClientStatus, Skill } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
@@ -102,6 +102,9 @@ export function useAccessItems(): { items: AccessItem[]; collections: Collection
       if (!b.where.flows || (b.group !== 'workspace' && b.group !== 'web')) continue
       out.push({ kind: 'tools', id: b.name, label: b.label, desc: b.description.split(/(?<=\.)\s/)[0], meta: 'Built in', warn: WRITES.includes(b.name) ? 'Can change files in its folder' : undefined, icon: b.group === 'web' ? Globe : FileText })
     }
+    // Computer use (Windows and macOS): screenshots, mouse and keyboard, on a model that sees images.
+    if (window.cloth.platform === 'win32' || window.cloth.platform === 'darwin')
+      out.push({ kind: 'tools', id: 'computer', label: 'Computer', desc: 'Sees your screen and uses the mouse and keyboard.', meta: 'Built in · needs a model that sees images', warn: 'Controls this computer while it runs', icon: Monitor })
     for (const t of custom) {
       const runsCode = t.kind === 'command' || t.kind === 'javascript'
       out.push({

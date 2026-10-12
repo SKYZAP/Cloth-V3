@@ -78,6 +78,8 @@ export interface ClothApi {
     /** Reveal a file in Explorer / Finder. */
     showInFolder(path: string): Promise<void>
     openExternal(url: string): Promise<void>
+    /** macOS: open the Privacy & Security pane for a permission computer use needs. */
+    openPrivacySettings(kind: 'screen' | 'accessibility'): Promise<void>
   }
   settings: {
     get(): Promise<Settings>
@@ -399,4 +401,6 @@ export type EventMap = {
   mcpCalls: import('./types').McpCallLog
   containers: { sessionId: string; ports: import('./types').ContainerPort[] }
   runs: import('./types').RunEvent
+  /** Computer use is missing a macOS permission. */
+  computer: { kind: 'screen' | 'accessibility'; text: string }
 }
