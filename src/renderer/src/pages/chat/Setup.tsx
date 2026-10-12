@@ -184,6 +184,13 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
       </div>
       <div className="grid gap-0.5 p-2">
         <SummaryLine label="Agent" onOpen={() => setView('agent')} value={agent ? `${agent.name}${changed ? ' (changed)' : ''}` : 'Default'} />
+        <div className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-medium text-fg">Choose tiers automatically</div>
+            <div className="text-[11px] leading-snug text-dim">Cloth picks a tier for each job it hands to an agent.</div>
+          </div>
+          <Toggle on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} label="Choose tiers automatically" />
+        </div>
         <SummaryLine label="Skills" count={skillsOn.length} tokens={parts.skills} onOpen={() => setView('skills')} hint={!session.skillsEnabled ? 'picked by you only' : undefined} />
         {!configs.length ? (
           <SummaryLine label="External servers" onOpen={() => setView('servers')} hint="none set up" />

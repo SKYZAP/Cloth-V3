@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
-import { AGENT_TEMPLATES, type Agent, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef, type ThinkingLevel } from '@shared/types'
+import { AGENT_TEMPLATES, type Agent, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef, type ThinkingLevel } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Inspector, refocus } from '@/components/Inspector'
-import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
+import { Button, Input, Modal, PageHeader, Select, Spinner, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
@@ -241,6 +241,13 @@ const EFFORT: { value: ThinkingLevel | 'chat'; label: string }[] = [
   { value: 'high', label: 'High' }
 ]
 
+/** "Light — Mechanical edits…": a tier's name and the start of its purpose, for a select option. */
+const tierLabel = (t: AgentTier) => {
+  const p = t.purpose.trim().replace(/\s+/g, ' ')
+  if (!p) return t.name
+  return `${t.name} — ${p.length > 56 ? `${p.slice(0, 55).trimEnd()}…` : p}`
+}
+
 function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { agent: Agent; onClose(): void; onSaved(a: Agent): void; onRemoved(): void; onDuplicated(a: Agent): void }) {
   const [name, setName] = useState(agent.name)
   const [purpose, setPurpose] = useState(agent.purpose)
@@ -248,6 +255,11 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
   const [setup, setSetup] = useState<ChatSetup | null>(null)
   const [servers, setServers] = useState<McpClientStatus[]>([])
   const setPage = useApp((s) => s.setPage)
+  const tiers = useApp((s) => s.settings?.agentTiers) ?? []
+  const settingsLoaded = useApp((s) => !!s.settings)
+  useEffect(() => {
+    if (!settingsLoaded) void useApp.getState().loadSettings()
+  }, [settingsLoaded])
   useEffect(() => setName(agent.name), [agent.name])
   useEffect(() => setPurpose(agent.purpose), [agent.purpose])
   useEffect(() => setInstructions(agent.instructions), [agent.instructions])
@@ -328,12 +340,42 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
             <Textarea rows={2} value={purpose} onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== agent.purpose && void save({ purpose })} aria-label="Purpose" placeholder="e.g. Reviews and fixes interfaces against the project's design system." />
           </Section>
           <Section title="Model">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 mobile:grid-cols-1">
-              <ModelPicker value={agent.model} onChange={(model) => void save({ model })} allowNone noneLabel="The chat's model" />
-              <div className="w-[300px] mobile:w-full">
-                <Segmented size="sm" label="Reasoning effort" value={agent.thinking ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v })} options={EFFORT} />
-              </div>
+            <div className="w-[240px] mobile:w-full">
+              <Segmented
+                size="sm"
+                label="Model"
+                value={agent.tier ? 'tier' : 'own'}
+                onChange={(v) => {
+                  if (v === 'own') void save({ tier: null })
+                  else if (tiers.length) void save({ tier: (tiers.find((t) => t.id === 'medium') ?? tiers[0]).id, model: null, thinking: null })
+                }}
+                disabled={tiers.length ? [] : ['tier']}
+                options={[
+                  { value: 'own', label: 'Own model' },
+                  { value: 'tier', label: 'Tier' }
+                ]}
+              />
             </div>
+            {agent.tier ? (
+              <>
+                <Select aria-label="Tier" value={agent.tier} onChange={(e) => void save({ tier: e.target.value, model: null, thinking: null })}>
+                  {!tiers.some((t) => t.id === agent.tier) && <option value={agent.tier}>Removed tier</option>}
+                  {tiers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {tierLabel(t)}
+                    </option>
+                  ))}
+                </Select>
+                <div className="text-[11px] text-dim">Its model and effort come from the tier. A job can still be given a different tier.</div>
+              </>
+            ) : (
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 mobile:grid-cols-1">
+                <ModelPicker value={agent.model} onChange={(model) => void save({ model })} allowNone noneLabel="The chat's model" />
+                <div className="w-[300px] mobile:w-full">
+                  <Segmented size="sm" label="Reasoning effort" value={agent.thinking ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v })} options={EFFORT} />
+                </div>
+              </div>
+            )}
           </Section>
           <InstructionsEditor agent={agent} value={instructions} onChange={setInstructions} onSave={(text) => void save({ instructions: text })} />
 

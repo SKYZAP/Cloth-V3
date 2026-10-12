@@ -13,20 +13,23 @@ import {
   MagnifyingGlass,
   Palette,
   PlugsConnected,
+  Plus,
   Robot,
+  Trash,
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { AppInfo, Settings, SubagentSettings, ThinkingLevel } from '@shared/types'
+import type { AgentTier, AppInfo, Settings, SubagentSettings, ThinkingLevel } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { Button, Card, Input, ListPane, Switch } from '@/components/ui'
+import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
+import { effortLabel } from './chat/StatusLine'
 
 type SectionId = 'models' | 'chat' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
 
@@ -187,7 +190,12 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
         </Group>
       )
     case 'subagents':
-      return <SubagentSection value={settings.subagents} />
+      return (
+        <>
+          <SubagentSection value={settings.subagents} />
+          <TierSection tiers={settings.agentTiers} />
+        </>
+      )
     case 'web':
       return <WebSearchSettings />
     case 'knowledge':
@@ -279,6 +287,67 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </div>
       </Group>
     </>
+  )
+}
+
+const TIER_EFFORT: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
+
+/** The tiers (model + effort) agents can run at, in order. */
+function TierSection({ tiers }: { tiers: AgentTier[] }) {
+  const update = useApp((s) => s.updateSettings)
+  const save = (next: AgentTier[]) => void update({ agentTiers: next })
+  const patch = (id: string, p: Partial<AgentTier>) => save(tiers.map((t) => (t.id === id ? { ...t, ...p } : t)))
+  const add = () => save([...tiers, { id: `tier_${Math.random().toString(36).slice(2, 10)}`, name: 'New tier', model: null, thinking: 'medium', purpose: '' }])
+  const remove = async (t: AgentTier) => {
+    if (tiers.length <= 1) return
+    if (!(await confirmAction('Agents set to it fall back to the subagent defaults.', { title: `Remove ${t.name}?`, confirmLabel: 'Remove', danger: true }))) return
+    save(tiers.filter((x) => x.id !== t.id))
+  }
+  return (
+    <Group title="Tiers" note="Agents can run at a tier. Cloth picks the cheapest one that should get each job right.">
+      {tiers.map((t) => (
+        <TierRow key={t.id} tier={t} canRemove={tiers.length > 1} onChange={(p) => patch(t.id, p)} onRemove={() => void remove(t)} />
+      ))}
+      <div className="px-4 py-3">
+        <Button size="sm" icon={<Plus size={13} />} onClick={add}>
+          Add tier
+        </Button>
+      </div>
+    </Group>
+  )
+}
+
+function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; canRemove: boolean; onChange(p: Partial<AgentTier>): void; onRemove(): void }) {
+  const [name, setName] = useState(tier.name)
+  const [purpose, setPurpose] = useState(tier.purpose)
+  useEffect(() => setName(tier.name), [tier.name])
+  useEffect(() => setPurpose(tier.purpose), [tier.purpose])
+  return (
+    <div className="grid gap-2.5 px-4 py-3.5">
+      <div className="flex items-center gap-2 mobile:flex-wrap">
+        <Input
+          className="w-40 mobile:w-full"
+          value={name}
+          aria-label="Tier name"
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => (name.trim() && name !== tier.name ? onChange({ name: name.trim() }) : setName(tier.name))}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        />
+        <ModelPicker className="min-w-0 flex-1 mobile:w-full" value={tier.model} onChange={(model) => onChange({ model })} allowNone noneLabel="Chat's model" />
+        <Select className="w-32 mobile:w-full" aria-label="Effort" value={tier.thinking ?? 'chat'} onChange={(e) => onChange({ thinking: e.target.value === 'chat' ? null : (e.target.value as ThinkingLevel) })}>
+          <option value="chat">Chat's</option>
+          {TIER_EFFORT.map((t) => (
+            <option key={t} value={t}>
+              {effortLabel(t)}
+            </option>
+          ))}
+        </Select>
+        <IconButton aria-label={`Remove ${tier.name}`} title={canRemove ? 'Remove tier' : 'At least one tier must remain'} disabled={!canRemove} onClick={onRemove}>
+          <Trash size={14} />
+        </IconButton>
+      </div>
+      <Textarea rows={2} value={purpose} aria-label="Purpose" placeholder="Meant for…" onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== tier.purpose && onChange({ purpose })} />
+    </div>
   )
 }
 
