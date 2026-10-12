@@ -29,7 +29,7 @@ import {
   type Icon
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
-import { duration, pretty } from '@/lib/format'
+import { duration, formatCost, pretty } from '@/lib/format'
 import { DiffStat, DiffView } from './DiffView'
 import { TodoList, todosOf } from './Planning'
 import { Markdown } from './Markdown'
@@ -329,6 +329,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
             <span className="font-normal normal-case tracking-normal">
               {steps.length} step{steps.length === 1 ? '' : 's'}
               {run.usage ? ` · ${Math.round((run.usage.input + run.usage.output) / 100) / 10}k tokens` : ''}
+              {run.usage && run.usage.cost > 0 ? ` · ${formatCost(run.usage.cost)}` : ''}
             </span>
             <div className="flex-1" />
             <button onClick={() => setFull(!full)} className="font-normal normal-case tracking-normal text-dim hover:text-fg">
