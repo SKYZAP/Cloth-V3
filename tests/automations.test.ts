@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fauxAssistantMessage, fauxToolCall, type TranscriptContext } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { Automation, WorkflowEvent } from '../src/shared/types'
-import { makeServices } from './helpers'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { plainSecrets } from '../src/main/core/context'
+import { createServices } from '../src/main/services'
+import { makeServices, REPO } from './helpers'
 
 let faux: ReturnType<typeof registerFauxProvider> | null = null
 afterEach(() => {
@@ -187,5 +192,77 @@ describe('automations', () => {
     // Nothing reported: an empty list (the run history says "nothing to report").
     expect(services.workflows.runs(wf.id)[0].reports).toEqual([])
     services.workflows.stopScheduler()
+  })
+})
+
+describe('the Automation project', () => {
+  const reportOnce = () =>
+    faux!.setResponses([fauxAssistantMessage([fauxToolCall('report_in_chat', { title: 'Your morning', markdown: 'Hi' }, { id: 'c1' })], { stopReason: 'toolUse' }), fauxAssistantMessage('Reported.')])
+  const reportedChat = async (services: ReturnType<typeof makeServices>['services'], events: { payload: unknown }[], wfId: string) => {
+    reportOnce()
+    await services.workflows.run(wfId, undefined)
+    return services.chat.get(automationEvents(events).at(-1)!.chatId!)
+  }
+
+  it('files report_in_chat chats under it, keeping the automation folder as the workspace', async () => {
+    const { services, events, dataDir } = setup()
+    const wf = services.workflows.createAutomation({ name: 'Morning brief', automation: base })
+    services.workflows.save(wf.id, { workspace: dataDir })
+    const chat = await reportedChat(services, events, wf.id)
+    const project = services.projects.list().find((p) => p.id === chat.projectId)!
+    expect(project).toMatchObject({ name: 'Automation', folder: null })
+    expect(chat.workspace).toBe(dataDir)
+    expect(chat.origin).toEqual({ kind: 'automation', workflowId: wf.id })
+    // The next run's chat goes to the same project; no second one is made.
+    const next = await reportedChat(services, events, wf.id)
+    expect(next.projectId).toBe(project.id)
+    expect(services.projects.list().filter((p) => p.name === 'Automation')).toHaveLength(1)
+    services.workflows.stopScheduler()
+  })
+
+  it('is made again when deleted, and kept when renamed', async () => {
+    const { services, events } = setup()
+    const wf = services.workflows.createAutomation({ name: 'Morning brief', automation: base })
+    const first = await reportedChat(services, events, wf.id)
+    services.projects.update(first.projectId!, { name: 'Bots' })
+    const renamed = await reportedChat(services, events, wf.id)
+    expect(renamed.projectId).toBe(first.projectId)
+    expect(services.projects.get(first.projectId!).name).toBe('Bots')
+
+    services.projects.remove(first.projectId!)
+    const again = await reportedChat(services, events, wf.id)
+    expect(again.projectId).not.toBe(first.projectId)
+    expect(services.projects.get(again.projectId!).name).toBe('Automation')
+    services.workflows.stopScheduler()
+  })
+
+  it('takes in chats automations made before it existed, once, at startup', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'cloth-test-'))
+    const open = () => createServices({ dataDir, secrets: plainSecrets, dbFile: join(dataDir, 'cloth.db'), sidecarsDir: join(REPO, 'sidecars'), examplesDir: join(REPO, 'resources', 'examples') })
+    const before = open()
+    const wf = before.workflows.createAutomation({ name: 'Morning brief', automation: base })
+    const old = before.chat.create({})
+    const filed = before.projects.create({ name: 'Mine' })
+    const elsewhere = before.chat.create({ projectId: filed.id })
+    const mine = before.chat.create({})
+    const run = { id: 'wfr_old', workflowId: wf.id, status: 'ok', startedAt: 1, reports: [{ kind: 'chat', chatId: old.id, title: 'Old' }, { kind: 'chat', chatId: elsewhere.id, title: 'Moved' }] }
+    before.ctx.db.prepare('INSERT INTO workflow_runs (id, workflow_id, data, started_at) VALUES (?, ?, ?, ?)').run(run.id, wf.id, JSON.stringify(run), 1)
+    // The first startup had nothing to move; pretend this database predates the project.
+    before.ctx.kv.set('automation.chatsMigrated', false)
+    before.workflows.stopScheduler()
+
+    const after = open()
+    const project = after.projects.list().find((p) => p.name === 'Automation')!
+    expect(after.chat.get(old.id).projectId).toBe(project.id)
+    // A chat the user had already filed elsewhere, and the user's own chats, stay put.
+    expect(after.chat.get(elsewhere.id).projectId).toBe(filed.id)
+    expect(after.chat.get(mine.id).projectId).toBeNull()
+
+    // Only once: a chat moved out afterwards isn't pulled back in.
+    after.chat.update(old.id, { projectId: null })
+    after.workflows.stopScheduler()
+    const later = open()
+    expect(later.chat.get(old.id).projectId).toBeNull()
+    later.workflows.stopScheduler()
   })
 })

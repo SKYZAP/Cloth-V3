@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ComputerTrace, ContainerSettings, GeneratedImage, ImageSize } from '@shared/types'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import { agentSlug } from '@shared/mention'
 import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
@@ -642,6 +642,7 @@ export class ChatService {
       skillsOff: cur.skillsOff,
       skillsAlways: cur.skillsAlways,
       agentId: cur.agentId,
+      origin: cur.origin,
       ...config
     }
     // Switching computer use off takes back the chat's consent: switched on again, it asks again.
@@ -902,9 +903,18 @@ export class ChatService {
   }
 
   /** A new chat holding a finished run's conversation (an automation's result), to read and reply to. */
-  fromTranscript(input: { id?: string; title: string; workspace: string | null; agentId: string | null; messages: AgentMessage[]; container?: ContainerSettings | null }): ChatSession {
+  fromTranscript(input: { id?: string; title: string; workspace: string | null; agentId: string | null; messages: AgentMessage[]; container?: ContainerSettings | null; projectId?: string | null; origin?: ChatOrigin }): ChatSession {
     // A run that worked in a container hands its copy over: the chat shows its changes to apply.
-    const s = this.create({ workspace: input.workspace, fileAccess: input.container ? 'write' : 'read', container: input.container ?? null }, input.id)
+    const s = this.create(
+      {
+        workspace: input.workspace,
+        fileAccess: input.container ? 'write' : 'read',
+        container: input.container ?? null,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        ...(input.origin ? { origin: input.origin } : {})
+      },
+      input.id
+    )
     if (input.agentId && this.agents?.find(input.agentId)) this.useAgent(s.id, input.agentId)
     this.saveMessages(s.id, input.messages)
     const chat = this.update(s.id, { title: input.title.slice(0, 80), titleSource: 'user' })
