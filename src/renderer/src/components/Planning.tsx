@@ -1,22 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
-import { CaretDown, CheckCircle, Circle, CircleNotch, ListChecks } from '@phosphor-icons/react'
-import type { ContextSliceKey, ContextUsage, TodoItem, UiMessage } from '@shared/types'
+import { CheckCircle, Circle, CircleNotch } from '@phosphor-icons/react'
+import type { ContextSliceKey, ContextUsage, TodoItem } from '@shared/types'
 import { compact } from '@/lib/format'
-
-/** The todos from the most recent todo_write call in the (non-archived) conversation. */
-export function latestTodos(messages: UiMessage[]): TodoItem[] | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.archived) break
-    for (let j = m.blocks.length - 1; j >= 0; j--) {
-      const b = m.blocks[j]
-      if (b.type === 'tool' && b.trace.name === 'todo_write' && b.trace.status !== 'error') return todosOf(b.trace.args)
-    }
-  }
-  return null
-}
 
 export function todosOf(args: unknown): TodoItem[] {
   const list = (args as { todos?: unknown })?.todos
@@ -52,46 +39,6 @@ export function TodoList({ todos, dense }: { todos: TodoItem[]; dense?: boolean 
         ))}
       </AnimatePresence>
     </ul>
-  )
-}
-
-/** Pinned above the composer while a plan is being worked through. */
-export function PlanPanel({ todos }: { todos: TodoItem[] }) {
-  const [open, setOpen] = useState(true)
-  const done = todos.filter((t) => t.status === 'completed').length
-  const current = todos.find((t) => t.status === 'in_progress')
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-      className="pointer-events-auto mx-auto mb-2 w-[min(740px,calc(100%-64px))] overflow-hidden mobile:w-[calc(100%-20px)] rounded-[14px] border border-line bg-panel/95 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.7)] backdrop-blur"
-    >
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left">
-        <ListChecks size={15} className="text-crimson-hi" />
-        <span className="text-[12px] font-semibold">Plan</span>
-        <span className="font-mono text-[11px] text-dim">
-          {done}/{todos.length}
-        </span>
-        <div className="mx-1 h-1 w-24 overflow-hidden rounded-full bg-elev-2">
-          <motion.div className="h-full rounded-full bg-crimson" animate={{ width: `${todos.length ? (done / todos.length) * 100 : 0}%` }} transition={{ type: 'spring', stiffness: 200, damping: 28 }} />
-        </div>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{!open && current ? current.content : ''}</span>
-        <motion.span animate={{ rotate: open ? 0 : -90 }} className="flex text-dim">
-          <CaretDown size={13} />
-        </motion.span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} className="overflow-hidden">
-            <div className="max-h-44 overflow-y-auto px-3.5 pb-2.5">
-              <TodoList todos={todos} dense />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
   )
 }
 

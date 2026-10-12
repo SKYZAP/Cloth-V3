@@ -31,6 +31,10 @@ describe('panel stack: migrate', () => {
   it('prefers the stack over an old tab', () => {
     expect(migrate({ tab: 'git', stack: ['files'], sizes: [1] }).stack).toEqual(['files'])
   })
+  it('keeps the agents tab', () => {
+    expect(migrate({ stack: ['files', 'agents'], sizes: [1, 1], focus: 1 })).toEqual({ stack: ['files', 'agents'], sizes: [0.5, 0.5], focus: 1 })
+    expect(migrate({ tab: 'agents' }).stack).toEqual(['agents'])
+  })
 })
 
 describe('panel stack: stackBelow', () => {

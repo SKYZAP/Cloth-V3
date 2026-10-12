@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
-import { FolderSimple, GitBranch, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
-import type { ChatSession, WorkspaceFile } from '@shared/types'
+import { FolderSimple, GitBranch, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
+import type { ChatSession, UiMessage, WorkspaceFile } from '@shared/types'
 import { canStack, focusOrReplace, focusSection, migrate, resize, shownTabs, stackBelow, unstack, type PanelStack, type PanelTab } from '@shared/panel-stack'
 import { isMobile } from '@/lib/platform'
 import { IconButton } from '@/components/ui'
@@ -9,6 +9,7 @@ import { Terminals } from './Terminals'
 import { Files } from './Files'
 import { GitPanel } from './GitPanel'
 import { SetupPanel } from './Setup'
+import { AgentsPanel } from './AgentsPanel'
 
 export type { PanelTab } from '@shared/panel-stack'
 const KEY = 'cloth.chat.panel'
@@ -45,16 +46,18 @@ const TABS: { id: PanelTab; label: string; icon: typeof TerminalWindow }[] = [
   { id: 'setup', label: 'Setup', icon: SlidersHorizontal },
   { id: 'files', label: 'Files', icon: FolderSimple },
   { id: 'terminal', label: 'Terminal', icon: TerminalWindow },
-  { id: 'git', label: 'Git', icon: GitBranch }
+  { id: 'git', label: 'Git', icon: GitBranch },
+  { id: 'agents', label: 'Agents', icon: Robot }
 ]
 
 const HEADER = 28
 const HANDLE = 4
 const FULL = 'Up to three can be stacked'
 
-/** The chat's side panel: what the chat can use, the folder's files, terminals and git changes — up to three stacked. */
+/** The chat's side panel: what the chat can use, the folder's files, terminals, git changes and agent runs — up to three stacked. */
 export function SidePanel({
   session,
+  messages,
   update,
   state,
   set,
@@ -63,6 +66,8 @@ export function SidePanel({
   onPickFolder
 }: {
   session: ChatSession
+  /** The chat's messages (the Agents tab lists their agent runs). */
+  messages: UiMessage[]
   update(p: Partial<ChatSession>): Promise<void>
   state: PanelState
   set(p: Partial<PanelState>): void
@@ -286,6 +291,13 @@ export function SidePanel({
           <div className={clsx('relative min-h-0', !visible('git') && 'hidden')} style={place('git')} {...sectionEvents('git')}>
             <div className="absolute inset-0">
               <GitPanel key={folder} sessionId={session.id} visible={visible('git')} />
+            </div>
+          </div>
+        )}
+        {visible('agents') && (
+          <div className="relative min-h-0" style={place('agents')} {...sectionEvents('agents')}>
+            <div className="absolute inset-0">
+              <AgentsPanel messages={messages} />
             </div>
           </div>
         )}
