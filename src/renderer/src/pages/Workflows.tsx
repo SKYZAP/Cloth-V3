@@ -242,13 +242,9 @@ function AutomationCard({ flow, info, onOpen, onToggle, onRun }: { flow: Workflo
   return (
     <div className={clsx('grid min-w-0 grid-cols-[minmax(0,1fr)] content-start overflow-hidden rounded-[12px] border bg-elev', failing ? 'border-crimson-line' : 'border-line')}>
       <button data-focus-key={flow.id} onClick={onOpen} className="grid min-w-0 grid-cols-[minmax(0,1fr)] text-left hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line">
-        <span className="border-b border-line bg-panel">
-          <span className="grid h-[74px] content-start px-3.5 py-2.5">
-            <span className="line-clamp-3 text-[12px] text-muted">{flow.automation?.prompt}</span>
-          </span>
-        </span>
         <span className="grid gap-1.5 px-3.5 py-3">
           <span className="line-clamp-2 text-[13.5px] font-semibold">{flow.name}</span>
+          <span className="line-clamp-2 text-[12px] text-muted">{flow.automation?.prompt}</span>
           <span className="text-[12px] text-dim">
             {flow.cron ? (
               <>
