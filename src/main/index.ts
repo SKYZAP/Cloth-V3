@@ -182,10 +182,10 @@ else {
   })
 }
 
-/** A desktop notification when an automation asks for one, or fails. */
+/** A desktop notification when an automation's agent asks for one, or a run fails. */
 function notifyAutomation(e: WorkflowEvent): void {
   if (e.type !== 'automation' || !e.notify || !Notification.isSupported()) return
-  const n = new Notification({ title: e.ok ? e.name : `${e.name} failed`, body: e.summary || (e.ok ? 'Finished.' : 'The run failed. Open Flows to see why.'), silent: e.ok })
+  const n = new Notification({ title: e.ok ? e.title || e.name : `${e.name} failed`, body: e.summary || (e.ok ? 'Finished.' : 'The run failed. Open Flows to see why.'), silent: e.ok })
   n.on('click', () => {
     const w = BrowserWindow.getAllWindows()[0]
     if (!w) return

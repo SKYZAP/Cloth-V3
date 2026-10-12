@@ -146,6 +146,8 @@ export interface AgentRunOptions {
   signal?: AbortSignal
   maxTurns?: number
   onEvent?: (turn: UiMessage) => void
+  /** Tools only this run gets (an automation's reporting tools), on top of what the scope allows. */
+  extraTools?: AgentTool<any, ToolDetails>[]
 }
 
 /** Built-in tools the Tools page can run on their own: they only read. */
@@ -319,7 +321,9 @@ export class AgentRuntime {
       ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
-    ].filter((t) => !off.has(t.name) && (!only || only.has(t.name)))
+    ]
+      .filter((t) => !off.has(t.name) && (!only || only.has(t.name)))
+      .concat(parent.extraTools ?? [])
   }
 
   /** The tool declarations an agent with this scope is given, as the model sees them. */

@@ -784,7 +784,7 @@ export interface Workflow {
   updatedAt: number
 }
 
-/** What happens with an automation's result when a run finishes. */
+/** @deprecated The automation's agent now decides how to report (report_in_chat, notify, save_to_knowledge). Kept so old data reads. */
 export type AutomationDelivery = 'chat' | 'notify' | 'knowledge'
 
 /** A flow written as a prompt: one agent step with exactly the tools, servers, knowledge and skills it may use. */
@@ -798,9 +798,10 @@ export interface Automation {
   servers: { id: string; tools: string[] | null }[]
   collectionIds: string[]
   skills: string[]
-  deliver: AutomationDelivery
-  /** Where results are saved when `deliver` is 'knowledge'. */
-  collectionId: string | null
+  /** @deprecated Ignored: the agent picks how to report with its reporting tools. Kept so old data reads. */
+  deliver?: AutomationDelivery
+  /** @deprecated Ignored (was where results went when `deliver` was 'knowledge'); save_to_knowledge uses `collectionIds`. */
+  collectionId?: string | null
   /** Also run when this changes (null = only on its schedule or when run by hand). */
   watch: AutomationWatch | null
   /** May run commands: in a container on a copy of its folder, or here but only these commands (null = no commands). */
@@ -891,8 +892,11 @@ export interface WorkflowOverview {
 
 export type WorkflowEvent =
   | { type: 'run'; run: WorkflowRun }
-  /** An automation finished and its result was delivered (`chatId` when it went to a new chat). */
-  | { type: 'automation'; workflowId: string; name: string; runId: string; ok: boolean; summary: string; chatId: string | null; notify: boolean }
+  /**
+   * An automation finished (`chatId` when its agent reported in a chat). `notify` when its agent asked for a desktop
+   * notification (then `title` and `summary` are that notification's) or the run failed.
+   */
+  | { type: 'automation'; workflowId: string; name: string; runId: string; ok: boolean; summary: string; chatId: string | null; notify: boolean; title?: string }
   | { type: 'schedule'; workflowId: string; nextRunAt: number | null }
   | WorkflowBuildEvent
 

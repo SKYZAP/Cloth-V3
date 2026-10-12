@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { sep } from 'node:path'
 import { join } from 'node:path'
@@ -23,6 +23,8 @@ import type { CustomToolService } from '../tools/custom'
 import { parseJsonLoose } from '../core/llm-json'
 import { executeGraph, renderArgs, renderTemplate, type Executor } from './engine'
 import { buildWorkflow } from './builder'
+import { flowToAutomation } from './convert'
+import { REPORT_GUIDANCE, reportTools, reportTranscript, type RunReport } from './report'
 
 export interface RunOptions {
   /** Overrides the flow's workspace for this run (null = none). */
@@ -124,8 +126,8 @@ export class WorkflowService {
 
   // ─── Automations ──────────────────────────────────────────────────────────
 
-  /** Delivers an automation's result (a new chat, a Knowledge note); set up by the app. Returns the new chat's id. */
-  deliver: ((wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], chatId: string | null) => Promise<string | null>) | null = null
+  /** Makes the chat an automation's run reported in (its transcript and reports); set up by the app. Returns the chat's id. */
+  deliver: ((wf: Workflow, chat: { id: string; title: string; messages: AgentMessage[] }) => Promise<string>) | null = null
 
   createAutomation(input: AutomationInput & { name: string; automation: Automation }): Workflow {
     const wf = this.create({ name: input.name }, null)
@@ -138,7 +140,6 @@ export class WorkflowService {
     const automation = cleanAutomation(input.automation ?? cur.automation)
     if (!automation) throw new Error('This flow is not an automation')
     if (!automation.prompt.trim()) throw new Error('Say what the automation should do')
-    if (automation.deliver === 'knowledge' && !automation.collectionId) throw new Error('Pick the Knowledge collection to save results to')
     const workspace = input.workspace === undefined ? cur.workspace : input.workspace
     if (automation.watch?.kind === 'files' && !workspace) throw new Error('Choose the folder to watch')
     if (automation.watch?.kind === 'url' && !/^https?:\/\/\S+$/i.test(automation.watch.url)) throw new Error('Give the address of the page to watch, starting with https://')
@@ -160,26 +161,66 @@ export class WorkflowService {
     return this.save(id, { automation: null }, { note: 'Turned into a flow' })
   }
 
-  private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], runChat: string | null): Promise<void> {
+  /**
+   * Turns every graph flow into an automation (Flows holds automations only): backs each one up as
+   * JSON in <dataDir>/backups/flows first, then rewrites it in place. Flows that are automations already
+   * are left alone, so running it again changes nothing. Returns the flows it converted.
+   */
+  convertFlows(): Workflow[] {
+    const rows = this.ctx.db.prepare('SELECT * FROM workflows ORDER BY created_at').all() as unknown as WorkflowRow[]
+    const converted: Workflow[] = []
+    for (const row of rows) {
+      const wf = this.toWorkflow(row)
+      if (wf.automation) continue
+      try {
+        const dir = join(this.ctx.dataDir, 'backups', 'flows')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, `${wf.id}-${Date.now()}.json`), JSON.stringify(row, null, 2))
+        const automation = cleanAutomation(flowToAutomation(wf))!
+        converted.push(this.save(wf.id, { ...automationGraph(automation), automation }, { source: 'edit', note: 'Converted from a flow into an automation' }))
+        this.ctx.log('automation', `Converted the flow “${wf.name}” (${wf.id}) into an automation`)
+      } catch (err) {
+        this.ctx.log('automation', `Converting the flow “${wf.name}” (${wf.id}) failed:`, errorMessage(err))
+      }
+    }
+    return converted
+  }
+
+  /** convertFlows, once per profile (at startup). */
+  convertFlowsOnce(): void {
+    const key = 'flows.convertedToAutomations'
+    if (this.ctx.kv.get(key, false)) return
+    const done = this.convertFlows()
+    this.ctx.kv.set(key, true)
+    this.ctx.log('automation', `Converted ${done.length} flow${done.length === 1 ? '' : 's'} into automations`)
+  }
+
+  /** Hands over what the run reported: its chat (made now, with the run's transcript), and a notification. */
+  private async afterAutomation(wf: Workflow, run: WorkflowRun, transcript: AgentMessage[], report: RunReport): Promise<void> {
     const a = wf.automation
     if (!a) return
     let chatId: string | null = null
+    // A finished run in a container hands its changes over in a chat, whether or not it reported in one.
+    const chat = report.chat.length > 0 || (run.status === 'ok' && a.commands?.mode === 'container')
     try {
-      chatId = run.status === 'ok' && this.deliver ? await this.deliver(wf, run, transcript, runChat) : null
+      if (chat && report.chatId && this.deliver) chatId = await this.deliver(wf, { id: report.chatId, title: report.chat[0]?.title || wf.name, messages: reportTranscript(transcript, report) })
     } catch (err) {
       this.ctx.log('automation', `Delivering ${wf.name} failed:`, errorMessage(err))
     }
-    const text = run.status === 'ok' ? (typeof run.output === 'string' ? run.output : JSON.stringify(run.output)) : run.error ?? 'Failed'
+    const ok = run.status === 'ok'
+    const note = report.notes.at(-1)
+    const text = !ok ? (run.error ?? 'Failed') : note ? report.notes.map((n) => n.body).join(' ') : typeof run.output === 'string' ? run.output : JSON.stringify(run.output)
     this.ctx.emit('workflow', {
       type: 'automation',
       workflowId: wf.id,
       name: wf.name,
       runId: run.id,
-      ok: run.status === 'ok',
+      ok,
       summary: text.replace(/\s+/g, ' ').trim().slice(0, 180),
       chatId,
-      // Failed runs always say so; finished ones when the automation asks to notify.
-      notify: run.status !== 'ok' || a.deliver === 'notify'
+      // Failed runs always say so; finished ones when the agent asked to notify.
+      notify: !ok || !!note,
+      ...(ok && note?.title ? { title: note.title } : {})
     })
   }
 
@@ -532,7 +573,7 @@ export class WorkflowService {
     this.persist(run)
     let transcript: AgentMessage[] = []
     // A container run's copy belongs to the chat its result goes to, made with this id.
-    const chatId = wf.automation?.commands?.mode === 'container' ? newId('ses_') : null
+    const report: RunReport = { chatId: wf.automation?.commands?.mode === 'container' ? newId('ses_') : null, chat: [], notes: [] }
     this.active.set(id, Infinity)
     const done = this.deps.providers.usage.run({ source: 'workflow', ref: id }, () =>
       executeGraph(
@@ -545,7 +586,7 @@ export class WorkflowService {
             run.files = [...files]
           },
           onTranscript: (messages) => (transcript = messages),
-          chatId
+          report
         }),
         controller.signal,
         {
@@ -575,7 +616,7 @@ export class WorkflowService {
         this.prune(id)
       })
       .then(async (r) => {
-        if (wf.automation) await this.afterAutomation(wf, r, transcript, chatId)
+        if (wf.automation) await this.afterAutomation(wf, r, transcript, report)
         return r
       })
     return { run: { ...run }, done }
@@ -628,7 +669,7 @@ export class WorkflowService {
     return m
   }
 
-  private executor(env: { workspace: string | null; onFile(abs: string): void; onTranscript?(messages: AgentMessage[]): void; chatId?: string | null }): Executor {
+  private executor(env: { workspace: string | null; onFile(abs: string): void; onTranscript?(messages: AgentMessage[]): void; report?: RunReport }): Executor {
     const { providers, rag, skills, runtime, web, custom } = this.deps
     /** Tool-like nodes count as tool calls on the dashboard. */
     const timed = async <T>(name: string, kind: string, fn: () => Promise<T>): Promise<T> => {
@@ -697,14 +738,19 @@ export class WorkflowService {
             }
             system = [`You are the "${saved.name}" agent. ${saved.purpose}`, saved.instructions.trim(), system].filter(Boolean).join('\n\n')
           }
-          // An automation's step may use exactly what was picked for it, whoever it runs as.
-          if (d.automation) scope = await this.automationScope(d, scope, env.chatId ?? null)
+          // An automation's step may use exactly what was picked for it, whoever it runs as, and decides how to report.
+          const report = d.automation ? (env.report ?? { chatId: null, chat: [], notes: [] }) : null
+          if (report) {
+            scope = await this.automationScope(d, scope, report.chatId)
+            system = [system, REPORT_GUIDANCE].filter(Boolean).join('\n\n')
+          }
           const why = d.automation ? changeNote(values.input) : ''
           const res = await runtime.run({
             model: d.model?.providerId ? d.model : (saved?.model ?? this.modelFor(null)),
             prompt: (t(d.prompt) || String(prev ?? '')) + why,
             systemPrompt: system,
             scope,
+            extraTools: report ? reportTools(report, { rag, collectionIds: scope.collectionIds }) : undefined,
             thinking: saved?.thinking ?? undefined,
             maxTurns: d.maxTurns ? Number(d.maxTurns) : 12,
             signal
@@ -905,9 +951,9 @@ function cleanAutomation(a: Automation | null | undefined): Automation | null {
     servers: (Array.isArray(a.servers) ? a.servers : []).filter((s) => s && typeof s.id === 'string').map((s) => ({ id: s.id, tools: Array.isArray(s.tools) ? list(s.tools) : null })),
     collectionIds: list(a.collectionIds),
     skills: list(a.skills),
-    // A run in a container hands its changes over in a chat, so its result always goes to one.
-    deliver: a.commands?.mode === 'container' ? 'chat' : a.deliver === 'notify' || a.deliver === 'knowledge' ? a.deliver : 'chat',
-    collectionId: a.collectionId || null,
+    // No longer used (the agent decides how to report); kept as they were so old data reads the same.
+    ...(a.deliver ? { deliver: a.deliver } : {}),
+    ...(a.collectionId ? { collectionId: a.collectionId } : {}),
     watch: cleanWatch(a.watch),
     commands: cleanCommands(a.commands)
   }

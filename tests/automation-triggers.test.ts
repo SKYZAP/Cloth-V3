@@ -92,7 +92,7 @@ describe('automation commands', () => {
     const { services } = setup()
     const folder = mkdtempSync(join(tmpdir(), 'cloth-auto-'))
     const wf = services.workflows.createAutomation({ name: 'Box', automation: { ...base, deliver: 'notify', commands: { mode: 'container', image: '', network: false } }, workspace: folder })
-    expect(wf.automation).toMatchObject({ deliver: 'chat', commands: { mode: 'container', image: 'node:22', network: false } })
+    expect(wf.automation).toMatchObject({ commands: { mode: 'container', image: 'node:22', network: false } })
     services.workflows.stopScheduler()
   })
 })
