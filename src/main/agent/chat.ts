@@ -5,7 +5,8 @@ import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, Us
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
 import { agentSlug } from '@shared/mention'
-import type { Agent as SavedAgent, AgentSetup, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
+import { toolSummary } from '@shared/tool-summary'
+import type { Agent as SavedAgent, AgentSetup, AgentTier, SubagentActivity, TodoItem, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
 import { ROLE_BUILTINS, type AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
@@ -17,7 +18,7 @@ import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
-import { DEFAULT_SUBAGENTS, type SettingsService } from '../core/settings'
+import { DEFAULT_AGENT_TIERS, DEFAULT_SUBAGENTS, type SettingsService } from '../core/settings'
 import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
@@ -113,7 +114,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   disabledTools: [],
   skillsOff: [],
   skillsAlways: [],
-  agentId: null
+  agentId: null,
+  autoTiers: true
 }
 
 /** The capability switches a chat copies from an agent when it is set up from one. */
@@ -148,9 +150,98 @@ export interface AgentRunOptions {
   history?: AgentMessage[]
   signal?: AbortSignal
   maxTurns?: number
-  onEvent?: (turn: UiMessage) => void
+  /** The latest assistant turn, and what the run is doing now and which files it has changed so far. */
+  onEvent?: (turn: UiMessage, progress: RunProgress) => void
   /** Tools only this run gets (an automation's reporting tools), on top of what the scope allows. */
   extraTools?: AgentTool<any, ToolDetails>[]
+}
+
+export interface RunProgress {
+  /** The tool running now (the latest started, when several run at once); null between tools. */
+  current: SubagentActivity | null
+  /** Workspace files changed so far, in the order they were first changed. */
+  files: string[]
+}
+
+/** The model and effort a delegated job runs with, and the tier behind them. */
+export interface Delegation {
+  model: ModelRef
+  thinking: ThinkingLevel | undefined
+  tier?: AgentTier
+  /** Set when the requested tier doesn't exist (it was ignored). */
+  note?: string
+}
+
+/**
+ * Where a delegated job's model and effort come from: the tier the delegating agent asked for
+ * (when its chat lets it pick tiers), else the agent's own model and effort, else the agent's tier,
+ * else `fallback` (Settings → Subagents, then the chat). A tier without a model uses the chat's.
+ */
+export function resolveDelegation(input: {
+  tierArg?: string
+  autoTiers: boolean
+  tiers: AgentTier[]
+  agent: { model: ModelRef | null; thinking: ThinkingLevel | null; tier?: string | null } | null
+  chat: { model: ModelRef; thinking: ThinkingLevel | undefined }
+  fallback: { model: ModelRef; thinking: ThinkingLevel | undefined }
+  usable: (m: ModelRef | null | undefined) => m is ModelRef
+}): Delegation {
+  const { chat, usable } = input
+  const byId = (id: string | null | undefined) => (id ? input.tiers.find((t) => t.id === id) : undefined)
+  const asked = input.autoTiers && input.tierArg ? input.tierArg : undefined
+  const explicit = byId(asked)
+  const note = asked && !explicit ? `Note: there is no tier "${asked}", so it was ignored.` : undefined
+  if (explicit) return { model: usable(explicit.model) ? explicit.model : chat.model, thinking: explicit.thinking ?? chat.thinking, tier: explicit }
+  const agent = input.agent
+  const own = agent && usable(agent.model) ? agent.model : null
+  const tier = byId(agent?.tier)
+  const usesTier = !!tier && (!own || !agent?.thinking)
+  return {
+    model: own ?? (tier ? (usable(tier.model) ? tier.model : chat.model) : input.fallback.model),
+    thinking: agent?.thinking ?? (tier ? (tier.thinking ?? chat.thinking) : input.fallback.thinking),
+    ...(usesTier ? { tier } : {}),
+    ...(note ? { note } : {})
+  }
+}
+
+/** Calls fn at most once per `ms` with the latest value (the first at once, the last after the wait). */
+export function throttle<T>(fn: (v: T) => void, ms: number): ((v: T) => void) & { cancel(): void } {
+  let last = 0
+  let timer: NodeJS.Timeout | null = null
+  let pending: { v: T } | null = null
+  const flush = () => {
+    timer = null
+    if (!pending) return
+    const { v } = pending
+    pending = null
+    last = Date.now()
+    fn(v)
+  }
+  const call = (v: T) => {
+    pending = { v }
+    if (timer) return
+    const wait = last + ms - Date.now()
+    if (wait <= 0) flush()
+    else timer = setTimeout(flush, wait)
+  }
+  return Object.assign(call, {
+    cancel: () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+      pending = null
+    }
+  })
+}
+
+/** The todo list as the latest successful todo_write left it. */
+export function latestTodos(messages: AgentMessage[]): TodoItem[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'toolResult' || m.toolName !== 'todo_write' || m.isError) continue
+    const todos = (m.details as { todos?: TodoItem[] } | undefined)?.todos
+    if (Array.isArray(todos)) return todos
+  }
+  return []
 }
 
 /** Built-in tools the Tools page can run on their own: they only read. */
@@ -197,6 +288,10 @@ export class AgentRuntime {
 
   private subagentSettings(): SubagentSettings {
     return this.ws.settings?.get().subagents ?? DEFAULT_SUBAGENTS
+  }
+
+  private tiers(): AgentTier[] {
+    return this.ws.settings?.get().agentTiers ?? DEFAULT_AGENT_TIERS
   }
 
   // Subagents running now across every chat, and the tasks waiting for a slot.
@@ -266,6 +361,11 @@ export class AgentRuntime {
       )
       const named = this.delegates(scope.agentId)
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
+      if (scope.autoTiers && this.tiers().length) {
+        lines.push(
+          'For multi-step work, plan with `todo_write` first and delegate the steps to agents with `task` (pass `step`). Give each job the cheapest `tier` that gets that step right the first time; when unsure between two tiers, pick the higher.'
+        )
+      }
     }
     const external = this.ws.mcp?.tools(scope) ?? []
     if (external.length) {
@@ -462,6 +562,8 @@ export class AgentRuntime {
 
   /** The `task` tool: run a subagent with a fresh context and a scoped toolset. */
   private taskTool(parent: Omit<AgentRunOptions, 'prompt'>): AgentTool<any, ToolDetails> {
+    const tiers = parent.scope.autoTiers ? this.tiers() : []
+    const steps = !!parent.scope.sessionId && !parent.scope.depth
     return {
       name: 'task',
       label: 'Subagent',
@@ -472,10 +574,21 @@ export class AgentRuntime {
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
         role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')])),
-        ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain scout or worker: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {})
+        ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain scout or worker: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
+        ...(tiers.length
+          ? {
+              tier: Type.Optional(
+                Type.Union(
+                  tiers.map((t) => Type.Literal(t.id)),
+                  { description: `The model and effort the job runs with. Pick the cheapest tier that gets it right the first time; when unsure between two, pick the higher. ${tiers.map((t) => `${t.id} (${t.name}): ${t.purpose || 'no purpose given'}`).join(' ')}` }
+                )
+              )
+            }
+          : {}),
+        ...(steps ? { step: Type.Optional(Type.Integer({ description: 'Which step of your todo list this work is for.' })) } : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string }
+        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string; tier?: string; step?: number }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
         if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
@@ -491,40 +604,65 @@ export class AgentRuntime {
           }
         }
         const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && this.providers.list().some((pr) => pr.id === m.providerId && pr.enabled)
-        // The agent's own model, then the subagent model, unless its provider is gone or switched off.
-        const own = named?.model ?? builtin?.model
-        const model = usable(own) ? own : usable(cfg.model) ? cfg.model : parent.model
-        const base = { role, ...(named ? { agent: named.name } : {}), description: p.description || named?.name || 'Subagent', model: model.modelId }
+        const who = named ?? builtin
+        // The tier asked for, the agent's own model and effort, its tier, then Settings → Subagents and the chat.
+        const { model, thinking, tier, note } = resolveDelegation({
+          tierArg: p.tier,
+          autoTiers: !!parent.scope.autoTiers,
+          tiers: this.tiers(),
+          agent: who ?? null,
+          chat: { model: parent.model, thinking: parent.thinking },
+          fallback: { model: usable(cfg.model) ? cfg.model : parent.model, thinking: cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking },
+          usable
+        })
+        const todos = steps && typeof p.step === 'number' && Number.isInteger(p.step) ? (parent.scope.todos?.() ?? []) : []
+        const step = p.step !== undefined && p.step >= 1 && p.step <= todos.length ? { step: p.step, stepText: todos[p.step - 1].content } : {}
+        const base = {
+          role,
+          ...(named ? { agent: named.name } : {}),
+          description: p.description || named?.name || 'Subagent',
+          model: model.modelId,
+          ...(tier ? { tier: tier.id, tierName: tier.name } : {}),
+          ...step
+        }
         const release = await this.subagentSlot(signal, () =>
           onUpdate?.({ content: [{ type: 'text', text: 'Queued…' }], details: { subagent: { ...base, blocks: [], running: true } } as unknown as ToolDetails })
         )
         const started = Date.now()
+        let files: string[] = []
+        // Live progress for the chat, at most four updates a second.
+        const progress = throttle((run: SubagentRun) => onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: run } as unknown as ToolDetails }), 250)
         const { result, changes } = await runAsCall(id, 'task', signal, () =>
           this.run({
             model,
             prompt: p.prompt,
-            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), named ? `You are the "${named.name}" agent. ${named.purpose}` : '', (named ?? builtin)?.instructions.trim() ?? cfg.instructions.trim()].filter(Boolean).join('\n\n'),
+            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), named ? `You are the "${named.name}" agent. ${named.purpose}` : '', who?.instructions.trim() ?? cfg.instructions.trim()].filter(Boolean).join('\n\n'),
             scope,
-            thinking: (named ?? builtin)?.thinking ?? (cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking),
+            thinking,
             signal,
             maxTurns: Math.max(1, cfg.maxTurns),
-            onEvent: (turn) =>
-              onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: { ...base, blocks: turn.blocks, running: true } } as unknown as ToolDetails })
+            onEvent: (turn, now) => {
+              files = now.files
+              progress({ ...base, blocks: turn.blocks, running: true, ...(turn.usage ? { usage: turn.usage } : {}), ...(now.current ? { current: now.current } : {}), ...(files.length ? { files } : {}) })
+            }
           })
         )
           .catch((err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
-            const who = named ?? builtin
             if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, false)
             throw err
           })
-          .finally(release)
+          .finally(() => {
+            progress.cancel()
+            release()
+          })
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
-        const who = named ?? builtin
         if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, true)
+        for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
+        const report = result.text || '(the subagent finished without a report)'
         return {
-          content: [{ type: 'text', text: result.text || '(the subagent finished without a report)' }],
-          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
+          content: [{ type: 'text', text: note ? `${report}\n\n(${note})` : report }],
+          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}) }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
         }
       }
     }
@@ -548,11 +686,20 @@ export class AgentRuntime {
     const startIndex = agent.state.messages.length
     let turns = 0
     const maxTurns = opts.maxTurns ?? 12
+    // What it is doing now and the files it has changed, for live progress.
+    const running = new Map<string, SubagentActivity>()
+    const files: string[] = []
     agent.subscribe((e) => {
       if (e.type === 'turn_end' && ++turns >= maxTurns) agent.abort()
+      if (e.type === 'tool_execution_start') running.set(e.toolCallId, { tool: e.toolName, summary: toolSummary(e.toolName, e.args) })
+      if (e.type === 'tool_execution_end') {
+        running.delete(e.toolCallId)
+        const changes = (e.result as { details?: ToolDetails } | undefined)?.details?.changes
+        if (!e.isError && Array.isArray(changes)) for (const c of changes) if (c.path && !files.includes(c.path)) files.push(c.path)
+      }
       if (opts.onEvent && (e.type === 'message_end' || e.type === 'tool_execution_start' || e.type === 'tool_execution_end')) {
         const turn = toUiMessages(agent.state.messages.slice(startIndex), agent.state.pendingToolCalls).at(-1)
-        if (turn?.role === 'assistant') opts.onEvent(turn)
+        if (turn?.role === 'assistant') opts.onEvent(turn, { current: [...running.values()].at(-1) ?? null, files: [...files] })
       }
     })
     opts.signal?.addEventListener('abort', () => agent.abort(), { once: true })
@@ -642,6 +789,7 @@ export class ChatService {
       skillsOff: cur.skillsOff,
       skillsAlways: cur.skillsAlways,
       agentId: cur.agentId,
+      autoTiers: cur.autoTiers,
       origin: cur.origin,
       ...config
     }
@@ -977,6 +1125,8 @@ export class ChatService {
       skillsOff: session.skillsOff,
       skillsAlways: session.skillsAlways,
       agentId: session.agentId,
+      autoTiers: session.autoTiers,
+      todos: () => latestTodos(this.active.get(id)?.state.messages ?? this.rawMessages(id)),
       depth: 0,
       autoApprove: () => this.get(id).autoApprove,
       onAlways: (scope) => {

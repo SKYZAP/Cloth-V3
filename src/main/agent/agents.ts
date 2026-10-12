@@ -90,6 +90,7 @@ const DEFAULTS: AgentConfig = {
   instructions: '',
   model: null,
   thinking: null,
+  tier: null,
   ...DEFAULT_AGENT_SETUP
 }
 
@@ -274,7 +275,7 @@ export class AgentService {
   }
 }
 
-const KEYS: (keyof AgentConfig)[] = ['purpose', 'instructions', 'model', 'thinking', ...(Object.keys(DEFAULT_AGENT_SETUP) as (keyof AgentConfig)[])]
+const KEYS: (keyof AgentConfig)[] = ['purpose', 'instructions', 'model', 'thinking', 'tier', ...(Object.keys(DEFAULT_AGENT_SETUP) as (keyof AgentConfig)[])]
 function pickConfig(input: AgentInput): Partial<AgentConfig> {
   const out: Partial<AgentConfig> = {}
   for (const k of KEYS) if (input[k as keyof AgentInput] !== undefined) (out as Record<string, unknown>)[k] = input[k as keyof AgentInput]
