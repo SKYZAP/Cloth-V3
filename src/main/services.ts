@@ -144,19 +144,15 @@ export function createServices(opts: {
     }
   })
 
-  // An automation's result becomes a chat you can reply to, or a note in a Knowledge collection.
-  workflows.deliver = async (wf, run, transcript, chatId) => {
+  // An automation that reports in a chat gets one you can reply to: its run, then what it reported.
+  workflows.deliver = async (wf, report) => {
     const a = wf.automation
-    if (!a) return null
-    const text = typeof run.output === 'string' ? run.output : JSON.stringify(run.output, null, 2)
-    if (a.deliver === 'knowledge' && a.collectionId) {
-      await rag.ingestText(a.collectionId, `${wf.name}, ${new Date(run.startedAt).toLocaleString()}`, text)
-      return null
-    }
-    const container = a.commands?.mode === 'container' ? { image: a.commands.image, network: a.commands.network } : null
-    if (a.deliver === 'chat' && transcript.length) return chat.fromTranscript({ id: chatId ?? undefined, title: wf.name, workspace: wf.workspace, agentId: a.agentId, messages: transcript, container }).id
-    return null
+    const container = a?.commands?.mode === 'container' ? { image: a.commands.image, network: a.commands.network } : null
+    return chat.fromTranscript({ id: report.id, title: report.title, workspace: wf.workspace, agentId: a?.agentId ?? null, messages: report.messages, container }).id
   }
+
+  // Flows holds automations only: graph flows from before become automations (backed up first).
+  workflows.convertFlowsOnce()
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
