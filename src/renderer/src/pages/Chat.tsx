@@ -37,6 +37,7 @@ import { latestTodos, PlanPanel } from '@/components/Planning'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { formatCost, formatTokens } from '@/lib/format'
+import { agentCost } from '@/lib/agentCost'
 import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
@@ -1298,6 +1299,9 @@ function AssistantTurn({
     return out
   }, [all, lastTodoIdx])
 
+  const own = message.usage?.cost ?? 0
+  const agents = useMemo(() => agentCost(message), [message])
+
   return (
     <motion.div {...enterProps(fresh)} className="group mb-9 grid grid-cols-[28px_1fr] gap-4 mobile:mb-7 mobile:grid-cols-1">
       <div className="mt-0.5 mobile:hidden">
@@ -1320,7 +1324,9 @@ function AssistantTurn({
           <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
             {message.model && <span>{message.model}</span>}
             {message.usage && message.usage.input + message.usage.output > 0 && <TokenCounts usage={message.usage} />}
-            {message.usage && message.usage.cost > 0 && <span title="Cost of this reply">{formatCost(message.usage.cost)}</span>}
+            {own + agents > 0 && (
+              <span title={agents > 0 ? `This reply ${formatCost(own)}, plus ${formatCost(agents)} for agents it handed work to` : 'Cost of this reply'}>{formatCost(own + agents)}</span>
+            )}
             {allRefs.length > 0 && (
               <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted transition-colors hover:text-fg">
                 <Books size={13} /> {allRefs.length} sources
