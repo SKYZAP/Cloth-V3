@@ -91,7 +91,6 @@ export function ToolsPage() {
   const [custom, setCustom] = useState<CustomTool[]>([])
   const [usage, setUsage] = useState<Record<string, ToolUsage>>({})
   const [usedBy, setUsedBy] = useState<Record<string, string[]>>({})
-  const [tryable, setTryable] = useState<string[]>([])
   const [agentNames, setAgentNames] = useState<string[]>([])
   const [servers, setServers] = useState<McpClientStatus[]>([])
   const [selKey, setSelKey] = useState<string | null>(null)
@@ -111,7 +110,6 @@ export function ToolsPage() {
   }
   useEffect(() => {
     void load()
-    void api.tools.tryable().then(setTryable, () => undefined)
     void api.agents.list().then((a) => setAgentNames(a.map((x) => x.name)), () => undefined)
   }, [])
   // Tools made by a model (chat or MCP) appear without a reload.
@@ -146,9 +144,9 @@ export function ToolsPage() {
   const matches = (i: Item) => (show === 'all' || i.source === show) && (!q || `${i.name} ${i.label} ${i.description}`.toLowerCase().includes(q))
   const shown = items.filter(matches)
   const count = (s: Show) => items.filter((i) => s === 'all' || i.source === s).length
-  const sections: { id: string; title: string; jump: string; items: Item[]; note?: ReactNode }[] = [
-    ...GROUPS.map((g) => ({ id: g.id, title: g.label, jump: g.label, items: shown.filter((i) => i.builtin?.group === g.id), note: undefined })),
-    { id: 'mine', title: 'Made by you', jump: 'Made by you', items: shown.filter((i) => i.source === 'mine'), note: undefined },
+  const sections: { id: string; title: string; items: Item[]; note?: ReactNode }[] = [
+    ...GROUPS.map((g) => ({ id: g.id, title: g.label, items: shown.filter((i) => i.builtin?.group === g.id), note: undefined })),
+    { id: 'mine', title: 'Made by you', items: shown.filter((i) => i.source === 'mine'), note: undefined },
     ...configs.map((c) => {
       const st = servers.find((s) => s.id === c.id)
       const list = shown.filter((i) => i.source === 'mcp' && i.key.startsWith(`m:${c.id}:`))
@@ -156,7 +154,6 @@ export function ToolsPage() {
       return {
         id: `mcp-${c.id}`,
         title: `From ${c.name}`,
-        jump: c.name,
         items: list,
         note: offline ? (
           <button onClick={() => setPage('mcp')} className="w-full rounded-[11px] px-3 py-2.5 text-left text-[12.5px] text-dim hover:bg-elev hover:text-muted">
@@ -182,7 +179,6 @@ export function ToolsPage() {
     setSelKey(next.key)
     requestAnimationFrame(() => document.querySelector(`[data-focus-key="${CSS.escape(next.key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   }
-  const jumpTo = (id: string) => document.getElementById(`tools-section-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -234,7 +230,6 @@ export function ToolsPage() {
       usage={usage[sel.name]}
       usedBy={usedBy[sel.name] ?? []}
       agentNames={agentNames}
-      tryable={tryable.includes(sel.name)}
       onEdit={sel.custom ? () => setMaking({ id: sel.custom!.id }) : undefined}
       onChanged={() => void load()}
       onClose={close}
@@ -283,20 +278,11 @@ export function ToolsPage() {
                 </button>
               ))}
             </div>
-            {sections.length > 0 && (
-              <nav aria-label="Jump to group" className="ml-auto flex min-w-0 flex-wrap justify-end gap-0.5 mobile:hidden">
-                {sections.map((s) => (
-                  <button key={s.id} onClick={() => jumpTo(s.id)} className="h-[26px] rounded-[7px] px-2 text-[12px] text-dim hover:bg-elev hover:text-fg">
-                    {s.jump}
-                  </button>
-                ))}
-              </nav>
-            )}
           </div>
 
           <div className="grid min-w-0 gap-6">
             {sections.map((s) => (
-              <section key={s.id} id={`tools-section-${s.id}`} aria-label={s.title} className="scroll-mt-14">
+              <section key={s.id} aria-label={s.title}>
                 <h2 className="mb-3 border-b border-line pb-2 text-[12px] font-semibold text-fg/90">
                   {s.title}
                   <span className="ml-2 text-[11.5px] font-normal tabular-nums text-dim">{s.items.length}</span>
@@ -388,7 +374,6 @@ function ToolDetails({
   usage,
   usedBy,
   agentNames,
-  tryable,
   onEdit,
   onChanged,
   onClose,
@@ -399,7 +384,6 @@ function ToolDetails({
   usage?: ToolUsage
   usedBy: string[]
   agentNames: string[]
-  tryable: boolean
   onEdit?: () => void
   onChanged(): void
   onClose(): void
@@ -414,16 +398,8 @@ function ToolDetails({
   // Every agent having it reads better as one phrase than as a list of all of them.
   const everyAgent = agentNames.length > 1 && agentNames.every((n) => usedBy.includes(n))
   const users = everyAgent ? ['Every agent', ...usedBy.filter((n) => !agentNames.includes(n))] : usedBy
-  const run: ((args: Record<string, unknown>, folder: string | null) => Promise<ToolRunResult>) | null = t
-    ? (args) => api.tools.test({ kind: t.kind, config: t.config, params: t.params }, args)
-    : i.source === 'mcp' && i.serverId && i.rawName
-      ? (args) => api.mcp.callTool(i.serverId!, i.rawName!, args)
-      : i.builtin && tryable
-        ? (args, folder) => api.tools.tryBuiltin(i.name, args, folder)
-        : null
   const origin = t && t.createdBy !== 'user' ? (t.createdBy === 'chat' ? 'in a chat' : 'for an app connected over MCP') : null
   const runsCode = t && (t.kind === 'command' || t.kind === 'javascript')
-  const [trying, setTrying] = useState(false)
   return (
     <div className="grid gap-5 px-5 py-5">
       <div className="flex items-center gap-3">
@@ -478,16 +454,7 @@ function ToolDetails({
         </div>
       )}
 
-      <div className="grid gap-2">
-        <div className={clsx('grid gap-2', onEdit && 'grid-cols-2')}>
-          <Button variant="primary" icon={<Play size={13} />} disabled={!run} aria-expanded={run ? trying : undefined} onClick={() => setTrying((v) => !v)}>
-            {trying && run ? 'Hide try' : 'Try tool'}
-          </Button>
-          {onEdit && <Button onClick={onEdit}>Edit tool</Button>}
-        </div>
-        {!run && <p className="text-[12px] text-dim">{i.builtin ? 'This tool changes things or needs a chat, so it can’t be tried here.' : 'Start its server to try it.'}</p>}
-      </div>
-      {run && trying && <TryIt fields={params} run={run} folder={i.builtin?.group === 'workspace'} />}
+      {onEdit && <Button onClick={onEdit}>Edit tool</Button>}
 
       <section aria-labelledby="tool-usage" className="grid gap-2 border-t border-line pt-4">
         <h3 id="tool-usage" className="text-[12.5px] font-semibold">
