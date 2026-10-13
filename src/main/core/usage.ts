@@ -72,7 +72,7 @@ export class UsageService {
     this.insert({ kind: 'tool', name, detail, durationMs, ok })
   }
 
-  /** A job a saved agent (or built-in scout/worker) ran as a subagent; `name` is the agent's id. */
+  /** A job a saved agent ran as a subagent; `name` is the agent's id. */
   agentRun(agentId: string, role: string, durationMs: number, ok: boolean): void {
     this.insert({ kind: 'agent', name: agentId, detail: role, durationMs, ok })
   }

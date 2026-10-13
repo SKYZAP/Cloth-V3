@@ -30,7 +30,7 @@ import {
 } from '@phosphor-icons/react'
 import type { RagHit, ToolTrace as Trace } from '@shared/types'
 import { duration, formatCost, pretty } from '@/lib/format'
-import { runCardId } from '@/lib/workbar'
+import { runAccess, runCardId, runName } from '@/lib/workbar'
 import { DiffStat, DiffView } from './DiffView'
 import { TodoList, todosOf } from './Planning'
 import { Markdown } from './Markdown'
@@ -133,11 +133,9 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
           <Icon size={14} />
         </span>
         <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.subagent ? 'subagent' : trace.name}</span>
-        {trace.subagent && (
-          <span className={clsx('shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium', trace.subagent.role === 'worker' ? 'bg-warn/10 text-warn' : 'bg-info/10 text-info')}>{trace.subagent.role}</span>
-        )}
-        {trace.subagent?.agent && <span className="shrink-0 text-[12px] text-agent">{trace.subagent.agent}</span>}
+        {trace.subagent && <span className={clsx('shrink-0 text-[12px]', trace.subagent.agent ? 'text-agent' : 'text-fg')}>{runName(trace.subagent)}</span>}
         {trace.subagent?.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10px] font-medium text-agent">{trace.subagent.tierName}</span>}
+        {trace.subagent && <span className={clsx('shrink-0 text-[11px]', trace.subagent.role === 'worker' ? 'text-warn' : 'text-dim')}>{runAccess(trace.subagent.role)}</span>}
         <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : trace.name === 'agent_mention' ? 'text-agent' : 'text-dim')}>{summarize(trace)}</span>
         <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
           {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}

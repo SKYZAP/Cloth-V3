@@ -242,6 +242,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
 function SubagentSection({ value }: { value: SubagentSettings }) {
   const update = useApp((s) => s.updateSettings)
   const set = (patch: Partial<SubagentSettings>) => void update({ subagents: { ...value, ...patch } })
+  const [instructions, setInstructions] = useState(value.instructions)
+  useEffect(() => setInstructions(value.instructions), [value.instructions])
   return (
     <>
       <Group title="Defaults">
@@ -279,8 +281,19 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Instructions">
-        <div className="flex items-center gap-3 p-4 text-[12.5px] text-muted">
-          <span className="flex-1">Scout and Worker are agents now: edit their instructions, model and effort on the Agents page. Your own agents can take delegated work too.</span>
+        <div className="grid gap-2 p-4">
+          <Textarea
+            rows={4}
+            value={instructions}
+            aria-label="Instructions for plain jobs"
+            placeholder="Rules every plain job follows (on top of its tier's)…"
+            onChange={(e) => setInstructions(e.target.value)}
+            onBlur={() => instructions !== value.instructions && set({ instructions })}
+          />
+          <span className="text-[11.5px] text-dim">Added to every job handed out without a saved agent, read-only or editing.</span>
+        </div>
+        <div className="flex items-center gap-3 border-t border-line p-4 text-[12.5px] text-muted">
+          <span className="flex-1">Saved agents, with their own instructions, model and effort, are on the Agents page.</span>
           <Button size="sm" onClick={() => useApp.getState().setPage('agents')}>
             Open Agents
           </Button>

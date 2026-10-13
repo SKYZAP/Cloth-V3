@@ -158,8 +158,6 @@ function LaneEmpty({ children }: { children: ReactNode }) {
 
 const TILE: Record<string, string> = {
   designer: 'bg-skill-soft text-skill',
-  scout: 'bg-info/15 text-info',
-  worker: 'bg-warn/15 text-warn',
   researcher: 'bg-ok/15 text-ok',
   reviewer: 'bg-fg/10 text-fg'
 }
@@ -397,7 +395,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                 m={m}
                 access={
                   agent.builtin ? (
-                    <span className="text-[11px] text-dim">{agent.builtin === 'scout' ? 'Read-only: a scout never changes files.' : 'Can edit files when the chat it works for can.'}</span>
+                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Can edit files when the chat it works for can.'}</span>
                   ) : (
                     <div className="grid gap-1.5">
                       <Segmented

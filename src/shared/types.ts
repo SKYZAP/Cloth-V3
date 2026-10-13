@@ -412,8 +412,8 @@ export const DEFAULT_AGENT_SETUP: AgentSetup = {
   autoApprove: 'none'
 }
 
-/** The built-in agents, editable but not deletable. */
-export type AgentBuiltin = 'scout' | 'worker' | 'designer' | 'researcher' | 'reviewer'
+/** The built-in agents, editable but not deletable. (Scout and worker are access modes of a plain `task` job, not agents.) */
+export type AgentBuiltin = 'designer' | 'researcher' | 'reviewer'
 
 /** The skills the built-in Designer always applies. */
 export const DESIGNER_SKILLS = ['ui-ux-pro-max', 'frontend-design', 'web-design-guidelines']

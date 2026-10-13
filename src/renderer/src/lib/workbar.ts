@@ -11,8 +11,10 @@ export interface RunInfo {
   id: string
   /** The id of the top-level trace whose card shows this run (itself, or the run it is nested in). */
   cardId: string
-  /** "{agent ?? role}". */
+  /** The saved agent's name, else "Scout" or "Worker" for a plain job (see runName). */
   name: string
+  /** Whether a saved agent ran (vs a plain job). */
+  named: boolean
   role: SubagentRun['role']
   tierName?: string
   model?: string
@@ -32,6 +34,12 @@ export interface RunInfo {
 
 export const runCardId = (traceId: string) => `run-${traceId}`
 
+/** What a run is called: the saved agent that ran, else "Scout" or "Worker" for a plain job. */
+export const runName = (run: Pick<SubagentRun, 'agent' | 'role'>): string => run.agent ?? (run.role === 'worker' ? 'Worker' : 'Scout')
+
+/** What a run may do with files: "read-only" (scout) or "can edit" (worker). */
+export const runAccess = (role: SubagentRun['role']): string => (role === 'worker' ? 'can edit' : 'read-only')
+
 /** How a finished run that fell short is labelled: "Partly done" or "Blocked" (null otherwise). */
 export const shortfall = (r: RunInfo): string | null => (r.outcome === 'partial' ? 'Partly done' : r.outcome === 'blocked' ? 'Blocked' : null)
 
@@ -40,7 +48,8 @@ function runInfo(trace: ToolTrace, run: SubagentRun, cardId: string): RunInfo {
   return {
     id: trace.id,
     cardId,
-    name: run.agent ?? run.role,
+    name: runName(run),
+    named: !!run.agent,
     role: run.role,
     tierName: run.tierName,
     model: run.model,

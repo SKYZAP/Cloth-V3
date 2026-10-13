@@ -52,16 +52,6 @@ Report each finding with its severity (high, medium or low), the file and line, 
 
 /** Built-in agents: `fixed` holds what the user can't change; `seed` is where each starts. */
 const BUILTINS: Record<AgentBuiltin, { name: string; purpose: string; fixed: Partial<AgentConfig>; seed?: Partial<AgentConfig> }> = {
-  scout: {
-    name: 'Scout',
-    purpose: 'Explores code, files and the web for the main agent and reports back. Read-only.',
-    fixed: { fileAccess: 'read', shell: false }
-  },
-  worker: {
-    name: 'Worker',
-    purpose: 'Makes changes the main agent hands over, keeping them minimal. Each edit follows the chat’s approvals.',
-    fixed: { fileAccess: 'write', shell: false }
-  },
   designer: {
     name: 'Designer',
     purpose: 'Designs and builds UI: pages, screens, components and visual polish, following the project’s design system. Hand it any job about how something looks or feels to use.',
@@ -82,8 +72,12 @@ const BUILTINS: Record<AgentBuiltin, { name: string; purpose: string; fixed: Par
   }
 }
 
-/** The built-ins behind the task tool's plain roles; other built-ins are handed work by name. */
-export const ROLE_BUILTINS: AgentBuiltin[] = ['scout', 'worker']
+/**
+ * Scout and worker were built-in agents once; they are now only the access modes of a plain `task` job.
+ * Their rows may still be in the database and are kept there (no data loss) but never listed or looked up.
+ */
+const RETIRED_BUILTINS = ['scout', 'worker']
+const LIVE = `(builtin IS NULL OR builtin NOT IN (${RETIRED_BUILTINS.map((b) => `'${b}'`).join(', ')}))`
 
 const DEFAULTS: AgentConfig = {
   purpose: '',
@@ -125,13 +119,13 @@ export class AgentService {
 
   list(): Agent[] {
     this.seed()
-    const rows = this.ctx.db.prepare('SELECT * FROM agents ORDER BY builtin IS NOT NULL, name COLLATE NOCASE').all() as unknown as AgentRow[]
+    const rows = this.ctx.db.prepare(`SELECT * FROM agents WHERE ${LIVE} ORDER BY builtin IS NOT NULL, name COLLATE NOCASE`).all() as unknown as AgentRow[]
     return rows.map(toAgent)
   }
 
   get(id: string): Agent {
     this.seed()
-    const row = this.ctx.db.prepare('SELECT * FROM agents WHERE id = ?').get(id) as unknown as AgentRow | undefined
+    const row = this.ctx.db.prepare(`SELECT * FROM agents WHERE id = ? AND ${LIVE}`).get(id) as unknown as AgentRow | undefined
     if (!row) throw new Error('Agent not found')
     return toAgent(row)
   }
@@ -253,7 +247,7 @@ export class AgentService {
     if (this.seeded) return
     this.seeded = true
     const have = new Set((this.ctx.db.prepare('SELECT builtin FROM agents WHERE builtin IS NOT NULL').all() as { builtin: string }[]).map((r) => r.builtin))
-    const legacy = this.settings.get().subagents.instructions
+    this.foldRetired()
     for (const kind of Object.keys(BUILTINS) as AgentBuiltin[]) {
       if (have.has(kind)) continue
       const b = BUILTINS[kind]
@@ -264,10 +258,25 @@ export class AgentService {
         this.ctx.db.prepare('UPDATE agents SET builtin = ?, name = ?, config = ?, updated_at = ? WHERE id = ?').run(kind, b.name, JSON.stringify({ ...json<object>(mine.config, {}), ...b.fixed }), now, mine.id)
         continue
       }
-      // Instructions set for all subagents before agents existed carry over to scout and worker.
-      const config: AgentConfig = { ...DEFAULTS, purpose: b.purpose, instructions: legacy, ...b.seed, ...b.fixed }
+      const config: AgentConfig = { ...DEFAULTS, purpose: b.purpose, ...b.seed, ...b.fixed }
       this.ctx.db.prepare('INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(newId('agt_'), b.name, kind, JSON.stringify(config), now, now)
     }
+  }
+
+  /**
+   * Once: instructions the user gave the old Scout or Worker agent move to Settings → Subagents (which plain jobs
+   * now use), when those are empty. Scout's win over Worker's; the old rows stay in the database untouched.
+   */
+  private foldRetired(): void {
+    if (this.ctx.kv.get<boolean>('agents.retiredFolded', false)) return
+    this.ctx.kv.set('agents.retiredFolded', true)
+    const subagents = this.settings.get().subagents
+    if (subagents.instructions.trim()) return
+    const rows = this.ctx.db.prepare(`SELECT builtin, config FROM agents WHERE NOT ${LIVE}`).all() as { builtin: string; config: string }[]
+    const text = RETIRED_BUILTINS.map((kind) => rows.find((r) => r.builtin === kind))
+      .map((r) => (r ? json<Partial<AgentConfig>>(r.config, {}).instructions?.trim() : ''))
+      .find(Boolean)
+    if (text) this.settings.update({ subagents: { ...subagents, instructions: text } })
   }
 
   private changed(): void {

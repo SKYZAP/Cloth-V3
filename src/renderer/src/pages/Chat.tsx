@@ -480,8 +480,8 @@ function ChatView({
   // Skills are invoked inline: every "/name" in the message that names an installed skill.
   const known = useMemo(() => new Set(skills.map((sk) => sk.name)), [skills])
   const inline = useMemo(() => invokedSkills(draft, known), [draft, known])
-  // Agents are tagged inline: every "@slug" that names a saved agent (not the one this chat runs as, nor the plain scout and worker).
-  const taggable = useMemo(() => savedAgents.filter((a) => a.id !== session.agentId && a.builtin !== 'scout' && a.builtin !== 'worker'), [savedAgents, session.agentId])
+  // Agents are tagged inline: every "@slug" that names a saved agent (not the one this chat runs as).
+  const taggable = useMemo(() => savedAgents.filter((a) => a.id !== session.agentId), [savedAgents, session.agentId])
   const agentsBySlug = useMemo(() => new Map(taggable.map((a) => [agentSlug(a.name), a.name] as const)), [taggable])
   const slugs = useMemo(() => new Set(agentsBySlug.keys()), [agentsBySlug])
   const tagged = useMemo(() => mentionedAgents(draft, slugs), [draft, slugs])

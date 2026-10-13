@@ -168,4 +168,37 @@ describe('subagents', () => {
     expect(childPrompt).toContain('Answer in one line.')
     expect(env.services.chat.create({}).subagents).toBe(false)
   })
+
+  it('runs a plain job with no saved agent: the chat model, Settings → Subagents instructions, never an old Worker row', async () => {
+    const env = setup({ fileAccess: 'write' })
+    const provider = env.services.providers.list()[0]
+    // A Worker agent left over from before scout and worker became plain access modes.
+    env.services.ctx.db
+      .prepare("INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES ('agt_old', 'Worker', 'worker', ?, 1, 1)")
+      .run(JSON.stringify({ instructions: 'OLD-WORKER-RULES', model: { providerId: provider.id, modelId: 'faux-big' }, thinking: 'high' }))
+    env.services.settings.update({ subagents: { ...env.services.settings.get().subagents, instructions: 'PLAIN-RULES' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    let childModel = ''
+    let childPrompt = ''
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('task', { description: 'Bump it', prompt: 'Change config.txt', role: 'worker' }, { id: 't' })], { stopReason: 'toolUse' }),
+      (ctx, _opts, _state, model) => {
+        childModel = model.id
+        childPrompt = JSON.stringify(ctx.messages[0])
+        return fauxAssistantMessage('Done.')
+      },
+      fauxAssistantMessage('ok')
+    ])
+    const traces = await send(env, 'go')
+    const task = traces.find((t) => t.id === 't')!
+    expect(task.status).toBe('ok')
+    expect(task.subagent).toMatchObject({ role: 'worker', model: 'faux-1' })
+    expect(task.subagent?.agent).toBeUndefined()
+    expect(childModel).toBe('faux-1')
+    expect(childPrompt).toContain('You are a worker')
+    expect(childPrompt).toContain('PLAIN-RULES')
+    expect(childPrompt).not.toContain('OLD-WORKER-RULES')
+    // A plain job is no saved agent's activity.
+    expect(env.services.agents.activity()).toEqual({})
+  })
 })
