@@ -64,7 +64,7 @@ function Row({ row }: { row: BarRow }) {
   )
 }
 
-/** The current turn's plan and agent runs, pinned at the top of the chat. */
+/** The current turn's plan and agent runs, pinned above the message box. */
 export function WorkBar({ bar }: { bar: Bar }) {
   const [open, setOpen] = useState(false)
   const { completed, inProgress, rest } = bar.progress
@@ -72,9 +72,9 @@ export function WorkBar({ bar }: { bar: Bar }) {
   const title = bar.mode === 'todos' ? (bar.current ?? 'All steps done') : 'Agents at work'
   return (
     <motion.div
-      initial={{ opacity: 0, y: -6 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
+      exit={{ opacity: 0, y: 6 }}
       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
       className="overflow-hidden rounded-[12px] border border-line bg-panel"
     >
@@ -82,7 +82,7 @@ export function WorkBar({ bar }: { bar: Bar }) {
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{title}</span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{bar.mode === 'todos' ? `${bar.done} of ${bar.total}` : `${bar.runCount} agent${bar.runCount === 1 ? '' : 's'}`}</span>
         {bar.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(bar.cost)}</span>}
-        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.25 }} className="flex shrink-0 text-dim">
+        <motion.span animate={{ rotate: open ? 0 : 180 }} transition={{ duration: 0.25 }} className="flex shrink-0 text-dim">
           <CaretDown size={13} />
         </motion.span>
         <span className="absolute inset-x-0 bottom-0 flex h-1 bg-line" aria-hidden="true">
