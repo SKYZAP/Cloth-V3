@@ -720,7 +720,8 @@ function ChatView({
         )}
       </AnimatePresence>
       {/* Header floats over the conversation and fades into it */}
-      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
+      {/* Solid while the work bar is up: the fade would let scrolled messages show between the title and the bar. */}
+      <header className={clsx('absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 px-5 mobile:gap-1.5 mobile:px-3', workBar ? 'bg-bg' : 'bg-gradient-to-b from-bg from-55% to-transparent')}>
         <SplitBack />
         {side && (
           <Tooltip content={listHidden ? 'Show the chat list (Ctrl+B)' : 'Hide the chat list (Ctrl+B)'}>
@@ -784,7 +785,7 @@ function ChatView({
       <AnimatePresence>
         {workBar && (
           // A solid band behind the bar so the scrolling chat doesn't show around it.
-          <div key="workbar" className="absolute inset-x-0 top-14 z-10 bg-bg pb-2">
+          <div key="workbar" className="absolute inset-x-0 top-14 z-10 bg-bg pb-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-5 after:bg-gradient-to-b after:from-bg after:to-transparent">
             <div className="mx-auto w-[min(740px,calc(100%-64px))] mobile:w-[calc(100%-28px)]">
               <WorkBar bar={workBar} />
             </div>
