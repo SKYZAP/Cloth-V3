@@ -28,7 +28,9 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
-import { ReferenceCard, ToolGroup, ToolTraceCard } from '@/components/ToolTrace'
+import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
+import { ActivityGroup, ChangedFiles } from '@/components/Activity'
+import { groupTurn } from '@/lib/activity'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
@@ -1301,32 +1303,10 @@ function AssistantTurn({
   const lastTodoIdx = all.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
   // Only the latest plan in a turn can be approved.
   const lastPlanIdx = all.map((b) => (b.type === 'tool' && b.trace.plan ? 'p' : '')).lastIndexOf('p')
-  // Consecutive tool calls fold into one line. Plan updates other than the latest are dropped (the plan
-  // panel shows the plan); images, questions and subagents keep their own cards.
-  const items = useMemo(() => {
-    const out: ({ kind: 'block'; i: number } | { kind: 'group'; indices: number[] })[] = []
-    let run: number[] = []
-    const flush = () => {
-      if (run.length >= 2) out.push({ kind: 'group', indices: run })
-      else for (const i of run) out.push({ kind: 'block', i })
-      run = []
-    }
-    all.forEach((b, i) => {
-      if (b.type === 'tool') {
-        const t = b.trace
-        if (t.name === 'todo_write' && i !== lastTodoIdx) return
-        if (t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || t.subagent || t.plan) {
-          flush()
-          out.push({ kind: 'block', i })
-        } else run.push(i)
-        return
-      }
-      flush()
-      out.push({ kind: 'block', i })
-    })
-    flush()
-    return out
-  }, [all, lastTodoIdx])
+  // Thinking and tool calls between pieces of the reply fold into one activity line. Plan updates other
+  // than the latest are dropped (the plan panel shows the plan); images, questions and subagents keep their own cards.
+  const items = useMemo(() => groupTurn(all, lastTodoIdx), [all, lastTodoIdx])
+  const traces = useMemo(() => all.flatMap((b) => (b.type === 'tool' ? [b.trace] : [])), [all])
 
   const own = message.usage?.cost ?? 0
   const agents = useMemo(() => agentCost(message), [message])
@@ -1337,14 +1317,12 @@ function AssistantTurn({
         <Logo size={28} />
       </div>
       <div className="min-w-0">
-        {items.map((item) => {
-          if (item.kind === 'group') {
-            const traces = item.indices.map((j) => (all[j] as Extract<UiBlock, { type: 'tool' }>).trace)
-            return <ToolGroup key={traces[0].id} traces={traces} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
-          }
+        {items.map((item, n) => {
+          if (item.kind === 'group')
+            return <ActivityGroup key={item.key} blocks={item.indices.map((j) => all[j])} live={streaming && n === items.length - 1} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           const i = item.i
           const { block, refs } = blocks[i]
-          if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === all.length - 1} />
+          if (block.type === 'thinking') return null
           if (block.type === 'tool' && block.trace.plan) {
             const p: PlanProposal = block.trace.plan
             return <PlanCard key={block.trace.id} plan={p} actionable={!!plan?.actionable && i === lastPlanIdx} onApprove={(mode) => plan?.onApprove(mode) ?? Promise.resolve()} onRevise={() => plan?.onRevise()} />
@@ -1352,6 +1330,7 @@ function AssistantTurn({
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}
+        {!streaming && <ChangedFiles traces={traces} onUndo={onUndo} />}
         {message.error && <div className="mt-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
         {!streaming && (
           <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
@@ -1436,28 +1415,6 @@ function SummaryDivider({ summary }: { summary: string }) {
             <div className="mt-3 rounded-[14px] border border-line bg-panel px-4 py-3 text-[13px]">
               <Markdown text={summary} />
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-function Thinking({ text, live }: { text: string; live: boolean }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="mb-2.5">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[12.5px] text-dim transition-colors hover:text-muted">
-        <Brain size={14} />
-        <span className={live ? 'shimmer-text' : ''}>{live ? 'Thinking' : 'Thought process'}</span>
-        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} className="flex">
-          <CaretRight size={11} />
-        </motion.span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div key="t" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="overflow-hidden">
-            <div className="selectable mt-2 whitespace-pre-wrap border-l-2 border-line pl-3 text-[12.5px] leading-relaxed text-dim">{text}</div>
           </motion.div>
         )}
       </AnimatePresence>
