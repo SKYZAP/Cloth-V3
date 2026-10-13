@@ -720,8 +720,7 @@ function ChatView({
         )}
       </AnimatePresence>
       {/* Header floats over the conversation and fades into it */}
-      {/* Solid while the work bar is up: the fade would let scrolled messages show between the title and the bar. */}
-      <header className={clsx('absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 px-5 mobile:gap-1.5 mobile:px-3', workBar ? 'bg-bg' : 'bg-gradient-to-b from-bg from-55% to-transparent')}>
+      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
         <SplitBack />
         {side && (
           <Tooltip content={listHidden ? 'Show the chat list (Ctrl+B)' : 'Hide the chat list (Ctrl+B)'}>
@@ -782,17 +781,6 @@ function ChatView({
         </Tooltip>
       </header>
 
-      <AnimatePresence>
-        {workBar && (
-          // A solid band behind the bar so the scrolling chat doesn't show around it.
-          <div key="workbar" className="absolute inset-x-0 top-14 z-10 bg-bg pb-2 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-5 after:bg-gradient-to-b after:from-bg after:to-transparent">
-            <div className="mx-auto w-[min(740px,calc(100%-64px))] mobile:w-[calc(100%-28px)]">
-              <WorkBar bar={workBar} />
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-
       <div
         ref={scroller}
         className="min-h-0 flex-1 overflow-y-auto"
@@ -809,7 +797,7 @@ function ChatView({
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
-        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pb-[250px] mobile:w-[calc(100%-28px)] mobile:pb-[190px]', workBar ? 'pt-[108px] mobile:pt-[104px]' : 'pt-[84px] mobile:pt-[64px]')}>
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pt-[64px]', workBar ? 'pb-[300px] mobile:pb-[240px]' : 'pb-[250px] mobile:pb-[190px]')}>
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -880,7 +868,7 @@ function ChatView({
               setUnseen(false)
               scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
             }}
-            className="absolute bottom-[170px] left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg mobile:bottom-[150px]"
+            className={clsx('absolute left-1/2 z-30', workBar ? 'bottom-[220px] mobile:bottom-[200px]' : 'bottom-[170px] mobile:bottom-[150px]', 'flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg')}
           >
             <ArrowDown size={13} />
             {unseen && running ? 'New output' : 'Jump to latest'}
@@ -890,6 +878,14 @@ function ChatView({
 
       {/* Composer: floats over a gradient fade — no divider line */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 has-[[role=menu]]:z-40 has-[[role=dialog]]:z-40 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
+        {/* The current turn's plan and agents, just above the message box. Opening it grows upward. */}
+        <AnimatePresence>
+          {workBar && (
+            <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(724px,calc(100%-80px))] mobile:w-[calc(100%-36px)]">
+              <WorkBar bar={workBar} />
+            </div>
+          )}
+        </AnimatePresence>
         <div
           className={clsx(
             'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
