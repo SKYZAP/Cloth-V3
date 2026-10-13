@@ -2,18 +2,23 @@ import { useMemo } from 'react'
 import clsx from 'clsx'
 import type { UiMessage } from '@shared/types'
 import { formatCost, formatTokens } from '@/lib/format'
-import { chatAgents, type RunInfo } from '@/lib/workbar'
+import { chatAgents, shortfall, type RunInfo } from '@/lib/workbar'
 import { scrollToRun } from '@/components/WorkBar'
 
 function RunRow({ run }: { run: RunInfo }) {
+  const short = shortfall(run)
   return (
     <button onClick={() => scrollToRun(run.cardId)} className="block w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-elev" title="Show this run in the chat">
       <div className="flex items-center gap-2 text-[12.5px]">
         <span
-          className={clsx('h-2 w-2 shrink-0 rounded-full', run.status === 'running' ? 'animate-pulse bg-warn' : run.status === 'done' ? 'bg-ok' : 'bg-crimson')}
-          aria-label={run.status === 'running' ? 'Running' : run.status === 'done' ? 'Done' : 'Failed'}
+          className={clsx(
+            'h-2 w-2 shrink-0 rounded-full',
+            run.status === 'running' ? 'animate-pulse bg-warn' : run.outcome === 'partial' ? 'bg-warn' : run.status === 'done' && run.outcome !== 'blocked' ? 'bg-ok' : 'bg-crimson'
+          )}
+          aria-label={run.status === 'running' ? 'Running' : (short ?? (run.status === 'done' ? 'Done' : 'Failed'))}
         />
         <span className="min-w-0 truncate text-fg">{run.name}</span>
+        {short && <span className={clsx('shrink-0 text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-crimson-hi')}>{short}</span>}
         {run.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10.5px] text-agent">{run.tierName}</span>}
         <div className="flex-1" />
         {run.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(run.cost)}</span>}

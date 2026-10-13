@@ -33,6 +33,12 @@ describe('collectRuns', () => {
     expect(runs[1].name).toBe('worker')
   })
 
+  it("carries a finished run's outcome, not a running or failed one's", () => {
+    expect(collectRuns([task('a', { outcome: 'blocked' })])[0].outcome).toBe('blocked')
+    expect(collectRuns([task('a', { outcome: 'partial', running: true }, 'running')])[0].outcome).toBeUndefined()
+    expect(collectRuns([task('a', { outcome: 'partial' }, 'error')])[0].outcome).toBeUndefined()
+  })
+
   it('keeps the current action only while running', () => {
     const current = { tool: 'read', summary: 'a.ts' }
     expect(collectRuns([task('a', { running: true, current }, 'running')])[0]).toMatchObject({ status: 'running', current })

@@ -39,8 +39,16 @@ const SUBAGENT_INSTRUCTIONS = (role: 'scout' | 'worker') =>
     role === 'scout'
       ? 'You are a read-only scout: investigate with the tools you have and do not attempt to change anything.'
       : 'You are a worker: make the changes the job asks for, keeping them minimal. Each edit may be reviewed by the user.',
-    'When done, reply with a concise report — it is all the other agent will see. Include concrete findings: file paths with line numbers, names, facts, and what you changed. No preamble.'
+    `When done, reply with a report — it is all the other agent will see. Start it with a line \`Result: done\`, \`Result: partly done\` or \`Result: blocked\`, then: ${role === 'scout' ? 'what you found (file paths with line numbers, names, facts)' : 'the files you changed, one line each with what changed'}; the verification you ran and its outcome; open questions or risks ("none" if none). Keep it under ~300 words, no preamble.`
   ].join('\n')
+
+/** What a subagent's report says it achieved: its first `Result:` line, or undefined without one. */
+export function parseOutcome(text: string): SubagentRun['outcome'] {
+  const m = /^\s*\**result\**\s*:\s*\**\s*(done|partly done|partially done|blocked)/im.exec(text)
+  if (!m) return undefined
+  const v = m[1].toLowerCase()
+  return v === 'done' ? 'done' : v === 'blocked' ? 'blocked' : 'partial'
+}
 
 const SLICE_LABELS: Record<ContextSliceKey, string> = {
   system: 'System prompt',
@@ -424,7 +432,10 @@ export class AgentRuntime {
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
       if (scope.autoTiers && this.tiers().length) {
         lines.push(
-          'For multi-step work, plan with `todo_write` first and delegate the steps to agents with `task` (pass `step`). Give each job the cheapest `tier` that gets that step right the first time; when unsure between two tiers, pick the higher.'
+          'For multi-step work, plan with `todo_write` first and delegate the steps to agents with `task` (pass `step`). Give each job the cheapest `tier` that gets that step right the first time; when unsure between two tiers, pick the higher.',
+          "Write each brief so it stands alone: the agent can't see this chat. Name the files, the constraints, what done looks like and how to check it.",
+          "Treat each report as a claim: check the changed files (and rerun the check when it's cheap) before telling the user it's done. If something is wrong, send the job back with the specific defects, at most twice, then rethink the plan or ask the user.",
+          'Keep visual and UX design decisions yourself; put the decided design into the brief.'
         )
       }
     }
@@ -709,7 +720,14 @@ export class AgentRuntime {
           this.run({
             model,
             prompt: p.prompt,
-            systemPrompt: [SUBAGENT_INSTRUCTIONS(role), named ? `You are the "${named.name}" agent. ${named.purpose}` : '', who?.instructions.trim() ?? cfg.instructions.trim()].filter(Boolean).join('\n\n'),
+            systemPrompt: [
+              SUBAGENT_INSTRUCTIONS(role),
+              tier?.instructions?.trim() ? `Rules for this job (${tier.name} tier):\n${tier.instructions.trim()}` : '',
+              named ? `You are the "${named.name}" agent. ${named.purpose}` : '',
+              who?.instructions.trim() ?? cfg.instructions.trim()
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
             scope,
             thinking,
             signal,
@@ -733,9 +751,10 @@ export class AgentRuntime {
         if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, true)
         for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
         const report = result.text || '(the subagent finished without a report)'
+        const outcome = parseOutcome(result.text)
         return {
           content: [{ type: 'text', text: note ? `${report}\n\n(${note})` : report }],
-          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}) }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
+          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}), ...(outcome ? { outcome } : {}) }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
         }
       }
     }

@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretDown, CheckCircle, Circle, WarningCircle } from '@phosphor-icons/react'
 import { formatCost } from '@/lib/format'
-import { runCardId, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
+import { runCardId, shortfall, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
 
 /** Scroll the chat to a run's card and flash it briefly. */
 export function scrollToRun(cardId: string) {
@@ -29,10 +29,15 @@ function StatusIcon({ status }: { status: StepStatus }) {
 
 function Row({ row }: { row: BarRow }) {
   const run = row.run
+  const short = run ? shortfall(run) : null
   const body = (
     <>
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-        <StatusIcon status={row.status} />
+        {short && row.status === 'completed' ? (
+          <span className={clsx('mx-[3px] h-2 w-2 rounded-full', run?.outcome === 'partial' ? 'bg-warn' : 'bg-crimson')} aria-label={short} />
+        ) : (
+          <StatusIcon status={row.status} />
+        )}
       </span>
       <span className={clsx('min-w-0 flex-1 truncate', row.status === 'completed' ? 'text-muted' : row.status === 'in_progress' ? 'text-fg' : 'text-dim')}>
         {row.n !== undefined && <span className="mr-1.5 font-mono text-[11px] text-dim">{row.n}</span>}
@@ -47,6 +52,7 @@ function Row({ row }: { row: BarRow }) {
         <span className="flex shrink-0 items-center gap-2 text-[11px]">
           {row.runs > 1 && <span className="text-dim">{row.runs} runs</span>}
           <span className="rounded-full bg-agent-soft px-1.5 py-px text-agent">{runLabel(run)}</span>
+          {short && <span className={clsx('text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-crimson-hi')}>{short}</span>}
           {run.cost > 0 && <span className="font-mono text-dim">{formatCost(run.cost)}</span>}
         </span>
       ) : (

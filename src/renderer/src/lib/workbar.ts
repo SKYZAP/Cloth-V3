@@ -18,6 +18,8 @@ export interface RunInfo {
   model?: string
   description: string
   status: RunStatus
+  /** What a finished run's report says it achieved (none = done or no `Result:` line). */
+  outcome?: SubagentRun['outcome']
   cost: number
   /** Uncached plus cached input tokens. */
   tokensIn: number
@@ -30,6 +32,9 @@ export interface RunInfo {
 
 export const runCardId = (traceId: string) => `run-${traceId}`
 
+/** How a finished run that fell short is labelled: "Partly done" or "Blocked" (null otherwise). */
+export const shortfall = (r: RunInfo): string | null => (r.outcome === 'partial' ? 'Partly done' : r.outcome === 'blocked' ? 'Blocked' : null)
+
 function runInfo(trace: ToolTrace, run: SubagentRun, cardId: string): RunInfo {
   const status: RunStatus = trace.status === 'error' ? 'failed' : run.running || trace.status === 'running' ? 'running' : 'done'
   return {
@@ -41,6 +46,7 @@ function runInfo(trace: ToolTrace, run: SubagentRun, cardId: string): RunInfo {
     model: run.model,
     description: run.description,
     status,
+    outcome: status === 'done' ? run.outcome : undefined,
     cost: run.usage?.cost ?? 0,
     tokensIn: (run.usage?.input ?? 0) + (run.usage?.cached ?? 0),
     tokensOut: run.usage?.output ?? 0,
