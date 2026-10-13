@@ -37,7 +37,7 @@ import { Markdown } from './Markdown'
 import { GeneratedImageCard } from './GeneratedImageCard'
 import { api } from '@/lib/api'
 
-const ICONS: Record<string, Icon> = {
+export const ICONS: Record<string, Icon> = {
   rag_search: Books,
   web_search: GlobeHemisphereWest,
   web_fetch: GlobeHemisphereWest,
@@ -113,8 +113,8 @@ const refLabel = (r: RagHit) => {
 }
 
 /** `fresh` animates the card in — only for traces that appear live, not when loading history. */
-export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, compact }: { trace: Trace; fresh?: boolean; awaiting?: boolean; onUndo?(toolCallId: string): Promise<void>; superseded?: boolean; /** Inside a group: tighter. */ compact?: boolean }) {
-  const [open, setOpen] = useState(false)
+export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, compact, defaultOpen }: { trace: Trace; fresh?: boolean; awaiting?: boolean; onUndo?(toolCallId: string): Promise<void>; superseded?: boolean; /** Inside a group: tighter. */ compact?: boolean; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(!!defaultOpen)
   const [undoing, setUndoing] = useState(false)
   const changes = trace.changes ?? []
   const undone = changes.length > 0 && changes.every((c) => c.undone)
@@ -398,7 +398,7 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
   )
 }
 
-// ─── Grouped tool calls ───────────────────────────────────────────────────────
+// ─── Activity ────────────────────────────────────────────────────────────────
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
@@ -432,67 +432,45 @@ export function describeTools(traces: Trace[]): string {
   return text[0].toUpperCase() + text.slice(1)
 }
 
-/** A run of tool calls, folded into one line that opens into the full traces. */
-export function ToolGroup({ traces, fresh, awaiting, onUndo }: { traces: Trace[]; fresh?: boolean; awaiting: Set<string>; onUndo?(toolCallId: string): Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const running = traces.find((t) => t.status === 'running')
-  const errors = traces.filter((t) => t.status === 'error').length
-  const waiting = traces.some((t) => awaiting.has(t.id))
-  const changes = traces.flatMap((t) => t.changes ?? [])
-  const added = changes.reduce((n, c) => n + c.added, 0)
-  const removed = changes.reduce((n, c) => n + c.removed, 0)
-  const ms = traces.reduce((n, t) => n + (t.durationMs ?? 0), 0)
-  const Icon = running ? (ICONS[running.name] ?? Wrench) : ListChecks
-  return (
-    <motion.div initial={fresh ? { opacity: 0, y: 6 } : false} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 28 }} className="mb-4">
-      <button
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-line-strong"
-      >
-        <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
-          <Icon size={14} />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg/90">
-          {running ? (
-            <>
-              <span className="shimmer-text">{running.name.replace(/^mcp__([^_]+)__/, '$1 ')}</span> <span className="text-dim">{summarize(running)}</span>
-            </>
-          ) : (
-            describeTools(traces)
-          )}
-        </span>
-        <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
-          {waiting && <span className="rounded-full bg-warn/10 px-2 py-px font-sans text-[10.5px] text-warn">awaiting approval</span>}
-          {changes.length > 0 && <DiffStat added={added} removed={removed} />}
-          <span>{plural(traces.length, 'step')}</span>
-          {ms > 0 && !running && <span>{duration(ms)}</span>}
-          {running ? (
-            <CircleNotch size={14} className="animate-spin text-crimson" />
-          ) : errors ? (
-            <span className="flex items-center gap-1 font-sans text-crimson-hi" title={`${plural(errors, 'step')} failed`}>
-              <WarningCircle size={15} weight="fill" />
-              {errors}
-            </span>
-          ) : (
-            <CheckCircle size={15} weight="fill" className="text-ok" />
-          )}
-        </span>
-        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} className="flex shrink-0 text-dim">
-          <CaretRight size={13} />
-        </motion.span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden">
-            <div className="ml-[22px] mt-2 border-l border-line pl-4 [&>div:last-child]:mb-0">
-              {traces.map((t) => (
-                <ToolTraceCard key={t.id} trace={t} awaiting={awaiting.has(t.id)} onUndo={onUndo} compact />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  )
+const VERBS: Record<string, string> = {
+  read: 'Read',
+  read_file: 'Read',
+  ls: 'Listed',
+  list_dir: 'Listed',
+  grep: 'Searched',
+  find: 'Searched',
+  ast_grep: 'Searched',
+  lsp: 'Looked up',
+  write: 'Wrote',
+  edit: 'Edited',
+  ast_edit: 'Rewrote',
+  bash: 'Ran',
+  powershell: 'Ran',
+  web_search: 'Searched',
+  web_fetch: 'Fetched',
+  rag_search: 'Searched',
+  rag_index: 'Saved',
+  skill_list: 'Listed skills',
+  skill_use: 'Used skill',
+  skill_create: 'Created skill',
+  tool_create: 'Created tool',
+  agent_mention: 'Handed to',
+  computer: 'Used computer'
+}
+
+/** One step in plain words: a short verb and what it acted on ("Ran", "npm run build"). */
+export function toolVerb(t: Trace): { verb: string; target: string } {
+  const [, server, ...tool] = t.name.split('__')
+  const verb = VERBS[t.name] ?? (t.name.startsWith('mcp__') && tool.length ? `${server} ${tool.join(' ').replace(/_/g, ' ')}` : t.name.replace(/_/g, ' '))
+  const target = t.name === 'bash' || t.name === 'powershell' ? String((t.args as { command?: unknown })?.command ?? '').split('\n')[0] : t.name.startsWith('mcp__') ? argValues(t.args) : summarize(t)
+  return { verb, target }
+}
+
+/** An MCP call's arguments as their values ("http://127.0.0.1:4173"), not JSON. */
+function argValues(args: unknown): string {
+  if (!args || typeof args !== 'object') return ''
+  return Object.values(args as Record<string, unknown>)
+    .filter((v) => (typeof v === 'string' && v.trim()) || typeof v === 'number')
+    .map(String)
+    .join(' · ')
 }
