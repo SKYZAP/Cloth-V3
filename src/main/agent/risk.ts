@@ -3,7 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { posix, win32 } from 'node:path'
 
 /**
- * Risky actions: what still asks for approval in a chat set to Auto (and what an unattended
+ * Risky actions: what asks for approval in a chat set to Manual (and what an unattended
  * automation refuses). Everything here is a pure function of the command or path, so it is easy to
  * test; `commandRiskResolved` / `pathRiskResolved` add one look at the disk to follow links.
  *
@@ -630,7 +630,7 @@ function trackPaths(paths: string[], kind: PathKind, recursive: boolean, ctx: Ri
   return why
 }
 
-/** Why running `command` needs a person's go-ahead in Auto mode (shown on the approval card), or null. */
+/** Why running `command` needs a person's go-ahead in Manual mode (shown on the approval card), or null. */
 export function commandRisk(command: string, ctx: RiskContext): string | null {
   return analyze(command, ctx).reason
 }

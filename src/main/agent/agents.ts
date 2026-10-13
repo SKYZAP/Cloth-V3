@@ -1,4 +1,5 @@
 import { AGENT_TEMPLATES, DEFAULT_AGENT_SETUP, DESIGNER_SKILLS, type Agent, type AgentBuiltin, type AgentInput, type ModelRef, type ThinkingLevel } from '@shared/types'
+import { normalizeEffortOrNull } from '@shared/effort'
 import { json } from '../core/db'
 import { newId, type Ctx } from '../core/context'
 import { parseJsonLoose } from '../core/llm-json'
@@ -97,6 +98,8 @@ const toAgent = (r: AgentRow): Agent => {
     builtin: (r.builtin as AgentBuiltin | null) ?? null,
     ...DEFAULTS,
     ...config,
+    // Efforts saved before the four levels ('off', 'minimal') read as Light.
+    thinking: normalizeEffortOrNull(config.thinking),
     createdAt: r.created_at,
     updatedAt: r.updated_at
   }

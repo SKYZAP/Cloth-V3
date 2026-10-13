@@ -1,5 +1,6 @@
 import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, TodoItem } from '@shared/types'
 import type { LspManager } from './lsp'
+import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
 import type { JsonValue } from '@earendil-works/pi-ai'
 import type { UsageService } from '../core/usage'
@@ -48,7 +49,7 @@ export interface ToolScope {
   autoApprove?: () => AutoApprove
   onAlways?: (scope: 'edits' | 'all') => void
   /**
-   * The chat's permission mode, live (none outside chats: flows and automations count as auto).
+   * The chat's permission mode, live (none outside chats: flows and automations count as manual).
    * fileAccess / shell / autoApprove above are derived from it (permissionCaps).
    */
   permissions?: () => Permissions
@@ -512,6 +513,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         shellExec: scope.container?.exec,
         // A container's changes are reviewed with Apply / Discard, so nothing in it counts as risky.
         checkRisk: !scope.container,
+        // A chat in Auto takes risky actions without asking; unattended runs keep refusing them.
+        asksBeforeRisky: () => asksBeforeRisky(scope.permissions?.(), !!scope.sessionId),
         readOnly: () => inPlanMode(scope)
       })
     )

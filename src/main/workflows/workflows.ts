@@ -600,9 +600,9 @@ export class WorkflowService {
             skillNames: Array.isArray(d.skills) ? d.skills : null,
             workspace: workspace || null,
             fileAccess,
-            // Nobody is watching a flow run: it works in Auto mode, so edits inside its workspace are
-            // approved up front, and risky actions (risk.ts), which would need a person, are refused.
-            permissions: () => 'auto',
+            // Nobody is watching a flow run: it works like Manual mode without a person, so edits inside
+            // its workspace are approved up front, and risky actions (risk.ts), which would need a person, are refused.
+            permissions: () => 'manual',
             autoApprove: () => (fileAccess === 'write' ? 'edits' : 'none'),
             onFile: env.onFile,
             codeIntel: false

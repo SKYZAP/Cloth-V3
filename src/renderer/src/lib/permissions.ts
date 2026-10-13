@@ -5,17 +5,17 @@ export const PERMISSION_MODES: { id: Permissions; name: string; sub: string; not
   {
     id: 'auto',
     name: 'Auto',
-    sub: 'Edits files and runs commands on its own; still asks before anything risky.',
-    note: {
-      lead: 'Still asks before:',
-      rest: 'deleting or writing outside the folder, git push, installing packages, downloading from the network. In a Linux container it doesn’t ask; you review the changes instead.'
-    }
+    sub: 'Edits, runs commands and takes risky actions without asking.',
+    note: { lead: 'Never asks,', rest: 'not even before risky actions. MCP servers you set to ask still ask, and you can undo file changes.' }
   },
   {
     id: 'manual',
     name: 'Manual',
-    sub: 'Reads freely; asks before every change and every command.',
-    note: { lead: 'Asks before:', rest: 'every file change (as a diff) and every command. Reading and searching never ask.' }
+    sub: 'Works on its own, but asks before risky actions: outside the folder, deleting, pushing, installing, downloading or admin rights.',
+    note: {
+      lead: 'Asks before:',
+      rest: 'deleting or writing outside the folder, git push, installing packages, downloading from the network, admin rights. In a Linux container it doesn’t ask; you review the changes instead.'
+    }
   },
   {
     id: 'plan',

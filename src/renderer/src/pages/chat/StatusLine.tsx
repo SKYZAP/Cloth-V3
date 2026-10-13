@@ -3,21 +3,15 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { Code, Cube, Desktop, FolderDashed, FolderSimple, FolderSimplePlus, GlobeHemisphereWest, X } from '@phosphor-icons/react'
 import { DEFAULT_CONTAINER } from '@shared/types'
-import type { ChatSession, ContainerStatus, Project, ThinkingLevel } from '@shared/types'
+import type { ChatSession, ContainerStatus, Project } from '@shared/types'
+import { EFFORT_OPTIONS, effortLabel, normalizeEffort } from '@shared/effort'
 import { api } from '@/lib/api'
 import { isMobile } from '@/lib/platform'
 import { Button } from '@/components/ui'
 import { ModelMenu } from '@/components/ModelPicker'
 import { BottomSheet } from '@/components/BottomSheet'
 
-const EFFORTS: { value: ThinkingLevel; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'minimal', label: 'Minimal' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' }
-]
-export const effortLabel = (t: ThinkingLevel) => EFFORTS.find((e) => e.value === t)?.label ?? t
+export { effortLabel }
 
 type Update = (p: Partial<ChatSession>) => Promise<void>
 
@@ -94,7 +88,7 @@ export function ModelEffortMenu({ session, update, reasoning, onPicked }: { sess
       <div className="mb-1.5 text-[11.5px] text-dim">{reasoning ? 'Reasoning effort' : "This model doesn't reason, so it has no effort setting."}</div>
       {reasoning && (
         <>
-          <Segmented value={session.thinking} onChange={(thinking) => void update({ thinking })} options={EFFORTS} label="Reasoning effort" />
+          <Segmented value={normalizeEffort(session.thinking)} onChange={(thinking) => void update({ thinking })} options={EFFORT_OPTIONS} label="Reasoning effort" />
           <div className="mt-1.5 text-[11px] text-dim">Higher effort thinks longer before answering: slower, better on tricky changes.</div>
         </>
       )}

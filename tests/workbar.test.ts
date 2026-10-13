@@ -55,8 +55,8 @@ describe('runName', () => {
   })
 
   it('says what a run may do with files', () => {
-    expect(runAccess('scout')).toBe('read-only')
-    expect(runAccess('worker')).toBe('can edit')
+    expect(runAccess('scout')).toBe('Reader')
+    expect(runAccess('worker')).toBe('Editor')
   })
 })
 

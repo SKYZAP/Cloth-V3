@@ -6,6 +6,7 @@ import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, Image
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
+import { normalizeEffort } from '@shared/effort'
 import { toolSummary } from '@shared/tool-summary'
 import type { Agent as SavedAgent, AgentSetup, AgentTier, SubagentActivity, TodoItem, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
@@ -110,11 +111,11 @@ export function permissionSection(p: Permissions, where: { workspace: string | n
   if (where.container) {
     return p === 'auto'
       ? '## Permissions: Auto\nThis chat is in Auto mode (this replaces anything said earlier about approvals): changes and commands in the container run without asking; the user reviews the changes before they reach their folder.'
-      : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): the user approves each file change (as a diff) and each command before it runs. If something is declined, do not retry it; ask what they want instead.'
+      : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): changes and commands in the container run without asking (nothing in the container counts as risky); the user reviews the changes before they reach their folder.'
   }
   return p === 'auto'
-    ? '## Permissions: Auto\nThis chat is in Auto mode (this replaces anything said earlier about approvals): file changes and commands run without asking, and the user can undo changes. Risky actions still need the user\'s approval first: deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings. If one is declined, do not retry it or work around it; ask how to proceed.'
-    : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): the user approves each file change (as a diff) and each command before it runs; reading and searching never ask. If something is declined, do not retry it; ask what they want instead.'
+    ? '## Permissions: Auto\nThis chat is in Auto mode (this replaces anything said earlier about approvals): nothing needs approval. File changes, commands and risky actions (deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings) all run without asking, and the user can undo file changes. Take risky actions only when the task needs them, and say what you did.'
+    : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): file changes and commands run without asking, and the user can undo changes. Risky actions pause until the user OKs them: deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings. Batch risky steps where you can (e.g. one install for all packages) and explain why each is needed. If one is declined, do not retry it or work around it; ask how to proceed.'
 }
 
 /** What a chat stores: fileAccess / shell / autoApprove are worked out from `permissions`, never stored. */
@@ -170,12 +171,12 @@ const DEFAULT_CONFIG: SessionConfig = {
   webEnabled: false,
   customTools: true,
   workspace: null,
-  permissions: 'auto',
+  permissions: 'manual',
   subagents: true,
   codeIntel: true,
   imagesEnabled: true,
   computerUse: false,
-  thinking: 'off',
+  thinking: 'low',
   projectId: null,
   container: null,
   mcpServers: null,
@@ -455,7 +456,7 @@ export class AgentRuntime {
       // The same rules the tools are built with (buildTools): outside a chat, changes and commands need approval up front, an allowlist or a container.
       const unattended = !scope.sessionId
       const autoEdits = !!scope.autoApprove && scope.autoApprove() !== 'none'
-      // Auto mode in a chat: changes and commands run without asking, except risky ones.
+      // Auto or Manual in a chat: changes and commands run without asking (Manual still asks before risky ones).
       const autoAll = !unattended && !!scope.autoApprove && scope.autoApprove() === 'all'
       const writable = scope.fileAccess === 'write' && (!!scope.sessionId || autoEdits)
       const shell = scope.shell && (scope.sessionId || scope.commandAllow?.length || scope.container) ? (scope.container || process.platform !== 'win32' ? 'bash' : 'powershell') : null
@@ -483,7 +484,7 @@ export class AgentRuntime {
                 : scope.commandAllow?.length
                   ? `You can run only these commands with ${shell} (working directory = the workspace), each on its own and with any arguments: ${scope.commandAllow.map((c) => `\`${c}\``).join(', ')}. Anything else, or chaining commands with ; && | or redirects, is refused.`
                   : autoAll
-                    ? `You can run commands with ${shell} (working directory = the workspace). Commands run without asking, except risky ones — deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings — which the user approves first. If one is declined, do not retry it or work around it; ask how to proceed.`
+                    ? `You can run commands with ${shell} (working directory = the workspace). Commands run without asking; the Permissions section says whether risky ones (deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings) wait for the user's OK first. If one is declined, do not retry it or work around it; ask how to proceed.`
                     : unattended
                       ? `You can run commands with ${shell} (working directory = the workspace).`
                       : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`,
@@ -823,6 +824,31 @@ export class ChatService {
     private agents?: AgentService
   ) {}
 
+  /**
+   * Once: Auto became "never asks" and Manual took over what Auto did (asking only before risky
+   * actions), so chats, project defaults and the default for new chats saved as Auto move to Manual
+   * and keep behaving as before. Returns how many chats moved; later calls do nothing.
+   */
+  migrateAutoToManual(): number {
+    if (this.ctx.kv.get<boolean>('permissions.autoToManual', false)) return 0
+    this.ctx.kv.set('permissions.autoToManual', true)
+    let moved = 0
+    const setChat = this.ctx.db.prepare('UPDATE sessions SET config = ? WHERE id = ?')
+    for (const r of this.ctx.db.prepare('SELECT id, config FROM sessions').all() as { id: string; config: string }[]) {
+      const config = json<SessionInput>(r.config, {})
+      if (config.permissions !== 'auto') continue
+      setChat.run(JSON.stringify({ ...config, permissions: 'manual' }), r.id)
+      moved++
+    }
+    const setProject = this.ctx.db.prepare('UPDATE projects SET defaults = ? WHERE id = ?')
+    for (const r of this.ctx.db.prepare('SELECT id, defaults FROM projects').all() as { id: string; defaults: string }[]) {
+      const defaults = json<{ permissions?: unknown }>(r.defaults, {})
+      if (defaults.permissions === 'auto') setProject.run(JSON.stringify({ ...defaults, permissions: 'manual' }), r.id)
+    }
+    if (this.ctx.kv.get<{ defaultPermissions?: unknown }>('settings', {}).defaultPermissions === 'auto') this.settings.update({ defaultPermissions: 'manual' })
+    return moved
+  }
+
   list(): ChatSession[] {
     const rows = this.ctx.db.prepare('SELECT id, title, config, preview, created_at, updated_at FROM sessions ORDER BY updated_at DESC').all() as unknown as SessionRow[]
     // Chats from before previews existed get theirs worked out once.
@@ -846,7 +872,7 @@ export class ChatService {
     const fromProject: SessionInput = config.projectId && this.projects ? this.projects.chatConfig(config.projectId) : {}
     const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...withoutCaps(fromProject), ...withoutCaps(config) }
     // Its permission mode: asked for, else the project's, else the default for new chats.
-    full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'auto')
+    full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'manual')
     if (!full.model) full.model = s.defaultModel
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
@@ -1229,7 +1255,7 @@ export class ChatService {
       depth: 0,
       permissions: () => this.get(id).permissions,
       autoApprove: () => permissionCaps(this.get(id).permissions).autoApprove,
-      // "Allow all in this chat" on an approval card: the chat switches to Auto.
+      // "Switch to Auto" on an approval card: the chat switches to Auto (and stops asking).
       onAlways: () => {
         if (this.get(id).permissions === 'manual') this.update(id, { permissions: 'auto' })
       }
@@ -1246,8 +1272,8 @@ export class ChatService {
     const session = this.update(id, { permissions: mode })
     const how =
       mode === 'auto'
-        ? 'This chat is now in Auto mode: changes and commands run without asking, except risky ones, which the user approves first.'
-        : 'This chat is now in Manual mode: the user approves each file change and each command.'
+        ? 'This chat is now in Auto mode: changes, commands and risky actions run without asking.'
+        : "This chat is now in Manual mode: changes and commands run without asking, but risky actions wait for the user's OK, so batch them and explain why each is needed."
     const note = [`${PLAN_OPEN}${mode}">`, `Plan approved. Carry it out. ${how} Work through the plan step by step (keep the todo list current), then report what you did.`, PLAN_CLOSE].join('\n')
     await this.run(id, { role: 'user', content: [{ type: 'text', text: note }, { type: 'text', text: PLAN_APPROVED_TEXT }], timestamp: Date.now() }, '')
     return session
@@ -1474,6 +1500,8 @@ export class ChatService {
 function toSession(row: SessionRow): ChatSession {
   const stored = json<SessionInput>(row.config, {})
   const config: SessionConfig = { ...DEFAULT_CONFIG, ...withoutCaps(stored) }
+  // Efforts saved before the four levels ('off', 'minimal') read as Light.
+  config.thinking = normalizeEffort(config.thinking)
   // Chats saved before permission modes carry the old switches: they map to a mode (and keep it once saved).
   if (!isPermissions(stored.permissions)) config.permissions = legacyPermissions(stored, config)
   return { id: row.id, title: row.title, ...config, ...permissionCaps(config.permissions), ...(row.preview ? { preview: row.preview } : {}), createdAt: row.created_at, updatedAt: row.updated_at }

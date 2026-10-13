@@ -29,7 +29,7 @@ import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
-import { effortLabel } from './chat/StatusLine'
+import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 
 type SectionId = 'models' | 'chat' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
 
@@ -55,7 +55,6 @@ const SECTIONS: SectionDef[] = [
   { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and version', keywords: 'data folder version database about' }
 ]
 
-const THINKING: (ThinkingLevel | 'inherit')[] = ['inherit', 'off', 'minimal', 'low', 'medium', 'high']
 const LAST_SECTION = 'cloth.settingsSection'
 
 export function SettingsPage() {
@@ -255,13 +254,14 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
         <Row label="Thinking" hint="On models that support it.">
           <select
-            value={value.thinking}
+            value={value.thinking === 'inherit' ? 'inherit' : normalizeEffort(value.thinking)}
             onChange={(e) => set({ thinking: e.target.value as SubagentSettings['thinking'] })}
             className="h-8 w-44 rounded-md border border-line bg-panel px-2 text-[12.5px] text-fg outline-none focus:border-crimson-line mobile:w-full"
           >
-            {THINKING.map((t) => (
-              <option key={t} value={t}>
-                {t === 'inherit' ? 'Same as the chat' : t[0].toUpperCase() + t.slice(1)}
+            <option value="inherit">Same as the chat</option>
+            {EFFORT_OPTIONS.map((e) => (
+              <option key={e.value} value={e.value}>
+                {e.label}
               </option>
             ))}
           </select>
@@ -302,8 +302,6 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
     </>
   )
 }
-
-const TIER_EFFORT: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
 
 /** The tiers (model + effort) agents can run at, in order. */
 function TierSection({ tiers }: { tiers: AgentTier[] }) {
@@ -350,11 +348,11 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
         <ModelPicker className="min-w-0 flex-1 mobile:w-full" value={tier.model} onChange={(model) => onChange({ model })} allowNone noneLabel="Chat's model" />
-        <Select className="w-32 mobile:w-full" aria-label="Effort" value={tier.thinking ?? 'chat'} onChange={(e) => onChange({ thinking: e.target.value === 'chat' ? null : (e.target.value as ThinkingLevel) })}>
+        <Select className="w-32 mobile:w-full" aria-label="Effort" value={normalizeEffortOrNull(tier.thinking) ?? 'chat'} onChange={(e) => onChange({ thinking: e.target.value === 'chat' ? null : (e.target.value as ThinkingLevel) })}>
           <option value="chat">Chat's</option>
-          {TIER_EFFORT.map((t) => (
-            <option key={t} value={t}>
-              {effortLabel(t)}
+          {EFFORT_OPTIONS.map((e) => (
+            <option key={e.value} value={e.value}>
+              {e.label}
             </option>
           ))}
         </Select>

@@ -9,6 +9,8 @@ import { parseOutcome, resolveDelegation, throttle } from '../src/main/agent/cha
 import { DEFAULT_TIER_INSTRUCTIONS } from '../src/main/core/settings'
 import { makeServices } from './helpers'
 
+const SHELL = process.platform === 'win32' ? 'powershell' : 'bash'
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 let faux: ReturnType<typeof registerFauxProvider> | null = null
@@ -66,12 +68,14 @@ describe('agent tiers', () => {
       ['light', 'Light', null, 'low'],
       ['medium', 'Medium', null, 'medium'],
       ['careful', 'Careful', null, 'high'],
-      ['heavy', 'Heavy', null, 'high']
+      ['heavy', 'Heavy', null, 'xhigh']
     ])
     expect(tiers.every((t) => t.purpose.length > 10)).toBe(true)
     const next = env.services.settings.update({ agentTiers: [{ ...tiers[0], name: 'Quick' }, { id: '', name: 'Mine', model: null, thinking: 'minimal', purpose: 'x', instructions: '' }] }).agentTiers
     expect(next[0]).toMatchObject({ id: 'light', name: 'Quick' })
     expect(next[1].id).toMatch(/^tier_/)
+    // An old effort ('minimal') reads as Light.
+    expect(next[1].thinking).toBe('low')
     expect(env.services.settings.get().agentTiers).toHaveLength(2)
     // Agents and chats carry their tier settings.
     const agent = env.services.agents.create({ name: 'Fixer', tier: 'light' })
@@ -93,6 +97,24 @@ describe('agent tiers', () => {
     // Tiers saved on disk before instructions existed get the defaults when loaded.
     ;(env.services.settings as unknown as { ctx: { kv: { set(k: string, v: unknown): void } } }).ctx.kv.set('settings', { agentTiers: legacy })
     expect(env.services.settings.get().agentTiers.map((t) => t.instructions)).toEqual(tiers.map((t) => t.instructions))
+  })
+
+  it("reads efforts saved before the four levels ('off', 'minimal') as Light", () => {
+    const env = setup()
+    const kv = (env.services.settings as unknown as { ctx: { kv: { set(k: string, v: unknown): void } } }).ctx.kv
+    const tiers = env.services.settings.get().agentTiers
+    kv.set('settings', { subagents: { thinking: 'minimal' }, agentTiers: [{ ...tiers[0], thinking: 'off' }, { ...tiers[1], thinking: null }, { ...tiers[3], thinking: 'xhigh' }] })
+    const s = env.services.settings.get()
+    expect(s.subagents.thinking).toBe('low')
+    expect(s.agentTiers.map((t) => t.thinking)).toEqual(['low', null, 'xhigh'])
+    kv.set('settings', { subagents: { thinking: 'inherit' } })
+    expect(env.services.settings.get().subagents.thinking).toBe('inherit')
+    // Chats and saved agents too.
+    expect(env.services.chat.update(env.session.id, { thinking: 'off' }).thinking).toBe('low')
+    expect(env.services.chat.update(env.session.id, { thinking: 'xhigh' }).thinking).toBe('xhigh')
+    const agent = env.services.agents.create({ name: 'Old', thinking: 'minimal' })
+    expect(env.services.agents.get(agent.id).thinking).toBe('low')
+    expect(env.services.agents.update(agent.id, { thinking: null }).thinking).toBeNull()
   })
 
   it('reads the Result line of a report', () => {
@@ -269,6 +291,8 @@ describe('agent tiers', () => {
       fauxAssistantMessage([fauxToolCall('task', { description: 'Bump the port', prompt: 'Change port=4242 to port=8080 in config.txt.', role: 'worker' }, { id: 'task' })], { stopReason: 'toolUse' }),
       async () => (await wait(300), fauxAssistantMessage([fauxToolCall('read', { path: 'config.txt' }, { id: 'r1' })], { stopReason: 'toolUse' })),
       async () => (await wait(300), fauxAssistantMessage([fauxToolCall('edit', { path: 'config.txt', edits: [{ oldText: 'port=4242', newText: 'port=8080' }] }, { id: 'e1' })], { stopReason: 'toolUse' })),
+      // A risky command (a push; the folder is no repository) waits for approval in Manual.
+      async () => (await wait(300), fauxAssistantMessage([fauxToolCall(SHELL, { command: 'git push origin main' }, { id: 'c1' })], { stopReason: 'toolUse' })),
       fauxAssistantMessage('Changed config.txt.'),
       fauxAssistantMessage('Done.')
     ])
@@ -280,7 +304,7 @@ describe('agent tiers', () => {
         .map((b) => (b.type === 'tool' && b.trace.id === 'task' ? b.trace.subagent : undefined))
         .filter((s) => s?.running)
     const done = send(env, 'bump it')
-    // The edit waits for approval: by then the subagent shows it as its current tool.
+    // The push waits for approval: by then the subagent shows it as its current tool.
     let approvalId = ''
     for (let i = 0; i < 400 && !approvalId; i++) {
       const a = env.events.map((e) => e.payload as ChatEvent).find((e) => e.type === 'approval')
@@ -291,11 +315,11 @@ describe('agent tiers', () => {
     await wait(400)
     const live = running()
     const last = live.at(-1)!
-    expect(last.current).toEqual({ tool: 'edit', summary: 'config.txt' })
+    expect(last.current).toEqual({ tool: SHELL, summary: '$ git push origin main' })
     const withUsage = live.filter((s) => s?.usage)
     expect(withUsage.length).toBeGreaterThan(1)
     expect(last.usage!.input).toBeGreaterThan(withUsage[0]!.usage!.input)
-    env.services.chat.resolveApproval(approvalId, 'allow')
+    env.services.chat.resolveApproval(approvalId, 'deny')
     await done
     const task = traces(env).find((t) => t.id === 'task')!
     expect(task.subagent).toMatchObject({ running: false, files: ['config.txt'] })

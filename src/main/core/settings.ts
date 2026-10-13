@@ -1,5 +1,6 @@
 import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type Settings, type SubagentSettings } from '@shared/types'
 import { newId, type Ctx } from './context'
+import { normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 
 export { DEFAULT_TIER_INSTRUCTIONS }
 
@@ -8,7 +9,7 @@ export const DEFAULT_AGENT_TIERS: AgentTier[] = [
   { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: 'Mechanical edits, renames, running builds or tests, small isolated fixes.', instructions: DEFAULT_TIER_INSTRUCTIONS.light },
   { id: 'medium', name: 'Medium', model: null, thinking: 'medium', purpose: 'Standard features and bug fixes with a known cause, a few files.', instructions: DEFAULT_TIER_INSTRUCTIONS.medium },
   { id: 'careful', name: 'Careful', model: null, thinking: 'high', purpose: 'Delicate changes where the approach is clear: multi-file refactors, edge cases, keeping invariants.', instructions: DEFAULT_TIER_INSTRUCTIONS.careful },
-  { id: 'heavy', name: 'Heavy', model: null, thinking: 'high', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.', instructions: DEFAULT_TIER_INSTRUCTIONS.heavy }
+  { id: 'heavy', name: 'Heavy', model: null, thinking: 'xhigh', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.', instructions: DEFAULT_TIER_INSTRUCTIONS.heavy }
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -46,7 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
     instructions: ''
   },
   agentTiers: DEFAULT_AGENT_TIERS,
-  defaultPermissions: 'auto'
+  defaultPermissions: 'manual'
 }
 
 export const DEFAULT_SUBAGENTS: SubagentSettings = DEFAULT_SETTINGS.subagents
@@ -62,7 +63,7 @@ export class SettingsService {
     return {
       ...DEFAULT_SETTINGS,
       ...stored,
-      subagents: { ...DEFAULT_SETTINGS.subagents, ...stored.subagents },
+      subagents: withEffort({ ...DEFAULT_SETTINGS.subagents, ...stored.subagents }),
       ...(stored.agentTiers ? { agentTiers: stored.agentTiers.map(withInstructions) } : {})
     }
   }
@@ -92,8 +93,13 @@ function cleanTiers(tiers: AgentTier[]): AgentTier[] {
   })
 }
 
-/** Tiers saved before they had instructions get their default's (an explicit '' stays empty). */
+/** Tiers saved before they had instructions get their default's (an explicit '' stays empty). Old efforts ('off', 'minimal') read as Light. */
 function withInstructions(t: AgentTier): AgentTier {
   const raw: unknown = t.instructions
-  return { ...t, instructions: typeof raw === 'string' ? raw.trim() : (DEFAULT_TIER_INSTRUCTIONS[t.id] ?? '') }
+  return { ...t, thinking: normalizeEffortOrNull(t.thinking), instructions: typeof raw === 'string' ? raw.trim() : (DEFAULT_TIER_INSTRUCTIONS[t.id] ?? '') }
+}
+
+/** Subagent effort saved before the four levels ('off', 'minimal') reads as Light; 'inherit' stays. */
+function withEffort(s: SubagentSettings): SubagentSettings {
+  return { ...s, thinking: s.thinking === 'inherit' ? 'inherit' : normalizeEffort(s.thinking) }
 }
