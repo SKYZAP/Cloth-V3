@@ -54,7 +54,7 @@ describe('ast-grep tools', () => {
     expect(b.after).toContain('logger.debug(console.log("nested"))')
   })
 
-  it('ast_edit asks once for all files and one Undo restores them', async () => {
+  it('ast_edit changes all files in one step and one Undo restores them', async () => {
     const env = makeServices()
     const root = project()
     const provider = env.services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
@@ -75,10 +75,8 @@ describe('ast-grep tools', () => {
       }
       await wait(10)
     }
-    expect(asked).toHaveLength(1)
-    expect(asked[0]).toMatchObject({ kind: 'edit', path: '2 files' })
-    expect(asked[0].diff).toContain('+++ b/src/a.ts')
-    expect(asked[0].diff).toContain('+++ b/src/b.ts')
+    // Manual (the old ask-for-everything switches) asks only before risky actions.
+    expect(asked).toHaveLength(0)
     const trace = env.services.chat
       .messages(session.id)
       .flatMap((m) => m.blocks)

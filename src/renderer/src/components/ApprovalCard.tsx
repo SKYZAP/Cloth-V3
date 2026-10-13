@@ -13,13 +13,17 @@ const KIND = {
 } as const
 
 /**
- * Inline request for the user's go-ahead on a write, edit or shell command. A risky action (Auto mode)
- * says why it needs a look and offers no "always"; in Manual mode "always" switches the chat to Auto.
+ * Inline request for the user's go-ahead on a write, edit or shell command. A risky action (what
+ * Manual asks about) says why it needs a look and offers Allow once / Deny / "Switch to Auto"
+ * (which allows this one and stops asking). MCP tools set to ask can be always allowed per server.
  */
 export function ApprovalCard({ approval, permissions, onDecide }: { approval: PendingApproval; permissions?: Permissions; onDecide(decision: ApprovalDecision): Promise<void> | void }) {
   const [busy, setBusy] = useState(false)
   const k = KIND[approval.kind]
   const manual = permissions === 'manual'
+  // Manual asks only about risky actions; its third button switches the chat to Auto.
+  const risky = !!approval.risk
+  const switchToAuto = manual && approval.kind !== 'tool' && approval.kind !== 'computer'
   const decide = async (d: ApprovalDecision) => {
     setBusy(true)
     try {
@@ -73,33 +77,27 @@ export function ApprovalCard({ approval, permissions, onDecide }: { approval: Pe
             onClick={() => void decide('allow')}
             className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:opacity-50"
           >
-            {approval.kind === 'command' ? 'Run' : approval.kind === 'tool' || approval.kind === 'computer' ? 'Allow' : 'Apply'}
+            {risky ? 'Allow once' : approval.kind === 'command' ? 'Run' : approval.kind === 'tool' || approval.kind === 'computer' ? 'Allow' : 'Apply'}
           </button>
           <button
             disabled={busy}
             onClick={() => void decide('deny')}
             className="h-8 rounded-lg border border-line-strong px-3.5 text-[12.5px] font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
           >
-            Decline
+            {risky ? 'Deny' : 'Decline'}
           </button>
           <div className="flex-1" />
-          {approval.kind !== 'computer' && !approval.risk && (
+          {(switchToAuto || approval.kind === 'tool') && (
             <button
               disabled={busy}
               onClick={() => void decide('always')}
               title={
-                manual
-                  ? 'Stop asking: the chat edits files and runs commands on its own, and still asks before anything risky'
-                  : approval.kind === 'tool'
-                    ? `Stop asking for ${approval.tool?.server} tools in this chat`
-                    : approval.kind === 'command'
-                      ? 'Stop asking for commands and edits in this chat'
-                      : 'Stop asking for file edits in this chat'
+                switchToAuto ? 'Allow this and stop asking: the chat takes risky actions without asking too' : `Stop asking for ${approval.tool?.server} tools in this chat`
               }
               className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] text-dim transition-colors hover:bg-elev-2 hover:text-muted disabled:opacity-50"
             >
-              {manual ? <Lightning size={14} /> : <ShieldCheck size={14} />}
-              {manual ? 'Switch to Auto' : approval.kind === 'tool' ? `Always allow ${approval.tool?.server} here` : approval.kind === 'command' ? 'Allow everything in this chat' : 'Allow all edits in this chat'}
+              {switchToAuto ? <Lightning size={14} /> : <ShieldCheck size={14} />}
+              {switchToAuto ? 'Switch to Auto' : `Always allow ${approval.tool?.server} here`}
             </button>
           )}
         </div>

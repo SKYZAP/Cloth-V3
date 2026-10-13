@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
-import { AGENT_TEMPLATES, type Agent, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef, type ThinkingLevel } from '@shared/types'
+import { AGENT_TEMPLATES, type Agent, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
+import { EFFORT_OPTIONS, normalizeEffortOrNull, type Effort } from '@shared/effort'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Inspector, refocus } from '@/components/Inspector'
@@ -231,13 +232,7 @@ function Cap({ children }: { children: ReactNode }) {
   return <span className="rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">{children}</span>
 }
 
-const EFFORT: { value: ThinkingLevel | 'chat'; label: string }[] = [
-  { value: 'chat', label: "Chat's" },
-  { value: 'off', label: 'Off' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' }
-]
+const EFFORT: { value: Effort | 'chat'; label: string }[] = [{ value: 'chat', label: "Chat's" }, ...EFFORT_OPTIONS]
 
 /** "Light — Mechanical edits…": a tier's name and the start of its purpose, for a select option. */
 const tierLabel = (t: AgentTier) => {
@@ -370,7 +365,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 mobile:grid-cols-1">
                 <ModelPicker value={agent.model} onChange={(model) => void save({ model })} allowNone noneLabel="The chat's model" />
                 <div className="w-[300px] mobile:w-full">
-                  <Segmented size="sm" label="Reasoning effort" value={agent.thinking ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v })} options={EFFORT} />
+                  <Segmented size="sm" label="Reasoning effort" value={normalizeEffortOrNull(agent.thinking) ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v })} options={EFFORT} />
                 </div>
               </div>
             )}
@@ -395,7 +390,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                 m={m}
                 access={
                   agent.builtin ? (
-                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Can edit files when the chat it works for can.'}</span>
+                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Reader: it never changes files.' : 'Editor: it can change files when the chat it works for can.'}</span>
                   ) : (
                     <div className="grid gap-1.5">
                       <Segmented

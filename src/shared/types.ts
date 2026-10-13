@@ -301,7 +301,8 @@ export interface SkillInput {
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 
-export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high'
+/** 'off' is only for models that don't reason; 'minimal' is read as 'low' (see shared/effort.ts). */
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface ChatSession {
   id: string
@@ -316,8 +317,8 @@ export interface ChatSession {
   customTools: boolean
   workspace: string | null
   /**
-   * What the agent may do and what it asks first: auto (changes and commands run, risky actions
-   * ask), manual (every change and command asks) or plan (read-only until a plan is approved).
+   * What the agent may do and what it asks first: auto (nothing asks, risky actions included),
+   * manual (changes and commands run, risky actions ask) or plan (read-only until a plan is approved).
    */
   permissions: Permissions
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
@@ -616,7 +617,7 @@ export interface PendingApproval {
   diff?: string
   added?: number
   removed?: number
-  /** Why this needs a look in Auto mode ("Pushes to a remote", "Installs packages"…); absent for routine asks. */
+  /** Why this needs a look in Manual mode ("Pushes to a remote", "Installs packages"…); absent for routine asks. */
   risk?: string
   createdAt: number
 }

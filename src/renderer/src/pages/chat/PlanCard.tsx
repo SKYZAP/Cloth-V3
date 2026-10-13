@@ -40,7 +40,7 @@ export function PlanCard({ plan, actionable, onApprove, onRevise }: { plan: Plan
             Approve and continue in Auto
           </button>
           <button disabled={busy} onClick={() => void approve('manual')} className="h-8 rounded-[9px] border border-line-strong px-3 text-[12.5px] text-fg transition-colors hover:bg-elev-2 disabled:opacity-50">
-            Approve, ask before changes
+            Approve, ask before risky actions
           </button>
           <button disabled={busy} onClick={onRevise} className="h-8 rounded-[9px] border border-line-strong px-3 text-[12.5px] text-fg transition-colors hover:bg-elev-2 disabled:opacity-50">
             Change the plan…
@@ -58,7 +58,7 @@ export function PlanApprovalLine({ message, fresh }: { message: UiMessage; fresh
       <span className="flex items-center gap-1.5 rounded-full border border-line bg-elev px-3 py-1 text-[12px] text-muted">
         <CheckCircle size={13} weight="fill" className="text-ok" />
         Approved the plan
-        <span className="text-dim">· {message.planApproval === 'manual' ? 'asks before changes' : 'continues in Auto'}</span>
+        <span className="text-dim">· {message.planApproval === 'manual' ? 'asks before risky actions' : 'continues in Auto'}</span>
       </span>
     </motion.div>
   )

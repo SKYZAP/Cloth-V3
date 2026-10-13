@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, type Contex
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { Automation, ChatEvent, PendingApproval, Permissions, ToolTrace } from '../src/shared/types'
-import { legacyPermissions, permissionCaps } from '../src/shared/permissions'
+import { asksBeforeRisky, legacyPermissions, permissionCaps } from '../src/shared/permissions'
 import { buildWorkspaceTools, NEEDS_PERSON, PLAN_REFUSAL } from '../src/main/agent/workspace'
 import { mcpReadOnly } from '../src/main/mcp/client'
 import { RISK } from '../src/main/agent/risk'
@@ -53,16 +53,21 @@ async function settle(env: ReturnType<typeof setup>, onApproval?: (a: PendingApp
 describe('permission modes', () => {
   it('turn into tool switches in one place', () => {
     expect(permissionCaps('auto')).toEqual({ fileAccess: 'write', shell: true, autoApprove: 'all' })
-    expect(permissionCaps('manual')).toEqual({ fileAccess: 'write', shell: true, autoApprove: 'none' })
+    expect(permissionCaps('manual')).toEqual({ fileAccess: 'write', shell: true, autoApprove: 'all' })
     expect(permissionCaps('plan')).toEqual({ fileAccess: 'read', shell: false, autoApprove: 'none' })
+    // Only a chat (someone to ask) in Auto skips the risk checks; unattended runs never do.
+    expect(asksBeforeRisky('auto', true)).toBe(false)
+    expect(asksBeforeRisky('manual', true)).toBe(true)
+    expect(asksBeforeRisky('auto', false)).toBe(true)
+    expect(asksBeforeRisky(undefined, false)).toBe(true)
   })
 
-  it('map the old switches (migration)', () => {
+  it('map the old switches (migration), never to the looser Auto', () => {
     const ws = { workspace: '/x', container: null }
     expect(legacyPermissions({ fileAccess: 'write', shell: true, autoApprove: 'none' }, ws)).toBe('manual')
     expect(legacyPermissions({ fileAccess: 'write', shell: false, autoApprove: 'none' }, ws)).toBe('manual')
-    expect(legacyPermissions({ fileAccess: 'write', shell: false, autoApprove: 'edits' }, ws)).toBe('auto')
-    expect(legacyPermissions({ fileAccess: 'write', shell: true, autoApprove: 'all' }, ws)).toBe('auto')
+    expect(legacyPermissions({ fileAccess: 'write', shell: false, autoApprove: 'edits' }, ws)).toBe('manual')
+    expect(legacyPermissions({ fileAccess: 'write', shell: true, autoApprove: 'all' }, ws)).toBe('manual')
     expect(legacyPermissions({ fileAccess: 'read', shell: false, autoApprove: 'none' }, ws)).toBe('plan')
     expect(legacyPermissions({ fileAccess: 'read', shell: false, autoApprove: 'all' }, ws)).toBe('plan')
     expect(legacyPermissions({ fileAccess: 'read', shell: true, autoApprove: 'none' }, ws)).toBe('manual')
@@ -71,7 +76,7 @@ describe('permission modes', () => {
     expect(legacyPermissions({ fileAccess: 'read', autoApprove: 'none' }, { workspace: '/x', container: { image: 'node:22', network: true } })).toBe('auto')
     // Without a folder there is nothing to plan against: approvals are kept as they were.
     expect(legacyPermissions({ fileAccess: 'read', autoApprove: 'none' }, { workspace: null })).toBe('manual')
-    expect(legacyPermissions({ fileAccess: 'read', autoApprove: 'all' }, { workspace: null })).toBe('auto')
+    expect(legacyPermissions({ fileAccess: 'read', autoApprove: 'all' }, { workspace: null })).toBe('manual')
   })
 
   it('migrates saved chats and keeps the old fields readable', () => {
@@ -81,8 +86,8 @@ describe('permission modes', () => {
       services.ctx.db.prepare('UPDATE sessions SET config = ? WHERE id = ?').run(JSON.stringify(config), s.id)
       return services.chat.get(s.id)
     }
-    expect(save({ workspace: '/w', fileAccess: 'write', shell: true, autoApprove: 'none' })).toMatchObject({ permissions: 'manual', fileAccess: 'write', shell: true, autoApprove: 'none' })
-    expect(save({ workspace: '/w', fileAccess: 'write', autoApprove: 'edits' })).toMatchObject({ permissions: 'auto', fileAccess: 'write', shell: true, autoApprove: 'all' })
+    expect(save({ workspace: '/w', fileAccess: 'write', shell: true, autoApprove: 'none' })).toMatchObject({ permissions: 'manual', fileAccess: 'write', shell: true, autoApprove: 'all' })
+    expect(save({ workspace: '/w', fileAccess: 'write', autoApprove: 'edits' })).toMatchObject({ permissions: 'manual', fileAccess: 'write', shell: true, autoApprove: 'all' })
     expect(save({ workspace: '/w', fileAccess: 'read', shell: false })).toMatchObject({ permissions: 'plan', fileAccess: 'read', shell: false })
     expect(save({ workspace: '/w', fileAccess: 'write', shell: true, autoApprove: 'none', container: { image: 'node:22', network: true } })).toMatchObject({ permissions: 'auto' })
     // Once saved the mode is stored, and the old switches are not.
@@ -95,15 +100,47 @@ describe('permission modes', () => {
 
   it('new chats start in the default mode; the old switches still set a mode', () => {
     const { services } = makeServices()
-    expect(services.chat.create({}).permissions).toBe('auto')
-    services.settings.update({ defaultPermissions: 'manual' })
     expect(services.chat.create({}).permissions).toBe('manual')
+    services.settings.update({ defaultPermissions: 'auto' })
+    expect(services.chat.create({}).permissions).toBe('auto')
     expect(services.chat.create({ permissions: 'plan' }).permissions).toBe('plan')
     const s = services.chat.create({ workspace: '/w', fileAccess: 'write', autoApprove: 'edits' })
-    expect(s.permissions).toBe('auto')
+    expect(s.permissions).toBe('manual')
+    expect(services.chat.update(s.id, { permissions: 'auto' }).permissions).toBe('auto')
     expect(services.chat.update(s.id, { autoApprove: 'none' }).permissions).toBe('manual')
     expect(services.chat.update(s.id, { fileAccess: 'read', shell: false }).permissions).toBe('plan')
     expect(services.chat.update(s.id, { permissions: 'auto' })).toMatchObject({ permissions: 'auto', fileAccess: 'write', shell: true, autoApprove: 'all' })
+  })
+
+  it('moves chats, project defaults and the default saved as Auto to Manual, once', () => {
+    const { services } = makeServices()
+    const db = services.ctx.db
+    const raw = (id: string) => JSON.parse((db.prepare('SELECT config FROM sessions WHERE id = ?').get(id) as { config: string }).config)
+    const auto = services.chat.create({ workspace: '/w', permissions: 'auto' })
+    const manual = services.chat.create({ workspace: '/w', permissions: 'manual' })
+    const plan = services.chat.create({ workspace: '/w', permissions: 'plan' })
+    const project = services.projects.create({ name: 'P', defaults: { permissions: 'auto' } })
+    services.settings.update({ defaultPermissions: 'auto' })
+    // As if this install predates the change.
+    services.ctx.kv.set('permissions.autoToManual', false)
+    expect(services.chat.migrateAutoToManual()).toBe(1)
+    expect(raw(auto.id).permissions).toBe('manual')
+    expect(raw(manual.id).permissions).toBe('manual')
+    expect(raw(plan.id).permissions).toBe('plan')
+    expect(services.projects.get(project.id).defaults.permissions).toBe('manual')
+    expect(services.settings.get().defaultPermissions).toBe('manual')
+    // A second run is a no-op: Auto chosen afterwards stays Auto.
+    services.chat.update(auto.id, { permissions: 'auto' })
+    services.settings.update({ defaultPermissions: 'auto' })
+    expect(services.chat.migrateAutoToManual()).toBe(0)
+    expect(raw(auto.id).permissions).toBe('auto')
+    expect(services.settings.get().defaultPermissions).toBe('auto')
+  })
+
+  it('a fresh install defaults new chats to Manual', () => {
+    const { services } = makeServices()
+    expect(services.settings.get().defaultPermissions).toBe('manual')
+    expect(services.chat.create({}).permissions).toBe('manual')
   })
 
   it('a chat set up from a read-only agent plans; a planning chat stays in Plan', () => {
@@ -143,12 +180,13 @@ describe('permission modes', () => {
 })
 
 describe('approvals by mode', () => {
-  it('Auto runs changes and commands without asking, except risky ones', async () => {
+  it('Auto runs changes, commands and risky commands without asking', async () => {
     const env = setup('auto')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('write', { path: 'a.txt', content: 'a' }, { id: 'w' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall(SHELL, { command: 'echo quiet-run' }, { id: 'c1' })], { stopReason: 'toolUse' }),
+      // Risky (a push), but the folder is no repository, so it fails harmlessly once it runs.
       fauxAssistantMessage([fauxToolCall(SHELL, { command: 'git push origin main' }, { id: 'c2' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('ok')
     ])
@@ -158,53 +196,60 @@ describe('approvals by mode', () => {
       asked.push(a)
       env.services.chat.resolveApproval(a.id, 'deny')
     })
+    expect(asked).toHaveLength(0)
     expect(readFileSync(join(env.root, 'a.txt'), 'utf8')).toBe('a')
     expect(traces.find((t) => t.id === 'c1')?.result).toContain('quiet-run')
-    expect(asked).toHaveLength(1)
-    expect(asked[0]).toMatchObject({ kind: 'command', command: 'git push origin main', risk: RISK.push })
-    expect(traces.find((t) => t.id === 'c2')).toMatchObject({ status: 'error' })
-    // "Always" on a risky action doesn't change the mode.
+    const push = traces.find((t) => t.id === 'c2')
+    expect(push).toBeDefined()
+    expect(push?.result ?? '').not.toContain(NEEDS_PERSON)
+    expect(push?.result ?? '').not.toContain('declined')
     expect(env.services.chat.get(env.session.id).permissions).toBe('auto')
   }, 30_000)
 
-  it('Manual asks before every change and every command, never for reads', async () => {
+  it('Manual asks only before risky actions, never for plain changes, commands or reads', async () => {
     const env = setup('manual')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('write', { path: 'a.txt', content: 'a' }, { id: 'w' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall('read', { path: 'a.txt' }, { id: 'r' }), fauxToolCall('grep', { pattern: 'a' }, { id: 'g' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall(SHELL, { command: 'echo manual-run' }, { id: 'c' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall(SHELL, { command: 'git push origin main' }, { id: 'c2' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('ok')
     ])
     await env.services.chat.send(env.session.id, 'go')
     const asked: PendingApproval[] = []
     const { traces } = await settle(env, (a) => {
       asked.push(a)
-      env.services.chat.resolveApproval(a.id, 'allow')
+      env.services.chat.resolveApproval(a.id, 'deny')
     })
-    expect(asked.map((a) => a.kind)).toEqual(['write', 'command'])
-    expect(asked.every((a) => !a.risk)).toBe(true)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toMatchObject({ kind: 'command', command: 'git push origin main', risk: RISK.push })
+    expect(readFileSync(join(env.root, 'a.txt'), 'utf8')).toBe('a')
     expect(traces.find((t) => t.id === 'r')?.status).toBe('ok')
     expect(traces.find((t) => t.id === 'c')?.result).toContain('manual-run')
+    expect(traces.find((t) => t.id === 'c2')).toMatchObject({ status: 'error' })
+    // Declining keeps the mode.
+    expect(env.services.chat.get(env.session.id).permissions).toBe('manual')
   }, 30_000)
 
-  it('"Allow all" on a Manual approval switches the chat to Auto', async () => {
+  it('"Switch to Auto" on a Manual approval allows it and switches the chat to Auto', async () => {
     const env = setup('manual')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall('write', { path: 'a.txt', content: 'a' }, { id: 'a' })], { stopReason: 'toolUse' }),
-      fauxAssistantMessage([fauxToolCall('write', { path: 'b.txt', content: 'b' }, { id: 'b' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall(SHELL, { command: 'git push origin main' }, { id: 'a' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall(SHELL, { command: 'git push origin dev' }, { id: 'b' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('ok')
     ])
     await env.services.chat.send(env.session.id, 'go')
     let asks = 0
-    await settle(env, (a) => {
+    const { traces } = await settle(env, (a) => {
       asks++
       env.services.chat.resolveApproval(a.id, 'always')
     })
     expect(asks).toBe(1)
     expect(env.services.chat.get(env.session.id).permissions).toBe('auto')
-    expect(existsSync(join(env.root, 'b.txt'))).toBe(true)
+    expect(traces.find((t) => t.id === 'a')?.result ?? '').not.toContain('declined')
+    expect(traces.find((t) => t.id === 'b')).toBeDefined()
   }, 30_000)
 
   it('a container skips the risk checks; nobody to ask refuses risky actions; Plan refuses changes', async () => {
@@ -302,7 +347,7 @@ describe('Plan mode', () => {
     expect(system(seen[1])).toMatch(/"name":"present_plan"/)
   }, 30_000)
 
-  it('approving in Manual asks before changes', async () => {
+  it('approving in Manual carries on without asking for plain changes', async () => {
     const env = setup('plan')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
@@ -318,7 +363,7 @@ describe('Plan mode', () => {
       asked.push(a)
       env.services.chat.resolveApproval(a.id, 'allow')
     })
-    expect(asked.map((a) => a.kind)).toEqual(['write'])
+    expect(asked).toHaveLength(0)
     expect(existsSync(join(env.root, 'x.txt'))).toBe(true)
   }, 30_000)
 })

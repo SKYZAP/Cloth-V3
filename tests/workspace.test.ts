@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ChatEvent, PendingApproval, ToolTrace } from '../src/shared/types'
-import { confine, makeDiff } from '../src/main/agent/workspace'
+import { buildWorkspaceTools, confine, makeDiff, type ApprovalService } from '../src/main/agent/workspace'
 import { makeServices } from './helpers'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -53,7 +53,7 @@ afterEach(() => {
 })
 
 describe('workspace file tools', () => {
-  it('writes a file after approval, records the diff, and can undo it', async () => {
+  it('writes a file without asking (Manual), records the diff, and can undo it', async () => {
     const env = setup('write')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([fauxAssistantMessage([fauxToolCall('write', { path: 'notes/todo.md', content: '# Todo\n- ship it\n' }, { id: 'w1' })], { stopReason: 'toolUse' }), fauxAssistantMessage('Created notes/todo.md.')])
@@ -62,7 +62,7 @@ describe('workspace file tools', () => {
       asked = a
       env.services.chat.resolveApproval(a.id, 'allow')
     })
-    expect(asked).toMatchObject({ kind: 'write', path: 'notes/todo.md', added: 2, removed: 0, toolCallId: 'w1' })
+    expect(asked).toBeNull()
     expect(readFileSync(join(env.root, 'notes/todo.md'), 'utf8')).toBe('# Todo\n- ship it\n')
     const t = traces.find((x) => x.id === 'w1')!
     expect(t.status).toBe('ok')
@@ -74,7 +74,7 @@ describe('workspace file tools', () => {
     expect(undone && undone.type === 'tool' && undone.trace.changes?.[0].undone).toBe(true)
   })
 
-  it('edits in place; a declined edit leaves the file untouched and tells the model', async () => {
+  it('edits in place without asking, recording each change', async () => {
     const env = setup('write')
     writeFileSync(join(env.root, 'app.ts'), 'const port = 3000\nexport default port\n')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
@@ -83,15 +83,28 @@ describe('workspace file tools', () => {
       fauxAssistantMessage([fauxToolCall('edit', { path: 'app.ts', edits: [{ oldText: 'export default port', newText: 'export { port }' }] }, { id: 'e2' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Done.')
     ])
-    const { traces } = await runChat(env, 'change the port', (a) => env.services.chat.resolveApproval(a.id, a.toolCallId === 'e1' ? 'allow' : 'deny'))
-    expect(readFileSync(join(env.root, 'app.ts'), 'utf8')).toBe('const port = 8080\nexport default port\n')
+    let asks = 0
+    const { traces } = await runChat(env, 'change the port', () => asks++)
+    expect(asks).toBe(0)
+    expect(readFileSync(join(env.root, 'app.ts'), 'utf8')).toBe('const port = 8080\nexport { port }\n')
     expect(traces.find((t) => t.id === 'e1')?.changes?.[0]).toMatchObject({ kind: 'modify', added: 1, removed: 1 })
-    const denied = traces.find((t) => t.id === 'e2')!
-    expect(denied.status).toBe('error')
-    expect(denied.result).toMatch(/declined/)
+    expect(traces.find((t) => t.id === 'e2')?.changes?.[0]).toMatchObject({ kind: 'modify', added: 1, removed: 1 })
   })
 
-  it('"always" switches the chat to Auto', async () => {
+  it('a declined edit (where edits still ask) leaves the file untouched and tells the model', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cloth-ws-'))
+    writeFileSync(join(root, 'app.ts'), 'const port = 3000\n')
+    const asked: unknown[] = []
+    const approvals = { request: async (input: unknown) => (asked.push(input), 'deny') } as unknown as ApprovalService
+    const tools = buildWorkspaceTools({ root, sessionId: 's1', access: 'write', shell: false, approvals, checkpoints: null, autoApprove: () => 'none' })
+    const edit = tools.find((t) => t.name === 'edit')!
+    await expect(edit.execute('e1', { path: 'app.ts', edits: [{ oldText: 'const port = 3000', newText: 'const port = 8080' }] })).rejects.toThrow(/declined/)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toMatchObject({ kind: 'edit', path: 'app.ts', added: 1, removed: 1 })
+    expect(readFileSync(join(root, 'app.ts'), 'utf8')).toBe('const port = 3000\n')
+  })
+
+  it('the old ask-for-everything switches land in Manual, which writes without asking', async () => {
     const env = setup('write')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
@@ -100,12 +113,10 @@ describe('workspace file tools', () => {
       fauxAssistantMessage('ok')
     ])
     let asks = 0
-    await runChat(env, 'two files', (a) => {
-      asks++
-      env.services.chat.resolveApproval(a.id, 'always')
-    })
-    expect(asks).toBe(1)
-    expect(env.services.chat.get(env.session.id)).toMatchObject({ permissions: 'auto', autoApprove: 'all' })
+    await runChat(env, 'two files', () => asks++)
+    expect(asks).toBe(0)
+    expect(env.services.chat.get(env.session.id)).toMatchObject({ permissions: 'manual', autoApprove: 'all' })
+    expect(readFileSync(join(env.root, 'a.txt'), 'utf8')).toBe('a')
     expect(readFileSync(join(env.root, 'b.txt'), 'utf8')).toBe('b')
   })
 

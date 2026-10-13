@@ -156,6 +156,10 @@ export function createServices(opts: {
     return chat.fromTranscript({ id: report.id, title: report.title, workspace: wf.workspace, agentId: a?.agentId ?? null, messages: report.messages, container, projectId, origin: { kind: 'automation', workflowId: wf.id } }).id
   }
 
+  // Auto now never asks: chats (and defaults) saved as Auto move to Manual, which asks before risky actions as Auto did. Once.
+  const toManual = chat.migrateAutoToManual()
+  if (toManual) ctx.log('permissions', `Moved ${toManual} chat${toManual === 1 ? '' : 's'} from Auto to Manual`)
+
   // Chats automations made before the Automation project existed move into it, once.
   const moved = projects.migrateAutomationChats(workflows.reportedChatIds())
   if (moved) ctx.log('automation', `Filed ${moved} automation chat${moved === 1 ? '' : 's'} under the Automation project`)

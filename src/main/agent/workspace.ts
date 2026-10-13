@@ -266,10 +266,12 @@ export interface WorkspaceOptions {
   /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
   shellExec?: (command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]) => Promise<{ exitCode: number | null }>
   /**
-   * Look for risky actions (risk.ts): they ask even when everything else is approved up front, and
-   * are refused when nobody is there to ask. Never in a container, whose changes are reviewed instead.
+   * Look for risky actions (risk.ts): they ask even when everything else is approved up front (unless
+   * `asksBeforeRisky` says no), and are refused when nobody is there to ask. Never in a container, whose changes are reviewed instead.
    */
   checkRisk?: boolean
+  /** Live: risky actions still ask (permissions.ts asksBeforeRisky); false in a chat set to Auto. Default true. */
+  asksBeforeRisky?(): boolean
   /** Live: the chat is in Plan mode, so changes and commands are refused even if the tools are there. */
   readOnly?(): boolean
 }
@@ -306,7 +308,7 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     t('lsp', 'Code intelligence', 'Language-server diagnostics, definition, references, hover, symbols and rename for TypeScript/JavaScript (TypeScript 7 native server) and Python (Pyright). Also reports type errors right after each edit.', 'Chats with a workspace and code intelligence on', obj({ action: 'string', path: 'string', symbol: 'string', line: 'number', query: 'string', newName: 'string' }, ['action'])),
     t('write', 'Write file', 'Create or overwrite a file. Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', content: 'string' }, ['path', 'content'])),
     t('edit', 'Edit file', 'Replace exact text in a file (one or more edits). Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', edits: 'array' }, ['path', 'edits'])),
-    t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. Always asks for approval unless everything is auto-approved.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number' }, ['command']))
+    t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. In Manual mode, risky commands ask first.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number' }, ['command']))
   ]
 }
 
@@ -330,6 +332,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       if (!risk || allowCovers(input.command ?? '', o.commandAllow, commandShell, o.root)) return
       throw new Error(`${risk}. ${NEEDS_PERSON}`)
     }
+    // A chat in Auto takes risky actions without asking too.
+    if (risk && o.asksBeforeRisky && !o.asksBeforeRisky()) risk = null
     const policy = o.autoApprove()
     const auto = policy === 'all' || (policy === 'edits' && input.kind !== 'command')
     if (auto && !risk) return
@@ -343,8 +347,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
           : `The user declined this change to ${input.path}. Do not retry the same change; ask the user what they want instead.`
       )
     }
-    // "Always" on a risky action allows this one; risky actions keep asking.
-    if (decision === 'always' && !risk) o.onAlways?.(input.kind === 'command' ? 'all' : 'edits')
+    // "Always" ("Switch to Auto" on a risky action) allows this one and stops asking from now on.
+    if (decision === 'always') o.onAlways?.(input.kind === 'command' ? 'all' : 'edits')
   }
 
   /** Apply one or more file changes behind a single approval, checkpointing each file. */

@@ -8,6 +8,7 @@ import { attempt, useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { Button, Field, Input, Modal, Select, Textarea, confirmAction } from '@/components/ui'
 import type { DesignSystem } from '@shared/design'
+import { effortLabel } from '@shared/effort'
 import { ModelPicker } from '@/components/ModelPicker'
 
 /** The chat settings a project can hand to new chats (everything but the workspace, which is its folder). */
@@ -30,7 +31,7 @@ function describeDefaults(d: ProjectDefaults, folder: string | null): string[] {
   if (d.knowledgeEnabled === false) out.push('no knowledge')
   if (d.subagents === false) out.push('no subagents')
   if (d.autoApprove && d.autoApprove !== 'none') out.push(d.autoApprove === 'all' ? 'auto-approve all' : 'auto-approve edits')
-  if (d.thinking && d.thinking !== 'off') out.push(`thinking: ${d.thinking}`)
+  if (d.thinking && d.thinking !== 'off') out.push(`thinking: ${effortLabel(d.thinking)}`)
   return out
 }
 

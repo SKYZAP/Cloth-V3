@@ -9,19 +9,25 @@ export interface PermissionCaps {
 
 /**
  * The one place a chat's permission mode turns into tool switches; nothing else decides them.
- * - auto: read, write and commands; nothing asks except risky actions (see main/agent/risk.ts).
- * - manual: read, write and commands; every change and every command asks.
+ * - auto: read, write and commands; nothing asks, risky actions included (see `asksBeforeRisky`).
+ * - manual: read, write and commands; only risky actions ask (see main/agent/risk.ts).
  * - plan: read-only, no commands, until the user approves a plan.
  */
 export function permissionCaps(p: Permissions): PermissionCaps {
   switch (p) {
     case 'plan':
       return { fileAccess: 'read', shell: false, autoApprove: 'none' }
-    case 'manual':
-      return { fileAccess: 'write', shell: true, autoApprove: 'none' }
     default:
       return { fileAccess: 'write', shell: true, autoApprove: 'all' }
   }
+}
+
+/**
+ * Whether risky actions (risk.ts) still need a person's OK: everywhere except a chat in Auto. An
+ * unattended run (no chat, or no mode) always checks, and refuses them since nobody can say yes.
+ */
+export function asksBeforeRisky(p: Permissions | undefined, attended: boolean): boolean {
+  return !(attended && p === 'auto')
 }
 
 export const PERMISSION_MODES: Permissions[] = ['auto', 'manual', 'plan']
@@ -39,15 +45,15 @@ export interface LegacyCaps {
 
 /**
  * The mode a chat set up with the old switches gets: container chats → auto (their changes are
- * reviewed with Apply/Discard); a read-only folder without commands → plan; otherwise asking for
- * nothing → manual, auto-approving edits or everything → auto. A chat without a folder has no
- * files to protect, so read-only only keeps its approvals (manual) rather than becoming a plan.
+ * reviewed with Apply/Discard); a read-only folder without commands → plan; otherwise → manual,
+ * which still asks before risky actions (never the looser Auto). A chat without a folder has no
+ * files to protect, so read-only keeps its approvals (manual) rather than becoming a plan.
  */
 export function legacyPermissions(l: LegacyCaps, where: { workspace?: string | null; container?: unknown } = {}): Permissions {
   if (where.container) return 'auto'
   const fileAccess = l.fileAccess ?? 'read'
   if (where.workspace && fileAccess === 'read' && !l.shell) return 'plan'
-  return (l.autoApprove ?? 'none') === 'none' ? 'manual' : 'auto'
+  return 'manual'
 }
 
 /** True when the patch sets one of the old switches. */

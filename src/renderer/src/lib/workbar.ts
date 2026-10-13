@@ -37,8 +37,8 @@ export const runCardId = (traceId: string) => `run-${traceId}`
 /** What a run is called: the saved agent that ran, else "Scout" or "Worker" for a plain job. */
 export const runName = (run: Pick<SubagentRun, 'agent' | 'role'>): string => run.agent ?? (run.role === 'worker' ? 'Worker' : 'Scout')
 
-/** What a run may do with files: "read-only" (scout) or "can edit" (worker). */
-export const runAccess = (role: SubagentRun['role']): string => (role === 'worker' ? 'can edit' : 'read-only')
+/** What a run may do with files: "Reader" (scout, read-only) or "Editor" (worker, can edit). */
+export const runAccess = (role: SubagentRun['role']): string => (role === 'worker' ? 'Editor' : 'Reader')
 
 /** How a finished run that fell short is labelled: "Partly done" or "Blocked" (null otherwise). */
 export const shortfall = (r: RunInfo): string | null => (r.outcome === 'partial' ? 'Partly done' : r.outcome === 'blocked' ? 'Blocked' : null)
