@@ -47,7 +47,8 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
   useEffect(() => {
     if (navSeq === handledSeq.current) return
     handledSeq.current = navSeq
-    write((cur) => ({ ...cur, open: true, ...(isMobile ? { stack: ['setup'], sizes: [1], focus: 0 } : focusOrReplace(cur, 'setup')) }))
+    // open last: focusOrReplace returns the whole state, including open: false.
+    write((cur) => ({ ...cur, ...(isMobile ? { stack: ['setup'], sizes: [1], focus: 0 } : focusOrReplace(cur, 'setup')), open: true }))
   }, [navSeq]) // eslint-disable-line react-hooks/exhaustive-deps
   return [state, set]
 }

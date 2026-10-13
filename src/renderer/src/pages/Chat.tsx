@@ -23,7 +23,7 @@ import {
   Trash,
   type Icon
 } from '@phosphor-icons/react'
-import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
+import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
@@ -44,7 +44,9 @@ import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { SidePanel, usePanelState } from './chat/SidePanel'
 import { showTab, shownTabs } from '@shared/panel-stack'
-import { StatusLine } from './chat/StatusLine'
+import { ComposerBar } from './chat/ComposerBar'
+import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
+import { cyclesPermission, nextPermission, planStatus } from '@/lib/permissions'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
 
@@ -375,6 +377,8 @@ function ChatView({
   const [mentionIndex, setMentionIndex] = useState(0)
   const [attachments, setAttachments] = useState<Pending[]>([])
   const [dragging, setDragging] = useState(false)
+  // A one-off prompt in the empty message box (after "Change the plan…"); cleared on send.
+  const [hint, setHint] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
@@ -455,6 +459,7 @@ function ChatView({
   // Opening a chat puts the cursor in its message box (not on the phone: that would pop the keyboard).
   useEffect(() => {
     if (!isMobile) textarea.current?.focus()
+    setHint(null)
   }, [session.id])
 
   useLayoutEffect(() => {
@@ -487,6 +492,7 @@ function ChatView({
     if ((!t && !files.length) || running) return
     stick.current = true
     setDraft('')
+    setHint(null)
     setSlash(null)
     setMention(null)
     setAttachments([])
@@ -523,6 +529,30 @@ function ChatView({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+  // Shift+Tab switches the permission mode while the message box has focus or nothing does.
+  const cyclePermission = () => void update({ permissions: nextPermission(session.permissions) })
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      const active = document.activeElement
+      const focus = active === textarea.current ? 'composer' : !active || active === document.body ? 'none' : 'other'
+      // The message box handles its own keys (its menus take Tab first).
+      if (focus === 'composer' || !cyclesPermission(e, focus)) return
+      e.preventDefault()
+      cyclePermission()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+  const approvePlan = async (mode: 'auto' | 'manual') => {
+    stick.current = true
+    const s = await attempt(() => api.chat.approvePlan(session.id, mode))
+    if (s) onChange(s)
+  }
+  const revisePlan = () => {
+    setHint('Say what to change in the plan')
+    textarea.current?.focus()
+  }
   const attachWorkspaceFile = async (f: WorkspaceFile) => {
     const bytes = f.kind === 'image' && f.data ? Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0)) : new TextEncoder().encode(f.text ?? '')
     await attach([new File([bytes], f.path.split('/').pop() || 'file', { type: f.mimeType ?? 'text/plain' })])
@@ -800,15 +830,15 @@ function ChatView({
             return m.role === 'user' ? (
               <div key={m.id}>
                 {m.summary !== undefined && <SummaryDivider summary={m.summary} />}
-                <UserBubble message={m} fresh={fresh} />
+                {m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} />
             )
           })}
           <AnimatePresence>
             {approvals.map((a) => (
-              <ApprovalCard key={a.id} approval={a} onDecide={(d) => decide(a, d)} />
+              <ApprovalCard key={a.id} approval={a} permissions={session.permissions} onDecide={(d) => decide(a, d)} />
             ))}
             {questions.map((q) => (
               <QuestionCard key={q.id} question={q} onAnswer={(answer) => attempt(() => api.chat.answerQuestion(q.id, answer)).then(() => undefined)} />
@@ -858,7 +888,7 @@ function ChatView({
       </AnimatePresence>
 
       {/* Composer: floats over a gradient fade — no divider line */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 has-[[role=menu]]:z-40 has-[[role=dialog]]:z-40 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
         <div
           className={clsx(
             'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
@@ -936,6 +966,11 @@ function ChatView({
                 setSlash(null)
                 return
               }
+              if (cyclesPermission(e, 'composer')) {
+                e.preventDefault()
+                cyclePermission()
+                return
+              }
               // Phones: Enter is a newline; the send button sends.
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isMobile) {
                 e.preventDefault()
@@ -943,35 +978,38 @@ function ChatView({
               }
             }}
             rows={1}
-            placeholder={!session.model ? 'Pick a model below to start' : 'Ask anything — / for a skill, @ for an agent'}
+            placeholder={!session.model ? 'Pick a model below to start' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
             className={clsx(
               'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
               (inline.length > 0 || tagged.length > 0) && 'text-transparent caret-fg'
             )}
           />
           </div>
-          <div className="flex items-center gap-0.5 pb-2 pl-2.5 pr-2 pt-1.5">
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => {
-                void attach([...(e.target.files ?? [])])
-                e.target.value = ''
-              }}
-            />
-            <ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />
-            {unknown.length > 0 && (
-              <span className="ml-1.5 min-w-0 truncate text-[11.5px] text-dim" role="status">
-                No skill called {unknown.join(', ')}. It will be sent as text.
-              </span>
-            )}
-            <div className="flex-1" />
-            <SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />
-          </div>
+          {unknown.length > 0 && (
+            <div className="truncate px-[18px] pb-0.5 text-[11.5px] text-dim" role="status">
+              No skill called {unknown.join(', ')}. It will be sent as text.
+            </div>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              void attach([...(e.target.files ?? [])])
+              e.target.value = ''
+            }}
+          />
+          <ComposerBar
+            session={session}
+            update={update}
+            usage={usage}
+            compacting={compacting}
+            onCompact={() => void compactNow()}
+            leading={<ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />}
+            send={<SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
+          />
         </div>
-        <StatusLine session={session} update={update} usage={usage} compacting={compacting} onCompact={() => void compactNow()} />
       </div>
     </div>
     {panel.open && <SidePanel session={session} messages={messages} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
@@ -1222,7 +1260,8 @@ function AssistantTurn({
   fresh,
   onRegenerate,
   awaiting,
-  onUndo
+  onUndo,
+  plan
 }: {
   message: UiMessage
   /** Skills the user's message invoked with /name. */
@@ -1234,6 +1273,8 @@ function AssistantTurn({
   onRegenerate(): void
   awaiting: Set<string>
   onUndo?(toolCallId: string): Promise<void>
+  /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
+  plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -1261,6 +1302,8 @@ function AssistantTurn({
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n\n')
   const lastTextIdx = all.map((b) => b.type).lastIndexOf('text')
   const lastTodoIdx = all.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
+  // Only the latest plan in a turn can be approved.
+  const lastPlanIdx = all.map((b) => (b.type === 'tool' && b.trace.plan ? 'p' : '')).lastIndexOf('p')
   // Consecutive tool calls fold into one line. Plan updates other than the latest are dropped (the plan
   // panel shows the plan); images, questions and subagents keep their own cards.
   const items = useMemo(() => {
@@ -1275,7 +1318,7 @@ function AssistantTurn({
       if (b.type === 'tool') {
         const t = b.trace
         if (t.name === 'todo_write' && i !== lastTodoIdx) return
-        if (t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || t.subagent) {
+        if (t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || t.subagent || t.plan) {
           flush()
           out.push({ kind: 'block', i })
         } else run.push(i)
@@ -1305,6 +1348,10 @@ function AssistantTurn({
           const i = item.i
           const { block, refs } = blocks[i]
           if (block.type === 'thinking') return <Thinking key={i} text={block.text} live={streaming && i === all.length - 1} />
+          if (block.type === 'tool' && block.trace.plan) {
+            const p: PlanProposal = block.trace.plan
+            return <PlanCard key={block.trace.id} plan={p} actionable={!!plan?.actionable && i === lastPlanIdx} onApprove={(mode) => plan?.onApprove(mode) ?? Promise.resolve()} onRevise={() => plan?.onRevise()} />
+          }
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}

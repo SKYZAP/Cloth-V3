@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
-import { CaretDown, Code, Cube, Desktop, FolderDashed, FolderSimple, FolderSimplePlus, GlobeHemisphereWest, X } from '@phosphor-icons/react'
+import { Code, Cube, Desktop, FolderDashed, FolderSimple, FolderSimplePlus, GlobeHemisphereWest, X } from '@phosphor-icons/react'
 import { DEFAULT_CONTAINER } from '@shared/types'
-import type { AutoApprove, ChatSession, ContainerStatus, ContextUsage, Project, ThinkingLevel } from '@shared/types'
+import type { ChatSession, ContainerStatus, Project, ThinkingLevel } from '@shared/types'
 import { api } from '@/lib/api'
-import { useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
-import { formatCost } from '@/lib/format'
 import { Button } from '@/components/ui'
 import { ModelMenu } from '@/components/ModelPicker'
-import { ContextMeter } from '@/components/Planning'
 import { BottomSheet } from '@/components/BottomSheet'
 
 const EFFORTS: { value: ThinkingLevel; label: string }[] = [
@@ -24,63 +21,29 @@ export const effortLabel = (t: ThinkingLevel) => EFFORTS.find((e) => e.value ===
 
 type Update = (p: Partial<ChatSession>) => Promise<void>
 
-/** Under the message box: where the agent works, with which model and effort, and how full the context is. */
-export function StatusLine({ session, update, usage, compacting, onCompact }: { session: ChatSession; update: Update; usage: ContextUsage | null; compacting: boolean; onCompact(): void }) {
-  const providers = useApp((s) => s.providers)
-  const model = providers.find((p) => p.id === session.model?.providerId)?.models.find((m) => m.id === session.model?.modelId)
-  const folder = session.workspace?.split(/[\\/]/).pop()
-  const access = session.container ? 'container' : session.fileAccess === 'write' ? (session.shell ? 'edits + shell' : 'edits') : session.shell ? 'read + shell' : 'read only'
-  return (
-    <div className="@container pointer-events-auto mx-auto mt-1.5 flex w-[min(740px,calc(100%-64px))] items-center gap-1 px-1 mobile:w-[calc(100%-20px)]" aria-label="Chat essentials" role="group">
-      <StatusButton
-        label={
-          <>
-            {session.container ? <Cube size={13} className="shrink-0" /> : folder ? <FolderSimple size={13} weight="fill" className="shrink-0" /> : <FolderDashed size={13} className="shrink-0" />}
-            <span className={clsx('min-w-0 max-w-[180px] truncate', !folder && 'mobile:hidden')}>{folder ?? 'No folder'}</span>
-            {folder && <span className="hidden shrink-0 whitespace-nowrap text-dim @[560px]:inline mobile:hidden">{access}</span>}
-          </>
-        }
-        title={session.workspace ?? 'Choose a folder for the agent to work in'}
-        width={360}
-        sheetTitle="Folder"
-      >
-        {() => <FolderMenu session={session} update={update} />}
-      </StatusButton>
-      <StatusButton
-        label={
-          <>
-            <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
-            <span className="min-w-0 max-w-[200px] truncate">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
-            {model?.reasoning && <span className="shrink-0 whitespace-nowrap text-dim">– {effortLabel(session.thinking)}</span>}
-          </>
-        }
-        title="Model and reasoning effort"
-        width={440}
-        sheetTitle="Model"
-      >
-        {(close) => <ModelEffortMenu session={session} update={update} reasoning={!!model?.reasoning} onPicked={close} />}
-      </StatusButton>
-      <div className="flex-1" />
-      {usage && usage.cost > 0 && (
-        <span className="hidden shrink-0 whitespace-nowrap px-1 text-[12px] tabular-nums text-dim @[420px]:inline" title="Spent in this chat so far, including agents it handed work to">
-          {formatCost(usage.cost)}
-        </span>
-      )}
-      <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} />
-    </div>
-  )
-}
-
-/** A quiet button that opens its own small popover above it (a bottom sheet on the phone). */
-function StatusButton({ label, title, width, sheetTitle, children }: { label: ReactNode; title: string; width: number; sheetTitle: string; children(close: () => void): ReactNode }) {
+/**
+ * A control in the message box's row that opens its own small popover above it (a bottom sheet on the
+ * phone). `trigger` draws the button; it gets whether the popover is open and the toggle.
+ */
+export function ComposerPopover({
+  trigger,
+  width,
+  sheetTitle,
+  role = 'dialog',
+  children
+}: {
+  trigger(open: boolean, toggle: () => void): ReactNode
+  width: number
+  sheetTitle: string
+  role?: 'dialog' | 'menu'
+  children(close: () => void): ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open || isMobile) return
     const onDown = (e: MouseEvent) => {
-      const t = e.target as HTMLElement
-      // The model list's own portals (none today) and this popover count as inside.
-      if (!wrap.current?.contains(t)) setOpen(false)
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     window.addEventListener('mousedown', onDown)
@@ -92,17 +55,8 @@ function StatusButton({ label, title, width, sheetTitle, children }: { label: Re
   }, [open])
   const close = () => setOpen(false)
   return (
-    <div ref={wrap} className="relative min-w-0">
-      <button
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        title={title}
-        className={clsx('flex h-7 min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-[12px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
-      >
-        {label}
-        <CaretDown size={10} className={clsx('shrink-0 text-dim transition-transform', open && 'rotate-180')} />
-      </button>
+    <div ref={wrap} className="relative shrink-0">
+      {trigger(open, () => setOpen(!open))}
       {isMobile ? (
         <BottomSheet open={open} onClose={close} title={sheetTitle} portal>
           {children(close)}
@@ -111,7 +65,7 @@ function StatusButton({ label, title, width, sheetTitle, children }: { label: Re
         <AnimatePresence>
           {open && (
             <motion.div
-              role="dialog"
+              role={role}
               aria-label={sheetTitle}
               initial={{ opacity: 0, y: 6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -129,7 +83,7 @@ function StatusButton({ label, title, width, sheetTitle, children }: { label: Re
   )
 }
 
-function ModelEffortMenu({ session, update, reasoning, onPicked }: { session: ChatSession; update: Update; reasoning: boolean; onPicked(): void }) {
+export function ModelEffortMenu({ session, update, reasoning, onPicked }: { session: ChatSession; update: Update; reasoning: boolean; onPicked(): void }) {
   const list = (
     <div key="list" className="flex min-h-0 flex-1 flex-col" style={{ height: isMobile ? undefined : 360 }}>
       <ModelMenu autoFocus={!isMobile} value={session.model} onChange={(model) => void update({ model }).then(() => !reasoning && onPicked())} />
@@ -150,13 +104,7 @@ function ModelEffortMenu({ session, update, reasoning, onPicked }: { session: Ch
   return <>{isMobile ? [effort, list] : [list, effort]}</>
 }
 
-const ACCESS: { value: string; label: string; patch: Partial<ChatSession> }[] = [
-  { value: 'read', label: 'Read', patch: { fileAccess: 'read', shell: false } },
-  { value: 'edit', label: 'Edit', patch: { fileAccess: 'write', shell: false } },
-  { value: 'shell', label: 'Edit + shell', patch: { fileAccess: 'write', shell: true } }
-]
-
-function FolderMenu({ session, update }: { session: ChatSession; update: Update }) {
+export function FolderMenu({ session, update }: { session: ChatSession; update: Update }) {
   const [projects, setProjects] = useState<Project[]>([])
   useEffect(() => {
     void api.projects.list().then(setProjects, () => undefined)
@@ -166,10 +114,9 @@ function FolderMenu({ session, update }: { session: ChatSession; update: Update 
     if (dir) await update({ workspace: dir })
   }
   const folders = [...new Set(projects.map((p) => p.folder).filter((f): f is string => !!f && f !== session.workspace))].slice(0, 4)
-  const access = session.fileAccess === 'write' ? (session.shell ? 'shell' : 'edit') : 'read'
-  const shell = session.container || window.cloth.platform !== 'win32' ? 'bash' : 'PowerShell'
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3 overflow-y-auto overflow-x-hidden p-3">
+      {!isMobile && <div className="-mb-1.5 text-[11.5px] text-dim">Folder</div>}
       <div className={clsx('flex items-center gap-2 rounded-[10px] border px-2.5 py-2', session.workspace ? 'border-line bg-bg' : 'border-dashed border-line-strong')}>
         {session.workspace ? <FolderSimple size={15} weight="fill" className="shrink-0 text-muted" /> : <FolderDashed size={15} className="shrink-0 text-dim" />}
         <span className={clsx('min-w-0 flex-1 truncate font-mono text-[11.5px]', session.workspace ? 'text-fg' : 'text-dim')} title={session.workspace ?? undefined}>
@@ -207,28 +154,11 @@ function FolderMenu({ session, update }: { session: ChatSession; update: Update 
       </Field>
       {session.container && <ContainerOptions session={session} update={update} />}
       {(session.workspace || session.container) && (
-        <>
-          <Field label="Access" hint={access === 'read' ? 'Read, list and search files.' : access === 'edit' ? 'Also write and edit files; each change can be undone.' : `Also run commands (${shell}) in the folder.`}>
-            <Segmented value={access} onChange={(v) => void update(ACCESS.find((a) => a.value === v)!.patch)} options={ACCESS} label="Access" disabled={session.container ? ['read', 'edit'] : []} />
-          </Field>
-          <Field label="Approvals">
-            <Segmented<AutoApprove>
-              value={session.autoApprove}
-              onChange={(autoApprove) => void update({ autoApprove })}
-              options={[
-                { value: 'none', label: 'Ask first' },
-                { value: 'edits', label: 'Allow edits' },
-                { value: 'all', label: 'Allow all' }
-              ]}
-              label="Approvals"
-            />
-          </Field>
-          <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted">
-            <input type="checkbox" checked={session.codeIntel} onChange={(e) => void update({ codeIntel: e.target.checked })} className="accent-crimson" />
-            <Code size={13} />
-            Code intelligence <span className="text-dim">(TypeScript, Python)</span>
-          </label>
-        </>
+        <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted">
+          <input type="checkbox" checked={session.codeIntel} onChange={(e) => void update({ codeIntel: e.target.checked })} className="accent-crimson" />
+          <Code size={13} />
+          Code intelligence <span className="text-dim">(TypeScript, Python)</span>
+        </label>
       )}
     </div>
   )
