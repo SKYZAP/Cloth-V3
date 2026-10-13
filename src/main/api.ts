@@ -195,7 +195,8 @@ export function createApi(s: Services): ClothApi {
       compact: (id, instructions) => s.chat.compact(id, { instructions, splitTurns: true }),
       contextUsage: (id) => s.chat.contextUsage(id),
       setup: (id) => s.chat.setup(id),
-      useAgent: async (id, agentId) => s.chat.useAgent(id, agentId)
+      useAgent: async (id, agentId) => s.chat.useAgent(id, agentId),
+      approvePlan: (id, mode) => s.chat.approvePlan(id, mode)
     },
     agents: {
       activity: async () => s.agents.activity(),

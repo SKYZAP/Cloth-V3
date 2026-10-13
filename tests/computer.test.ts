@@ -526,6 +526,20 @@ describe('computer use: when the tool is offered', () => {
     expect(services.chat.create({}).computerUse).toBe(false)
   })
 
+  it('Plan mode offers no computer', () => {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    services.providers.setModels(provider.id, [{ id: 'vis', name: 'vis', contextWindow: 32000, maxTokens: 4096, reasoning: false, vision: true, embedding: false }])
+    services.runtime.attachComputer(setup().controller)
+    const names = (permissions: 'auto' | 'manual' | 'plan') => {
+      const session = services.chat.create({ model: { providerId: provider.id, modelId: 'vis' }, computerUse: true, permissions })
+      return services.runtime.createAgent({ model: session.model!, scope: (services.chat as any).scope(session.id), systemPrompt: '' }).state.tools.map((x) => x.name)
+    }
+    expect(names('auto')).toContain('computer')
+    expect(names('manual')).toContain('computer')
+    expect(names('plan')).not.toContain('computer')
+  })
+
   it('without a computer (other platforms, tests) it is never offered', () => {
     const { services } = makeServices()
     const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })

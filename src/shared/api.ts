@@ -236,6 +236,11 @@ export interface ClothApi {
     setup(id: string): Promise<ChatSetup>
     /** Set the chat up from a saved agent (its model, effort and capabilities); null = the default assistant. */
     useAgent(id: string, agentId: string | null): Promise<ChatSession>
+    /**
+     * Approve the plan the agent presented in Plan mode: the chat switches to `mode` and carries on
+     * (a user line "Approved the plan" starts the run). Returns the chat with its new mode.
+     */
+    approvePlan(sessionId: string, mode: 'auto' | 'manual'): Promise<ChatSession>
   }
   agents: {
     /** Jobs each agent ran as a subagent in the last 7 days, by agent id. */

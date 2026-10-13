@@ -91,7 +91,7 @@ describe('workspace file tools', () => {
     expect(denied.result).toMatch(/declined/)
   })
 
-  it('"always" switches the chat to auto-approve edits', async () => {
+  it('"always" switches the chat to Auto', async () => {
     const env = setup('write')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
@@ -105,7 +105,7 @@ describe('workspace file tools', () => {
       env.services.chat.resolveApproval(a.id, 'always')
     })
     expect(asks).toBe(1)
-    expect(env.services.chat.get(env.session.id).autoApprove).toBe('edits')
+    expect(env.services.chat.get(env.session.id)).toMatchObject({ permissions: 'auto', autoApprove: 'all' })
     expect(readFileSync(join(env.root, 'b.txt'), 'utf8')).toBe('b')
   })
 

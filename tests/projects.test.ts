@@ -23,9 +23,10 @@ describe('projects', () => {
     expect(p.color).toMatch(/^#/)
 
     const chat = services.chat.create({ projectId: p.id })
-    expect(chat).toMatchObject({ projectId: p.id, workspace: folder, model, fileAccess: 'write', shell: true, webEnabled: true })
+    // The project's old switches (edit + shell, asking first) become Manual mode.
+    expect(chat).toMatchObject({ projectId: p.id, workspace: folder, model, permissions: 'manual', fileAccess: 'write', shell: true, webEnabled: true })
     // What the caller passes still wins over the project's defaults.
-    expect(services.chat.create({ projectId: p.id, shell: false }).shell).toBe(false)
+    expect(services.chat.create({ projectId: p.id, permissions: 'plan' })).toMatchObject({ permissions: 'plan', fileAccess: 'read', shell: false })
 
     const loose = services.projects.create({ name: 'Ideas' })
     expect(loose.folder).toBeNull()

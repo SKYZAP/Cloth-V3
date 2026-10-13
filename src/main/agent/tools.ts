@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange, TodoItem } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, TodoItem } from '@shared/types'
 import type { LspManager } from './lsp'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
 import type { JsonValue } from '@earendil-works/pi-ai'
@@ -47,6 +47,11 @@ export interface ToolScope {
   sessionId?: string
   autoApprove?: () => AutoApprove
   onAlways?: (scope: 'edits' | 'all') => void
+  /**
+   * The chat's permission mode, live (none outside chats: flows and automations count as auto).
+   * fileAccess / shell / autoApprove above are derived from it (permissionCaps).
+   */
+  permissions?: () => Permissions
   /** Offer the `task` tool (top-level chat agents only). */
   subagents?: boolean
   /** 0 for the chat agent, 1 inside a subagent. */
@@ -89,6 +94,11 @@ export interface ToolScope {
   todos?: () => TodoItem[]
 }
 
+/** The agent is in Plan mode now: read-only until the user approves a plan. */
+export function inPlanMode(scope: ToolScope): boolean {
+  return scope.permissions?.() === 'plan'
+}
+
 /** Skills an agent with this scope may see and load. */
 export function allowedSkill(scope: ToolScope, name: string): boolean {
   return (!scope.skillNames || scope.skillNames.includes(name)) && !scope.skillsOff?.includes(name)
@@ -108,7 +118,7 @@ interface BuiltinSpec<P extends TSchema = TSchema> {
   parameters: P
   description(ctx: Ctx | null): string
   when(ctx: Ctx): boolean
-  run(params: Static<P>, ctx: Ctx, signal: AbortSignal | undefined, toolCallId: string): Promise<{ text: string; details?: ToolDetails }>
+  run(params: Static<P>, ctx: Ctx, signal: AbortSignal | undefined, toolCallId: string): Promise<{ text: string; details?: ToolDetails; terminate?: boolean }>
 }
 
 const spec = <P extends TSchema>(s: BuiltinSpec<P>): BuiltinSpec => s as unknown as BuiltinSpec
@@ -160,6 +170,30 @@ export const BUILTINS: BuiltinSpec[] = [
       return {
         text: todos.length ? `Todo list updated: ${done}/${todos.length} completed.${current ? ` In progress: ${current.content}` : ''}` : 'Todo list cleared.',
         details: { todos: todos.map((t) => ({ content: t.content.trim(), status: t.status })) }
+      }
+    }
+  }),
+  spec({
+    name: 'present_plan',
+    label: 'Present plan',
+    group: 'planning',
+    availability: 'Chats in Plan mode',
+    parameters: Type.Object({
+      title: Type.String({ description: 'What the plan does, in a few words' }),
+      steps: Type.Array(Type.String(), { description: 'The concrete steps, in order: files to change and how, commands to run, checks to do' }),
+      notes: Type.Optional(Type.String({ description: 'Risks, open questions or assumptions the user should know before approving' }))
+    }),
+    description: () =>
+      'Present your plan to the user for approval, then stop. Call it once you have explored enough to know what to change: a short title and concrete, ordered steps (and notes for risks or open questions). The user approves it — the chat then leaves Plan mode and you carry it out — or asks for changes, and you revise and present it again.',
+    when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inPlanMode(ctx.scope),
+    async run(p) {
+      const steps = (p.steps ?? []).map((x) => String(x).trim()).filter(Boolean)
+      if (!steps.length) throw new Error('A plan needs at least one step')
+      const plan: PlanProposal = { title: String(p.title ?? '').trim() || 'Plan', steps, ...(p.notes?.trim() ? { notes: p.notes.trim() } : {}) }
+      return {
+        text: `Plan presented to the user (${steps.length} step${steps.length === 1 ? '' : 's'}). Stop here: the user will approve it or ask for changes.`,
+        details: { plan: plan as unknown as ToolDetails[string] },
+        terminate: true
       }
     }
   }),
@@ -395,6 +429,7 @@ const W = (chats: boolean, subagents: boolean, flows: boolean, apps: boolean): T
  */
 const WHERE: Record<string, ToolWhere> = {
   todo_write: W(true, false, false, false),
+  present_plan: W(true, false, false, false),
   ask_user: W(true, false, false, false),
   rag_search: W(true, true, true, true),
   rag_index: W(true, false, false, true),
@@ -449,7 +484,7 @@ function instantiate(b: BuiltinSpec, ctx: Ctx): AgentTool<TSchema, ToolDetails> 
     async execute(id, params, signal): Promise<AgentToolResult<ToolDetails>> {
       const started = performance.now()
       const out = await b.run(params, ctx, signal, id)
-      return { content: [{ type: 'text', text: out.text }], details: { ...(out.details ?? {}), durationMs: Math.round(performance.now() - started) } }
+      return { content: [{ type: 'text', text: out.text }], details: { ...(out.details ?? {}), durationMs: Math.round(performance.now() - started) }, ...(out.terminate ? { terminate: true } : {}) }
     }
   }
 }
@@ -474,14 +509,18 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         autoApprove: scope.autoApprove ?? (() => 'none'),
         onAlways: scope.onAlways,
         lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null,
-        shellExec: scope.container?.exec
+        shellExec: scope.container?.exec,
+        // A container's changes are reviewed with Apply / Discard, so nothing in it counts as risky.
+        checkRisk: !scope.container,
+        readOnly: () => inPlanMode(scope)
       })
     )
   }
   if (scope.customTools !== false) {
-    // Custom code may only write where file edits are already allowed without asking.
+    // Custom code may only write where file edits are already allowed without asking; Plan mode runs no custom commands.
     const env = scope.workspace ? { workspace: { root: scope.workspace, writable: scope.fileAccess === 'write' && autoEdits, onWrite: scope.onFile } } : {}
-    for (const t of deps.custom.list()) if (t.enabled && (!scope.toolNames || scope.toolNames.includes(t.name))) tools.push(deps.custom.toAgentTool(t, env))
+    const plan = inPlanMode(scope)
+    for (const t of deps.custom.list()) if (t.enabled && (!scope.toolNames || scope.toolNames.includes(t.name)) && !(plan && t.kind === 'command')) tools.push(deps.custom.toAgentTool(t, env))
   }
   const usage = deps.usage
   return usage ? tools.map((t) => withUsage(t, BUILTIN_NAMES.includes(t.name) ? 'builtin' : 'custom', usage)) : tools
