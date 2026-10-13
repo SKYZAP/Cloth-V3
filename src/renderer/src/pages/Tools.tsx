@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { AlertTriangle, ArrowLeft, BookOpen, Code2, FileText, Globe, Link2, ListChecks, MessageSquareText, Play, Plug, Plus, Search, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, BookOpen, ChevronDown, ChevronUp, Code2, FileText, Globe, Link2, ListChecks, MessageSquareText, Play, Plug, Plus, Search, ShieldAlert, Sparkles, SquareTerminal, Trash2, Wrench, X } from 'lucide-react'
 import { mcpToolName, type BuiltinToolInfo, type CustomTool, type CustomToolInput, type CustomToolKind, type McpClientStatus, type ModelRef, type ToolParam, type ToolParamType, type ToolRunResult, type ToolUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -81,17 +81,6 @@ const humanize = (name: string) => {
 /** A tool made by a model that waits for the user's OK (or one switched off before tools stopped having a switch). */
 const waiting = (t: CustomTool) => !t.enabled
 
-function useWide(query = '(min-width: 980px)') {
-  const [wide, setWide] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(query)
-    const on = () => setWide(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [query])
-  return wide
-}
-
 /**
  * What Cloth and its agents can do: every tool in one searchable list (built in, made by you, from MCP
  * servers), its details and a quick test beside it, and a step-by-step screen for making your own.
@@ -111,7 +100,6 @@ export function ToolsPage() {
   const [show, setShow] = useState<Show>(() => (localStorage.getItem('cloth.tools.show') as Show | null) ?? 'all')
   const settings = useApp((s) => s.settings)
   const setPage = useApp((s) => s.setPage)
-  const wide = useWide()
 
   const load = async () => {
     const [b, c, u, m, by] = await Promise.all([api.tools.builtins(), api.tools.list(), api.tools.usage().catch(() => ({})), api.mcp.clients().catch(() => []), api.tools.usedBy().catch(() => ({}))])
@@ -158,15 +146,17 @@ export function ToolsPage() {
   const matches = (i: Item) => (show === 'all' || i.source === show) && (!q || `${i.name} ${i.label} ${i.description}`.toLowerCase().includes(q))
   const shown = items.filter(matches)
   const count = (s: Show) => items.filter((i) => s === 'all' || i.source === s).length
-  const sections: { title: string; items: Item[]; note?: ReactNode }[] = [
-    ...GROUPS.map((g) => ({ title: g.label, items: shown.filter((i) => i.builtin?.group === g.id), note: undefined })),
-    { title: 'Made by you', items: shown.filter((i) => i.source === 'mine'), note: undefined },
+  const sections: { id: string; title: string; jump: string; items: Item[]; note?: ReactNode }[] = [
+    ...GROUPS.map((g) => ({ id: g.id, title: g.label, jump: g.label, items: shown.filter((i) => i.builtin?.group === g.id), note: undefined })),
+    { id: 'mine', title: 'Made by you', jump: 'Made by you', items: shown.filter((i) => i.source === 'mine'), note: undefined },
     ...configs.map((c) => {
       const st = servers.find((s) => s.id === c.id)
       const list = shown.filter((i) => i.source === 'mcp' && i.key.startsWith(`m:${c.id}:`))
       const offline = st?.state !== 'ready' && (show === 'all' || show === 'mcp') && (!q || c.name.toLowerCase().includes(q))
       return {
+        id: `mcp-${c.id}`,
         title: `From ${c.name}`,
+        jump: c.name,
         items: list,
         note: offline ? (
           <button onClick={() => setPage('mcp')} className="w-full rounded-[11px] px-3 py-2.5 text-left text-[12.5px] text-dim hover:bg-elev hover:text-muted">
@@ -183,6 +173,39 @@ export function ToolsPage() {
     setSelKey(null)
     refocus(key)
   }
+  // The tools on screen, in the order they're shown: previous and next step through these.
+  const order = sections.flatMap((s) => s.items)
+  const step = (d: 1 | -1) => {
+    if (!order.length) return
+    const at = order.findIndex((i) => i.key === selKey)
+    const next = order[at < 0 ? (d > 0 ? 0 : order.length - 1) : (at + d + order.length) % order.length]
+    setSelKey(next.key)
+    requestAnimationFrame(() => document.querySelector(`[data-focus-key="${CSS.escape(next.key)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+  }
+  const jumpTo = (id: string) => document.getElementById(`tools-section-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (making || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.matches('input, textarea, select') || el.isContentEditable)) return
+      // A modal opened from the drawer handles its own keys.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      // Not while the drawer is open: the search box is behind it.
+      if (e.key === '/' && !sel) {
+        e.preventDefault()
+        document.getElementById('tools-search')?.focus()
+      } else if (sel && (e.key === 'ArrowDown' || e.key === 'j')) {
+        e.preventDefault()
+        step(1)
+      } else if (sel && (e.key === 'ArrowUp' || e.key === 'k')) {
+        e.preventDefault()
+        step(-1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (making)
     return (
@@ -214,7 +237,9 @@ export function ToolsPage() {
       tryable={tryable.includes(sel.name)}
       onEdit={sel.custom ? () => setMaking({ id: sel.custom!.id }) : undefined}
       onChanged={() => void load()}
-      onClose={wide ? undefined : close}
+      onClose={close}
+      onPrev={() => step(-1)}
+      onNext={() => step(1)}
     />
   )
 
@@ -228,7 +253,7 @@ export function ToolsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="grid gap-4 px-8 py-6 mobile:px-3 mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Tools</h1>
@@ -236,76 +261,86 @@ export function ToolsPage() {
             </div>
             <div className="relative w-[260px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
-              <Input className="pl-7" placeholder="Search tools…" aria-label="Search tools" spellCheck={false} autoComplete="off" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <Input id="tools-search" className="pl-7" placeholder="Search tools…" aria-label="Search tools" spellCheck={false} autoComplete="off" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setMaking({ id: null })}>
               New tool
             </Button>
           </div>
 
-          <div role="tablist" aria-label="Show" className="flex flex-wrap gap-0.5 border-b border-line pb-2">
-            {FILTERS.map((f) => (
-              <button
-                key={f.value}
-                role="tab"
-                aria-selected={show === f.value}
-                onClick={() => setShow(f.value)}
-                className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px]', show === f.value ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
-              >
-                {f.label}
-                <span className="text-[11px] tabular-nums text-dim">{count(f.value)}</span>
-              </button>
-            ))}
+          <div className="sticky top-0 z-[5] flex items-center gap-3 border-b border-line bg-bg py-2">
+            <div role="tablist" aria-label="Show" className="flex flex-wrap gap-0.5">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.value}
+                  role="tab"
+                  aria-selected={show === f.value}
+                  onClick={() => setShow(f.value)}
+                  className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px]', show === f.value ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
+                >
+                  {f.label}
+                  <span className="text-[11px] tabular-nums text-dim">{count(f.value)}</span>
+                </button>
+              ))}
+            </div>
+            {sections.length > 0 && (
+              <nav aria-label="Jump to group" className="ml-auto flex min-w-0 flex-wrap justify-end gap-0.5 mobile:hidden">
+                {sections.map((s) => (
+                  <button key={s.id} onClick={() => jumpTo(s.id)} className="h-[26px] rounded-[7px] px-2 text-[12px] text-dim hover:bg-elev hover:text-fg">
+                    {s.jump}
+                  </button>
+                ))}
+              </nav>
+            )}
           </div>
 
-          <div className={clsx('grid items-start gap-5', wide && 'grid-cols-[minmax(0,1fr)_380px]')}>
-            <div className="grid min-w-0 gap-6">
-              {sections.map((s) => (
-                <section key={s.title} aria-label={s.title}>
-                  <h2 className="mb-3 border-b border-line pb-2 text-[12px] font-semibold text-fg/90">{s.title}</h2>
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2.5">
-                    {s.items.map((i) => (
-                      <ToolCard key={i.key} item={i} usage={usage[i.name]} selected={selKey === i.key} onOpen={() => setSelKey(i.key)} />
-                    ))}
-                    {s.note && <div className="col-span-full">{s.note}</div>}
-                  </div>
-                </section>
-              ))}
-              {!shown.length && builtins.length > 0 && (
-                <div className="grid justify-items-center gap-2 rounded-[14px] border border-dashed border-line-strong px-4 py-7 text-center">
-                  <div className="text-[13.5px] font-semibold">{q ? `No tool matches “${filter.trim()}”` : 'Nothing here yet'}</div>
-                  <div className="text-[12.5px] text-dim">Make one: describe what it should do and Cloth drafts it.</div>
-                  <Button size="sm" icon={<Plus size={12} />} onClick={() => setMaking({ id: null })}>
-                    New tool
-                  </Button>
+          <div className="grid min-w-0 gap-6">
+            {sections.map((s) => (
+              <section key={s.id} id={`tools-section-${s.id}`} aria-label={s.title} className="scroll-mt-14">
+                <h2 className="mb-3 border-b border-line pb-2 text-[12px] font-semibold text-fg/90">
+                  {s.title}
+                  <span className="ml-2 text-[11.5px] font-normal tabular-nums text-dim">{s.items.length}</span>
+                </h2>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2.5">
+                  {s.items.map((i) => (
+                    <ToolCard key={i.key} item={i} usage={usage[i.name]} selected={selKey === i.key} onOpen={() => setSelKey(i.key)} />
+                  ))}
+                  {s.note && <div className="col-span-full">{s.note}</div>}
                 </div>
-              )}
-            </div>
-            {wide && (
-              <aside aria-label="Tool details" className="sticky top-4 min-w-0 rounded-[16px] border border-line bg-panel">
-                {details ?? <p className="px-5 py-8 text-center text-[12.5px] text-dim">Pick a tool to see what it does, try it, and who uses it.</p>}
-              </aside>
+              </section>
+            ))}
+            {!shown.length && builtins.length > 0 && (
+              <div className="grid justify-items-center gap-2 rounded-[14px] border border-dashed border-line-strong px-4 py-7 text-center">
+                <div className="text-[13.5px] font-semibold">{q ? `No tool matches “${filter.trim()}”` : 'Nothing here yet'}</div>
+                <div className="text-[12.5px] text-dim">Make one: describe what it should do and Cloth drafts it.</div>
+                <Button size="sm" icon={<Plus size={12} />} onClick={() => setMaking({ id: null })}>
+                  New tool
+                </Button>
+              </div>
             )}
           </div>
         </div>
       </div>
-      {!wide && (
-        <Inspector open={!!sel} label={sel?.label ?? 'Tool'} onClose={close} width={520}>
-          <div className="min-h-0 flex-1 overflow-y-auto">{details}</div>
-        </Inspector>
-      )}
+      <Inspector open={!!sel} label={sel?.label ?? 'Tool'} onClose={close} width={440}>
+        <div className="min-h-0 flex-1 overflow-y-auto">{details}</div>
+      </Inspector>
     </div>
   )
 }
 
 function ToolCard({ item: i, usage, selected, onOpen }: { item: Item; usage?: ToolUsage; selected: boolean; onOpen(): void }) {
   const pending = i.custom && waiting(i.custom)
+  const daily = usage?.daily ?? []
+  const peak = Math.max(1, ...daily)
   return (
     <button
       data-focus-key={i.key}
       onClick={onOpen}
       aria-pressed={selected}
-      className={clsx('flex flex-col overflow-hidden rounded-[12px] border text-left transition-colors focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-line-strong bg-elev' : 'border-line bg-panel hover:border-line-strong')}
+      className={clsx(
+        'group flex flex-col overflow-hidden rounded-[12px] border text-left transition-colors focus-visible:ring-2 focus-visible:ring-crimson-line',
+        selected ? 'border-crimson-line bg-elev ring-1 ring-crimson-line' : 'border-line bg-panel hover:border-line-strong'
+      )}
     >
       <span className="flex gap-3 p-3.5">
         <span aria-hidden="true" className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]', SOURCE_TILE[i.source])}>
@@ -326,10 +361,21 @@ function ToolCard({ item: i, usage, selected, onOpen }: { item: Item; usage?: To
         {pending ? (
           <span className="ml-auto shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Needs your OK</span>
         ) : usage ? (
-          <span className="ml-auto shrink-0 tabular-nums">
-            {usage.calls} use{usage.calls === 1 ? '' : 's'} this month
-          </span>
-        ) : null}
+          <>
+            <span className="ml-auto shrink-0 tabular-nums">
+              {usage.calls} use{usage.calls === 1 ? '' : 's'} this month
+            </span>
+            {daily.length > 0 && (
+              <span aria-hidden="true" className="inline-flex h-3 shrink-0 items-end gap-px">
+                {daily.map((n, d) => (
+                  <i key={d} style={{ height: `${Math.max(1, (n / peak) * 12)}px` }} className={clsx('w-[2px] rounded-[1px]', selected ? 'bg-dim' : 'bg-line-strong group-hover:bg-dim')} />
+                ))}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="ml-auto shrink-0">Not used yet</span>
+        )}
       </span>
     </button>
   )
@@ -337,9 +383,34 @@ function ToolCard({ item: i, usage, selected, onOpen }: { item: Item; usage?: To
 
 type SchemaProps = { properties?: Record<string, { type?: string; description?: string; anyOf?: { const?: string }[]; items?: { type?: string } }>; required?: string[] }
 
-function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onChanged, onClose }: { item: Item; usage?: ToolUsage; usedBy: string[]; agentNames: string[]; tryable: boolean; onEdit?: () => void; onChanged(): void; onClose?: () => void }) {
+function ToolDetails({
+  item: i,
+  usage,
+  usedBy,
+  agentNames,
+  tryable,
+  onEdit,
+  onChanged,
+  onClose,
+  onPrev,
+  onNext
+}: {
+  item: Item
+  usage?: ToolUsage
+  usedBy: string[]
+  agentNames: string[]
+  tryable: boolean
+  onEdit?: () => void
+  onChanged(): void
+  onClose(): void
+  onPrev(): void
+  onNext(): void
+}) {
   const t = i.custom
-  const params: Field[] = t ? t.params : fieldsOf((i.builtin?.schema ?? i.schema) as SchemaProps | undefined)
+  const aiSchema = i.builtin?.schema ?? i.schema
+  const params: Field[] = t ? t.params : fieldsOf(aiSchema as SchemaProps | undefined)
+  const daily = usage?.daily ?? []
+  const peak = Math.max(1, ...daily)
   // Every agent having it reads better as one phrase than as a list of all of them.
   const everyAgent = agentNames.length > 1 && agentNames.every((n) => usedBy.includes(n))
   const users = everyAgent ? ['Every agent', ...usedBy.filter((n) => !agentNames.includes(n))] : usedBy
@@ -365,7 +436,17 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
             {i.name}
           </div>
         </div>
-        {onClose && <IconButton aria-label="Close" title="Close (Esc)" onClick={onClose}>✕</IconButton>}
+        <div className="flex shrink-0 gap-0.5">
+          <IconButton aria-label="Previous tool" title="Previous tool (↑ or K)" onClick={onPrev}>
+            <ChevronUp size={15} />
+          </IconButton>
+          <IconButton aria-label="Next tool" title="Next tool (↓ or J)" onClick={onNext}>
+            <ChevronDown size={15} />
+          </IconButton>
+          <IconButton aria-label="Close" title="Close (Esc)" onClick={onClose}>
+            <X size={15} />
+          </IconButton>
+        </div>
       </div>
       <p className="text-[13px] leading-relaxed text-fg/90">{i.description}</p>
 
@@ -408,21 +489,62 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
       </div>
       {run && trying && <TryIt fields={params} run={run} folder={i.builtin?.group === 'workspace'} />}
 
-      <section aria-labelledby="tool-inputs" className="grid gap-2 border-t border-line pt-4">
+      <section aria-labelledby="tool-usage" className="grid gap-2 border-t border-line pt-4">
+        <h3 id="tool-usage" className="text-[12.5px] font-semibold">
+          Usage
+        </h3>
+        {usage ? (
+          <div>
+            <div className="grid grid-cols-3 rounded-[10px] border border-line">
+              {[
+                [String(usage.calls), 'uses in 30 days'],
+                [usage.lastAt ? timeAgo(usage.lastAt) : '—', 'last used'],
+                [String(usage.errors), 'failed']
+              ].map(([value, label], n) => (
+                <div key={label} className={clsx('min-w-0 px-3 py-2.5', n > 0 && 'border-l border-line')}>
+                  <div className="truncate text-[15px] font-semibold tabular-nums">{value}</div>
+                  <div className="text-[11.5px] text-dim">{label}</div>
+                </div>
+              ))}
+            </div>
+            {daily.length > 0 && (
+              <>
+                <div role="img" aria-label="Uses per day over the last 14 days" className="mt-2.5 flex h-9 items-end gap-[2px]">
+                  {daily.map((n, d) => (
+                    <i key={d} style={{ height: `${(n / peak) * 100}%` }} className="min-h-[2px] flex-1 rounded-t-[2px] bg-crimson-line" />
+                  ))}
+                </div>
+                <div className="mt-1 flex justify-between text-[11px] text-dim">
+                  <span>14 days ago</span>
+                  <span>today</span>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-dim">Not used in the last 30 days.</p>
+        )}
+      </section>
+
+      <section aria-labelledby="tool-inputs" className="grid gap-2">
         <h3 id="tool-inputs" className="text-[12.5px] font-semibold">
           Inputs
         </h3>
         {params.length ? (
-          <div className="flex flex-wrap gap-1.5">
-            {params.map((p) => (
-              <span
-                key={p.name}
-                translate="no"
-                title={`${PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase() ?? p.type} · ${p.required ? 'needed' : 'optional'}${p.description ? ` — ${p.description}` : ''}`}
-                className={clsx('rounded-md border border-line px-2 py-0.5 font-mono text-[11.5px]', p.required ? 'text-fg' : 'text-muted')}
-              >
-                {p.name}
-              </span>
+          <div className="rounded-[10px] border border-line">
+            {params.map((p, n) => (
+              <div key={p.name} className={clsx('grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-0.5 px-3 py-2.5', n > 0 && 'border-t border-line')}>
+                <span className="min-w-0 break-words font-mono text-[12px]" translate="no">
+                  {p.name}
+                  {p.required && (
+                    <span className="text-crimson-hi" title="Required">
+                      {' *'}
+                    </span>
+                  )}
+                </span>
+                <span className="text-right text-[11.5px] text-dim">{PARAM_TYPES.find((x) => x.value === p.type)?.label ?? p.type}</span>
+                {p.description && <p className="col-span-full text-[12px] text-muted">{p.description}</p>}
+              </div>
             ))}
           </div>
         ) : (
@@ -445,14 +567,13 @@ function ToolDetails({ item: i, usage, usedBy, agentNames, tryable, onEdit, onCh
         ) : (
           <p className="text-[13px] leading-relaxed">No agent or automation has it yet.</p>
         )}
-        <p className="text-[11.5px] text-dim">{usage ? `Used ${usage.calls} time${usage.calls === 1 ? '' : 's'} in 30 days${usage.errors ? `, ${usage.errors} failed` : ''}, last ${timeAgo(usage.lastAt)}` : 'Not used in the last 30 days'}</p>
         <p className="text-[11.5px] text-dim">Each agent and automation chooses its own tools. Change it there.</p>
       </section>
 
-      {i.builtin && (
+      {aiSchema && (
         <details>
           <summary className="cursor-default text-[12px] text-dim hover:text-muted">What the AI sees</summary>
-          <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(i.builtin.schema, null, 2)}</pre>
+          <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(aiSchema, null, 2)}</pre>
         </details>
       )}
 
