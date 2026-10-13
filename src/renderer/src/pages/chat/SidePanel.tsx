@@ -10,6 +10,7 @@ import { Files } from './Files'
 import { GitPanel } from './GitPanel'
 import { SetupPanel } from './Setup'
 import { AgentsPanel } from './AgentsPanel'
+import { useSetupNav } from './setupNav'
 
 export type { PanelTab } from '@shared/panel-stack'
 const KEY = 'cloth.chat.panel'
@@ -29,9 +30,9 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
       return { open: false, width: 400, ...migrate(null) }
     }
   })
-  const set = (p: Partial<PanelState>) =>
+  const write = (fn: (cur: PanelState) => PanelState) =>
     setState((cur) => {
-      const next = { ...cur, ...p }
+      const next = fn(cur)
       try {
         localStorage.setItem(KEY, JSON.stringify(next))
       } catch {
@@ -39,6 +40,15 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
       }
       return next
     })
+  const set = (p: Partial<PanelState>) => write((cur) => ({ ...cur, ...p }))
+  // openSetupSection(): open the panel with Setup shown (the Setup tab then opens the section itself).
+  const navSeq = useSetupNav((s) => s.seq)
+  const handledSeq = useRef(navSeq)
+  useEffect(() => {
+    if (navSeq === handledSeq.current) return
+    handledSeq.current = navSeq
+    write((cur) => ({ ...cur, open: true, ...(isMobile ? { stack: ['setup'], sizes: [1], focus: 0 } : focusOrReplace(cur, 'setup')) }))
+  }, [navSeq]) // eslint-disable-line react-hooks/exhaustive-deps
   return [state, set]
 }
 
