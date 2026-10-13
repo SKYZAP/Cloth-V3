@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import clsx from 'clsx'
 import type { UiMessage } from '@shared/types'
 import { formatCost, formatTokens } from '@/lib/format'
-import { chatAgents, shortfall, type RunInfo } from '@/lib/workbar'
+import { chatAgents, runAccess, shortfall, type RunInfo } from '@/lib/workbar'
 import { scrollToRun } from '@/components/WorkBar'
 
 function RunRow({ run }: { run: RunInfo }) {
@@ -20,6 +20,7 @@ function RunRow({ run }: { run: RunInfo }) {
         <span className="min-w-0 truncate text-fg">{run.name}</span>
         {short && <span className={clsx('shrink-0 text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-crimson-hi')}>{short}</span>}
         {run.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10.5px] text-agent">{run.tierName}</span>}
+        <span className={clsx('shrink-0 text-[11px]', run.role === 'worker' ? 'text-warn' : 'text-dim')}>{runAccess(run.role)}</span>
         <div className="flex-1" />
         {run.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(run.cost)}</span>}
       </div>

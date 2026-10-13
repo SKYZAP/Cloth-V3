@@ -17,7 +17,7 @@ export function scrollToRun(cardId: string) {
   )
 }
 
-/** "{agent or role} · {tier}". */
+/** "{agent, or Scout / Worker for a plain job} · {tier}". */
 export const runLabel = (r: RunInfo) => (r.tierName ? `${r.name} · ${r.tierName}` : r.name)
 
 function StatusIcon({ status }: { status: StepStatus }) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubagentRun, TodoItem, ToolTrace, UiBlock, UiMessage } from '@shared/types'
-import { buildWorkBar, chatAgents, collectRuns, currentTurn } from '../src/renderer/src/lib/workbar'
+import { buildWorkBar, chatAgents, collectRuns, currentTurn, runAccess, runName } from '../src/renderer/src/lib/workbar'
 
 const trace = (id: string, extra: Partial<ToolTrace> = {}): ToolTrace => ({ id, name: 'task', args: {}, status: 'ok', result: '', durationMs: null, references: [], ...extra })
 const task = (id: string, run: Partial<SubagentRun> = {}, status: ToolTrace['status'] = 'ok'): UiBlock => ({
@@ -29,8 +29,8 @@ describe('collectRuns', () => {
       ['b', 'b', 'failed'],
       ['c', 'b', 'done']
     ])
-    expect(runs[0]).toMatchObject({ name: 'Reviewer', tierName: 'Fast', cost: 0.5, tokensIn: 150, tokensOut: 20 })
-    expect(runs[1].name).toBe('worker')
+    expect(runs[0]).toMatchObject({ name: 'Reviewer', named: true, tierName: 'Fast', cost: 0.5, tokensIn: 150, tokensOut: 20 })
+    expect(runs[1]).toMatchObject({ name: 'Worker', named: false })
   })
 
   it("carries a finished run's outcome, not a running or failed one's", () => {
@@ -43,6 +43,20 @@ describe('collectRuns', () => {
     const current = { tool: 'read', summary: 'a.ts' }
     expect(collectRuns([task('a', { running: true, current }, 'running')])[0]).toMatchObject({ status: 'running', current })
     expect(collectRuns([task('a', { current })])[0].current).toBeUndefined()
+  })
+})
+
+describe('runName', () => {
+  it("is the saved agent's name, else Scout or Worker for a plain job", () => {
+    expect(runName({ role: 'scout', agent: 'Code reviewer' })).toBe('Code reviewer')
+    expect(runName({ role: 'worker', agent: 'Designer' })).toBe('Designer')
+    expect(runName({ role: 'scout' })).toBe('Scout')
+    expect(runName({ role: 'worker' })).toBe('Worker')
+  })
+
+  it('says what a run may do with files', () => {
+    expect(runAccess('scout')).toBe('read-only')
+    expect(runAccess('worker')).toBe('can edit')
   })
 })
 

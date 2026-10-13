@@ -50,7 +50,7 @@ describe('tools page', () => {
     expect(used.web_search).toEqual(expect.arrayContaining(['Researcher', 'Morning brief']))
     expect(used.rag_search).toContain('Morning brief')
     // Read-only agents don't count as using tools that change files.
-    expect(used.edit ?? []).not.toContain('Scout')
+    expect(used.edit ?? []).not.toContain('Researcher')
     expect(used.edit ?? []).not.toContain('Code reviewer')
     services.workflows.stopScheduler()
   })

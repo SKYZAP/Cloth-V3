@@ -17,16 +17,36 @@ afterEach(() => {
 const systemText = (ctx: TranscriptContext) => JSON.stringify(ctx.messages.filter((m) => (m.role as string) === 'system'))
 
 describe('agents', () => {
-  it('starts with five built-in agents, which can be edited but not deleted', () => {
+  it('starts with three built-in agents, which can be edited but not deleted', () => {
     const { services } = makeServices()
     const list = services.agents.list()
-    expect(list.map((a) => a.builtin)).toEqual(['reviewer', 'designer', 'researcher', 'scout', 'worker'])
-    const scout = services.agents.builtin('scout')
-    expect(() => services.agents.remove(scout.id)).toThrow(/built in/)
-    const edited = services.agents.update(scout.id, { name: 'Renamed', instructions: 'Cite files as path:line.', fileAccess: 'write' })
-    expect(edited.name).toBe('Scout')
+    expect(list.map((a) => a.builtin)).toEqual(['reviewer', 'designer', 'researcher'])
+    const reviewer = services.agents.builtin('reviewer')
+    expect(() => services.agents.remove(reviewer.id)).toThrow(/built in/)
+    const edited = services.agents.update(reviewer.id, { name: 'Renamed', instructions: 'Cite files as path:line.', fileAccess: 'write' })
+    expect(edited.name).toBe('Code reviewer')
     expect(edited.instructions).toBe('Cite files as path:line.')
     expect(edited.fileAccess).toBe('read')
+  })
+
+  it('keeps old Scout and Worker rows out of every list and lookup, moving their instructions to Settings → Subagents once', () => {
+    const { services } = makeServices()
+    const insert = services.ctx.db.prepare('INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1)')
+    insert.run('agt_scout', 'Scout', 'scout', JSON.stringify({ instructions: 'Cite files as path:line.', fileAccess: 'read' }))
+    insert.run('agt_worker', 'Worker', 'worker', JSON.stringify({ instructions: 'Keep diffs small.', fileAccess: 'write' }))
+    const list = services.agents.list()
+    expect(list.map((a) => a.name)).not.toContain('Scout')
+    expect(list.map((a) => a.name)).not.toContain('Worker')
+    expect(services.agents.find('agt_scout')).toBeNull()
+    expect(services.agents.byName('worker')).toBeNull()
+    expect(services.agents.byName('scout')).toBeNull()
+    // The rows stay in the database.
+    expect(services.ctx.db.prepare("SELECT COUNT(*) AS n FROM agents WHERE builtin IN ('scout', 'worker')").get()).toMatchObject({ n: 2 })
+    expect(services.settings.get().subagents.instructions).toBe('Cite files as path:line.')
+    // Only once: clearing them later sticks.
+    services.settings.update({ subagents: { ...services.settings.get().subagents, instructions: '' } })
+    services.agents.list()
+    expect(services.settings.get().subagents.instructions).toBe('')
   })
 
   it('has a read-only Researcher and Code reviewer built in', () => {

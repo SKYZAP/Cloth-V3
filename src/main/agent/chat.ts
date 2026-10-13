@@ -9,7 +9,7 @@ import { agentSlug } from '@shared/mention'
 import { toolSummary } from '@shared/tool-summary'
 import type { Agent as SavedAgent, AgentSetup, AgentTier, SubagentActivity, TodoItem, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
 import type { ProjectService } from './projects'
-import { ROLE_BUILTINS, type AgentService } from './agents'
+import type { AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
@@ -352,7 +352,7 @@ export class AgentRuntime {
 
   /** Saved agents other agents may hand work to by name. */
   delegates(self?: string | null): SavedAgent[] {
-    return (this.ws.agents?.list() ?? []).filter((a) => (!a.builtin || !ROLE_BUILTINS.includes(a.builtin)) && a.id !== self)
+    return (this.ws.agents?.list() ?? []).filter((a) => a.id !== self)
   }
 
   private subagentSettings(): SubagentSettings {
@@ -652,13 +652,13 @@ export class AgentRuntime {
       name: 'task',
       label: 'Subagent',
       description: this.subagentSettings().allowWorkers
-        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role "scout" (default) can read and search but not change anything; role "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.'
+        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role sets what a plain job may do: "scout" (default) is read-only — it can read and search but not change anything; "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.'
         : 'Run a read-only subagent on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation — put everything it needs in prompt.',
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
         role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')])),
-        ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain scout or worker: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
+        ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain job: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
         ...(tiers.length
           ? {
               tier: Type.Optional(
@@ -678,7 +678,6 @@ export class AgentRuntime {
         if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
         const wantsWrite = named ? named.fileAccess === 'write' : p.role === 'worker'
         const role: SubagentRun['role'] = wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
-        const builtin = this.ws.agents?.builtin(role)
         let scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
         if (named) {
           scope = { ...agentScope(named, scope), depth: 1, subagents: false }
@@ -688,13 +687,13 @@ export class AgentRuntime {
           }
         }
         const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && this.providers.list().some((pr) => pr.id === m.providerId && pr.enabled)
-        const who = named ?? builtin
         // The tier asked for, the agent's own model and effort, its tier, then Settings → Subagents and the chat.
+        // A plain job (no saved agent) goes straight from the tier to Settings → Subagents and the chat.
         const { model, thinking, tier, note } = resolveDelegation({
           tierArg: p.tier,
           autoTiers: !!parent.scope.autoTiers,
           tiers: this.tiers(),
-          agent: who ?? null,
+          agent: named ?? null,
           chat: { model: parent.model, thinking: parent.thinking },
           fallback: { model: usable(cfg.model) ? cfg.model : parent.model, thinking: cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking },
           usable
@@ -724,7 +723,7 @@ export class AgentRuntime {
               SUBAGENT_INSTRUCTIONS(role),
               tier?.instructions?.trim() ? `Rules for this job (${tier.name} tier):\n${tier.instructions.trim()}` : '',
               named ? `You are the "${named.name}" agent. ${named.purpose}` : '',
-              who?.instructions.trim() ?? cfg.instructions.trim()
+              named ? named.instructions.trim() : cfg.instructions.trim()
             ]
               .filter(Boolean)
               .join('\n\n'),
@@ -740,7 +739,7 @@ export class AgentRuntime {
         )
           .catch((err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
-            if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, false)
+            if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, false)
             throw err
           })
           .finally(() => {
@@ -748,7 +747,7 @@ export class AgentRuntime {
             release()
           })
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
-        if (who) this.providers.usage.agentRun(who.id, role, Date.now() - started, true)
+        if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, true)
         for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
         const report = result.text || '(the subagent finished without a report)'
         const outcome = parseOutcome(result.text)
