@@ -139,7 +139,7 @@ const plainThought = (text: string) =>
     .filter((l) => !/^\s*(\.{3}|…)?\s*$/.test(l))
     .join('\n')
 
-function ThinkingRow({ text: raw }: { text: string }) {
+export function ThinkingRow({ text: raw }: { text: string }) {
   const text = useMemo(() => plainThought(raw), [raw])
   const [full, setFull] = useState(false)
   const toggle = () => {
@@ -171,7 +171,7 @@ function ThinkingRow({ text: raw }: { text: string }) {
   )
 }
 
-function ToolRow({ trace, open, awaiting, onToggle }: { trace: ToolTrace; open: boolean; awaiting: boolean; onToggle(): void }) {
+export function ToolRow({ trace, open, awaiting, onToggle }: { trace: ToolTrace; open: boolean; awaiting: boolean; onToggle(): void }) {
   const Icon = ICONS[trace.name] ?? Wrench
   const { verb, target } = toolVerb(trace)
   const failed = trace.status === 'error'

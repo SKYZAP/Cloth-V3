@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FileChange, ToolTrace, UiBlock } from '@shared/types'
-import { activityStats, changedFiles, elapsed, groupTurn } from '../src/renderer/src/lib/activity'
+import { activityStats, changedFiles, elapsed, groupTurn, recentSteps, runNow, runState, runStepCount, runToolIds } from '../src/renderer/src/lib/activity'
 
 const trace = (id: string, extra: Partial<ToolTrace> = {}): ToolTrace => ({ id, name: 'read', args: {}, status: 'ok', result: '', durationMs: null, references: [], ...extra })
 const tool = (id: string, extra: Partial<ToolTrace> = {}): UiBlock => ({ type: 'tool', trace: trace(id, extra) })
@@ -103,5 +103,45 @@ describe('elapsed', () => {
     expect(elapsed(6100)).toBe('6s')
     expect(elapsed(65_000)).toBe('1m 5s')
     expect(elapsed(-5)).toBe('0s')
+  })
+})
+
+describe('agent run helpers', () => {
+  const sub = (blocks: UiBlock[], extra: Record<string, unknown> = {}) => ({ role: 'scout' as const, description: 'job', blocks, running: false, ...extra })
+
+  it('counts only tool calls as steps', () => {
+    expect(runStepCount(sub([think(), tool('a'), text(), tool('b')]))).toBe(2)
+    expect(runStepCount(sub([]))).toBe(0)
+  })
+
+  it('finds what a running agent is on', () => {
+    expect(runNow([])).toEqual({ kind: 'queued' })
+    expect(runNow([text()])).toEqual({ kind: 'queued' })
+    expect(runNow([tool('a'), think()])).toEqual({ kind: 'thinking' })
+    const r = runNow([think(), tool('a'), text()])
+    expect(r.kind === 'tool' && r.trace.id).toBe('a')
+  })
+
+  it('keeps the last five steps and counts the earlier tool calls', () => {
+    const blocks = [tool('a'), think('t1'), text(), tool('b'), tool('c'), think('t2'), tool('d'), tool('e')]
+    const { steps, earlier, offset } = recentSteps(blocks, 5)
+    expect(offset).toBe(2)
+    expect(earlier).toBe(1)
+    expect(steps.map((b) => (b.type === 'tool' ? b.trace.id : b.type === 'thinking' ? b.text : '?'))).toEqual(['b', 'c', 't2', 'd', 'e'])
+    expect(recentSteps(blocks, 5, true)).toEqual({ steps: blocks.filter((b) => b.type !== 'text'), earlier: 0, offset: 0 })
+    expect(recentSteps([tool('a')], 5)).toEqual({ steps: [tool('a')], earlier: 0, offset: 0 })
+  })
+
+  it('lists tool ids, nested runs included', () => {
+    expect(runToolIds([tool('a'), think(), tool('t', { name: 'task', subagent: sub([tool('n1'), tool('n2')]) })])).toEqual(['a', 't', 'n1', 'n2'])
+  })
+
+  it('reads where a run stands', () => {
+    expect(runState({ status: 'running', subagent: sub([]) })).toBe('running')
+    expect(runState({ status: 'ok', subagent: sub([], { running: true }) })).toBe('running')
+    expect(runState({ status: 'ok', subagent: sub([]) })).toBe('done')
+    expect(runState({ status: 'ok', subagent: sub([], { outcome: 'partial' }) })).toBe('partial')
+    expect(runState({ status: 'ok', subagent: sub([], { outcome: 'blocked' }) })).toBe('blocked')
+    expect(runState({ status: 'error', subagent: sub([], { outcome: 'done' }) })).toBe('failed')
   })
 })

@@ -4,21 +4,36 @@ import { create } from 'zustand'
 export type SetupSection = 'knowledge' | 'skills' | 'tools' | 'mcp' | 'agent' | 'instructions'
 
 interface SetupNav {
-  /** Bumped on every request; the side panel opens (on Setup) whenever it changes. */
+  /** Bumped on every request; the side panel opens (on `tab`) whenever it changes. */
   seq: number
+  /** The tab the latest request opens. */
+  tab: 'setup' | 'agents'
   /** The section the Setup tab should show next; cleared once it has. */
   pending: { section: SetupSection; seq: number } | null
+  /** The agent run (its task trace's id) the Agents tab should show next; cleared once it has. */
+  run: { id: string; seq: number } | null
 }
 
-export const useSetupNav = create<SetupNav>(() => ({ seq: 0, pending: null }))
+export const useSetupNav = create<SetupNav>(() => ({ seq: 0, tab: 'setup', pending: null, run: null }))
 
 /** Open the chat's side panel on Setup at a section, with its Filter box focused. */
 export function openSetupSection(section: SetupSection): void {
   const seq = useSetupNav.getState().seq + 1
-  useSetupNav.setState({ seq, pending: { section, seq } })
+  useSetupNav.setState({ seq, tab: 'setup', pending: { section, seq } })
 }
 
 /** Mark a request as shown (only that one: a newer request stays pending). */
 export function takeSetupSection(seq: number): void {
   if (useSetupNav.getState().pending?.seq === seq) useSetupNav.setState({ pending: null })
+}
+
+/** Open the chat's side panel on the Agents tab, scrolled to one run. */
+export function openAgentRun(id: string): void {
+  const seq = useSetupNav.getState().seq + 1
+  useSetupNav.setState({ seq, tab: 'agents', run: { id, seq } })
+}
+
+/** Mark an Agents tab request as shown (only that one). */
+export function takeAgentRun(seq: number): void {
+  if (useSetupNav.getState().run?.seq === seq) useSetupNav.setState({ run: null })
 }
