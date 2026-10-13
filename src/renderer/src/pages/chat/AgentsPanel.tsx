@@ -1,14 +1,20 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { UiMessage } from '@shared/types'
 import { formatCost, formatTokens } from '@/lib/format'
 import { chatAgents, runAccess, shortfall, type RunInfo } from '@/lib/workbar'
 import { scrollToRun } from '@/components/WorkBar'
+import { takeAgentRun, useSetupNav } from './setupNav'
 
-function RunRow({ run }: { run: RunInfo }) {
+function RunRow({ run, focused }: { run: RunInfo; focused?: boolean }) {
   const short = shortfall(run)
   return (
-    <button onClick={() => scrollToRun(run.cardId)} className="block w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-elev" title="Show this run in the chat">
+    <button
+      data-run={run.id}
+      onClick={() => scrollToRun(run.cardId)}
+      className={clsx('block w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-elev', focused && 'bg-elev')}
+      title="Show this run in the chat"
+    >
       <div className="flex items-center gap-2 text-[12.5px]">
         <span
           className={clsx(
@@ -51,6 +57,24 @@ function RunRow({ run }: { run: RunInfo }) {
 /** Every agent run in this chat: what it is doing or did, and what it cost. */
 export function AgentsPanel({ messages }: { messages: UiMessage[] }) {
   const { runs, cost } = useMemo(() => chatAgents(messages), [messages])
+  // openAgentRun(): scroll to that run and mark it for a moment.
+  const pending = useSetupNav((s) => s.run)
+  const list = useRef<HTMLDivElement>(null)
+  const [focused, setFocused] = useState<string | null>(null)
+  useEffect(() => {
+    if (!pending) return
+    takeAgentRun(pending.seq)
+    setFocused(pending.id)
+    const el = list.current?.querySelector<HTMLElement>(`[data-run="${CSS.escape(pending.id)}"]`)
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    el?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    el?.focus({ preventScroll: true })
+  }, [pending])
+  useEffect(() => {
+    if (!focused) return
+    const t = window.setTimeout(() => setFocused(null), 1600)
+    return () => window.clearTimeout(t)
+  }, [focused])
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
@@ -58,9 +82,9 @@ export function AgentsPanel({ messages }: { messages: UiMessage[] }) {
         <div className="flex-1" />
         {cost > 0 && <span className="font-mono text-[11px] tabular-nums text-dim">{formatCost(cost)}</span>}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+      <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {runs.length ? (
-          runs.map((r) => <RunRow key={r.id} run={r} />)
+          runs.map((r) => <RunRow key={r.id} run={r} focused={r.id === focused} />)
         ) : (
           <p className="px-3 py-6 text-center text-[12.5px] leading-relaxed text-dim">No agents yet. When Cloth hands work to an agent, it shows here with what it's doing and what it costs.</p>
         )}

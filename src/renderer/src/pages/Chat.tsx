@@ -30,6 +30,7 @@ import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
 import { ActivityGroup, ChangedFiles } from '@/components/Activity'
+import { AgentRunLine } from '@/components/AgentRun'
 import { groupTurn } from '@/lib/activity'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
@@ -1304,7 +1305,7 @@ function AssistantTurn({
   // Only the latest plan in a turn can be approved.
   const lastPlanIdx = all.map((b) => (b.type === 'tool' && b.trace.plan ? 'p' : '')).lastIndexOf('p')
   // Thinking and tool calls between pieces of the reply fold into one activity line. Plan updates other
-  // than the latest are dropped (the plan panel shows the plan); images, questions and subagents keep their own cards.
+  // than the latest are dropped (the plan panel shows the plan); images and questions keep their own cards; subagent runs show as agent lines.
   const items = useMemo(() => groupTurn(all, lastTodoIdx), [all, lastTodoIdx])
   const traces = useMemo(() => all.flatMap((b) => (b.type === 'tool' ? [b.trace] : [])), [all])
 
@@ -1327,6 +1328,7 @@ function AssistantTurn({
             const p: PlanProposal = block.trace.plan
             return <PlanCard key={block.trace.id} plan={p} actionable={!!plan?.actionable && i === lastPlanIdx} onApprove={(mode) => plan?.onApprove(mode) ?? Promise.resolve()} onRevise={() => plan?.onRevise()} />
           }
+          if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}

@@ -1,4 +1,4 @@
-import type { ToolTrace, UiBlock } from '@shared/types'
+import type { SubagentRun, ToolTrace, UiBlock } from '@shared/types'
 
 /** One item of an assistant turn: a block shown as-is, or a run of thinking and tool calls folded into one line. */
 export type TurnItem = { kind: 'block'; i: number } | { kind: 'group'; key: string; indices: number[] }
@@ -72,4 +72,43 @@ export function activityStats(traces: ToolTrace[]): { ms: number; added: number;
 export function elapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+/** How many tool calls a subagent run has made. */
+export const runStepCount = (run: Pick<SubagentRun, 'blocks'>): number => run.blocks.filter((b) => b.type === 'tool').length
+
+/** What a running agent is on: its latest tool call, thinking, or nothing yet (queued). */
+export type RunNow = { kind: 'queued' } | { kind: 'thinking' } | { kind: 'tool'; trace: ToolTrace }
+
+export function runNow(blocks: UiBlock[]): RunNow {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.type === 'tool') return { kind: 'tool', trace: b.trace }
+    if (b.type === 'thinking') return { kind: 'thinking' }
+  }
+  return { kind: 'queued' }
+}
+
+/** A run's steps (tool calls and thinking): the last `n`, or all of them, and how many earlier ones are left out. */
+export function recentSteps(blocks: UiBlock[], n: number, all = false): { steps: UiBlock[]; earlier: number; offset: number } {
+  const steps = blocks.filter((b) => b.type === 'tool' || b.type === 'thinking')
+  if (all || steps.length <= n) return { steps, earlier: 0, offset: 0 }
+  const offset = steps.length - n
+  // Counted like the line's "N steps": tool calls only, not thinking.
+  return { steps: steps.slice(-n), earlier: steps.slice(0, offset).filter((b) => b.type === 'tool').length, offset }
+}
+
+/** Every tool call id inside a run, nested runs included. */
+export function runToolIds(blocks: UiBlock[]): string[] {
+  return blocks.flatMap((b) => (b.type === 'tool' ? [b.trace.id, ...(b.trace.subagent ? runToolIds(b.trace.subagent.blocks) : [])] : []))
+}
+
+export type RunState = 'running' | 'done' | 'partial' | 'blocked' | 'failed'
+
+/** Where a `task` run stands: still going, or how it ended (a failed call wins over the report's outcome). */
+export function runState(trace: Pick<ToolTrace, 'status'> & { subagent?: Pick<SubagentRun, 'running' | 'outcome'> }): RunState {
+  if (trace.status === 'error') return 'failed'
+  if (trace.subagent?.running || trace.status === 'running') return 'running'
+  const o = trace.subagent?.outcome
+  return o === 'partial' ? 'partial' : o === 'blocked' ? 'blocked' : 'done'
 }

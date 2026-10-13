@@ -41,14 +41,15 @@ export function usePanelState(): [PanelState, (p: Partial<PanelState>) => void] 
       return next
     })
   const set = (p: Partial<PanelState>) => write((cur) => ({ ...cur, ...p }))
-  // openSetupSection(): open the panel with Setup shown (the Setup tab then opens the section itself).
+  // openSetupSection() / openAgentRun(): open the panel with Setup or Agents shown (the tab then shows the section or run itself).
   const navSeq = useSetupNav((s) => s.seq)
   const handledSeq = useRef(navSeq)
   useEffect(() => {
     if (navSeq === handledSeq.current) return
     handledSeq.current = navSeq
+    const tab = useSetupNav.getState().tab
     // open last: focusOrReplace returns the whole state, including open: false.
-    write((cur) => ({ ...cur, ...(isMobile ? { stack: ['setup'], sizes: [1], focus: 0 } : focusOrReplace(cur, 'setup')), open: true }))
+    write((cur) => ({ ...cur, ...(isMobile ? { stack: [tab], sizes: [1], focus: 0 } : focusOrReplace(cur, tab)), open: true }))
   }, [navSeq]) // eslint-disable-line react-hooks/exhaustive-deps
   return [state, set]
 }
