@@ -84,7 +84,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
 
   /** `of`: what 100% width represents — the whole window (panel) or just what is used (compact pill). */
   const Bar = ({ className, marker, of = window_ }: { className: string; marker?: boolean; of?: number }) => (
-    <div className={clsx('relative flex overflow-hidden rounded-full bg-elev-2', className)}>
+    <div className={clsx('relative flex overflow-hidden rounded-[3px] border border-line-strong bg-elev-2', className)}>
       {slices.map((s, i) => (
         <motion.div
           key={s.key}
@@ -165,7 +165,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         aria-expanded={open}
         className={clsx('flex h-7 items-center gap-2 rounded-lg px-2 transition-colors', open ? 'bg-elev-2' : 'hover:bg-elev')}
       >
-        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-1 w-12 @[560px]:w-20 mobile:hidden" />}
+        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-2.5 w-12 @[560px]:w-20 mobile:hidden" />}
         <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>
