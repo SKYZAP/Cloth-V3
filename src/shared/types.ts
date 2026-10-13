@@ -315,11 +315,16 @@ export interface ChatSession {
   webEnabled: boolean
   customTools: boolean
   workspace: string | null
-  /** What the agent may do in the workspace folder. */
+  /**
+   * What the agent may do and what it asks first: auto (changes and commands run, risky actions
+   * ask), manual (every change and command asks) or plan (read-only until a plan is approved).
+   */
+  permissions: Permissions
+  /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
   fileAccess: FileAccess
-  /** Offer a shell tool (bash, or PowerShell on Windows) that runs in the workspace. */
+  /** Derived from `permissions`: a shell tool (bash, or PowerShell on Windows) in the workspace. */
   shell: boolean
-  /** Which actions run without asking first. */
+  /** Derived from `permissions`: which actions run without asking first. */
   autoApprove: AutoApprove
   /** Let the agent delegate work to subagents with the `task` tool. */
   subagents: boolean
@@ -550,7 +555,7 @@ export interface ContainerPort {
 
 /** Chat settings a project gives the chats started in it. */
 export type ProjectDefaults = Partial<
-  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container' | 'mcpServers'>
+  Pick<ChatSession, 'model' | 'collectionIds' | 'knowledgeEnabled' | 'skillsEnabled' | 'webEnabled' | 'customTools' | 'permissions' | 'fileAccess' | 'shell' | 'autoApprove' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'thinking' | 'container' | 'mcpServers'>
 >
 
 /** A group of chats that share a folder (optional), instructions and starting settings. */
@@ -577,6 +582,15 @@ export type ProjectInput = Partial<Pick<Project, 'name' | 'folder' | 'color' | '
 
 export type FileAccess = 'read' | 'write'
 export type AutoApprove = 'none' | 'edits' | 'all'
+/** A chat's permission mode (see ChatSession.permissions). */
+export type Permissions = 'auto' | 'manual' | 'plan'
+
+/** A plan the agent proposed with `present_plan` (Plan mode). */
+export interface PlanProposal {
+  title: string
+  steps: string[]
+  notes?: string
+}
 
 /** One file changed by a write/edit tool call; undoable from its checkpoint. */
 export interface FileChange {
@@ -602,6 +616,8 @@ export interface PendingApproval {
   diff?: string
   added?: number
   removed?: number
+  /** Why this needs a look in Auto mode ("Pushes to a remote", "Installs packages"…); absent for routine asks. */
+  risk?: string
   createdAt: number
 }
 
@@ -638,6 +654,8 @@ export interface ToolTrace {
   image?: GeneratedImage
   /** For `computer` calls: what was done and a small copy of the screenshot it returned. */
   computer?: ComputerTrace
+  /** For `present_plan` calls: the plan waiting for the user's approval. */
+  plan?: PlanProposal
 }
 
 export interface ComputerTrace {
@@ -729,6 +747,8 @@ export interface UiMessage {
   summary?: string
   /** Turns that were summarised away — shown for reference, no longer sent to the model. */
   archived?: boolean
+  /** Set on the user message that approved a plan: the mode the chat switched to. */
+  planApproval?: 'auto' | 'manual'
 }
 
 /** An attachment as the chat shows it: images carry their bytes, files only what was read from them. */
@@ -1004,6 +1024,8 @@ export interface Settings {
   subagents: SubagentSettings
   /** Tiers the chat agent picks from when it delegates (cheapest first). */
   agentTiers: AgentTier[]
+  /** The permission mode new chats start in (a project's defaults win). */
+  defaultPermissions: Permissions
 }
 
 export interface SubagentSettings {

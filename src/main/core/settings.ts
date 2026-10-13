@@ -43,7 +43,8 @@ export const DEFAULT_SETTINGS: Settings = {
     allowWorkers: true,
     instructions: ''
   },
-  agentTiers: DEFAULT_AGENT_TIERS
+  agentTiers: DEFAULT_AGENT_TIERS,
+  defaultPermissions: 'auto'
 }
 
 export const DEFAULT_SUBAGENTS: SubagentSettings = DEFAULT_SETTINGS.subagents

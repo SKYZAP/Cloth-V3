@@ -1,6 +1,7 @@
 import { commandAllowed } from '@shared/types'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { glob, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { structuredPatch } from 'diff'
@@ -21,6 +22,7 @@ import type { ApprovalDecision, AutoApprove, BuiltinToolInfo, ChatEvent, FileAcc
 import { newId } from '../core/context'
 import { Type } from 'typebox'
 import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
+import { commandRisk, commandRiskResolved, pathRiskResolved } from './risk'
 import { fileURLToPath } from 'node:url'
 import {
   applyEdits,
@@ -263,6 +265,26 @@ export interface WorkspaceOptions {
   commandAllow?: string[] | null
   /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
   shellExec?: (command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]) => Promise<{ exitCode: number | null }>
+  /**
+   * Look for risky actions (risk.ts): they ask even when everything else is approved up front, and
+   * are refused when nobody is there to ask. Never in a container, whose changes are reviewed instead.
+   */
+  checkRisk?: boolean
+  /** Live: the chat is in Plan mode, so changes and commands are refused even if the tools are there. */
+  readOnly?(): boolean
+}
+
+/** What an unattended run is told when a risky action would need a person. */
+export const NEEDS_PERSON = 'This needs approval and nobody is here to give it; report it instead.'
+export const PLAN_REFUSAL = 'This chat is in Plan mode, which is read-only: describe the change in your plan (present_plan) instead of making it.'
+
+/** An allowlisted command that is risky runs only when the allowlist entry it matched is itself risky ("git push", not "git"). */
+function allowCovers(command: string, allow: string[], shell: 'bash' | 'powershell', root: string): boolean {
+  const c = command.trim().replace(/\s+/g, ' ')
+  return allow.some((a) => {
+    const p = a.trim().replace(/\s+/g, ' ')
+    return !!p && (c === p || c.startsWith(`${p} `)) && !!commandRisk(p, { root, shell })
+  })
 }
 
 export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit', 'lsp']
@@ -291,17 +313,29 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
 /** pi's coding tools, confined to the workspace, with approvals and checkpoints on every change. */
 export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   const inside = (p: string) => confine(o.root, p)
-  const ask = async (input: Omit<PendingApproval, 'id' | 'createdAt' | 'sessionId' | 'toolCallId'>): Promise<void> => {
+  const commandShell: 'bash' | 'powershell' = o.shellExec || process.platform !== 'win32' ? 'bash' : 'powershell'
+  /** Why a command needs a person's look (risk.ts), or null; never in a container. */
+  const commandRiskOf = async (command: string, cwd: string): Promise<string | null> =>
+    o.checkRisk && !o.shellExec ? commandRiskResolved(command, { root: await realpath(o.root), cwd, shell: commandShell, home: homedir() }) : null
+  /**
+   * Ask before a change or command unless the policy approves it up front. A risky one (`risk`)
+   * asks even then; with nobody to ask, it is refused with a note for the model.
+   */
+  const ask = async (input: Omit<PendingApproval, 'id' | 'createdAt' | 'sessionId' | 'toolCallId'>, risk: string | null = null): Promise<void> => {
+    if (o.readOnly?.()) throw new Error(PLAN_REFUSAL)
     if (input.kind === 'command' && o.commandAllow?.length) {
-      if (commandAllowed(input.command ?? '', o.commandAllow)) return
-      throw new Error(`This automation may only run these commands, one at a time: ${o.commandAllow.join(', ')}. Use one of them, or do without.`)
+      if (!commandAllowed(input.command ?? '', o.commandAllow)) {
+        throw new Error(`This automation may only run these commands, one at a time: ${o.commandAllow.join(', ')}. Use one of them, or do without.`)
+      }
+      if (!risk || allowCovers(input.command ?? '', o.commandAllow, commandShell, o.root)) return
+      throw new Error(`${risk}. ${NEEDS_PERSON}`)
     }
     const policy = o.autoApprove()
     const auto = policy === 'all' || (policy === 'edits' && input.kind !== 'command')
-    if (auto) return
-    if (!o.approvals || !o.sessionId) throw new Error('This action needs approval, and there is no one to ask in this context')
+    if (auto && !risk) return
+    if (!o.approvals || !o.sessionId) throw new Error(risk ? `${risk}. ${NEEDS_PERSON}` : 'This action needs approval, and there is no one to ask in this context')
     const state = call.getStore()
-    const decision = await o.approvals.request({ ...input, sessionId: o.sessionId, toolCallId: state?.toolCallId ?? null }, state?.signal)
+    const decision = await o.approvals.request({ ...input, ...(risk ? { risk } : {}), sessionId: o.sessionId, toolCallId: state?.toolCallId ?? null }, state?.signal)
     if (decision === 'deny') {
       throw new Error(
         input.kind === 'command'
@@ -309,7 +343,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
           : `The user declined this change to ${input.path}. Do not retry the same change; ask the user what they want instead.`
       )
     }
-    if (decision === 'always') o.onAlways?.(input.kind === 'command' ? 'all' : 'edits')
+    // "Always" on a risky action allows this one; risky actions keep asking.
+    if (decision === 'always' && !risk) o.onAlways?.(input.kind === 'command' ? 'all' : 'edits')
   }
 
   /** Apply one or more file changes behind a single approval, checkpointing each file. */
@@ -324,7 +359,10 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     if (!planned.length) return []
     const added = planned.reduce((n, p) => n + p.added, 0)
     const removed = planned.reduce((n, p) => n + p.removed, 0)
-    await ask({ kind, path: planned.length === 1 ? planned[0].rel : `${planned.length} files`, diff: planned.map((p) => p.diff).join('\n'), added, removed })
+    // Paths are already confined to the folder; this also catches one that a link leads out of.
+    let risk: string | null = null
+    if (o.checkRisk && !o.shellExec) for (const p of planned) risk ??= await pathRiskResolved(rootReal, p.abs, 'write')
+    await ask({ kind, path: planned.length === 1 ? planned[0].rel : `${planned.length} files`, diff: planned.map((p) => p.diff).join('\n'), added, removed }, risk)
     const state = call.getStore()
     const changes: FileChange[] = []
     for (const p of planned) {
@@ -517,7 +555,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     const operations: BashOperations = {
       exec: async (command, cwd, options) => {
         const rel = relative(await realpath(o.root), await inside(cwd)).split(sep).join('/')
-        await ask({ kind: 'command', command, path: rel || '.' })
+        await ask({ kind: 'command', command, path: rel || '.' }, await commandRiskOf(command, await inside(cwd)))
         return withDefaultTimeout('bash', options, (opts) => run(command, rel, opts))
       }
     }
@@ -527,7 +565,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     const operations: BashOperations = {
       exec: async (command, cwd, options) => {
         const dir = await inside(cwd)
-        await ask({ kind: 'command', command, path: relative(await realpath(o.root), dir).split(sep).join('/') || '.' })
+        await ask({ kind: 'command', command, path: relative(await realpath(o.root), dir).split(sep).join('/') || '.' }, await commandRiskOf(command, dir))
         return withDefaultTimeout(process.platform === 'win32' ? 'powershell' : 'bash', options, (opts) => local.exec(command, dir, opts))
       }
     }

@@ -12,12 +12,19 @@ import type { McpCallLog, McpClientConfig, McpClientStatus } from '@shared/types
 import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import type { ApprovalService } from '../agent/workspace'
-import type { ToolDetails, ToolScope } from '../agent/tools'
+import { inPlanMode, type ToolDetails, type ToolScope } from '../agent/tools'
 
 interface McpTool {
   name: string
   description?: string
   inputSchema: Record<string, unknown>
+  /** MCP tool hints; readOnlyHint = it doesn't change anything. */
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+}
+
+/** Whether a server's tool may run in Plan mode (read-only): the tool says it only reads, or the server is trusted to run without asking. */
+export function mcpReadOnly(server: Pick<McpClientConfig, 'approval'>, tool: Pick<McpTool, 'annotations'>): boolean {
+  return tool.annotations?.readOnlyHint === true || server.approval === 'auto'
 }
 
 interface Conn {
@@ -260,7 +267,8 @@ export class McpClientService {
     for (const id of scope.mcpServers) {
       const c = this.conns.get(id)
       if (c?.state !== 'ready') continue
-      for (const tool of c.tools) out.push(this.agentTool(c, tool, scope))
+      // Plan mode is read-only: only tools that say they only read (or trusted servers' tools).
+      for (const tool of c.tools) if (!inPlanMode(scope) || mcpReadOnly(c.config, tool)) out.push(this.agentTool(c, tool, scope))
     }
     return out
   }
@@ -275,6 +283,7 @@ export class McpClientService {
       parameters: Type.Unsafe(schema),
       execute: async (toolCallId, params, signal) => {
         const started = Date.now()
+        if (inPlanMode(scope) && !mcpReadOnly(server, tool)) throw new Error('This chat is in Plan mode, which is read-only: put this step in your plan (present_plan) instead.')
         await this.approve(server, tool.name, params, scope, toolCallId, signal)
         const client = this.conns.get(server.id)?.client
         if (!client) throw new Error(`The ${server.name} server is not running — it may have exited. Try again, or check it in Settings → MCP.`)
@@ -311,9 +320,12 @@ export class McpClientService {
     }
   }
 
-  /** Servers set to "ask" need the user's go-ahead per call, unless the chat approves everything. */
+  /**
+   * Servers set to "ask" need the user's go-ahead per call in every permission mode (until "Always
+   * allow here"); runs outside chats that approve everything up front don't ask.
+   */
   private async approve(server: McpClientConfig, tool: string, params: unknown, scope: ToolScope, toolCallId: string, signal?: AbortSignal): Promise<void> {
-    if (server.approval === 'auto' || scope.autoApprove?.() === 'all') return
+    if (server.approval === 'auto' || (!scope.permissions && scope.autoApprove?.() === 'all')) return
     const session = scope.sessionId
     if (!session) return
     if (this.trusted.get(session)?.has(server.id)) return

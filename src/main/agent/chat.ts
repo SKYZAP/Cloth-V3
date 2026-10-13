@@ -1,9 +1,10 @@
 import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, ImageContent, TextContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai'
-import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize } from '@shared/types'
+import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal } from '@shared/types'
 import { contextIsGuess } from '@shared/types'
+import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
 import { toolSummary } from '@shared/tool-summary'
 import type { Agent as SavedAgent, AgentSetup, AgentTier, SubagentActivity, TodoItem, ApprovalDecision, ChatAttachment, ChatEvent, ChatSession, ChatSetup, ContextSlice, ContextSliceKey, ContextUsage, FileChange, ModelRef, PendingApproval, PendingQuestion, SubagentRun, SubagentSettings, ThinkingLevel, ToolTrace, UiAttachment, UiBlock, UiMessage } from '@shared/types'
@@ -23,7 +24,7 @@ import type { RagService } from '../rag/rag'
 import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
-import { allowedSkill, buildTools, type ToolDetails, type ToolScope } from './tools'
+import { allowedSkill, buildTools, inPlanMode, type ToolDetails, type ToolScope } from './tools'
 import { runAsCall } from './workspace'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
@@ -75,10 +76,71 @@ const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
 const AGENT_OPEN = '<agent-mention name="'
 const AGENT_CLOSE = '</agent-mention>'
+const PLAN_OPEN = '<plan-approval mode="'
+const PLAN_CLOSE = '</plan-approval>'
+/** What the user sees for the message that approves a plan. */
+export const PLAN_APPROVED_TEXT = 'Approved the plan'
 /** Blocks the user message carries for the model only (never shown as the user's text). */
-const hidden = (text: string) => text.startsWith(SKILL_OPEN) || text.startsWith(AGENT_OPEN) || text.startsWith(FILE_OPEN)
+const hidden = (text: string) => text.startsWith(SKILL_OPEN) || text.startsWith(AGENT_OPEN) || text.startsWith(FILE_OPEN) || text.startsWith(PLAN_OPEN)
 
-type SessionConfig = Omit<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt'>
+/** The system prompt section that says which permission mode the chat is in now. */
+export const PERMISSIONS_SECTION = 'permissions'
+
+/**
+ * What the agent is told about the chat's permission mode. A chat's system prompt is fixed at its
+ * first run (it lives in the history), so this goes in a named section that a later system message
+ * replaces whenever the mode changes. null = nothing to say (no folder, not planning).
+ */
+export function permissionSection(p: Permissions, where: { workspace: string | null; container: unknown }): string | null {
+  if (p === 'plan') {
+    return [
+      '## Permissions: Plan mode',
+      'This chat is in Plan mode (this replaces anything said earlier about changing files or approvals): you can read and search, but not change files, run commands or use the computer. First explore what you need to understand the task (read the relevant files, search, look things up). Then call `present_plan` once, with a short title and concrete, ordered steps (which files change and how, what to run, how to check it), plus notes for risks or open questions, and stop — do not write the plan out again as text. The user approves the plan (the chat then leaves Plan mode and you carry it out) or asks for changes; then revise it and call `present_plan` again. Answer plain questions directly, without a plan.'
+    ].join('\n')
+  }
+  if (!where.workspace) return null
+  if (where.container) {
+    return p === 'auto'
+      ? '## Permissions: Auto\nThis chat is in Auto mode (this replaces anything said earlier about approvals): changes and commands in the container run without asking; the user reviews the changes before they reach their folder.'
+      : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): the user approves each file change (as a diff) and each command before it runs. If something is declined, do not retry it; ask what they want instead.'
+  }
+  return p === 'auto'
+    ? '## Permissions: Auto\nThis chat is in Auto mode (this replaces anything said earlier about approvals): file changes and commands run without asking, and the user can undo changes. Risky actions still need the user\'s approval first: deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings. If one is declined, do not retry it or work around it; ask how to proceed.'
+    : '## Permissions: Manual\nThis chat is in Manual mode (this replaces anything said earlier about approvals): the user approves each file change (as a diff) and each command before it runs; reading and searching never ask. If something is declined, do not retry it; ask what they want instead.'
+}
+
+/** What a chat stores: fileAccess / shell / autoApprove are worked out from `permissions`, never stored. */
+type SessionConfig = Omit<ChatSession, 'id' | 'title' | 'createdAt' | 'updatedAt' | 'fileAccess' | 'shell' | 'autoApprove'>
+/** Settings for a new or changed chat; the old switches (fileAccess, shell, autoApprove) still work and become a permission mode. */
+export type SessionInput = Partial<SessionConfig> & LegacyCaps
+
+/**
+ * The permission mode from the most specific layer that says anything about it: its `permissions`,
+ * else its old switches (filled in from the layers under it), else `fallback`.
+ */
+function resolvePermissions(layers: SessionInput[], where: { workspace: string | null; container: unknown }, fallback: Permissions): Permissions {
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]
+    if (isPermissions(layer.permissions)) return layer.permissions
+    if (hasLegacyCaps(layer)) {
+      const below = layers.slice(i).reverse().reduce<LegacyCaps>((acc, l) => ({ ...acc, ...definedCaps(l) }), {})
+      return legacyPermissions(below, where)
+    }
+  }
+  return fallback
+}
+
+const definedCaps = (l: LegacyCaps): LegacyCaps => ({
+  ...(l.fileAccess !== undefined ? { fileAccess: l.fileAccess } : {}),
+  ...(l.shell !== undefined ? { shell: l.shell } : {}),
+  ...(l.autoApprove !== undefined ? { autoApprove: l.autoApprove } : {})
+})
+
+/** A config without the old switches (they are derived, never stored). */
+function withoutCaps<T extends LegacyCaps>(c: T): Omit<T, 'fileAccess' | 'shell' | 'autoApprove'> {
+  const { fileAccess: _f, shell: _s, autoApprove: _a, ...rest } = c
+  return rest
+}
 
 interface SessionRow {
   id: string
@@ -100,9 +162,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   webEnabled: false,
   customTools: true,
   workspace: null,
-  fileAccess: 'read',
-  shell: false,
-  autoApprove: 'none',
+  permissions: 'auto',
   subagents: true,
   codeIntel: true,
   imagesEnabled: true,
@@ -118,8 +178,8 @@ const DEFAULT_CONFIG: SessionConfig = {
   autoTiers: true
 }
 
-/** The capability switches a chat copies from an agent when it is set up from one. */
-const SETUP_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools', 'fileAccess', 'shell', 'autoApprove']
+/** The capability switches a chat copies from an agent when it is set up from one (its folder access becomes a permission mode). */
+const SETUP_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools']
 
 /** An agent's switches as a tool scope (its folder access capped at what the caller has). */
 export function agentScope(agent: AgentSetup, base: ToolScope): ToolScope {
@@ -269,7 +329,8 @@ export class AgentRuntime {
   }
 
   private computerAvailable(parent: Omit<AgentRunOptions, 'prompt'>): boolean {
-    if (!this.ws.computer || !parent.scope.computerUse) return false
+    // Plan mode is read-only: no mouse and keyboard either.
+    if (!this.ws.computer || !parent.scope.computerUse || inPlanMode(parent.scope)) return false
     try {
       return computerOffered(parent.scope, this.providers.resolve(parent.model).model.input, true)
     } catch {
@@ -373,6 +434,8 @@ export class AgentRuntime {
       lines.push('', '## External tools', `Tools from these MCP servers are available (named mcp__<server>__<tool>): ${servers.join(', ')}.${servers.includes('playwright') ? ' With Playwright you can open pages in a real browser, interact with them and take screenshots — use it to check UI you build (open the page, look at the screenshot or snapshot, fix what is off).' : ''}`)
     }
     if (this.imagesAvailable(scope)) lines.push('', '## Images', 'You can create images with `generate_image` when the user asks for a picture, illustration, logo, mockup or similar. The image appears inline for the user.')
+    // A chat's current permission mode is told in its own section (permissionSection), which can change later.
+    const planning = inPlanMode(scope) && !!scope.sessionId && !scope.depth
     if (scope.sessionId && !scope.depth) {
       lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
       if (this.ws.approvals) lines.push('When you need a decision, a preference or information only the user has before you can continue, ask with the `ask_user` tool (offer options when you can) instead of guessing or ending your reply with questions — the user answers in the chat and you carry on with the answer. Ask one question per call; call it again for the next one. Do not ask about things you can find out yourself.')
@@ -381,6 +444,8 @@ export class AgentRuntime {
       // The same rules the tools are built with (buildTools): outside a chat, changes and commands need approval up front, an allowlist or a container.
       const unattended = !scope.sessionId
       const autoEdits = !!scope.autoApprove && scope.autoApprove() !== 'none'
+      // Auto mode in a chat: changes and commands run without asking, except risky ones.
+      const autoAll = !unattended && !!scope.autoApprove && scope.autoApprove() === 'all'
       const writable = scope.fileAccess === 'write' && (!!scope.sessionId || autoEdits)
       const shell = scope.shell && (scope.sessionId || scope.commandAllow?.length || scope.container) ? (scope.container || process.platform !== 'win32' ? 'bash' : 'powershell') : null
       lines.push(
@@ -393,8 +458,12 @@ export class AgentRuntime {
         writable
           ? unattended
             ? 'You can change files: use ast_edit for mechanical refactors across many places, edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. Nobody is watching this run, so changes are made without asking: keep them minimal and focused on the task, and say what you changed when you finish.'
-            : 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
-          : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
+            : autoAll
+              ? 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. Changes are applied without asking (the user can undo each one), so keep them minimal and focused on the request, and say what you changed when you finish.'
+              : 'You can change files: use ast_edit for mechanical refactors across many places (renames, API migrations), edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. The user reviews each change as a diff and may decline it — if a change is declined, do not retry it; ask what they would like instead. Keep changes minimal and focused on the request.'
+          : planning
+            ? 'Access is read-only in Plan mode: you cannot create or modify files or run commands. Put the changes in your plan instead.'
+            : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
         ...(scope.codeIntel !== false ? ['Use `lsp` for TypeScript/JavaScript/Python code intelligence: go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
         ...(shell
           ? [
@@ -402,7 +471,11 @@ export class AgentRuntime {
                 ? `You can run commands with bash in the container (working directory /workspace). It is Linux: use its package manager or language tools to install what you need. ${unattended ? 'Nobody is watching this run, so commands run without asking.' : 'Unless the user auto-approves commands, they approve each one, so explain why a command is needed.'}`
                 : scope.commandAllow?.length
                   ? `You can run only these commands with ${shell} (working directory = the workspace), each on its own and with any arguments: ${scope.commandAllow.map((c) => `\`${c}\``).join(', ')}. Anything else, or chaining commands with ; && | or redirects, is refused.`
-                  : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`,
+                  : autoAll
+                    ? `You can run commands with ${shell} (working directory = the workspace). Commands run without asking, except risky ones — deleting or writing outside the workspace, git push / reset --hard / clean, installing packages, downloading from the network, running elevated or changing system settings — which the user approves first. If one is declined, do not retry it or work around it; ask how to proceed.`
+                    : unattended
+                      ? `You can run commands with ${shell} (working directory = the workspace).`
+                      : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`,
               ...(scope.container
                 ? [
                     'Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file, listening on 0.0.0.0 (e.g. `nohup npm run dev -- --host 0.0.0.0 > /tmp/dev.log 2>&1 &`), then check they respond (e.g. with curl) and tell the user the port. Cloth opens container servers on the user’s PC automatically.'
@@ -748,20 +821,22 @@ export class ChatService {
     return toSession(this.row(id))
   }
 
-  create(config: Partial<SessionConfig> = {}, id = newId('ses_')): ChatSession {
+  create(config: SessionInput = {}, id = newId('ses_')): ChatSession {
     const now = Date.now()
     const s = this.settings.get()
     // A chat started in a project begins with the project's folder and settings.
-    const fromProject = config.projectId && this.projects ? this.projects.chatConfig(config.projectId) : {}
-    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...fromProject, ...config }
+    const fromProject: SessionInput = config.projectId && this.projects ? this.projects.chatConfig(config.projectId) : {}
+    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...withoutCaps(fromProject), ...withoutCaps(config) }
+    // Its permission mode: asked for, else the project's, else the default for new chats.
+    full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'auto')
     if (!full.model) full.model = s.defaultModel
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
   }
 
-  update(id: string, patch: Partial<SessionConfig> & { title?: string }): ChatSession {
+  update(id: string, patch: SessionInput & { title?: string }): ChatSession {
     const cur = this.get(id)
-    const { title, ...config } = patch
+    const { title, fileAccess, shell, autoApprove, ...config } = patch
     const next: SessionConfig = {
       model: cur.model,
       systemPrompt: cur.systemPrompt,
@@ -771,9 +846,7 @@ export class ChatService {
       webEnabled: cur.webEnabled,
       customTools: cur.customTools,
       workspace: cur.workspace,
-      fileAccess: cur.fileAccess,
-      shell: cur.shell,
-      autoApprove: cur.autoApprove,
+      permissions: cur.permissions,
       subagents: cur.subagents,
       codeIntel: cur.codeIntel,
       imagesEnabled: cur.imagesEnabled,
@@ -792,6 +865,11 @@ export class ChatService {
       autoTiers: cur.autoTiers,
       origin: cur.origin,
       ...config
+    }
+    // Screens that still set the old switches: they become the matching permission mode.
+    if (!isPermissions(config.permissions)) next.permissions = cur.permissions
+    if (!isPermissions(config.permissions) && hasLegacyCaps({ fileAccess, shell, autoApprove })) {
+      next.permissions = legacyPermissions({ fileAccess: fileAccess ?? cur.fileAccess, shell: shell ?? cur.shell, autoApprove: autoApprove ?? cur.autoApprove }, next)
     }
     // Switching computer use off takes back the chat's consent: switched on again, it asks again.
     if (config.computerUse === false) next.computerConsent = false
@@ -1044,7 +1122,8 @@ export class ChatService {
     const cur = this.get(id)
     const patch: Partial<SessionConfig> = { agentId }
     for (const k of SETUP_KEYS) (patch as Record<string, unknown>)[k] = agent[k]
-    if (cur.workspace && cur.fileAccess === 'read') patch.fileAccess = 'read'
+    // The agent's folder access as a mode; a chat that is only planning stays in Plan mode.
+    patch.permissions = cur.workspace && cur.permissions === 'plan' ? 'plan' : legacyPermissions(agent, cur)
     if (agent.model) patch.model = agent.model
     if (agent.thinking) patch.thinking = agent.thinking
     return this.update(id, patch)
@@ -1056,7 +1135,8 @@ export class ChatService {
     const s = this.create(
       {
         workspace: input.workspace,
-        fileAccess: input.container ? 'write' : 'read',
+        // Read-only (Plan) on the real folder; a container copy's changes are reviewed before they apply.
+        permissions: input.container ? 'auto' : legacyPermissions({ fileAccess: 'read' }, { workspace: input.workspace }),
         container: input.container ?? null,
         ...(input.projectId ? { projectId: input.projectId } : {}),
         ...(input.origin ? { origin: input.origin } : {})
@@ -1102,6 +1182,7 @@ export class ChatService {
 
   private scope(id: string): ToolScope {
     const session = this.get(id)
+    const caps = permissionCaps(session.permissions)
     return {
       collectionIds: session.collectionIds,
       knowledgeEnabled: session.knowledgeEnabled,
@@ -1109,8 +1190,8 @@ export class ChatService {
       webEnabled: session.webEnabled,
       customTools: session.customTools,
       workspace: session.workspace,
-      fileAccess: session.fileAccess,
-      shell: session.shell,
+      fileAccess: caps.fileAccess,
+      shell: caps.shell,
       sessionId: id,
       subagents: session.subagents,
       codeIntel: session.codeIntel,
@@ -1128,12 +1209,30 @@ export class ChatService {
       autoTiers: session.autoTiers,
       todos: () => latestTodos(this.active.get(id)?.state.messages ?? this.rawMessages(id)),
       depth: 0,
-      autoApprove: () => this.get(id).autoApprove,
-      onAlways: (scope) => {
-        const cur = this.get(id).autoApprove
-        if (cur !== 'all') this.update(id, { autoApprove: scope === 'all' ? 'all' : 'edits' })
+      permissions: () => this.get(id).permissions,
+      autoApprove: () => permissionCaps(this.get(id).permissions).autoApprove,
+      // "Allow all in this chat" on an approval card: the chat switches to Auto.
+      onAlways: () => {
+        if (this.get(id).permissions === 'manual') this.update(id, { permissions: 'auto' })
       }
     }
+  }
+
+  /**
+   * The user approved the plan the agent presented in Plan mode: switch the chat to `mode` and
+   * carry on, as if they had replied "Approved the plan". Returns the chat with its new mode.
+   */
+  async approvePlan(id: string, mode: 'auto' | 'manual'): Promise<ChatSession> {
+    if (mode !== 'auto' && mode !== 'manual') throw new Error('A plan is approved in Auto or Manual mode')
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const session = this.update(id, { permissions: mode })
+    const how =
+      mode === 'auto'
+        ? 'This chat is now in Auto mode: changes and commands run without asking, except risky ones, which the user approves first.'
+        : 'This chat is now in Manual mode: the user approves each file change and each command.'
+    const note = [`${PLAN_OPEN}${mode}">`, `Plan approved. Carry it out. ${how} Work through the plan step by step (keep the todo list current), then report what you did.`, PLAN_CLOSE].join('\n')
+    await this.run(id, { role: 'user', content: [{ type: 'text', text: note }, { type: 'text', text: PLAN_APPROVED_TEXT }], timestamp: Date.now() }, '')
+    return session
   }
 
   async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = [], agentNames: string[] = []): Promise<void> {
@@ -1181,6 +1280,13 @@ export class ChatService {
     const history = this.rawMessages(id)
     const systemPrompt = await this.runtime.systemPrompt(scope, await this.instructions(session))
     const agent = this.runtime.createAgent({ model: session.model, scope, thinking: session.thinking, history, systemPrompt })
+    // Tell the agent the chat's permission mode when it is new or changed since the last run.
+    const mode = permissionSection(session.permissions, { workspace: session.workspace, container: session.container })
+    const told = getCurrentSystemMessage(agent.state.messages)?.sections?.[PERMISSIONS_SECTION] ?? null
+    if (mode !== told) {
+      const update: SystemMessage = { role: 'system', content: '', sections: { [PERMISSIONS_SECTION]: mode }, timestamp: Date.now() }
+      agent.state.messages = [...agent.state.messages, update]
+    }
     this.active.set(id, agent)
 
     const emit = (e: ChatEvent) => this.ctx.emit('chat', e)
@@ -1348,8 +1454,11 @@ export class ChatService {
 }
 
 function toSession(row: SessionRow): ChatSession {
-  const config = { ...DEFAULT_CONFIG, ...json<Partial<SessionConfig>>(row.config, {}) }
-  return { id: row.id, title: row.title, ...config, ...(row.preview ? { preview: row.preview } : {}), createdAt: row.created_at, updatedAt: row.updated_at }
+  const stored = json<SessionInput>(row.config, {})
+  const config: SessionConfig = { ...DEFAULT_CONFIG, ...withoutCaps(stored) }
+  // Chats saved before permission modes carry the old switches: they map to a mode (and keep it once saved).
+  if (!isPermissions(stored.permissions)) config.permissions = legacyPermissions(stored, config)
+  return { id: row.id, title: row.title, ...config, ...permissionCaps(config.permissions), ...(row.preview ? { preview: row.preview } : {}), createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
 /** One line from the latest turn: the reply's opening, or what was asked when there's no reply yet. */
@@ -1396,15 +1505,17 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
       const parts: string[] = []
       const attachments: UiAttachment[] = []
       let summary: string | undefined
+      let planApproval: UiMessage['planApproval']
       for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
         if (c.type === 'image') attachments.push({ kind: 'image', mimeType: c.mimeType, data: c.data })
+        else if (c.text.startsWith(PLAN_OPEN)) planApproval = c.text.startsWith(`${PLAN_OPEN}manual"`) ? 'manual' : 'auto'
         else if (c.text.startsWith(FILE_OPEN)) attachments.push(parseFileBlock(c.text)!)
         else if (c.text.startsWith(SUMMARY_OPEN)) summary = splitSummary({ role: 'user', content: [c], timestamp: 0 }).summary ?? ''
         else if (c.text.startsWith(SKILL_OPEN)) skills.push(c.text.slice(SKILL_OPEN.length, c.text.indexOf('"', SKILL_OPEN.length)))
         else if (c.text.startsWith(AGENT_OPEN)) agents.push(c.text.slice(AGENT_OPEN.length, c.text.indexOf('"', AGENT_OPEN.length)).replace(/&quot;/g, '"'))
         else parts.push(c.text)
       }
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(agents.length ? { agents } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}) })
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(agents.length ? { agents } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}), ...(planApproval ? { planApproval } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue
@@ -1431,7 +1542,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
           ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
           ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {}),
-          ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {})
+          ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {}),
+          ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })
