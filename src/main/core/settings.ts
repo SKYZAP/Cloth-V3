@@ -1,12 +1,14 @@
-import type { AgentTier, Settings, SubagentSettings } from '@shared/types'
+import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type Settings, type SubagentSettings } from '@shared/types'
 import { newId, type Ctx } from './context'
+
+export { DEFAULT_TIER_INSTRUCTIONS }
 
 /** The tiers a chat agent picks from when it delegates; model null = the chat's own model. */
 export const DEFAULT_AGENT_TIERS: AgentTier[] = [
-  { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: 'Mechanical edits, renames, running builds or tests, small isolated fixes.' },
-  { id: 'medium', name: 'Medium', model: null, thinking: 'medium', purpose: 'Standard features and bug fixes with a known cause, a few files.' },
-  { id: 'careful', name: 'Careful', model: null, thinking: 'high', purpose: 'Delicate changes where the approach is clear: multi-file refactors, edge cases, keeping invariants.' },
-  { id: 'heavy', name: 'Heavy', model: null, thinking: 'high', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.' }
+  { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: 'Mechanical edits, renames, running builds or tests, small isolated fixes.', instructions: DEFAULT_TIER_INSTRUCTIONS.light },
+  { id: 'medium', name: 'Medium', model: null, thinking: 'medium', purpose: 'Standard features and bug fixes with a known cause, a few files.', instructions: DEFAULT_TIER_INSTRUCTIONS.medium },
+  { id: 'careful', name: 'Careful', model: null, thinking: 'high', purpose: 'Delicate changes where the approach is clear: multi-file refactors, edge cases, keeping invariants.', instructions: DEFAULT_TIER_INSTRUCTIONS.careful },
+  { id: 'heavy', name: 'Heavy', model: null, thinking: 'high', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.', instructions: DEFAULT_TIER_INSTRUCTIONS.heavy }
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -57,7 +59,12 @@ export class SettingsService {
   get(): Settings {
     const stored = this.ctx.kv.get<Partial<Settings>>('settings', {})
     // Nested groups merge field by field so settings added later get their defaults.
-    return { ...DEFAULT_SETTINGS, ...stored, subagents: { ...DEFAULT_SETTINGS.subagents, ...stored.subagents } }
+    return {
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      subagents: { ...DEFAULT_SETTINGS.subagents, ...stored.subagents },
+      ...(stored.agentTiers ? { agentTiers: stored.agentTiers.map(withInstructions) } : {})
+    }
   }
 
   update(patch: Partial<Settings>): Settings {
@@ -81,6 +88,12 @@ function cleanTiers(tiers: AgentTier[]): AgentTier[] {
     let id = typeof t.id === 'string' && t.id.trim() ? t.id.trim() : ''
     if (!id || seen.has(id)) id = newId('tier_')
     seen.add(id)
-    return { id, name: t.name?.trim() || 'Tier', model: t.model ?? null, thinking: t.thinking ?? null, purpose: t.purpose?.trim() ?? '' }
+    return withInstructions({ id, name: t.name?.trim() || 'Tier', model: t.model ?? null, thinking: t.thinking ?? null, purpose: t.purpose?.trim() ?? '', instructions: t.instructions })
   })
+}
+
+/** Tiers saved before they had instructions get their default's (an explicit '' stays empty). */
+function withInstructions(t: AgentTier): AgentTier {
+  const raw: unknown = t.instructions
+  return { ...t, instructions: typeof raw === 'string' ? raw.trim() : (DEFAULT_TIER_INSTRUCTIONS[t.id] ?? '') }
 }

@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall, type TranscriptContext } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { AgentTier, ChatEvent, ModelRef, ToolTrace } from '../src/shared/types'
-import { resolveDelegation, throttle } from '../src/main/agent/chat'
+import { parseOutcome, resolveDelegation, throttle } from '../src/main/agent/chat'
+import { DEFAULT_TIER_INSTRUCTIONS } from '../src/main/core/settings'
 import { makeServices } from './helpers'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -68,7 +69,7 @@ describe('agent tiers', () => {
       ['heavy', 'Heavy', null, 'high']
     ])
     expect(tiers.every((t) => t.purpose.length > 10)).toBe(true)
-    const next = env.services.settings.update({ agentTiers: [{ ...tiers[0], name: 'Quick' }, { id: '', name: 'Mine', model: null, thinking: 'minimal', purpose: 'x' }] }).agentTiers
+    const next = env.services.settings.update({ agentTiers: [{ ...tiers[0], name: 'Quick' }, { id: '', name: 'Mine', model: null, thinking: 'minimal', purpose: 'x', instructions: '' }] }).agentTiers
     expect(next[0]).toMatchObject({ id: 'light', name: 'Quick' })
     expect(next[1].id).toMatch(/^tier_/)
     expect(env.services.settings.get().agentTiers).toHaveLength(2)
@@ -80,14 +81,38 @@ describe('agent tiers', () => {
     expect(env.services.chat.update(env.session.id, { autoTiers: false }).autoTiers).toBe(false)
   })
 
+  it('fills missing tier instructions from the defaults and keeps an explicit empty one', () => {
+    const env = setup()
+    const tiers = env.services.settings.get().agentTiers
+    expect(tiers.map((t) => t.instructions)).toEqual(['light', 'medium', 'careful', 'heavy'].map((id) => DEFAULT_TIER_INSTRUCTIONS[id]))
+    expect(DEFAULT_TIER_INSTRUCTIONS.careful).toContain('invariants')
+    expect(DEFAULT_TIER_INSTRUCTIONS.heavy).toContain('reproduce first')
+    const legacy = tiers.map(({ instructions: _, ...t }) => t) as AgentTier[]
+    const saved = env.services.settings.update({ agentTiers: [legacy[0], { ...legacy[2], instructions: '' }, { ...legacy[3], instructions: '  Be brief.  ' }, { id: 'mine', name: 'Mine', model: null, thinking: null, purpose: '' } as unknown as AgentTier] }).agentTiers
+    expect(saved.map((t) => t.instructions)).toEqual([DEFAULT_TIER_INSTRUCTIONS.light, '', 'Be brief.', ''])
+    // Tiers saved on disk before instructions existed get the defaults when loaded.
+    ;(env.services.settings as unknown as { ctx: { kv: { set(k: string, v: unknown): void } } }).ctx.kv.set('settings', { agentTiers: legacy })
+    expect(env.services.settings.get().agentTiers.map((t) => t.instructions)).toEqual(tiers.map((t) => t.instructions))
+  })
+
+  it('reads the Result line of a report', () => {
+    expect(parseOutcome('Result: done\nFiles: a.ts')).toBe('done')
+    expect(parseOutcome('**Result:** blocked\n...')).toBe('blocked')
+    expect(parseOutcome('Some preamble\nResult: partially done')).toBe('partial')
+    expect(parseOutcome('result: PARTLY DONE')).toBe('partial')
+    expect(parseOutcome('RESULT: Done.')).toBe('done')
+    expect(parseOutcome('All finished, nothing blocked.')).toBeUndefined()
+    expect(parseOutcome('')).toBeUndefined()
+  })
+
   describe('resolveDelegation', () => {
     const chat: ModelRef = { providerId: 'p', modelId: 'chat' }
     const big: ModelRef = { providerId: 'p', modelId: 'big' }
     const own: ModelRef = { providerId: 'p', modelId: 'own' }
     const gone: ModelRef = { providerId: 'gone', modelId: 'x' }
     const tiers: AgentTier[] = [
-      { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: '' },
-      { id: 'heavy', name: 'Heavy', model: big, thinking: 'high', purpose: '' }
+      { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: '', instructions: '' },
+      { id: 'heavy', name: 'Heavy', model: big, thinking: 'high', purpose: '', instructions: '' }
     ]
     const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && m.providerId === 'p'
     const base = { tiers, usable, chat: { model: chat, thinking: 'medium' as const }, fallback: { model: { providerId: 'p', modelId: 'settings' }, thinking: 'minimal' as const } }
@@ -162,6 +187,7 @@ describe('agent tiers', () => {
       expect('tier' in params).toBe(autoTiers)
       if (autoTiers) expect(JSON.stringify(params.tier)).toContain('Mechanical edits')
       expect(prompt.includes('cheapest `tier`')).toBe(autoTiers)
+      expect(prompt.includes('Treat each report as a claim')).toBe(autoTiers)
       faux.unregister()
       faux = null
     }
@@ -202,6 +228,38 @@ describe('agent tiers', () => {
     expect(t2.subagent).toMatchObject({ tier: 'light', tierName: 'Light', model: 'faux-1' })
     expect(t2.subagent?.step).toBeUndefined()
     expect(t2.subagent?.stepText).toBeUndefined()
+  })
+
+  it("adds the tier's rules to the subagent's prompt and records the report's outcome", async () => {
+    const env = setup()
+    env.services.settings.update({ agentTiers: env.services.settings.get().agentTiers.map((t) => (t.id === 'light' ? { ...t, instructions: '' } : t)) })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const prompts: Record<string, string> = {}
+    const child = (ctx: TranscriptContext) => {
+      const sys = JSON.stringify(ctx.messages[0])
+      const job = JSON.stringify(ctx.messages).includes('Job A') ? 'a' : 'b'
+      prompts[job] = sys
+      return fauxAssistantMessage(job === 'a' ? '**Result:** partly done\nFiles: none' : 'All good.')
+    }
+    faux.setResponses([
+      fauxAssistantMessage(
+        [
+          fauxToolCall('task', { description: 'A', prompt: 'Job A.', tier: 'careful' }, { id: 'a' }),
+          fauxToolCall('task', { description: 'B', prompt: 'Job B.', tier: 'light' }, { id: 'b' })
+        ],
+        { stopReason: 'toolUse' }
+      ),
+      child,
+      child,
+      fauxAssistantMessage('Done.')
+    ])
+    const all = await send(env, 'go')
+    expect(prompts.a).toContain('Rules for this job (Careful tier):')
+    expect(prompts.a).toContain('list the invariants')
+    expect(prompts.a.indexOf('Result: done')).toBeLessThan(prompts.a.indexOf('Rules for this job'))
+    expect(prompts.b).not.toContain('Rules for this job')
+    expect(all.find((t) => t.id === 'a')!.subagent?.outcome).toBe('partial')
+    expect(all.find((t) => t.id === 'b')!.subagent?.outcome).toBeUndefined()
   })
 
   it('reports what a running subagent is doing, its usage so far, and the files it changed', async () => {

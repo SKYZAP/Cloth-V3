@@ -707,6 +707,8 @@ export interface SubagentRun {
   current?: SubagentActivity
   /** Workspace files it has changed so far (kept when it finishes). */
   files?: string[]
+  /** What its report says it achieved (its `Result:` line), once finished. */
+  outcome?: 'done' | 'partial' | 'blocked'
 }
 
 /** What a running subagent is doing: e.g. { tool: 'read', summary: 'src/auth/refresh.ts' }. */
@@ -980,6 +982,22 @@ export interface AgentTier {
   thinking: ThinkingLevel | null
   /** When to pick it (shown to the agent choosing a tier). */
   purpose: string
+  /** Extra rules every job at this tier follows (added to the subagent's system prompt). */
+  instructions: string
+}
+
+const TIER_BASE_RULES = [
+  "- Do exactly the job in the brief. Don't widen the scope, refactor neighbouring code or \"improve\" unrelated things.",
+  "- Don't make visual or UX design decisions the brief doesn't settle: report the open question instead of guessing.",
+  '- Verify before reporting: build, run the tests or exercise the code path when the project allows it, and say which command you ran and what it showed.'
+].join('\n')
+
+/** The default tiers' instructions, by tier id. */
+export const DEFAULT_TIER_INSTRUCTIONS: Record<string, string> = {
+  light: TIER_BASE_RULES,
+  medium: TIER_BASE_RULES,
+  careful: `${TIER_BASE_RULES}\n- Before editing, list the invariants and edge cases the change must keep; check each one after the change.`,
+  heavy: `${TIER_BASE_RULES}\n- For bugs: reproduce first, confirm the root cause, then fix the cause, not the symptom. If you can't reproduce it, say so and give your strongest hypothesis with its evidence.`
 }
 
 export interface Settings {

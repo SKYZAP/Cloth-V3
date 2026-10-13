@@ -19,7 +19,7 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import type { AgentTier, AppInfo, Settings, SubagentSettings, ThinkingLevel } from '@shared/types'
+import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings, type SubagentSettings, type ThinkingLevel } from '@shared/types'
 import { api } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
@@ -297,7 +297,7 @@ function TierSection({ tiers }: { tiers: AgentTier[] }) {
   const update = useApp((s) => s.updateSettings)
   const save = (next: AgentTier[]) => void update({ agentTiers: next })
   const patch = (id: string, p: Partial<AgentTier>) => save(tiers.map((t) => (t.id === id ? { ...t, ...p } : t)))
-  const add = () => save([...tiers, { id: `tier_${Math.random().toString(36).slice(2, 10)}`, name: 'New tier', model: null, thinking: 'medium', purpose: '' }])
+  const add = () => save([...tiers, { id: `tier_${Math.random().toString(36).slice(2, 10)}`, name: 'New tier', model: null, thinking: 'medium', purpose: '', instructions: '' }])
   const remove = async (t: AgentTier) => {
     if (tiers.length <= 1) return
     if (!(await confirmAction('Agents set to it fall back to the subagent defaults.', { title: `Remove ${t.name}?`, confirmLabel: 'Remove', danger: true }))) return
@@ -321,7 +321,10 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
   const [name, setName] = useState(tier.name)
   const [purpose, setPurpose] = useState(tier.purpose)
   useEffect(() => setName(tier.name), [tier.name])
+  const [instructions, setInstructions] = useState(tier.instructions)
   useEffect(() => setPurpose(tier.purpose), [tier.purpose])
+  useEffect(() => setInstructions(tier.instructions), [tier.instructions])
+  const preset = DEFAULT_TIER_INSTRUCTIONS[tier.id]
   return (
     <div className="grid gap-2.5 px-4 py-3.5">
       <div className="flex items-center gap-2 mobile:flex-wrap">
@@ -347,6 +350,26 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
         </IconButton>
       </div>
       <Textarea rows={2} value={purpose} aria-label="Purpose" placeholder="Meant for…" onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== tier.purpose && onChange({ purpose })} />
+      <label htmlFor={`tier-instructions-${tier.id}`} className="px-0.5 text-[12px] font-medium text-dim">
+        Instructions
+      </label>
+      <Textarea
+        id={`tier-instructions-${tier.id}`}
+        rows={5}
+        value={instructions}
+        aria-label="Instructions"
+        placeholder="Rules every job at this tier follows…"
+        onChange={(e) => setInstructions(e.target.value)}
+        onBlur={() => instructions !== tier.instructions && onChange({ instructions })}
+      />
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[11.5px] text-dim">Added to the agent's instructions for every job run at this tier.</span>
+        {preset !== undefined && tier.instructions !== preset && (
+          <button type="button" className="shrink-0 text-[11.5px] text-dim hover:text-fg" onClick={() => onChange({ instructions: preset })}>
+            Reset to default
+          </button>
+        )}
+      </div>
     </div>
   )
 }
