@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretDown, CheckCircle, Circle, WarningCircle } from '@phosphor-icons/react'
 import { formatCost } from '@/lib/format'
-import { runCardId, shortfall, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
+import { barSegments, runCardId, shortfall, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
 
 /** Scroll the chat to a run's card and flash it briefly. */
 export function scrollToRun(cardId: string) {
@@ -70,11 +70,43 @@ function Row({ row }: { row: BarRow }) {
   )
 }
 
+/** Above this many steps the meter is one continuous bar instead of segments. */
+const MAX_SEGMENTS = 12
+
+/** The header's step meter: one segment per step, or a continuous bar for long lists. */
+function Meter({ bar }: { bar: Bar }) {
+  const segments = barSegments(bar)
+  if (!segments.length) return null
+  const total = segments.length
+  const completed = segments.filter((s) => s === 'completed').length
+  const inProgress = segments.filter((s) => s === 'in_progress').length
+  const label = `${completed} of ${total} steps done${inProgress ? `, ${inProgress} in progress` : ''}`
+  if (total > MAX_SEGMENTS) {
+    return (
+      <span role="img" aria-label={label} className="flex h-[6px] w-[96px] shrink-0 overflow-hidden rounded-[2px] border border-line-strong bg-elev-2 mobile:hidden">
+        <span className="h-full bg-ok transition-[width] duration-300" style={{ width: `${(completed / total) * 100}%` }} />
+        <span className="h-full bg-warn transition-[width] duration-300" style={{ width: `${(inProgress / total) * 100}%` }} />
+      </span>
+    )
+  }
+  return (
+    <span role="img" aria-label={label} className="flex shrink-0 items-center gap-[2px] mobile:hidden">
+      {segments.map((s, i) => (
+        <span
+          key={i}
+          className={clsx(
+            'box-border h-[6px] w-[14px] rounded-[2px]',
+            s === 'completed' ? 'bg-ok' : s === 'failed' ? 'bg-crimson' : s === 'in_progress' ? 'animate-pulse bg-warn motion-reduce:animate-none' : 'border border-line-strong bg-transparent'
+          )}
+        />
+      ))}
+    </span>
+  )
+}
+
 /** The current turn's plan and agent runs, pinned above the message box. */
 export function WorkBar({ bar }: { bar: Bar }) {
   const [open, setOpen] = useState(false)
-  const { completed, inProgress, rest } = bar.progress
-  const total = completed + inProgress + rest || 1
   const title = bar.mode === 'todos' ? (bar.current ?? 'All steps done') : 'Agents at work'
   return (
     <motion.div
@@ -84,17 +116,14 @@ export function WorkBar({ bar }: { bar: Bar }) {
       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
       className="overflow-hidden rounded-[12px] border border-line bg-panel"
     >
-      <button onClick={() => setOpen(!open)} aria-expanded={open} className="relative flex h-9 w-full items-center gap-3 px-3 text-left">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-9 w-full items-center gap-3 px-3 text-left">
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{title}</span>
+        <Meter bar={bar} />
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{bar.mode === 'todos' ? `${bar.done} of ${bar.total}` : `${bar.runCount} agent${bar.runCount === 1 ? '' : 's'}`}</span>
         {bar.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(bar.cost)}</span>}
         <motion.span animate={{ rotate: open ? 0 : 180 }} transition={{ duration: 0.25 }} className="flex shrink-0 text-dim">
           <CaretDown size={13} />
         </motion.span>
-        <span className="absolute inset-x-0 bottom-0 flex h-1 bg-line" aria-hidden="true">
-          <span className="h-full bg-ok transition-[width] duration-300" style={{ width: `${(completed / total) * 100}%` }} />
-          <span className="h-full bg-warn transition-[width] duration-300" style={{ width: `${(inProgress / total) * 100}%` }} />
-        </span>
       </button>
       <AnimatePresence initial={false}>
         {open && (

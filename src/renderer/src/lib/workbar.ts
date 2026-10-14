@@ -187,6 +187,13 @@ export function buildWorkBar(messages: UiMessage[]): WorkBar | null {
   }
 }
 
+export type SegmentStatus = 'completed' | 'in_progress' | 'pending' | 'failed'
+
+/** One meter segment per step, in step order: the todo rows' statuses, or one per run (running = in progress, failed = failed, otherwise completed). */
+export function barSegments(bar: Pick<WorkBar, 'rows'>): SegmentStatus[] {
+  return bar.rows.map((r) => (r.status === 'in_progress' ? 'in_progress' : r.status === 'pending' ? 'pending' : r.status === 'failed' ? 'failed' : 'completed'))
+}
+
 /** Every agent run in the chat, newest first, and what they cost together. */
 export function chatAgents(messages: UiMessage[]): { runs: RunInfo[]; cost: number } {
   const runs = messages.flatMap((m) => (m.role === 'assistant' ? collectRuns(m.blocks) : []))
