@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cloth chat activity</title>
+<style>
+  :root {
+    --bg: #0a0a0b; --panel: #111113; --elev: #18181b; --elev2: #202024; --line: #26262b; --line-strong: #34343b;
+    --fg: #ececef; --muted: #a3a3ad; --dim: #85858f;
+    --crimson: #dc2645; --crimson-hi: #ef3d5c; --crimson-soft: rgb(220 38 69 / 0.12); --crimson-line: rgb(220 38 69 / 0.35);
+    --ok: #3fb97a; --warn: #e0a43a; --del: #f0656f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14.5px/1.65 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+  :focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 2px; border-radius: 6px; }
+  .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+  svg { flex-shrink: 0; }
+
+  .switch { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); display: flex; gap: 6px; align-items: center; justify-content: center; padding: 10px 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); }
+  .switch button { height: 28px; padding: 0 11px; border-radius: 8px; color: var(--muted); }
+  .switch button.on { background: var(--elev2); color: var(--fg); font-weight: 600; }
+  .switch .sep { width: 1px; height: 18px; background: var(--line); margin: 0 6px; }
+
+  .col { width: min(700px, calc(100% - 32px)); margin: 28px auto 120px; }
+  .user { margin: 0 0 28px auto; width: fit-content; max-width: 80%; background: var(--elev); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; }
+  .turn { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 14px; }
+  .av { width: 26px; height: 26px; border-radius: 8px; background: var(--crimson); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; margin-top: 2px; }
+  .body > p { margin: 0 0 12px; }
+  .body > p code, .row code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; background: var(--elev); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+
+  /* Activity summary: one quiet line per stretch of work */
+  .act { margin: 2px 0 14px; }
+  .sum { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; color: var(--dim); font-size: 13px; border-radius: 8px; padding: 3px 8px 3px 4px; margin-left: -4px; }
+  .sum:hover { color: var(--muted); background: var(--panel); }
+  .sum .car { transition: transform .18s; }
+  .act.open > .sum .car { transform: rotate(90deg); }
+  .sum .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sum .stat { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .add { color: var(--ok); } .del { color: var(--del); }
+  .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--line-strong); }
+
+  /* Expanded: a slim timeline, no boxes */
+  .tl { display: none; margin: 6px 0 4px 6px; padding-left: 16px; border-left: 1px solid var(--line); }
+  .act.open > .tl { display: block; }
+  .row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 4px 6px; margin-left: -6px; border-radius: 7px; font-size: 13px; color: var(--muted); }
+  .row:hover { background: var(--panel); }
+  .row .ic { color: var(--dim); align-self: center; display: grid; }
+  .row .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .what b { color: var(--fg); font-weight: 500; }
+  .row .what .arg { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--dim); }
+  .row .ms { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--dim); }
+  .row.think .what { font-style: italic; color: var(--dim); white-space: normal; }
+  .row.err .ic, .row.err .ms { color: var(--del); }
+  .row.sel { background: var(--panel); }
+  .detail { margin: 2px 0 8px 26px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; overflow: hidden; }
+  .detail pre { margin: 0; padding: 10px 12px; color: var(--muted); white-space: pre-wrap; max-height: 180px; overflow: auto; }
+  .detail .dh { display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid var(--line); color: var(--dim); }
+
+  /* Live: a single line that updates in place */
+  .live { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; margin: 2px 0 14px; }
+  .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--crimson-hi); animation: s .8s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .live .arg { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .live .t { margin-left: auto; font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--dim); }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  /* Things that need the person stay visible */
+  .ask { border: 1px solid var(--crimson-line); background: linear-gradient(var(--crimson-soft), transparent 70%); border-radius: 12px; padding: 12px 14px; margin: 4px 0 14px; font-size: 13.5px; }
+  .ask .q { display: flex; gap: 8px; }
+  .ask .a { margin-top: 8px; color: var(--dim); font-size: 12.5px; }
+  .ask .a b { color: var(--fg); font-weight: 500; }
+
+  /* End-of-turn change list */
+  .changes { border: 1px solid var(--line); border-radius: 12px; margin: 6px 0 10px; overflow: hidden; }
+  .changes .ch { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 12.5px; color: var(--dim); border-bottom: 1px solid var(--line); }
+  .changes .ch b { color: var(--fg); font-weight: 600; }
+  .changes .ch .undo { margin-left: auto; color: var(--dim); font-size: 12px; }
+  .changes .ch .undo:hover { color: var(--fg); }
+  .file { display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 12.5px; }
+  .file + .file { border-top: 1px solid var(--line); }
+  .file .p { font-family: ui-monospace, Consolas, monospace; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .n { margin-left: auto; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+  .meta { color: var(--dim); font-size: 12px; display: flex; gap: 10px; }
+
+  /* Variant B: inline steps, always shown but flat */
+  .flat .act > .sum { display: none; }
+  .flat .act > .tl { display: block; border-left-color: transparent; padding-left: 0; margin-left: 0; }
+  .flat .row.think { display: none; }
+  .flat .act .more { display: inline-flex; }
+  .more { display: none; color: var(--dim); font-size: 12px; margin: 0 0 0 26px; }
+  .more:hover { color: var(--muted); }
+  .flat.thinking .row.think { display: grid; }
+
+  .note { width: min(700px, calc(100% - 32px)); margin: 0 auto; color: var(--dim); font-size: 12.5px; border: 1px dashed var(--line-strong); border-radius: 12px; padding: 12px 14px; }
+  .note b { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="switch" role="toolbar" aria-label="Mockup controls">
+  <span>Design</span>
+  <button data-v="a" class="on">A · Folded</button>
+  <button data-v="b">B · Flat steps</button>
+  <span class="sep"></span>
+  <span>State</span>
+  <button data-s="done" class="on">Finished</button>
+  <button data-s="live">Working</button>
+</div>
+
+<div id="root"></div>
+
+<div class="note" id="note"></div>
+
+<script>
+  const I = {
+    car: '<svg class="car" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg>',
+    think: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0012 3z"/></svg>',
+    read: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>',
+    edit: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+    term: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
+    web: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18"/></svg>',
+    search: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+    ask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--crimson-hi)" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
+    undo: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>'
+  }
+  // A turn: text, then a stretch of activity, more text, etc. Steps: [kind, verb, arg, ms, output?]
+  const ACT1 = { time: '1.4s', steps: [
+    ['think', 'The user wants a Vite app scaffold with the skill applied. Check what is in the folder first, then the Node version.'],
+    ['read', 'Listed', 'with_skill/', '3ms'],
+    ['read', 'Read', 'with_skill/package.json', '4ms'],
+    ['term', 'Ran', 'node --version; npm --version', '539ms', 'v22.11.0\n10.9.0'],
+    ['think', 'Node 22 is fine. The App.jsx has two bugs: the counter starts at 1 and the title is hard-coded.'],
+    ['edit', 'Edited', 'with_skill/src/App.jsx', '50ms', '- const [n, setN] = useState(1)\n+ const [n, setN] = useState(0)'],
+    ['edit', 'Edited', 'with_skill/index.html', '9ms']
+  ] }
+  const ACT2 = { time: '42.1s', steps: [
+    ['term', 'Ran', 'npm install', '12.3s', 'added 214 packages in 12s'],
+    ['term', 'Ran', 'npm run dev -- --host 127.0.0.1', '4.5s', 'VITE v6.0.3  ready in 412 ms\n➜  Local: http://127.0.0.1:5173/'],
+    ['think', 'Open the page and check that the counter renders and increments.'],
+    ['web', 'Opened', 'http://127.0.0.1:5173/', '1.9s'],
+    ['web', 'Clicked', '"count is 0"', '0.3s'],
+    ['search', 'Checked', 'page text contains "count is 1"', '0.1s'],
+    ['term', 'Ran', 'npm run build', '6.8s', 'error during build: [vite]: Rollup failed to resolve import "react-dom/client"', 'err'],
+    ['think', 'react-dom is missing from dependencies; add it and rebuild.'],
+    ['edit', 'Edited', 'with_skill/package.json', '6ms'],
+    ['term', 'Ran', 'npm install && npm run build', '14.2s', '✓ built in 1.21s']
+  ] }
+
+  const counts = (steps) => {
+    const n = (k) => steps.filter((s) => s[0] === k).length
+    const files = new Set(steps.filter((s) => s[0] === 'edit').map((s) => s[2])).size
+    const parts = []
+    if (files) parts.push(`edited ${files} file${files > 1 ? 's' : ''}`)
+    if (n('term')) parts.push(`ran ${n('term')} command${n('term') > 1 ? 's' : ''}`)
+    if (n('read') + n('search')) parts.push(`checked ${n('read') + n('search')} thing${n('read') + n('search') > 1 ? 's' : ''}`)
+    if (n('web')) parts.push(`${n('web')} browser step${n('web') > 1 ? 's' : ''}`)
+    return parts.join(', ')
+  }
+  let v = 'a', state = 'done', openActs = new Set(), sel = null
+
+  function act(id, a, stat) {
+    const s = a.steps
+    const failed = s.some((x) => x[5] === 'err')
+    const head = `<button class="sum" aria-expanded="${openActs.has(id)}" data-act="${id}">${I.car}<span class="txt">Worked for ${a.time}<span style="opacity:.5"> · </span>${counts(s)}</span>${stat ? `<span class="stat"><span class="add">+${stat[0]}</span> <span class="del">-${stat[1]}</span></span>` : ''}${failed ? '<span class="stat del">1 failed, fixed</span>' : ''}</button>`
+    const rows = s.map((x, i) => {
+      const key = `${id}:${i}`
+      if (x[0] === 'think') return `<div class="row think"><span class="ic">${I.think}</span><span class="what">${x[1]}</span><span></span></div>`
+      return `<button class="row ${x[5] === 'err' ? 'err' : ''} ${sel === key ? 'sel' : ''}" style="width:100%;text-align:left" data-step="${key}" ${x[4] ? '' : 'disabled'}><span class="ic">${I[x[0]]}</span><span class="what"><b>${x[1]}</b> <span class="arg">${x[2]}</span></span><span class="ms">${x[5] === 'err' ? 'failed · ' : ''}${x[3]}</span></button>${sel === key && x[4] ? `<div class="detail"><div class="dh"><span class="mono">${x[2]}</span><span>${x[3]}</span></div><pre class="mono">${x[4]}</pre></div>` : ''}`
+    }).join('')
+    const thinks = s.filter((x) => x[0] === 'think').length
+    return `<div class="act ${openActs.has(id) ? 'open' : ''}">${head}<div class="tl">${rows}</div><button class="more" data-thinking>${I.think}&nbsp;Show ${thinks} thought${thinks > 1 ? 's' : ''}</button></div>`
+  }
+
+  function render() {
+    document.querySelectorAll('[data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === v))
+    document.querySelectorAll('[data-s]').forEach((b) => b.classList.toggle('on', b.dataset.s === state))
+    const live = state === 'live'
+    $root.className = 'col ' + (v === 'b' ? 'flat' : '') + (showThinking ? ' thinking' : '')
+    $root.innerHTML = `
+      <div class="user">Set up the with_skill app, fix the counter, and make sure it builds.</div>
+      <div class="turn"><span class="av">C</span><div class="body">
+        <p>I'll check the project, fix the two bugs in <code>App.jsx</code>, then install and build it.</p>
+        ${act('a1', ACT1, [9, 14])}
+        <p>Both bugs are fixed: the counter now starts at 0 and the page title comes from <code>package.json</code>. Next, the dependencies.</p>
+        <div class="ask"><div class="q">${I.ask}<span>Installing needs about 40 MB of packages from npm. Go ahead?</span></div><div class="a">You answered <b>Yes, install them</b></div></div>
+        ${live ? `<div class="live"><span class="spin" aria-hidden="true"></span><span>Running</span><span class="arg">npm run build</span><span class="t">6.1s</span></div>
+          <div class="meta">Worked for 31s so far · ran 3 commands, 3 browser steps</div>`
+        : `${act('a2', ACT2, [2, 0])}
+        <p>It installs, runs, and builds. The first build failed because <code>react-dom</code> wasn't listed as a dependency, so I added it. In the browser the counter starts at 0 and goes up by one per click.</p>
+        <div class="changes">
+          <div class="ch"><b>3 files changed</b><span class="add mono">+11</span><span class="del mono">-14</span><button class="undo">${I.undo} Undo all</button></div>
+          <div class="file"><span class="p">with_skill/src/App.jsx</span><span class="n"><span class="add">+1</span> <span class="del">-1</span></span></div>
+          <div class="file"><span class="p">with_skill/index.html</span><span class="n"><span class="add">+8</span> <span class="del">-13</span></span></div>
+          <div class="file"><span class="p">with_skill/package.json</span><span class="n"><span class="add">+2</span> <span class="del">-0</span></span></div>
+        </div>
+        <div class="meta"><span>gpt-6-luna</span><span>1.8M in, 20k out</span><span>$0.07</span></div>`}
+      </div></div>`
+    $note.innerHTML = v === 'a'
+      ? '<b>A · Folded.</b> Each stretch of work between two pieces of the reply becomes one quiet line: how long it took, what it did, the line count it changed. Click it to see the steps as a slim list (no boxes), thinking in italics between them; click a step for its output. Questions, approvals and the changed-files list always stay visible. While working, one line updates in place.'
+      : '<b>B · Flat steps.</b> Steps are always shown, one line each with no boxes, and thinking is hidden behind a small "Show thoughts" link. Denser than A when you want to watch what happened, still far lighter than today.'
+  }
+  let showThinking = false
+  const $ = (id) => document.getElementById(id)
+  const $root = $('root'), $note = $('note')
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button'); if (!t) return
+    if (t.dataset.v) { v = t.dataset.v; sel = null }
+    else if (t.dataset.s) state = t.dataset.s
+    else if (t.dataset.act) { openActs.has(t.dataset.act) ? openActs.delete(t.dataset.act) : openActs.add(t.dataset.act) }
+    else if (t.dataset.step) sel = sel === t.dataset.step ? null : t.dataset.step
+    else if (t.hasAttribute('data-thinking')) showThinking = !showThinking
+    else return
+    render()
+  })
+  render()
+</script>
+</body>
+</html>
