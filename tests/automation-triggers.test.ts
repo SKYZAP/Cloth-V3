@@ -109,7 +109,7 @@ describe('automation triggers', () => {
         return fauxAssistantMessage('Noted.')
       }
     ])
-    const wf = services.workflows.createAutomation({ name: 'Watch', automation: { ...base, watch: { kind: 'files' } }, workspace: folder })
+    const wf = services.workflows.createAutomation({ name: 'Watch', automation: { ...base, watch: { kind: 'files' } }, workspace: folder, cronEnabled: true })
     await wait(200)
     writeFileSync(join(folder, 'notes.md'), 'hello')
     for (let i = 0; i < 40 && !asked; i++) await wait(100)
@@ -134,7 +134,7 @@ describe('automation triggers', () => {
         return fauxAssistantMessage('The price went up.')
       }
     ])
-    const wf = services.workflows.createAutomation({ name: 'Price', automation: { ...base, watch: { kind: 'url', url, everyMinutes: 60 } } })
+    const wf = services.workflows.createAutomation({ name: 'Price', automation: { ...base, watch: { kind: 'url', url, everyMinutes: 60 } }, cronEnabled: true })
     // The first look only remembers the page.
     for (let i = 0; i < 30 && !services.workflows.watchState(wf.id).checkedAt; i++) await wait(50)
     expect(services.workflows.runs(wf.id)).toHaveLength(0)
@@ -149,6 +149,53 @@ describe('automation triggers', () => {
     expect(services.workflows.watchState(wf.id)).toMatchObject({ error: null })
     services.workflows.stopScheduler()
   }, 20_000)
+})
+
+describe('on and paused', () => {
+  it('a paused watch-only automation ignores changes until it is turned on', async () => {
+    const { services } = setup()
+    const folder = mkdtempSync(join(tmpdir(), 'cloth-watch-'))
+    services.workflows.watchTiming = { debounceMs: 150, quietMs: 300 }
+    let asked = ''
+    faux!.setResponses([
+      (ctx) => {
+        asked = lastUser(ctx)
+        return fauxAssistantMessage('Noted.')
+      }
+    ])
+    const wf = services.workflows.createAutomation({ name: 'Paused watch', automation: { ...base, watch: { kind: 'files' } }, workspace: folder, cronEnabled: false })
+    expect(wf).toMatchObject({ cron: null, cronEnabled: false })
+    await wait(200)
+    writeFileSync(join(folder, 'a.md'), 'one')
+    await wait(800)
+    expect(services.workflows.runs(wf.id)).toHaveLength(0)
+    expect(asked).toBe('')
+
+    const on = services.workflows.saveAutomation(wf.id, { cronEnabled: true })
+    expect(on).toMatchObject({ cron: null, cronEnabled: true })
+    await wait(200)
+    writeFileSync(join(folder, 'b.md'), 'two')
+    for (let i = 0; i < 40 && !asked; i++) await wait(100)
+    expect(asked).toContain('b.md')
+    expect(services.workflows.runs(wf.id)[0]).toMatchObject({ trigger: 'change' })
+    services.workflows.stopScheduler()
+  }, 20_000)
+
+  it('stays paused with no schedule and no watch', () => {
+    const { services } = setup()
+    const wf = services.workflows.createAutomation({ name: 'Nothing', automation: base, cronEnabled: true })
+    expect(wf.cronEnabled).toBe(false)
+    services.workflows.stopScheduler()
+  })
+
+  it('pausing a scheduled automation clears its next run, and resuming brings it back', () => {
+    const { services } = setup()
+    const wf = services.workflows.createAutomation({ name: 'Daily', automation: base, cron: '0 9 * * *', cronEnabled: true })
+    expect(services.workflows.get(wf.id).nextRunAt).toBeGreaterThan(Date.now())
+    expect(services.workflows.saveAutomation(wf.id, { cronEnabled: false })).toMatchObject({ cronEnabled: false, nextRunAt: null })
+    expect(services.workflows.saveAutomation(wf.id, { cronEnabled: true }).nextRunAt).toBeGreaterThan(Date.now())
+    services.workflows.stopScheduler()
+  })
 })
 
 describe('exporting an automation', () => {

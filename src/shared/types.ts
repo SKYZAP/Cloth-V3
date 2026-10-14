@@ -894,6 +894,18 @@ export function commandAllowed(command: string, allow: string[]): boolean {
   })
 }
 
+/** An automation drafted from a plain description, for the user to check before saving (nothing is saved). */
+export interface AutomationDraft {
+  /** 2–5 words, sentence case. */
+  name: string
+  /** The prompt rewritten as a clear instruction, and what it may use (only things that exist). */
+  automation: Automation
+  /** 5-field cron in local time (e.g. "30 8 * * 1-5"); null = only on changes or by hand. */
+  cron: string | null
+  /** A folder named in the description that exists on disk; else null. */
+  workspace: string | null
+}
+
 export interface AutomationInput {
   name?: string
   automation?: Automation

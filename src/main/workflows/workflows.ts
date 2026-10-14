@@ -1,10 +1,10 @@
 import { runInNewContext } from 'node:vm'
-import { existsSync, mkdirSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { sep } from 'node:path'
 import { join } from 'node:path'
 import { Cron } from 'croner'
-import type { Automation, AutomationCommands, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowNode, WorkflowRun, WorkflowRunReport } from '@shared/types'
+import type { Automation, AutomationCommands, AutomationDraft, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowNode, WorkflowRun, WorkflowRunReport } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
@@ -14,7 +14,7 @@ import { skillSystemPrompt, type SkillService } from '../skills/skills'
 import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { AgentService } from '../agent/agents'
 import type { ContainerService } from '../agent/containers'
-import type { ToolScope } from '../agent/tools'
+import { describeBuiltins, type ToolScope } from '../agent/tools'
 import { mcpToolName } from '../mcp/client'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { WebService } from '../web/web'
@@ -91,7 +91,7 @@ export class WorkflowService {
     const next = { ...cur, ...patch, cron }
     this.ctx.db
       .prepare('UPDATE workflows SET name = ?, description = ?, graph = ?, cron = ?, cron_enabled = ?, updated_at = ? WHERE id = ?')
-      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null, automation: next.automation ?? null }), cron, next.cronEnabled && cron ? 1 : 0, Date.now(), id)
+      .run(next.name, next.description, JSON.stringify({ nodes: next.nodes, edges: next.edges, workspace: next.workspace?.trim() || null, automation: next.automation ?? null }), cron, next.cronEnabled && (cron || next.automation?.watch) ? 1 : 0, Date.now(), id)
     this.schedule(id)
     return this.get(id)
   }
@@ -104,6 +104,90 @@ export class WorkflowService {
   createAutomation(input: AutomationInput & { name: string; automation: Automation }): Workflow {
     const wf = this.create({ name: input.name })
     return this.saveAutomation(wf.id, input)
+  }
+
+  /**
+   * Drafts an automation from a plain description with the default model, choosing only tools, MCP servers,
+   * knowledge collections and skills that exist. Saves nothing: the caller shows it for the user to check.
+   */
+  async draftAutomation(description: string): Promise<AutomationDraft> {
+    const desc = String(description ?? '').trim()
+    if (!desc) throw new Error('Describe what the automation should do')
+    const ref = this.deps.settings.get().defaultModel
+    if (!ref?.providerId) throw new Error('Set a default model in Settings to draft automations.')
+
+    const oneLine = (t: string) => t.replace(/\s+/g, ' ').trim().slice(0, 160)
+    const builtins = describeBuiltins().filter((b) => b.where.flows)
+    const customs = this.deps.custom.list().filter((t) => t.enabled)
+    const toolNames = new Set([...builtins.map((b) => b.name), ...customs.map((t) => t.name)])
+    const status = this.deps.runtime.mcpClients?.status() ?? []
+    const servers = this.deps.settings
+      .get()
+      .mcpClients.filter((c) => c.enabled)
+      .map((c) => ({ id: c.id, name: c.name, tools: status.find((st) => st.id === c.id)?.tools ?? [] }))
+    const collections = this.deps.rag.listCollections()
+    const skills = await this.deps.skills.list().catch(() => [])
+
+    const catalog = [
+      'Tools (by name):',
+      ...builtins.map((b) => `- ${b.name}: ${oneLine(b.description)}`),
+      ...customs.map((t) => `- ${t.name}: ${oneLine(t.description)}`),
+      'MCP servers (by id):',
+      ...(servers.length ? servers.map((sv) => `- ${sv.id} (${sv.name})${sv.tools.length ? `: tools ${sv.tools.map((t) => t.name).join(', ')}` : ''}`) : ['- none']),
+      'Knowledge collections (by id):',
+      ...(collections.length ? collections.map((c) => `- ${c.id}: ${c.name}${c.description ? ` - ${oneLine(c.description)}` : ''}`) : ['- none']),
+      'Skills (by name):',
+      ...(skills.length ? skills.map((sk) => `- ${sk.name}: ${oneLine(sk.description)}`) : ['- none'])
+    ].join('\n')
+    const prompt = `Available:\n${catalog}\n\nLocal time now: ${new Date().toString()}\n\nDescription:\n${desc}`
+    const { text } = await this.deps.providers.complete(ref, { system: DRAFT_AUTOMATION_SYSTEM, prompt, maxTokens: 1200, temperature: 0.2, thinking: 'off' })
+    const raw = parseJsonLoose<Record<string, unknown>>(text) ?? {}
+
+    const strings = (v: unknown) => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()))] : [])
+    const tools = strings(raw.tools).filter((n) => toolNames.has(n))
+    const pickedServers: Automation['servers'] = []
+    for (const item of Array.isArray(raw.servers) ? raw.servers : []) {
+      const obj = item && typeof item === 'object' ? (item as { id?: unknown; tools?: unknown }) : null
+      const id = typeof item === 'string' ? item : String(obj?.id ?? '')
+      const server = servers.find((sv) => sv.id === id || sv.name === id)
+      if (!server || pickedServers.some((p) => p.id === server.id)) continue
+      const wanted = Array.isArray(obj?.tools) ? strings(obj.tools) : null
+      const known = server.tools.map((t) => t.name)
+      const kept = wanted && known.length ? wanted.filter((n) => known.includes(n)) : null
+      pickedServers.push({ id: server.id, tools: kept && kept.length ? kept : null })
+    }
+    const collectionIds = strings(raw.collectionIds).filter((id) => collections.some((c) => c.id === id))
+    const skillNames = strings(raw.skills).filter((n) => skills.some((sk) => sk.name === n))
+
+    let workspace: string | null = null
+    if (typeof raw.workspace === 'string' && raw.workspace.trim()) {
+      const dir = raw.workspace.trim()
+      try {
+        if (statSync(dir).isDirectory()) workspace = dir
+      } catch {
+        workspace = null
+      }
+    }
+
+    let watch: AutomationWatch | null = null
+    const w = raw.watch && typeof raw.watch === 'object' ? (raw.watch as { kind?: unknown; url?: unknown; everyMinutes?: unknown }) : null
+    // Watching files needs a folder to watch.
+    if (w?.kind === 'files' && workspace) watch = { kind: 'files' }
+    else if (w?.kind === 'url' && typeof w.url === 'string' && /^https?:\/\/\S+$/i.test(w.url.trim())) {
+      watch = { kind: 'url', url: w.url.trim(), everyMinutes: Math.min(24 * 60, Math.max(1, Math.round(Number(w.everyMinutes) || 60))) }
+    }
+
+    let cron: string | null = typeof raw.cron === 'string' ? raw.cron.trim().replace(/\s+/g, ' ') : null
+    if (cron && (cron.split(' ').length !== 5 || !validateCron(cron).ok)) cron = null
+    if (!cron) cron = null
+
+    const promptText = typeof raw.prompt === 'string' && raw.prompt.trim() ? raw.prompt.trim() : desc
+    return {
+      name: draftName(typeof raw.name === 'string' ? raw.name : '', desc),
+      automation: { prompt: promptText, agentId: null, tools, servers: pickedServers, collectionIds, skills: skillNames, watch, commands: null },
+      cron,
+      workspace
+    }
   }
 
   /** Saves an automation and rebuilds its one-step graph from it. */
@@ -273,7 +357,8 @@ export class WorkflowService {
   private schedule(id: string): void {
     this.unschedule(id)
     const wf = this.get(id)
-    this.watch(wf)
+    // `cronEnabled` is the automation's on/off switch: paused stops its schedule and its watch.
+    if (wf.cronEnabled) this.watch(wf)
     if (!wf.cron || !wf.cronEnabled) {
       this.ctx.emit('workflow', { type: 'schedule', workflowId: id, nextRunAt: null })
       return
@@ -345,24 +430,8 @@ export class WorkflowService {
       return
     }
     // A cheap check on an interval: run only when its answer differs from last time.
-    const key = `automation.watch.${id}.${createHash('sha1').update(JSON.stringify(w)).digest('hex').slice(0, 12)}`
-    const what = w.kind === 'url' ? `the page at ${w.url}` : `the answer from ${w.tool}`
     let stopped = false
-    const tick = async () => {
-      if (stopped || busy()) return
-      let text: string
-      try {
-        text = await this.probe(w)
-      } catch (err) {
-        this.ctx.kv.set(key, { ...this.ctx.kv.get(key, {}), checkedAt: Date.now(), error: errorMessage(err) })
-        return
-      }
-      const hash = createHash('sha1').update(text).digest('hex')
-      const prev = this.ctx.kv.get<{ hash?: string }>(key, {})
-      this.ctx.kv.set(key, { hash, checkedAt: Date.now(), error: null })
-      if (stopped || !prev.hash || prev.hash === hash) return
-      await this.run(id, { changed: what, now: text.slice(0, 4000) }, 'change').catch((err) => this.ctx.log('automation', `${wf.name}: run on change failed`, errorMessage(err)))
-    }
+    const tick = this.checkTick(wf, w, () => stopped || busy())
     void tick()
     const timer = setInterval(() => void tick(), w.everyMinutes * 60_000)
     this.checks.set(id, tick)
@@ -373,11 +442,40 @@ export class WorkflowService {
     })
   }
 
+  /** One look at a check-based watch: remembers the answer and runs the automation when it changed. */
+  private checkTick(wf: Workflow, w: Exclude<AutomationWatch, { kind: 'files' }>, skip: () => boolean): () => Promise<void> {
+    const id = wf.id
+    const key = `automation.watch.${id}.${createHash('sha1').update(JSON.stringify(w)).digest('hex').slice(0, 12)}`
+    const what = w.kind === 'url' ? `the page at ${w.url}` : `the answer from ${w.tool}`
+    return async () => {
+      if (skip()) return
+      let text: string
+      try {
+        text = await this.probe(w)
+      } catch (err) {
+        this.ctx.kv.set(key, { ...this.ctx.kv.get(key, {}), checkedAt: Date.now(), error: errorMessage(err) })
+        return
+      }
+      const hash = createHash('sha1').update(text).digest('hex')
+      const prev = this.ctx.kv.get<{ hash?: string }>(key, {})
+      this.ctx.kv.set(key, { hash, checkedAt: Date.now(), error: null })
+      if (skip() || !prev.hash || prev.hash === hash) return
+      await this.run(id, { changed: what, now: text.slice(0, 4000) }, 'change').catch((err) => this.ctx.log('automation', `${wf.name}: run on change failed`, errorMessage(err)))
+    }
+  }
+
   private checks = new Map<string, () => Promise<void>>()
 
   /** Run an automation's check now instead of waiting for its interval (runs it if the answer changed). */
   async checkNow(id: string): Promise<{ checkedAt: number | null; error: string | null }> {
-    await this.checks.get(id)?.()
+    const live = this.checks.get(id)
+    if (live) await live()
+    else {
+      // Paused: still look once when asked.
+      const wf = this.get(id)
+      const w = wf.automation?.watch
+      if (w && w.kind !== 'files') await this.checkTick(wf, w, () => false)()
+    }
     return this.watchState(id)
   }
 
@@ -823,6 +921,23 @@ export function automationGraph(a: Automation): { nodes: WorkflowNode[]; edges: 
       { id: 'e2', source: 'n_agent', target: 'n_out' }
     ]
   }
+}
+
+const DRAFT_AUTOMATION_SYSTEM = `You set up an automation: a prompt an AI agent runs on a schedule, when something changes, or by hand.
+From the user's description, reply with ONLY a JSON object, no prose:
+{"name": string, "prompt": string, "tools": string[], "servers": [{"id": string, "tools": string[] | null}], "collectionIds": string[], "skills": string[], "watch": null | {"kind": "files"} | {"kind": "url", "url": string, "everyMinutes": 60}, "cron": string | null, "workspace": string | null}
+- name: 2 to 5 words, sentence case (e.g. "Morning news brief").
+- prompt: the task rewritten as a clear, complete instruction to the agent.
+- tools, servers, collectionIds, skills: pick only from the Available list, exactly as written, and only what the task needs. Use [] when none fit.
+- watch: null unless the description clearly asks to react to changes: files in a folder changing -> {"kind": "files"}; a web page changing -> {"kind": "url", "url": "...", "everyMinutes": 60}.
+- cron: a 5-field cron expression in local time (e.g. "30 8 * * 1-5" for 8:30 on weekdays); null when it should run only on changes or by hand.
+- workspace: a folder path only if the description names one; else null.`
+
+/** A draft's name: at most 5 words and 40 characters, sentence case; from the description when the model gave none. */
+function draftName(raw: string, description: string): string {
+  const words = (raw.replace(/["“”]/g, '').trim() || description).split(/\s+/).filter(Boolean).slice(0, 5)
+  const name = words.join(' ').slice(0, 40).replace(/[.,;:!?]+$/, '').trim() || 'New automation'
+  return name.charAt(0).toUpperCase() + name.slice(1)
 }
 
 function cleanAutomation(a: Automation | null | undefined): Automation | null {
