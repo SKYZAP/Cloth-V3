@@ -24,12 +24,15 @@ export function ComposerPopover({
   width,
   sheetTitle,
   role = 'dialog',
+  shrink = false,
   children
 }: {
   trigger(open: boolean, toggle: () => void): ReactNode
   width: number
   sheetTitle: string
   role?: 'dialog' | 'menu'
+  /** Let the trigger give up width (and truncate) when the row is tight. */
+  shrink?: boolean
   children(close: () => void): ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -49,7 +52,7 @@ export function ComposerPopover({
   }, [open])
   const close = () => setOpen(false)
   return (
-    <div ref={wrap} className="relative shrink-0">
+    <div ref={wrap} className={shrink ? 'relative min-w-0' : 'relative shrink-0'}>
       {trigger(open, () => setOpen(!open))}
       {isMobile ? (
         <BottomSheet open={open} onClose={close} title={sheetTitle} portal>
