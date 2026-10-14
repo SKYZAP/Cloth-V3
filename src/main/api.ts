@@ -257,6 +257,7 @@ export function createApi(s: Services): ClothApi {
     },
     workflows: {
       createAutomation: async (input) => s.workflows.createAutomation(input),
+      draftAutomation: (description) => s.workflows.draftAutomation(description),
       saveAutomation: async (id, input) => s.workflows.saveAutomation(id, input),
       watchState: async (id) => s.workflows.watchState(id),
       checkNow: (id) => s.workflows.checkNow(id),

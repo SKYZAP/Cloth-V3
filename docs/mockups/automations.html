@@ -1,1138 +1,295 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#09090a">
-  <title>Automations — Cloth</title>
-  <style>
-    @font-face {
-      font-family: "Inter Variable";
-      src: url("../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2");
-      font-style: normal;
-      font-weight: 100 900;
-      font-display: swap;
-    }
-    :root {
-      color-scheme: dark;
-      --bg: #09090a;
-      --elev: #151518;
-      --elev-2: #1b1b1f;
-      --hover: #202025;
-      --line: #232328;
-      --line-strong: #303036;
-      --fg: #ececef;
-      --muted: #a3a3ad;
-      --dim: #85858f;
-      --crimson: #dc2645;
-      --crimson-hi: #ef3d5c;
-      --crimson-line: rgb(220 38 69 / .35);
-      --ok: #3fb97a;
-      --info: #6b9cf0;
-      font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: var(--fg);
-      background: var(--bg);
-      font-size: 13px;
-      line-height: 1.5;
-      font-synthesis: none;
-      text-rendering: optimizeLegibility;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-width: 320px; height: 100vh; height: 100dvh; overflow: hidden; background: var(--bg); }
-    button { color: inherit; font: inherit; touch-action: manipulation; }
-    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 2px; }
-    .skip-link { position: fixed; top: 8px; left: 8px; z-index: 100; transform: translateY(-160%); padding: 8px 12px; border-radius: 6px; background: var(--fg); color: var(--bg); font-weight: 600; }
-    .skip-link:focus { transform: translateY(0); }
-    .app { display: flex; height: 100%; flex-direction: column; }
-    .titlebar { height: 36px; flex: 0 0 36px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg); }
-    .brand-mark { width: 16px; height: 16px; color: var(--crimson-hi); }
-    .brand { font-size: 12.5px; font-weight: 650; letter-spacing: -.025em; }
-    .title-spacer { flex: 1; }
-    .mcp-status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--dim); font-size: 11px; }
-    .mcp-status:hover { background: var(--elev); color: var(--muted); }
-    .mcp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
-    .shell { display: flex; min-height: 0; flex: 1; }
-    .mobile-tabs { display: none; }
-    .rail { width: 68px; flex: 0 0 68px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--bg); }
-    .nav-item { position: relative; width: 56px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 2px; border: 0; border-radius: 9px; background: transparent; color: var(--dim); font-size: 10px; font-weight: 500; cursor: default; }
-    .nav-item svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .nav-item:hover { background: var(--elev); color: var(--muted); }
-    .nav-item.active { background: var(--elev-2); color: var(--fg); }
-    .nav-item.active svg { color: var(--crimson-hi); }
-    .nav-item.active::before { content: ""; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--crimson); }
-    .rail-spacer { flex: 1; }
-    main { min-width: 0; flex: 1; overflow: auto; scroll-padding: 16px; background: var(--bg); scrollbar-width: thin; scrollbar-color: #2a2a30 transparent; }
-    .page { width: min(1180px, calc(100% - 40px)); display: grid; gap: 20px; margin: 0 auto; padding: 24px 0; }
-    .page-header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
-    .heading { min-width: 220px; flex: 1; }
-    h1 { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 650; letter-spacing: -.035em; }
-    .subtitle { margin: 2px 0 0; color: var(--dim); font-size: 12.5px; }
-    .button { height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 550; white-space: nowrap; cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
-    .button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .button.primary { background: var(--crimson); color: white; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .06); }
-    .button.primary:hover { background: var(--crimson-hi); }
-    .button.secondary { height: 28px; padding: 0 10px; border-color: var(--line); background: var(--elev-2); color: var(--fg); font-size: 12px; }
-    .button.secondary:hover { border-color: var(--line-strong); background: var(--hover); }
-    .button.secondary svg { width: 11px; height: 11px; }
-    .columns { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 20px; align-items: start; }
-    .main-column { min-width: 0; display: grid; align-content: start; gap: 20px; }
-    .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--elev); }
-    .upcoming { padding: 12px 16px 16px; }
-    .panel-heading { min-height: 26px; display: flex; align-items: center; gap: 8px; }
-    h2 { margin: 0; font-size: 13px; line-height: 1.4; font-weight: 650; letter-spacing: -.012em; }
-    .context { color: var(--dim); font-size: 12px; }
-    .flex-spacer { flex: 1; }
-    .segmented { display: inline-flex; align-items: center; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: #0f0f11; }
-    .segment { height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--dim); font-size: 11.5px; font-weight: 550; cursor: pointer; }
-    .segment:hover { color: var(--muted); }
-    .segment[aria-pressed="true"] { background: var(--elev-2); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .22); }
-    .timeline { position: relative; height: 78px; margin-top: 24px; }
-    .timeline-line { position: absolute; inset: 5px 0 auto; border-top: 1px solid var(--line-strong); }
-    .now-line { position: absolute; top: -6px; height: 66px; width: 1px; background: var(--crimson); left: 35%; }
-    .event { position: absolute; top: 0; transform: translateX(-50%); z-index: 1; }
-    .event-dot { display: block; width: 11px; height: 11px; border: 2px solid var(--elev); border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 1px var(--line-strong); }
-    .event-label { position: absolute; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 11.5px; white-space: nowrap; }
-    .event:nth-of-type(even) .event-label { top: 34px; }
-    .event:nth-of-type(odd) .event-label { top: 16px; }
-    .tick { position: absolute; top: 58px; transform: translateX(-50%); color: var(--dim); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .tick.first { transform: none; }
-    .tick.last { transform: translateX(-100%); }
-    .event-list { display: none; }
-    .legend { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 4px; color: var(--dim); font-size: 12px; }
-    .legend-label { margin-right: 0; }
-    .legend-item { display: inline-flex; align-items: flex-end; gap: 4px; }
-    .bar { display: inline-block; width: 7px; height: 12px; border-radius: 2px; background: var(--ok); }
-    .bar.fail { height: 6px; background: var(--crimson); }
-    .bar.running { border: 1.5px solid var(--info); background: transparent; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-    .automation-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--elev); }
-    .automation-card.failed { border-color: var(--crimson-line); }
-    .card-open { width: 100%; display: grid; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
-    .card-open:hover { background: var(--elev-2); }
-    .card-content { min-width: 0; display: grid; gap: 6px; padding: 12px 14px; }
-    .card-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 13.5px; font-weight: 650; line-height: 1.4; letter-spacing: -.012em; }
-    .prompt { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--muted); font-size: 12px; line-height: 1.5; }
-    .meta { color: var(--dim); font-size: 12px; line-height: 1.55; }
-    .run-bars { height: 16px; display: flex; align-items: flex-end; gap: 3px; }
-    .run-bars .bar { width: 8px; height: 16px; }
-    .run-bars .bar.fail { height: 7px; }
-    .run-bars .bar.running { height: 16px; }
-    .no-runs { color: var(--dim); font-size: 12px; }
-    .card-error { padding: 7px 14px; overflow: hidden; border-top: 1px solid var(--line); color: var(--crimson-hi); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-    .card-actions { min-height: 43px; display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-top: 1px solid var(--line); }
-    .switch-wrap { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
-    .switch { position: relative; width: 32px; height: 18px; padding: 0; border: 0; border-radius: 999px; background: var(--line-strong); cursor: pointer; transition: background .15s ease; }
-    .switch[aria-checked="true"] { background: var(--crimson); }
-    .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s ease; }
-    .switch[aria-checked="true"]::after { left: 16px; }
-    .recent { display: grid; align-content: start; gap: 4px; padding: 8px 0; }
-    .recent h2 { padding: 4px 14px 4px; }
-    .run-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 6px 14px; border: 0; background: transparent; text-align: left; cursor: pointer; }
-    .run-row:hover { background: var(--elev-2); }
-    .status-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--ok); }
-    .status-dot.failed { background: var(--crimson); }
-    .status-dot.live { background: var(--info); }
-    .run-name { display: block; overflow: hidden; color: var(--fg); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
-    .run-result { display: block; overflow: hidden; color: var(--dim); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-    .run-result.failed { color: var(--crimson-hi); }
-    .run-time { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .empty-recent { margin: 0; padding: 8px 14px; color: var(--dim); font-size: 12.5px; }
-    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 10; max-width: min(390px, calc(100vw - 36px)); padding: 10px 13px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--elev); color: var(--muted); box-shadow: 0 16px 36px rgb(0 0 0 / .4); opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
-    .toast.visible { opacity: 1; transform: translateY(0); }
-    #list-view[hidden], #editor-view[hidden], #schedule-detail[hidden], #watch-detail[hidden], #prompt-error[hidden], #access-empty[hidden] { display: none; }
-    .editor-page { padding-top: 20px; }
-    .editor-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .back-link { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
-    .back-link:hover { color: var(--fg); }
-    .back-link svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .crumb-separator { color: var(--line-strong); }
-    .automation-name { min-width: 200px; flex: 1; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
-    .automation-name:focus-visible { outline: 2px solid var(--crimson); outline-offset: 2px; border-radius: 4px; }
-    .editor-header .button { height: 32px; }
-    .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; gap: 24px; }
-    .editor-main { min-width: 0; }
-    .editor-block { display: grid; gap: 12px; padding: 20px 0; border-bottom: 1px solid var(--line); }
-    .editor-block:first-child { padding-top: 4px; }
-    .editor-block:last-child { border-bottom: 0; }
-    .editor-block h2 { font-size: 14px; text-wrap: balance; }
-    .section-title-row { display: flex; align-items: center; gap: 8px; }
-    .required-label { color: var(--dim); font-size: 11.5px; }
-    .editor-help { margin: 0; color: var(--dim); font-size: 12px; }
-    .field-error { margin: -6px 0 0; color: var(--crimson-hi); font-size: 12px; }
-    .prompt-field[aria-invalid="true"] { border-color: var(--crimson); }
-    .prompt-field { width: 100%; min-height: 112px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #0f0f11; color: var(--fg); font: inherit; font-size: 14px; line-height: 1.65; }
-    .prompt-field::placeholder { color: var(--dim); }
-    .prompt-field:focus { border-color: var(--crimson-line); }
-    .prompt-field:focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 2px; }
-    .folder-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
-    .folder-row .button { height: 28px; padding: 0 10px; font-size: 12px; }
-    .cadences { display: flex; flex-wrap: wrap; gap: 6px; }
-    .cadence { min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: transparent; color: var(--muted); font-size: 13px; white-space: nowrap; cursor: pointer; }
-    .cadence:hover { color: var(--fg); }
-    .cadence[aria-checked="true"] { border-color: var(--crimson-line); background: rgb(220 38 69 / .12); color: var(--fg); }
-    .schedule-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; }
-    .schedule-detail select, .schedule-detail input, .editor-select { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: #0f0f11; color: var(--fg); font: inherit; font-size: 12.5px; }
-    .schedule-detail input[type="time"] { width: 128px; }
-    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    .watch-choices { display: flex; flex-wrap: wrap; gap: 16px; }
-    .watch-choice { min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
-    .watch-choice[aria-checked="true"] { color: var(--fg); }
-    .allowed-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-    .allowed-entry { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 4px; color: var(--muted); font-size: 12.5px; }
-    .allowed-entry button { border: 0; background: transparent; color: var(--dim); font-size: 11.5px; cursor: pointer; }
-    .allowed-entry button:hover { color: var(--fg); }
-    .ability[data-on="true"] { border-color: rgb(63 185 122 / .4); background: rgb(63 185 122 / .1); color: var(--ok); }
-    .ability[data-on="true"][data-risk="true"] { border-color: rgb(224 164 58 / .45); background: rgb(224 164 58 / .1); color: #e0a43a; }
-    .access-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .access-heading h2 { flex: 1; }
-    .preset-label { color: var(--dim); font-size: 12px; }
-    .presets { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: #0f0f11; }
-    .preset { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
-    .preset:hover { color: var(--fg); }
-    .preset[aria-pressed="true"] { background: var(--elev-2); color: var(--fg); }
-    .ability-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 14px; background: #0f0f11; }
-    .ability-intro { margin: 0 4px; color: var(--muted); font-size: 12px; }
-    .ability { display: inline-flex; height: 30px; align-items: center; gap: 5px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); font-size: 12.5px; white-space: nowrap; }
-    .ability svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
-    .access-board { display: flex; flex-wrap: wrap; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #0f0f11; }
-    .allowed-pane { min-width: 250px; flex: 1 1 270px; display: grid; align-content: start; gap: 10px; padding: 14px; border-right: 1px solid var(--line); background: rgb(9 9 10 / .35); }
-    .add-pane { min-width: 300px; flex: 999 1 340px; display: grid; align-content: start; gap: 10px; padding: 14px; }
-    .pane-title { display: flex; align-items: baseline; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; }
-    .pane-count { color: var(--dim); font-size: 12px; }
-    .nothing-allowed { margin: 0; padding: 12px 2px; color: var(--dim); font-size: 12.5px; }
-    .search-wrap { position: relative; }
-    .search-wrap svg { position: absolute; top: 10px; left: 10px; width: 14px; height: 14px; stroke: var(--dim); fill: none; stroke-width: 1.7; }
-    .access-search { width: 100%; height: 34px; padding: 0 10px 0 31px; border: 1px solid var(--line); border-radius: 6px; background: #0f0f11; color: var(--fg); font: inherit; font-size: 12.5px; }
-    .filter-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-    .filter-tab { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
-    .filter-tab[aria-checked="true"] { border-color: var(--line-strong); background: var(--elev-2); color: var(--fg); }
-    .filter-tab em { color: var(--dim); font-size: 10px; font-style: normal; }
-    .access-items { display: grid; gap: 2px; max-height: 300px; overflow: auto; }
-    .access-item { min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 11px; }
-    .access-item:hover { background: rgb(21 21 24 / .6); }
-    .access-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border-radius: 9px; background: rgb(220 38 69 / .12); color: var(--crimson-hi); }
-    .access-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.7; }
-    .access-label { min-width: 0; flex: 1; }
-    .access-label strong { display: block; font-size: 13px; font-weight: 600; }
-    .access-label span { display: block; color: var(--dim); font-size: 11.5px; }
-    .add-button { min-width: 76px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--elev); color: var(--fg); font-size: 12px; cursor: pointer; }
-    .add-button[aria-pressed="true"] { border-color: transparent; background: rgb(63 185 122 / .12); color: var(--ok); }
-    .add-button svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
-    .editor-summary { position: sticky; top: 16px; display: grid; gap: 12px; }
-    .summary-card { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #0f0f11; }
-    .summary-card h2 { font-size: 13px; }
-    .summary-card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.65; }
-    .next-runs { display: grid; gap: 7px; }
-    .next-run { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12.5px; }
-    .next-run time { color: var(--dim); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; }
-    .editor-select { width: 100%; }
-    .runs-as-help { color: var(--dim) !important; font-size: 12px !important; }
-    .command-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
-    .command-option { min-height: 76px; display: grid; align-content: start; gap: 3px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; background: transparent; text-align: left; cursor: pointer; }
-    .command-option:hover { border-color: var(--line-strong); }
-    .command-option[aria-checked="true"] { border-color: var(--crimson-line); background: rgb(220 38 69 / .12); }
-    .command-option strong { font-size: 13px; }
-    .command-option span { color: var(--dim); font-size: 12px; }
-    .mobile-tab { flex: 1; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: transparent; color: var(--dim); font-size: 10px; font-weight: 500; }
-    .mobile-tab svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .mobile-tab.active { color: var(--crimson-hi); }
-    #leave-dialog[hidden] { display: none; }
-    #leave-dialog { width: min(420px, calc(100vw - 32px)); max-height: min(85vh, 620px); padding: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--elev); color: var(--fg); box-shadow: 0 24px 64px rgb(0 0 0 / .55); }
-    #leave-dialog::backdrop { background: rgb(0 0 0 / .62); backdrop-filter: blur(2px); }
-    .dialog-content { display: grid; gap: 12px; padding: 18px; }
-    .dialog-content h2 { font-size: 15px; }
-    .dialog-content p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
-    .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
-    .button.danger { border-color: var(--crimson-line); background: transparent; color: var(--crimson-hi); }
-    .button.danger:hover { background: rgb(220 38 69 / .12); }
-    @media (prefers-reduced-motion: reduce) { .skip-link, .toast { transition: none; } }
-    @media (max-width: 1040px) {
-      .editor-grid { grid-template-columns: minmax(0, 1fr); }
-      .editor-summary { position: static; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-    }
-    @media (max-width: 960px) {
-      .columns { grid-template-columns: minmax(0, 1fr); }
-      .recent { grid-row: 2; }
-    }
-    @media (max-width: 700px) {
-      body { overflow: hidden; }
-      .rail { display: none; }
-      .mobile-tabs { display: flex; height: calc(54px + env(safe-area-inset-bottom)); flex: 0 0 calc(54px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid var(--line); background: rgb(21 21 24 / .96); }
-      main { scroll-padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
-      .page { width: calc(100% - 24px); gap: 16px; padding: 16px 0; }
-      .subtitle { max-width: 48ch; }
-      .timeline { display: none; }
-      .event-list { display: grid; gap: 4px; margin: 12px 0 0; padding: 0; list-style: none; }
-      .event-list li { color: var(--fg); font-size: 12.5px; }
-      .event-list time { margin-right: 5px; color: var(--dim); font-variant-numeric: tabular-nums; }
-      .main-column { gap: 16px; }
-      .cards { grid-template-columns: 1fr; }
-      .editor-page { gap: 16px; }
-      .editor-header { gap: 7px; }
-      .editor-header .button, .back-link { min-height: 44px; height: 44px; }
-      .automation-name { min-width: 150px; }
-      .editor-block { padding: 17px 0; }
-      .cadences { gap: 8px; }
-      .cadence { min-height: 44px; }
-      .schedule-detail select, .schedule-detail input, .editor-select { min-height: 44px; }
-      .folder-row .button { height: 44px; }
-      .watch-choice { min-height: 44px; padding: 0 6px; }
-      .preset { height: 40px; }
-      .filter-tabs { gap: 6px; }
-      .filter-tab { height: 44px; }
-      .add-button { min-height: 44px; }
-      .access-board { display: grid; }
-      .allowed-pane { min-width: 0; border-right: 0; border-bottom: 1px solid var(--line); }
-      .add-pane { min-width: 0; }
-      .editor-summary { grid-template-columns: 1fr; }
-      .dialog-actions { flex-direction: column; }
-      .dialog-actions .button { width: 100%; min-height: 44px; height: 44px; }
-    }
-    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
-  </style>
-  <style id="automation-creation-redesign">
-    /* Creation workbench: stronger type, clearer choices, and a persistent plan preview. */
-    #editor-view { width: min(1320px, calc(100% - 64px)); gap: 26px; padding: 28px 0 40px; }
-    #editor-view .editor-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; padding-bottom: 2px; }
-    #editor-view .editor-header-main { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 280px); grid-template-areas: "back name" "heading name"; align-items: end; column-gap: 24px; row-gap: 5px; }
-    #editor-view .back-link { grid-area: back; width: max-content; height: 28px; margin-left: -6px; padding: 0 6px; color: var(--dim); }
-    #editor-view .editor-heading-copy { grid-area: heading; display: grid; gap: 4px; }
-    #editor-view .editor-heading-copy h1 { font-size: 23px; line-height: 1.25; letter-spacing: -.04em; }
-    #editor-view .editor-heading-copy h1:focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 4px; border-radius: 3px; }
-    #editor-view .editor-heading-copy p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-    #editor-view .automation-name-wrap { grid-area: name; display: grid; gap: 5px; align-self: end; padding-bottom: 2px; color: var(--dim); font-size: 12px; }
-    #editor-view .automation-name { width: 100%; min-width: 0; padding: 8px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: #101012; font-size: 14px; font-weight: 550; letter-spacing: 0; }
-    #editor-view .automation-name:focus-visible { border-color: var(--crimson-line); }
-    #editor-view .editor-actions { display: flex; align-items: center; gap: 8px; }
-    #editor-view .editor-mobile-actions { display: none; }
-    #editor-view .editor-actions .button { height: 40px; padding-inline: 14px; font-size: 13px; }
-    #editor-view .editor-grid { grid-template-columns: minmax(0, 1fr) 312px; grid-template-areas: "main preview"; gap: 32px; }
-    #editor-view .editor-main { grid-area: main; }
-    #editor-view .editor-summary { grid-area: preview; top: 20px; gap: 14px; }
-    #editor-view .editor-block { gap: 16px; padding: 27px 0; }
-    #editor-view .editor-block:first-child { padding-top: 6px; }
-    #editor-view .editor-block:last-child { padding-bottom: 8px; }
-    #editor-view .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-    #editor-view .section-heading-copy { min-width: 0; display: flex; align-items: center; gap: 12px; }
-    #editor-view .section-heading-copy > div { display: grid; gap: 3px; }
-    #editor-view .section-heading-copy h2 { font-size: 16px; line-height: 1.35; letter-spacing: -.02em; }
-    #editor-view .section-heading-copy p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    #editor-view .section-symbol { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 11px; background: var(--elev); color: var(--crimson-hi); }
-    #editor-view .section-symbol svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
-    #editor-view .required-label { padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-    #editor-view .prompt-block { padding-top: 8px; }
-    #editor-view .prompt-surface { position: relative; display: grid; gap: 12px; padding: 15px 17px 11px; border: 1px solid var(--line-strong); border-left: 3px solid var(--crimson); border-radius: 12px; background: #101012; transition: border-color .16s ease, background .16s ease; }
-    #editor-view .prompt-surface:focus-within { border-color: var(--crimson-line); border-left-color: var(--crimson-hi); background: #121214; box-shadow: 0 0 0 2px rgb(239 61 92 / .5); }
-    #editor-view .prompt-field { min-height: 156px; padding: 2px 0; border: 0; border-radius: 0; background: transparent; font-size: 15px; line-height: 1.7; }
-    #editor-view .prompt-field:focus, #editor-view .prompt-field:focus-visible { border-color: transparent; outline: none; }
-    #editor-view .prompt-field::placeholder { color: #777780; }
-    #editor-view .prompt-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
-    #editor-view .prompt-foot .editor-help, #editor-view .prompt-foot-note { color: var(--dim); font-size: 12px; }
-    #editor-view .prompt-foot-note { white-space: nowrap; }
-    #editor-view .report-help { max-width: 68ch; font-size: 13px; line-height: 1.55; }
-    #editor-view .folder-row { gap: 10px; font-size: 13px; }
-    #editor-view .folder-label { color: var(--muted); font-weight: 550; }
-    #editor-view .folder-row .button { height: 36px; padding-inline: 12px; font-size: 12.5px; }
-    #editor-view .folder-row .editor-help { font-size: 12.5px; }
-    #editor-view .schedule-block { gap: 17px; }
-    #editor-view .cadences { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-    #editor-view .cadence { min-width: 0; min-height: 78px; display: grid; align-content: center; justify-items: start; gap: 5px; padding: 12px 13px; border-color: var(--line); border-radius: 11px; background: #101012; color: var(--muted); text-align: left; white-space: normal; transition: border-color .15s ease, background .15s ease, color .15s ease; }
-    #editor-view .cadence[data-cadence="once"], #editor-view .cadence[data-cadence="change"] { grid-column: span 3; }
-    #editor-view .cadence[data-cadence="hourly"], #editor-view .cadence[data-cadence="daily"], #editor-view .cadence[data-cadence="weekdays"], #editor-view .cadence[data-cadence="weekly"] { grid-column: span 2; }
-    #editor-view .cadence-custom { grid-column: span 4; }
-    #editor-view .cadence:hover { border-color: var(--line-strong); background: var(--elev); color: var(--fg); }
-    #editor-view .cadence[aria-checked="true"] { border-color: var(--crimson-line); background: rgb(220 38 69 / .09); color: var(--fg); box-shadow: inset 0 0 0 1px rgb(220 38 69 / .08); }
-    #editor-view .cadence-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
-    #editor-view .cadence-copy { color: var(--dim); font-size: 12px; font-weight: 400; line-height: 1.4; }
-    #editor-view .schedule-detail { min-height: 48px; gap: 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; background: #101012; font-size: 13px; }
-    #editor-view .schedule-detail select, #editor-view .schedule-detail input, #editor-view .editor-select { height: 40px; font-size: 13px; }
-    #editor-view #schedule-description { color: var(--fg); }
-    #editor-view .watch-detail { padding: 12px 14px; border-left: 2px solid var(--crimson-line); background: rgb(21 21 24 / .55); }
-    #editor-view .watch-choices { gap: 8px; }
-    #editor-view .watch-choice { min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; }
-    #editor-view .watch-choice[aria-checked="true"] { border-color: var(--crimson-line); background: rgb(220 38 69 / .08); }
-    #editor-view .access-heading { align-items: end; gap: 14px; }
-    #editor-view .access-heading .section-heading-copy { flex: 1 1 100%; }
-    #editor-view .preset-label { margin-left: auto; align-self: center; color: var(--muted); font-size: 12px; white-space: nowrap; }
-    #editor-view .presets { flex: 0 0 auto; background: #101012; }
-    #editor-view .preset { height: 34px; padding-inline: 11px; font-size: 12.5px; }
-    #editor-view .ability-line { gap: 7px; padding: 10px 12px; border-radius: 11px; background: #101012; }
-    #editor-view .ability-intro { margin-right: 5px; font-size: 13px; }
-    #editor-view .ability { height: 32px; font-size: 12.5px; }
-    #editor-view .access-board { display: grid; grid-template-columns: minmax(0, 1fr); overflow: visible; border-radius: 13px; background: #101012; }
-    #editor-view .allowed-pane { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 9px; padding: 15px 16px; border: 0; border-bottom: 1px solid var(--line); background: transparent; }
-    #editor-view .pane-title { gap: 8px; font-size: 13.5px; }
-    #editor-view .pane-count { display: inline-grid; min-width: 23px; height: 23px; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--fg); font-size: 11px; }
-    #editor-view .nothing-allowed { padding: 4px 0; font-size: 13px; }
-    #editor-view .allowed-list { display: flex; flex-wrap: wrap; gap: 7px; }
-    #editor-view .allowed-entry { width: auto; min-height: 34px; justify-content: flex-start; gap: 9px; padding: 3px 6px 3px 11px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--elev); font-size: 12px; }
-    #editor-view .allowed-entry button { min-height: 28px; padding: 2px 7px; border-radius: 999px; color: var(--muted); font-size: 11.5px; }
-    #editor-view .allowed-entry button:hover { background: var(--hover); color: var(--fg); }
-    #editor-view .add-pane { min-width: 0; display: grid; gap: 11px; padding: 16px; }
-    #editor-view .add-pane .pane-title { font-size: 13.5px; }
-    #editor-view .search-wrap { max-width: 520px; }
-    #editor-view .access-search { height: 40px; font-size: 13px; }
-    #editor-view .search-wrap svg { top: 13px; }
-    #editor-view .filter-tabs { gap: 6px; }
-    #editor-view .filter-tab { height: 34px; padding-inline: 10px; border-color: var(--line); background: transparent; font-size: 12px; }
-    #editor-view .filter-tab[aria-checked="true"] { border-color: var(--line-strong); background: var(--elev-2); }
-    #editor-view .access-items { max-height: 310px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-    #editor-view .access-item[hidden] { display: none !important; }
-    #editor-view .access-item { min-width: 0; min-height: 66px; gap: 9px; padding: 9px; border: 1px solid var(--line); border-radius: 10px; }
-    #editor-view .access-item:hover { border-color: var(--line-strong); background: var(--elev); }
-    #editor-view .access-icon { width: 32px; height: 32px; flex-basis: 32px; }
-    #editor-view .access-label strong { font-size: 12.5px; }
-    #editor-view .access-label span { font-size: 11px; line-height: 1.35; }
-    #editor-view .add-button { min-width: 70px; height: 34px; border-radius: 7px; font-size: 12px; }
-    #editor-view .command-block { margin-top: 2px; padding: 24px 16px; border: 1px solid var(--line); border-radius: 13px; background: #101012; }
-    #editor-view .section-symbol-terminal { color: #e0a43a; }
-    #editor-view .command-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    #editor-view .command-option { min-height: 92px; padding: 13px; border-radius: 10px; }
-    #editor-view .command-option strong { font-size: 13px; }
-    #editor-view .command-option span { font-size: 12px; line-height: 1.45; }
-    #editor-view .command-option[aria-checked="true"] { border-color: var(--crimson-line); background: rgb(220 38 69 / .08); }
-    #editor-view .summary-card { gap: 13px; padding: 17px; border-radius: 13px; background: #101012; }
-    #editor-view .summary-card h2 { font-size: 13.5px; }
-    #editor-view .preview-card { gap: 16px; padding: 18px; border-top: 2px solid var(--crimson); }
-    #editor-view .preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-    #editor-view .preview-heading > div { display: grid; gap: 4px; }
-    #editor-view .preview-label { color: var(--dim); font-size: 11.5px; }
-    #editor-view .preview-heading h2 { font-size: 16px; }
-    #editor-view .preview-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-    #editor-view .preview-indicator > span { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
-    #editor-view .preview-card p { color: var(--fg); font-size: 14px; line-height: 1.65; }
-    #editor-view .preview-schedule { gap: 11px; }
-    #editor-view .next-runs { gap: 0; }
-    #editor-view .next-run { padding: 8px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
-    #editor-view .preview-note { color: var(--dim) !important; font-size: 11.5px !important; }
-    #editor-view .preview-agent { gap: 10px; }
-    #editor-view .editor-select { height: 42px; }
-    #editor-view .runs-as-help { font-size: 12.5px !important; line-height: 1.5; }
-    #editor-view .summary-card p { line-height: 1.6; }
-    #editor-view .filter-tab:hover:not([aria-checked="true"]), #editor-view .watch-choice:hover:not([aria-checked="true"]), #editor-view .preset:hover:not([aria-pressed="true"]) { background: var(--hover); color: var(--fg); }
-    #editor-view .add-button:hover:not([aria-pressed="true"]) { border-color: var(--muted); background: var(--hover); }
-    #editor-view .allowed-entry button:active, #editor-view .editor-actions .button:active, #editor-view .cadence:active, #editor-view .command-option:active, #editor-view .add-button:active { filter: brightness(.9); }
-    @media (max-width: 1040px) {
-      #editor-view { width: calc(100% - 40px); }
-      #editor-view .editor-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "preview"; gap: 24px; }
-      #editor-view .editor-summary { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-      #editor-view .preview-card { grid-column: 1 / -1; }
-    }
-    @media (max-width: 820px) {
-      #editor-view .editor-grid { gap: 16px; }
-      #editor-view .cadences { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      #editor-view .cadence[data-cadence="once"], #editor-view .cadence[data-cadence="change"], #editor-view .cadence-custom { grid-column: span 2; }
-      #editor-view .cadence[data-cadence="hourly"], #editor-view .cadence[data-cadence="daily"], #editor-view .cadence[data-cadence="weekdays"], #editor-view .cadence[data-cadence="weekly"] { grid-column: span 1; }
-      #editor-view .command-options { grid-template-columns: 1fr; }
-      #editor-view .command-option { min-height: 68px; }
-      #editor-view .access-items { grid-template-columns: 1fr; max-height: 340px; }
-    }
-    @media (max-width: 700px) {
-      #editor-view { width: calc(100% - 24px); gap: 18px; padding: 20px 0 116px; }
-      #editor-view .editor-header { display: block; padding-bottom: 12px; }
-      #editor-view .editor-header .editor-actions { display: none; }
-      #editor-view .editor-mobile-actions { position: fixed; right: 12px; bottom: calc(66px + env(safe-area-inset-bottom)); left: 12px; z-index: 20; display: flex; gap: 8px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgb(21 21 24 / .97); box-shadow: 0 10px 32px rgb(0 0 0 / .4); backdrop-filter: blur(12px); }
-      #editor-view .editor-mobile-actions .button { min-width: 0; height: 44px; flex: 1; padding-inline: 8px; font-size: 12px; }
-      #editor-view .editor-header-main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "back" "heading" "name"; gap: 10px; }
-      #editor-view .editor-heading-copy h1 { font-size: 22px; }
-      #editor-view .editor-heading-copy p { max-width: 45ch; font-size: 13px; }
-      #editor-view .back-link { min-height: 44px; height: 44px; }
-      main { scroll-padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
-      #editor-view .automation-name-wrap { gap: 4px; }
-      #editor-view .editor-block { gap: 14px; padding: 22px 0; }
-      #editor-view .section-heading-copy { align-items: flex-start; gap: 10px; }
-      #editor-view .section-symbol { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; }
-      #editor-view .section-heading-copy h2 { font-size: 15px; }
-      #editor-view .section-heading-copy p { font-size: 12.5px; }
-      #editor-view .prompt-block { padding-top: 4px; }
-      #editor-view .prompt-surface { padding: 12px 13px 10px; }
-      #editor-view .prompt-field { min-height: 150px; font-size: 15px; }
-      #editor-view .prompt-foot { align-items: flex-start; }
-      #editor-view .prompt-foot-note { display: none; }
-      #editor-view .folder-row .button { height: 44px; }
-      #editor-view .cadences { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      #editor-view .cadence { min-height: 76px; padding: 11px; }
-      #editor-view .cadence[data-cadence="once"], #editor-view .cadence[data-cadence="change"], #editor-view .cadence-custom { grid-column: span 2; }
-      #editor-view .cadence[data-cadence="hourly"], #editor-view .cadence[data-cadence="daily"], #editor-view .cadence[data-cadence="weekdays"], #editor-view .cadence[data-cadence="weekly"] { grid-column: span 1; }
-      #editor-view .schedule-detail { align-items: center; gap: 8px; padding: 10px; }
-      #editor-view .schedule-detail select, #editor-view .schedule-detail input, #editor-view .editor-select { min-height: 44px; }
-      #editor-view .access-heading { display: grid; grid-template-columns: 1fr; }
-      #editor-view .access-heading .section-heading-copy { grid-column: 1 / -1; }
-      #editor-view .preset-label { margin-left: 0; }
-      #editor-view .presets { width: 100%; }
-      #editor-view .preset { height: 44px; min-height: 44px; flex: 1; padding-inline: 6px; font-size: 11.5px; }
-      #editor-view .ability-line { gap: 6px; padding: 9px; }
-      #editor-view .ability { height: 34px; padding-inline: 9px; font-size: 12px; }
-      #editor-view .access-board { border-radius: 11px; }
-      #editor-view .allowed-pane, #editor-view .add-pane { padding: 13px; }
-      #editor-view .access-search { height: 44px; }
-      #editor-view .filter-tabs { gap: 8px; }
-      #editor-view .filter-tab { height: 44px; min-height: 44px; }
-      #editor-view .allowed-entry button { min-height: 40px; }
-      #editor-view .access-items { max-height: 320px; }
-      #editor-view .command-block { padding: 17px 13px; }
-      #editor-view .editor-summary { grid-template-columns: minmax(0, 1fr); }
-      #editor-view .preview-card { grid-column: auto; }
-      #editor-view .summary-card { padding: 15px; }
-      #editor-view .preview-card { padding: 16px; }
-      .toast { bottom: calc(130px + env(safe-area-inset-bottom)); }
-    }
-    @media (max-width: 380px) {
-      #editor-view .section-heading { align-items: flex-start; }
-      #editor-view .required-label { padding: 4px 7px; font-size: 11px; }
-      #editor-view .editor-actions .button { font-size: 11.5px; }
-      #editor-view .preview-indicator { font-size: 10px; }
-      #editor-view .ability { padding-inline: 7px; font-size: 11px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      #editor-view *, #editor-view *::before, #editor-view *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cloth automations</title>
+<style>
+  :root {
+    --bg: #0a0a0b; --panel: #111113; --elev: #18181b; --elev2: #202024; --line: #26262b; --line-strong: #34343b;
+    --fg: #ececef; --muted: #a3a3ad; --dim: #85858f;
+    --crimson: #dc2645; --crimson-hi: #ef3d5c; --crimson-soft: rgb(220 38 69 / 0.12); --crimson-line: rgb(220 38 69 / 0.35);
+    --ok: #3fb97a; --warn: #e0a43a; --del: #f0656f; --agent: #5ec8e0; --agent-soft: rgb(94 200 224 / 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.5 system-ui, -apple-system, "Segoe UI", Inter, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { background: none; border: 0; cursor: pointer; padding: 0; text-align: left; }
+  :focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 2px; border-radius: 6px; }
+  .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+  svg { flex-shrink: 0; }
+
+  .top { height: 34px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 12px; font-weight: 600; }
+  .logo { width: 18px; height: 18px; border-radius: 5px; background: var(--crimson); display: grid; place-items: center; font-size: 11px; color: #fff; }
+  .app { display: grid; grid-template-columns: 56px 340px minmax(0, 1fr); height: calc(100vh - 34px); }
+  .rail { border-right: 1px solid var(--line); display: grid; align-content: start; justify-items: center; gap: 6px; padding-top: 12px; }
+  .rail span { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--dim); }
+  .rail span.on { background: var(--crimson-soft); color: var(--crimson-hi); }
+
+  /* List */
+  .list { border-right: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; min-width: 0; }
+  .lh { padding: 18px 16px 10px; display: flex; align-items: center; gap: 10px; }
+  .lh h1 { margin: 0; font-size: 17px; font-weight: 600; flex: 1; }
+  .newb { height: 30px; border-radius: 8px; background: var(--crimson); color: #fff; font-weight: 600; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .newb:hover { background: var(--crimson-hi); }
+  .next { margin: 0 12px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 10px 12px; }
+  .next .k { color: var(--dim); font-size: 11.5px; }
+  .next .v { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+  .next .v b { font-weight: 600; }
+  .next .v span { color: var(--muted); font-size: 12px; }
+  .day { display: flex; gap: 2px; margin-top: 9px; height: 18px; align-items: end; }
+  .day i { flex: 1; background: var(--line); border-radius: 2px; height: 4px; position: relative; }
+  .day i.slot { background: var(--crimson-line); height: 12px; }
+  .day i.now { background: var(--fg); height: 18px; width: 2px; flex: 0 0 2px; }
+  .day-cap { display: flex; justify-content: space-between; color: var(--dim); font-size: 10.5px; margin-top: 3px; }
+  .items { overflow-y: auto; padding: 0 8px 16px; }
+  .grp { color: var(--dim); font-size: 11.5px; padding: 10px 8px 4px; }
+  .it { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 9px 10px; border-radius: 10px; }
+  .it:hover { background: var(--panel); }
+  .it.sel { background: var(--elev); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--line-strong); } .dot.run { background: var(--warn); box-shadow: 0 0 0 3px rgb(224 164 58 / .18); }
+  .it b { display: block; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .it .when { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .it.paused b { color: var(--muted); }
+  .res { font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .res.ok { color: var(--ok); } .res.partial { color: var(--warn); } .res.blocked, .res.failed { color: var(--del); } .res.none { color: var(--dim); font-weight: 400; }
+
+  /* Detail */
+  .detail { overflow-y: auto; min-width: 0; }
+  .dw { max-width: 760px; margin: 0 auto; padding: 22px 32px 60px; }
+  .dhead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .dhead input.name { flex: 1; min-width: 200px; background: none; border: 0; outline: 0; font-size: 20px; font-weight: 600; padding: 2px 0; border-bottom: 1px solid transparent; }
+  .dhead input.name:hover, .dhead input.name:focus { border-bottom-color: var(--line-strong); }
+  .btn { height: 32px; border-radius: 9px; border: 1px solid var(--line-strong); padding: 0 12px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .btn:hover { background: var(--elev2); }
+  .btn.primary { background: var(--crimson); border-color: var(--crimson); color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--crimson-hi); }
+  .sw { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+  .sw .t { width: 32px; height: 18px; border-radius: 999px; background: var(--line-strong); position: relative; transition: background .15s; }
+  .sw .t::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: transform .15s; }
+  .sw.on .t { background: var(--ok); }
+  .sw.on .t::after { transform: translateX(14px); }
+  .sub { color: var(--dim); margin: 4px 0 0; font-size: 12.5px; }
+
+  .sec { margin-top: 26px; }
+  .sec h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 small { color: var(--dim); font-weight: 400; font-size: 12px; }
+  textarea.prompt { width: 100%; min-height: 128px; resize: vertical; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; outline: 0; font-size: 13.5px; line-height: 1.6; }
+  textarea.prompt:focus { border-color: var(--crimson-line); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+
+  .sentence { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; font-size: 14px; line-height: 2.1; }
+  .pick { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--elev2); border: 1px solid var(--line-strong); font-size: 13px; vertical-align: middle; }
+  .pick:hover { border-color: var(--crimson-line); }
+  .pick svg { color: var(--dim); }
+  .also { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12.5px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 12.5px; color: var(--muted); }
+  .chip.on { border-color: var(--crimson-line); background: var(--crimson-soft); color: var(--fg); }
+  .chip.add { border-style: dashed; color: var(--dim); }
+  .chip:hover { color: var(--fg); }
+  .upcoming { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .upcoming b { color: var(--muted); font-weight: 500; }
+
+  .uses { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .use { display: grid; grid-template-columns: 26px 120px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; }
+  .use + .use { border-top: 1px solid var(--line); }
+  .use .ic { width: 26px; height: 26px; border-radius: 7px; background: var(--elev2); display: grid; place-items: center; color: var(--muted); }
+  .use .lbl { color: var(--muted); font-size: 12.5px; }
+  .use .val { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+  .tag { border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+  .tag.agent { border-color: transparent; background: var(--agent-soft); color: var(--agent); }
+  .use .edit { color: var(--dim); font-size: 12px; }
+  .use .edit:hover { color: var(--fg); }
+  .safety { display: flex; gap: 8px; align-items: flex-start; color: var(--dim); font-size: 12px; margin-top: 8px; }
+
+  .runs { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .run { display: grid; grid-template-columns: 14px 150px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 9px 14px; width: 100%; }
+  .run + .run { border-top: 1px solid var(--line); }
+  .run:hover { background: var(--panel); }
+  .run .when { color: var(--muted); font-size: 12.5px; }
+  .run .sum { color: var(--dim); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .run .num { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--dim); white-space: nowrap; }
+  .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--warn); animation: s .8s linear infinite; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+  .more { color: var(--dim); font-size: 12px; margin-top: 8px; display: inline-block; }
+  .more:hover { color: var(--fg); }
+
+  .danger { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center; color: var(--dim); font-size: 12px; }
+  .danger button { color: var(--dim); font-size: 12.5px; }
+  .danger button:hover { color: var(--del); }
+
+  /* New automation */
+  .compose { max-width: 640px; margin: 8vh auto 0; padding: 0 24px; }
+  .compose h2 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+  .compose p { color: var(--muted); margin: 0 0 16px; }
+  .cbox { border: 1px solid var(--line-strong); border-radius: 16px; background: var(--panel); padding: 12px; }
+  .cbox textarea { width: 100%; min-height: 92px; border: 0; outline: 0; background: none; resize: none; font-size: 14.5px; line-height: 1.6; padding: 2px 4px; }
+  .cbox .row { display: flex; justify-content: flex-end; gap: 8px; }
+  .ideas { display: grid; gap: 6px; margin-top: 16px; }
+  .idea { border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; color: var(--muted); }
+  .idea:hover { border-color: var(--line-strong); color: var(--fg); background: var(--panel); }
+  .idea b { color: var(--fg); font-weight: 500; }
+  .drafting { display: flex; gap: 8px; align-items: center; color: var(--muted); margin-top: 14px; }
+
+  @media (max-width: 860px) {
+    .app { grid-template-columns: minmax(0, 1fr); }
+    .rail { display: none; }
+    .list { display: none; }
+    .list.show { display: grid; }
+    .dw { padding: 18px 16px 48px; }
+    .use { grid-template-columns: 26px minmax(0, 1fr) auto; }
+    .use .lbl { display: none; }
+    .run { grid-template-columns: 14px minmax(0, 1fr) auto; }
+    .run .sum, .run .num:last-child { display: none; }
+  }
+</style>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Skip to main content</a>
-  <div class="app">
-    <header class="titlebar" aria-label="Cloth window header">
-      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5 12 2l7 3.5v8L12 22l-7-8.5z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m5.4 5.7 6.6 3.5 6.6-3.5M12 9.2V22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-      <span class="brand">Cloth</span>
-      <span class="title-spacer"></span>
-      <button class="mcp-status" type="button" title="MCP server running"><span class="mcp-dot"></span>MCP :4400</button>
-    </header>
-    <div class="shell">
-      <nav class="rail" aria-label="Main navigation">
-        <button class="nav-item" type="button" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-7"/></svg><span>Dashboard</span></button>
-        <button class="nav-item" type="button" aria-label="Chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.2A7.5 7.5 0 1 1 20 11.5Z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg><span>Chat</span></button>
-        <button class="nav-item" type="button" aria-label="Knowledge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21zM4 5.5v13A2.5 2.5 0 0 1 6.5 16H20M8 7h8M8 10h8"/></svg><span>Knowledge</span></button>
-        <button class="nav-item" type="button" aria-label="Skills"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></svg><span>Skills</span></button>
-        <button class="nav-item" type="button" aria-label="Agents"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6M3 11v4M21 11v4"/></svg><span>Agents</span></button>
-        <button class="nav-item" type="button" aria-label="Tools"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6a5 5 0 0 0-6.6 6.6L3 17l4 4 4.4-4.4A5 5 0 0 0 18 10l-3 3-4-4z"/></svg><span>Tools</span></button>
-        <button class="nav-item active" type="button" aria-current="page" aria-label="Automations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-3-3M17 17H7l3 3M17 7l3 3-3 3M7 17l-3-3 3-3"/></svg><span>Automations</span></button>
-        <button class="nav-item" type="button" aria-label="Models"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v3H9zM7 6h10v15H7zM4 9h3M17 9h3M4 13h3M17 13h3M10 10h4v4h-4z"/></svg><span>Models</span></button>
-        <button class="nav-item" type="button" aria-label="Run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z"/></svg><span>Run</span></button>
-        <button class="nav-item" type="button" aria-label="MCP"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8V5a3 3 0 0 1 6 0v3M8 16v3a3 3 0 0 0 6 0v-3M8 12H5a3 3 0 0 1 0-6h3M16 12h3a3 3 0 0 1 0 6h-3"/><circle cx="12" cy="12" r="3"/></svg><span>MCP</span></button>
-        <span class="rail-spacer"></span>
-        <button class="nav-item" type="button" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.6.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.6-.9l-1.7.6-1.4-2.4 1.4-1.1a8 8 0 0 1 0-1.9l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.6-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.6.9l1.7-.6 1.4 2.4-1.4 1.1a8 8 0 0 1 0 1.8Z"/></svg><span>Settings</span></button>
-      </nav>
-      <main id="main-content" tabindex="-1">
-        <div class="page list-view" id="list-view">
-          <header class="page-header">
-            <div class="heading">
-              <h1>Automations</h1>
-              <p class="subtitle">A prompt, a schedule and what it may use. It decides what to do and how to report.</p>
-            </div>
-            <button class="button primary" type="button" data-action="new">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-              New automation
-            </button>
-          </header>
-          <div class="columns">
-            <div class="main-column">
-              <section class="panel upcoming" aria-label="Coming up">
-                <div class="panel-heading">
-                  <h2>Coming up</h2>
-                  <span class="context" id="span-context">today and tomorrow</span>
-                  <span class="flex-spacer"></span>
-                  <div class="segmented" role="group" aria-label="Timeline range">
-                    <button class="segment" type="button" aria-pressed="true" data-range="2d">2 days</button>
-                    <button class="segment" type="button" aria-pressed="false" data-range="week">Week</button>
-                  </div>
-                </div>
-                <div class="timeline" id="timeline" aria-label="Scheduled automation runs">
-                  <span class="timeline-line"></span><span class="now-line"></span>
-                  <span class="event" style="left:18%"><i class="event-dot"></i><span class="event-label">Repository digest</span></span>
-                  <span class="event" style="left:42%"><i class="event-dot"></i><span class="event-label">Issue triage</span></span>
-                  <span class="event" style="left:72%"><i class="event-dot"></i><span class="event-label">Repository digest</span></span>
-                  <span class="event" style="left:91%"><i class="event-dot"></i><span class="event-label">Dependency review</span></span>
-                  <span class="tick first" style="left:0">Today</span><span class="tick" style="left:25%">12:00</span><span class="tick" style="left:50%">Tomorrow</span><span class="tick" style="left:75%">12:00</span><span class="tick last" style="left:100%">Thu</span><span class="tick" style="left:100%" hidden>Sat</span><span class="tick last" style="left:100%" hidden>Sun</span>
-                </div>
-                <ol class="event-list" aria-label="Scheduled runs">
-                  <li><time>09:00</time>Repository digest</li><li><time>15:30</time>Issue triage</li><li><time>Tomorrow, 09:00</time>Repository digest</li><li><time>Tomorrow, 18:00</time>Dependency review</li>
-                </ol>
-              </section>
-              <div class="legend" aria-label="Run history legend">
-                <span class="legend-label">Last runs, oldest to newest:</span>
-                <span class="legend-item"><i class="bar"></i> worked</span>
-                <span class="legend-item"><i class="bar fail"></i> failed (short)</span>
-                <span class="legend-item"><i class="bar running"></i> running (hollow)</span>
-              </div>
-              <div class="cards">
-                <article class="automation-card">
-                  <button class="card-open" type="button" data-toast="The automation editor is outside this page mockup." aria-label="Open Daily repository digest">
-                    <span class="card-content">
-                      <span class="card-title">Daily repository digest</span>
-                      <span class="prompt">Summarize meaningful changes across my active repositories. Call out risks and anything I should review.</span>
-                      <span class="meta">Every day at 09:00<br>Next: in 2 h 14 min<br>Last run 45 min ago: worked</span>
-                      <span class="run-bars" role="img" aria-label="Last 5 runs: 5 worked"><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i></span>
-                    </span>
-                  </button>
-                  <div class="card-actions">
-                    <label class="switch-wrap"><button class="switch" type="button" role="switch" aria-checked="true" aria-label="Pause Daily repository digest"></button><span>On</span></label>
-                    <span class="flex-spacer"></span>
-                    <button class="button secondary run-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z" fill="currentColor" stroke="none"/></svg>Run now</button>
-                  </div>
-                </article>
-                <article class="automation-card failed">
-                  <button class="card-open" type="button" data-toast="The automation editor is outside this page mockup." aria-label="Open Issue tracker triage">
-                    <span class="card-content">
-                      <span class="card-title">Issue tracker triage</span>
-                      <span class="prompt">Check for new and updated issues, group related reports, and draft a concise triage summary.</span>
-                      <span class="meta">When something changes<br>Last run 12 min ago: failed</span>
-                      <span class="run-bars" role="img" aria-label="Last 5 runs: 3 worked, 2 failed, including the latest"><i class="bar"></i><i class="bar"></i><i class="bar fail"></i><i class="bar"></i><i class="bar fail"></i></span>
-                    </span>
-                  </button>
-                  <div class="card-error" title="Unable to reach the issue tracker">Failed: Unable to reach the issue tracker</div>
-                  <div class="card-actions">
-                    <span class="flex-spacer"></span>
-                    <button class="button secondary run-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z" fill="currentColor" stroke="none"/></svg>Run now</button>
-                  </div>
-                </article>
-                <article class="automation-card">
-                  <button class="card-open" type="button" data-toast="The automation editor is outside this page mockup." aria-label="Open Weekly dependency review">
-                    <span class="card-content">
-                      <span class="card-title">Weekly dependency review</span>
-                      <span class="prompt">Review dependency updates each week. Flag breaking changes, security fixes, and packages that need attention.</span>
-                      <span class="meta">Every Sunday at 18:00<br>Paused<br>Last run 3 days ago: worked</span>
-                      <span class="run-bars" role="img" aria-label="Last 4 runs: 4 worked"><i class="bar"></i><i class="bar"></i><i class="bar"></i><i class="bar"></i></span>
-                    </span>
-                  </button>
-                  <div class="card-actions">
-                    <label class="switch-wrap"><button class="switch" type="button" role="switch" aria-checked="false" aria-label="Turn on Weekly dependency review"></button><span>Paused</span></label>
-                    <span class="flex-spacer"></span>
-                    <button class="button secondary run-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z" fill="currentColor" stroke="none"/></svg>Run now</button>
-                  </div>
-                </article>
-                <article class="automation-card">
-                  <button class="card-open" type="button" data-toast="The automation editor is outside this page mockup." aria-label="Open Manual release notes">
-                    <span class="card-content">
-                      <span class="card-title">Manual release notes</span>
-                      <span class="prompt">Draft release notes from the changes since the previous release. Keep it clear, brief, and ready to edit.</span>
-                      <span class="meta">Only when you run it<br>Last run yesterday: worked</span>
-                      <span class="run-bars" role="img" aria-label="Last 3 runs: 3 worked"><i class="bar"></i><i class="bar"></i><i class="bar"></i></span>
-                    </span>
-                  </button>
-                  <div class="card-actions"><span class="flex-spacer"></span><button class="button secondary run-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7z" fill="currentColor" stroke="none"/></svg>Run now</button></div>
-                </article>
-              </div>
-            </div>
-            <section class="panel recent" aria-label="Recent runs">
-              <h2>Recent runs</h2>
-              <button class="run-row" type="button" data-toast="The automation editor is outside this page mockup."><span class="status-dot"></span><span><span class="run-name">Daily repository digest</span><span class="run-result">Worked in 18s</span></span><span class="run-time">45 min</span></button>
-              <button class="run-row" type="button" data-toast="The automation editor is outside this page mockup."><span class="status-dot failed"></span><span><span class="run-name">Issue tracker triage</span><span class="run-result failed">Failed</span></span><span class="run-time">12 min</span></button>
-              <button class="run-row" type="button" data-toast="The automation editor is outside this page mockup."><span class="status-dot live"></span><span><span class="run-name">Manual release notes</span><span class="run-result">Running</span></span><span class="run-time">just now</span></button>
-              <button class="run-row" type="button" data-toast="The automation editor is outside this page mockup."><span class="status-dot"></span><span><span class="run-name">Weekly dependency review</span><span class="run-result">Worked in 2m 04s</span></span><span class="run-time">3 days</span></button>
-            </section>
-          </div>
+<div class="top"><span class="logo">C</span> Cloth</div>
+<div class="app">
+  <nav class="rail" aria-label="App">
+    <span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+    <span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5z"/></svg></span>
+    <span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg></span>
+    <span class="on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+  </nav>
+
+  <aside class="list" aria-label="Automations">
+    <div class="lh"><h1>Automations</h1><button class="newb" id="new"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>New</button></div>
+    <div class="next" id="next"></div>
+    <div class="items" id="items"></div>
+  </aside>
+
+  <main class="detail" id="detail"></main>
+</div>
+
+<script>
+  const I = {
+    clock: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    cal: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    down: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
+    play: '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>',
+    bot: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 13h.01M15 13h.01"/></svg>',
+    tool: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>',
+    book: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20V3H6.5A2.5 2.5 0 004 5.5z"/></svg>',
+    folder: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
+    term: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
+    bell: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"/></svg>',
+    shield: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-top:2px"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>',
+    ok: '<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--ok)"/><path d="M7.5 12.5l3 3 6-6" fill="none" stroke="#0a0a0b" stroke-width="2.6"/></svg>',
+    partial: '<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--warn)"/><path d="M12 7v6M12 16.5v.5" stroke="#0a0a0b" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    failed: '<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="var(--del)"/><path d="M8 12h8" stroke="#0a0a0b" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    eye: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+  }
+  const RESULT = { ok: 'Done', partial: 'Partly done', blocked: 'Blocked', failed: 'Failed' }
+  const A = [
+    { name: 'NestJS knowledge refresh', on: true, every: 'Every Monday', at: '9:00', next: 'Mon 9:00', nextIn: 'in 4 days', last: 'ok', also: [], agent: 'Researcher', tools: ['Web search', 'Fetch web page', 'Save to knowledge'], knowledge: ['NestJS docs'], folder: null, commands: 'None', report: 'Chat in Automation · notify when done',
+      prompt: 'Check the NestJS release notes and docs for anything new since the last run. Add new or changed pages to the "NestJS docs" collection, and write a short summary of what changed. If nothing changed, say so in one line.',
+      runs: [['ok', 'Mon 6 Oct, 9:00', 'Added 3 pages: v11.2 release notes, new CLI flags…', '2m 10s', '$0.02'], ['ok', 'Mon 29 Sep, 9:00', 'Nothing new since last week.', '41s', '$0.004'], ['partial', 'Mon 22 Sep, 9:00', 'Indexed 5 of 6 pages; one timed out.', '3m 02s', '$0.03']] },
+    { name: 'Morning repo check', on: true, every: 'Every weekday', at: '8:30', next: 'Tomorrow 8:30', nextIn: 'in 14 h', last: 'partial', also: ['files'], agent: null, tools: ['Read file', 'Search files', 'Git status'], knowledge: [], folder: 'E:\\Code Projects\\Cloth-v3', commands: 'Only: npm test, npx tsc --noEmit', report: 'Chat in Automation · notify on problems',
+      prompt: 'Run the type check and the tests in this folder. If anything fails, find the most likely cause from the recent commits and explain it in a few lines with file and line. Do not change any files.',
+      runs: [['partial', 'Today, 8:30', '2 tests failed in permissions.test.ts; likely e540d0d.', '1m 48s', '$0.01'], ['ok', 'Yesterday, 8:30', 'Type check clean, 622 tests passed.', '1m 12s', '$0.006'], ['ok', 'Fri 10 Oct, 8:30', 'Type check clean, 614 tests passed.', '1m 05s', '$0.006']] },
+    { name: 'Price watch: RTX 5080', on: true, every: 'Every hour', at: '', next: '21:00', nextIn: 'in 18 min', last: 'ok', also: ['url'], agent: null, tools: ['Fetch web page'], knowledge: [], folder: null, commands: 'None', report: 'Notify only when the price drops',
+      prompt: 'Check the price of the RTX 5080 Founders Edition on the store page. Only notify me if it is below RM 4,200 or back in stock.',
+      runs: [['ok', 'Today, 20:00', 'RM 4,599, out of stock. No alert.', '9s', '$0.001'], ['ok', 'Today, 19:00', 'RM 4,599, out of stock. No alert.', '8s', '$0.001']] },
+    { name: 'Weekly portfolio digest', on: false, every: 'Every Friday', at: '17:00', next: '—', nextIn: 'paused', last: 'failed', also: [], agent: 'Researcher', tools: ['Web search'], knowledge: ['Portfolio'], folder: null, commands: 'None', report: 'Chat in Automation',
+      prompt: 'Summarise the week for my portfolio site: new projects, commits, and anything worth writing about.',
+      runs: [['failed', 'Fri 3 Oct, 17:00', 'The model provider was unreachable.', '4s', '—']] }
+  ]
+  let sel = 1, composing = false, drafting = false
+  const $ = (id) => document.getElementById(id)
+
+  function list() {
+    const on = A.map((a, i) => [a, i]).filter(([a]) => a.on), off = A.map((a, i) => [a, i]).filter(([a]) => !a.on)
+    const row = ([a, i]) => `<button class="it ${i === sel && !composing ? 'sel' : ''} ${a.on ? '' : 'paused'}" data-sel="${i}"><span class="dot ${a.running ? 'run' : a.on ? 'on' : 'off'}"></span><span style="min-width:0"><b>${a.name}</b><span class="when">${a.on ? `${a.every}${a.at ? ` at ${a.at}` : ''}${a.also.length ? ' · and on changes' : ''}` : 'Paused'}</span></span><span class="res ${a.running ? 'none' : a.last}">${a.running ? 'Running' : RESULT[a.last]}</span></button>`
+    $('items').innerHTML = `<div class="grp">On · ${on.length}</div>${on.map(row).join('')}${off.length ? `<div class="grp">Paused · ${off.length}</div>${off.map(row).join('')}` : ''}`
+    const marks = Array.from({ length: 24 }, (_, h) => h === 20 ? '<i class="now"></i>' : `<i class="${[8, 9].includes(h) || h > 20 ? 'slot' : ''}"></i>`).join('')
+    $('next').innerHTML = `<div class="k">Next up</div><div class="v"><b>Price watch: RTX 5080</b><span>21:00 · in 18 min</span></div><div class="day" aria-hidden="true">${marks}</div><div class="day-cap"><span>00:00</span><span>today</span><span>24:00</span></div>`
+  }
+
+  function detail() {
+    if (composing) {
+      $('detail').innerHTML = `<div class="compose">
+        <h2>New automation</h2>
+        <p>Say what should happen and when. Cloth drafts the schedule and what it can use; you check it before it's turned on.</p>
+        <div class="cbox"><textarea id="desc" placeholder="Every weekday at 8:30, run the tests in my Cloth folder and tell me what broke…"></textarea>
+          <div class="row"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="draft">Draft it</button></div></div>
+        ${drafting ? `<div class="drafting"><span class="spin"></span>Drafting the schedule, tools and access…</div>` : `<div class="ideas">
+          <button class="idea" data-idea="Every Monday at 9:00, check the NestJS changelog and add anything new to my NestJS knowledge collection."><b>Keep a knowledge collection fresh</b> · every Monday, add what changed</button>
+          <button class="idea" data-idea="Every hour, check this store page and notify me if the price drops below RM 4,200."><b>Watch a web page</b> · notify me only when something changes</button>
+          <button class="idea" data-idea="Every weekday at 8:30, run the tests in my project folder and explain any failures. Don't change files."><b>Morning repo check</b> · run the tests and explain failures</button>
+        </div>`}
+      </div>`
+      return
+    }
+    const a = A[sel]
+    const last = a.runs[0]
+    $('detail').innerHTML = `<div class="dw">
+      <div class="dhead">
+        <input class="name" value="${a.name}" aria-label="Name" />
+        <button class="sw ${a.on ? 'on' : ''}" id="toggle" role="switch" aria-checked="${a.on}"><span class="t"></span>${a.on ? 'On' : 'Paused'}</button>
+        <button class="btn primary" id="runnow" ${a.running ? 'disabled style="opacity:.6"' : ''}>${I.play} ${a.running ? 'Running…' : 'Run now'}</button>
+      </div>
+      <p class="sub">${a.on ? `Next run ${a.next} (${a.nextIn}). ` : 'Paused: it won\u2019t run until you turn it on. '}Last run: <span class="res ${last[0]}">${RESULT[last[0]]}</span>, ${last[1].toLowerCase()}.</p>
+
+      <section class="sec"><h2>What it does <small>Written as you'd ask in a chat</small></h2>
+        <textarea class="prompt" aria-label="Instructions">${a.prompt}</textarea>
+        <div class="hint">It decides how to report: a chat in the Automation project, a notification, or saving to knowledge.</div>
+      </section>
+
+      <section class="sec"><h2>When it runs</h2>
+        <div class="sentence">
+          <button class="pick">${I.cal} ${a.every} ${I.down}</button>
+          ${a.at ? ` at <button class="pick">${I.clock} ${a.at} ${I.down}</button>` : ''}
         </div>
-        <div class="page editor-page" id="editor-view" hidden>
-          <header class="editor-header">
-            <div class="editor-header-main">
-              <button class="back-link" type="button" data-action="back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h11"/></svg>Automations</button>
-              <div class="editor-heading-copy">
-                <h1 tabindex="-1">Create an automation</h1>
-                <p>Give it a clear job, then choose when it runs and what it may use.</p>
-              </div>
-              <label class="automation-name-wrap">
-                <span>Name</span>
-                <input class="automation-name" id="automation-name" name="automation-name" type="text" autocomplete="off" aria-label="Automation name" value="New automation">
-              </label>
-            </div>
-            <div class="editor-actions">
-              <button class="button secondary" type="button" data-action="run-draft">Run now</button>
-              <button class="button primary" type="button" data-action="save-draft">Save and turn on</button>
-            </div>
-          </header>
-          <div class="editor-grid">
-            <div class="editor-main">
-              <section class="editor-block prompt-block" aria-label="What should happen?">
-                <div class="section-heading">
-                  <div class="section-heading-copy"><span class="section-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4h10l3 3v13H4V4zM8 11h8M8 15h6"/></svg></span><div><h2>What should happen?</h2><p>Start with the result you want. Cloth will work out the steps.</p></div></div>
-                  <span class="required-label">Required</span>
-                </div>
-                <label class="visually-hidden" for="automation-prompt">What should happen</label>
-                <div class="prompt-surface">
-                  <textarea class="prompt-field" id="automation-prompt" name="automation-prompt" autocomplete="off" rows="5" required aria-describedby="prompt-hint prompt-error" placeholder="Review the changes in this project each morning. Summarize what moved, flag anything blocked, and suggest the three most useful next steps…"></textarea>
-                  <div class="prompt-foot"><p class="editor-help" id="prompt-hint">Be specific about the outcome. Add tools and other access below.</p><span class="prompt-foot-note">Plain language works best</span></div>
-                </div>
-                <p class="field-error" id="prompt-error" role="alert" hidden>Say what should happen first. Add a short instruction before saving.</p>
-                <p class="editor-help report-help">Results can arrive in chat, as a notification, or in the Knowledge you allow.</p>
-                <div class="folder-row"><span class="folder-label">Working folder</span><button class="button secondary" type="button" data-toast="Folder selection is not connected in this mockup."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>Choose a folder</button><span class="editor-help">Optional; file tools need one.</span></div>
-              </section>
-              <section class="editor-block schedule-block" aria-label="How often?">
-                <div class="section-heading">
-                  <div class="section-heading-copy"><span class="section-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 3v6M16 3v6M4 10h16"/></svg></span><div><h2>Choose a schedule</h2><p>Pick a rhythm. You can change it any time.</p></div></div>
-                </div>
-                <div class="cadences" role="radiogroup" aria-label="How often">
-                  <button class="cadence" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="once"><span class="cadence-name">Run manually</span><span class="cadence-copy">Only when you press Run now</span></button>
-                  <button class="cadence" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="change"><span class="cadence-name">On a change</span><span class="cadence-copy">Watch a file, page, or MCP answer</span></button>
-                  <button class="cadence" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="hourly"><span class="cadence-name">Every hour</span><span class="cadence-copy">On the hour</span></button>
-                  <button class="cadence" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="daily"><span class="cadence-name">Every day</span><span class="cadence-copy">At a time you choose</span></button>
-                  <button class="cadence" type="button" role="radio" aria-checked="true" tabindex="0" data-cadence="weekdays"><span class="cadence-name">Weekdays</span><span class="cadence-copy">Monday to Friday</span></button>
-                  <button class="cadence" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="weekly"><span class="cadence-name">Every week</span><span class="cadence-copy">On a day you choose</span></button>
-                  <button class="cadence cadence-custom" type="button" role="radio" aria-checked="false" tabindex="-1" data-cadence="custom"><span class="cadence-name">Custom schedule</span><span class="cadence-copy">Write a cron expression for a more specific rhythm</span></button>
-                </div>
-                <div class="schedule-detail" id="schedule-detail"><span id="weekday-prefix" hidden>on</span><select id="weekly-day" name="weekly-day" aria-label="Day of week" hidden><option>Sunday</option><option selected>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option></select><span id="time-prefix">at</span><input id="run-time" name="run-time" type="time" autocomplete="off" value="09:00" aria-label="Run time"><label id="cron-wrap" hidden><span class="visually-hidden">Cron schedule</span><input id="cron-input" name="cron-schedule" type="text" autocomplete="off" spellcheck="false" placeholder="0 9 * * 1-5…" aria-label="Cron schedule"></label><span id="schedule-description">Runs Monday to Friday at 09:00</span></div>
-                <div id="watch-detail" hidden><div class="watch-choices" role="radiogroup" aria-label="What to watch"><button class="watch-choice" type="button" role="radio" aria-checked="true" tabindex="0">A file in its folder</button><button class="watch-choice" type="button" role="radio" aria-checked="false" tabindex="-1">A web page</button><button class="watch-choice" type="button" role="radio" aria-checked="false" tabindex="-1">An MCP tool’s answer</button></div><p class="editor-help">Choose its folder under “What should happen?” first. Changes to ignored build and dependency folders won’t trigger it.</p></div>
-              </section>
-              <section class="editor-block" aria-label="What it may use">
-                <div class="access-heading">
-                  <div class="section-heading-copy"><span class="section-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.4 8.2-8 10-4.6-1.8-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg></span><div><h2>Choose what it may use</h2><p>Only the tools and sources you allow are available when it runs.</p></div></div>
-                  <span class="preset-label">Start from</span><div class="presets" role="group" aria-label="Start from a preset"><button class="preset" type="button" aria-pressed="false" data-preset="Read-only">Read-only</button><button class="preset" type="button" aria-pressed="false" data-preset="Research">Research</button><button class="preset" type="button" aria-pressed="false" data-preset="Hands-on">Hands-on</button></div>
-                </div>
-                <div class="ability-line" role="group" aria-label="What this lets it do"><span class="ability-intro">It can</span><span class="ability" data-ability="files"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Read your files</span><span class="ability" data-ability="web"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Search the internet</span><span class="ability" data-ability="apps"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Use other apps</span><span class="ability" data-ability="knowledge"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Look things up in Knowledge</span><span class="ability" data-ability="change"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Change files</span><span class="ability" data-ability="commands"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>Run commands</span></div>
-                <div class="access-board">
-                  <section class="allowed-pane" aria-label="Allowed"><h3 class="pane-title">Allowed <span class="pane-count" id="allowed-count">0</span></h3><span class="visually-hidden" id="allowed-status" role="status" aria-live="polite" aria-atomic="true">Allowed items: 0.</span><p class="nothing-allowed" id="nothing-allowed">Nothing yet. It can only read the prompt and write an answer. Add things from the list.</p><ul id="allowed-list" class="allowed-list" aria-label="Allowed items"></ul></section>
-                  <section class="add-pane" aria-label="Add more"><h3 class="pane-title">Add more</h3>
-                    <label class="search-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><input class="access-search" id="access-search" name="access-search" type="search" autocomplete="off" aria-label="Search tools, servers, Knowledge and skills" placeholder="Search tools, servers, Knowledge and skills…"></label>
-                    <div class="filter-tabs" role="radiogroup" aria-label="Filter access by type"><button class="filter-tab" type="button" role="radio" aria-checked="true" tabindex="0" data-filter="all">Everything <em>7</em></button><button class="filter-tab" type="button" role="radio" aria-checked="false" tabindex="-1" data-filter="tools">Tools <em>4</em></button><button class="filter-tab" type="button" role="radio" aria-checked="false" tabindex="-1" data-filter="mcp">MCP servers <em>1</em></button><button class="filter-tab" type="button" role="radio" aria-checked="false" tabindex="-1" data-filter="knowledge">Knowledge <em>1</em></button><button class="filter-tab" type="button" role="radio" aria-checked="false" tabindex="-1" data-filter="skills">Skills <em>1</em></button></div>
-                    <p class="editor-help" id="access-empty" role="status" aria-live="polite" hidden>No matching items. Try a different search or filter.</p>
-                    <div class="access-items" id="access-items" role="list" aria-label="Available access">
-                      <div class="access-item" role="listitem" data-kind="tools" data-key="read files"><span class="access-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 3h9l5 5v13H5zM14 3v5h5M8 13h8M8 17h8"/></svg></span><span class="access-label"><strong>Read files</strong><span>Tool, built in · Read files in its folder</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="tools" data-key="web search"><span class="access-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5M8 10.8h5.6"/></svg></span><span class="access-label"><strong>Search the web</strong><span>Tool, built in · Search the internet</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="tools" data-key="web fetch"><span class="access-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h6"/></svg></span><span class="access-label"><strong>Fetch a web page</strong><span>Tool, built in · Read page text</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="tools" data-key="edit files"><span class="access-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z"/></svg></span><span class="access-label"><strong>Edit files</strong><span>Tool, built in · Can change files in its folder</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="mcp" data-key="github"><span class="access-icon" style="background:rgb(107 156 240 / .15);color:var(--info)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 8V5a3 3 0 0 1 6 0v3M8 16v3a3 3 0 0 0 6 0v-3M8 12H5a3 3 0 0 1 0-6h3M16 12h3a3 3 0 0 1 0 6h-3"/></svg></span><span class="access-label"><strong>GitHub</strong><span>MCP server, starts when it runs</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="knowledge" data-key="project notes"><span class="access-icon" style="background:rgb(63 185 122 / .15);color:var(--ok)"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg></span><span class="access-label"><strong>Project notes</strong><span>Knowledge, 18 documents</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                      <div class="access-item" role="listitem" data-kind="skills" data-key="code review"><span class="access-icon" style="background:rgb(192 132 252 / .15);color:#dcb6ff"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg></span><span class="access-label"><strong>code-review</strong><span>Skill · Review changes for correctness</span></span><button class="add-button" type="button" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button></div>
-                    </div>
-                  </section>
-                </div>
-              </section>
-              <section class="editor-block command-block" aria-label="Can it run commands?">
-                <div class="section-heading"><div class="section-heading-copy"><span class="section-symbol section-symbol-terminal" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 6 6 6-6 6M13 18h6"/></svg></span><div><h2>Command access</h2><p>Commands can change files or run code, so they’re separate from tools.</p></div></div></div>
-                <div class="command-options" role="radiogroup" aria-label="Running commands"><button class="command-option" type="button" role="radio" aria-checked="true" tabindex="0" data-mode="off"><strong>No commands</strong><span>Keep command-line access off.</span></button><button class="command-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="container"><strong>In a container</strong><span>Run on a copy of the folder. You apply its changes after.</span></button><button class="command-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="allowlist"><strong>Only allowed commands</strong><span>Run on this computer, limited to your allow list.</span></button></div>
-              </section>
-            </div>
-            <aside class="editor-summary" aria-label="Live automation preview">
-              <section class="summary-card preview-card"><div class="preview-heading"><div><span class="preview-label">Live preview</span><h2>Your plan</h2></div><span class="preview-indicator"><span></span>Updates as you edit</span></div><p id="plain-words" aria-live="polite" aria-atomic="true">Weekdays at 09:00. Cloth follows the prompt with nothing extra. It reports how it sees fit.</p></section>
-              <section class="summary-card preview-schedule"><h2>Next runs</h2><div class="next-runs" id="next-runs"></div><p class="preview-note">Times are shown in your local time.</p></section>
-              <section class="summary-card preview-agent"><h2>Runs as</h2><select class="editor-select" id="runs-as" name="runs-as" autocomplete="off" aria-label="Runs as"><option>Cloth</option><option>Code reviewer</option><option>Researcher</option></select><p class="runs-as-help">The default assistant, with only what you pick here.</p></section>
-            </aside>
-          </div>
-          <div class="editor-mobile-actions" role="group" aria-label="Automation actions">
-            <button class="button secondary" type="button" data-action="run-draft">Run now</button>
-            <button class="button primary" type="button" data-action="save-draft">Save and turn on</button>
-          </div>
+        <div class="also">Also when
+          <button class="chip ${a.also.includes('files') ? 'on' : ''}" data-also="files">${I.folder} files in its folder change</button>
+          <button class="chip ${a.also.includes('url') ? 'on' : ''}" data-also="url">${I.eye} a web page changes</button>
+          <button class="chip ${a.also.includes('mcp') ? 'on' : ''}" data-also="mcp">${I.tool} an MCP check changes</button>
         </div>
-      </main>
-    </div>
-    <nav class="mobile-tabs" aria-label="Mobile navigation">
-      <button class="mobile-tab" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-5.2A7.5 7.5 0 1 1 20 11.5Z"/></svg>Chat</button>
-      <button class="mobile-tab active" type="button" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-3-3M17 17H7l3 3M17 7l3 3-3 3M7 17l-3-3 3-3"/></svg>Automations</button>
-      <button class="mobile-tab" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21zM4 5.5v13A2.5 2.5 0 0 1 6.5 16H20"/></svg>Knowledge</button>
-      <button class="mobile-tab" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-7"/></svg>Dashboard</button>
-      <button class="mobile-tab" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>More</button>
-    </nav>
-  </div>
-  <dialog id="leave-dialog" role="alertdialog" aria-modal="true" aria-labelledby="leave-title" aria-describedby="leave-copy">
-    <div class="dialog-content">
-      <h2 id="leave-title">Leave without saving?</h2>
-      <p id="leave-copy">Your changes to this automation will be lost.</p>
-      <div class="dialog-actions"><button class="button secondary" type="button" data-dialog-action="stay">Keep editing</button><button class="button danger" type="button" data-dialog-action="leave">Leave without saving</button></div>
-    </div>
-  </dialog>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script>
-    const rangeButtons = [...document.querySelectorAll('[data-range]')];
-    const context = document.querySelector('#span-context');
-    const timeline = document.querySelector('#timeline');
-    const dayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-    const dateLabel = (offset) => {
-      const date = new Date();
-      date.setHours(12, 0, 0, 0);
-      date.setDate(date.getDate() + offset);
-      return dayFormatter.format(date);
-    };
-    function applyRange(button) {
-      rangeButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
-      const week = button.dataset.range === 'week';
-      context.textContent = week ? 'this week' : 'today and tomorrow';
-      const ticks = timeline.querySelectorAll('.tick');
-      const positions = week ? ['0%', '16.66%', '33.33%', '50%', '66.66%', '83.33%', '100%'] : ['0%', '25%', '50%', '75%', '100%'];
-      const labels = week
-        ? Array.from({ length: 7 }, (_, i) => dateLabel(i))
-        : [dateLabel(0), '12:00', dateLabel(1), '12:00', dateLabel(2)];
-      ticks.forEach((tick, i) => {
-        tick.style.left = positions[i] || '100%';
-        tick.textContent = labels[i] || '';
-        tick.hidden = i >= positions.length;
-        tick.classList.toggle('first', i === 0);
-        tick.classList.toggle('last', i === positions.length - 1);
-      });
-      timeline.querySelectorAll('.event').forEach((event, i) => {
-        event.style.left = week ? ['14%', '31%', '61%', '87%'][i] : ['18%', '42%', '72%', '91%'][i];
-      });
-      document.querySelector('.now-line').style.left = week ? '8%' : '35%';
-    }
-    rangeButtons.forEach((button) => button.addEventListener('click', () => applyRange(button)));
-    applyRange(rangeButtons[0]);
-    document.querySelectorAll('.switch').forEach((switchButton) => switchButton.addEventListener('click', () => {
-      const checked = switchButton.getAttribute('aria-checked') === 'true';
-      switchButton.setAttribute('aria-checked', String(!checked));
-      switchButton.setAttribute('aria-label', `${checked ? 'Turn on' : 'Pause'} ${switchButton.closest('.automation-card').querySelector('.card-title').textContent}`);
-      switchButton.nextElementSibling.textContent = checked ? 'Paused' : 'On';
-    }));
-    let toastTimer;
-    const toast = document.querySelector('#toast');
-    function showToast(message) {
-      toast.textContent = message;
-      toast.classList.add('visible');
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toast.classList.remove('visible'), 3500);
-    }
-    document.querySelectorAll('[data-toast]').forEach((button) => button.addEventListener('click', () => showToast(button.dataset.toast)));
-    document.querySelectorAll('.run-button').forEach((button) => button.addEventListener('click', () => {
-      const name = button.closest('.automation-card').querySelector('.card-title').textContent;
-      showToast(`Running “${name}” — demonstration only.`);
-    }));
+        ${a.on ? `<div class="upcoming">Coming up: <b>${a.next}</b>${a.every === 'Every weekday' ? ', Fri 8:30, Mon 8:30' : a.every === 'Every hour' ? ', 22:00, 23:00' : ', Mon 20 Oct 9:00'}</div>` : ''}
+      </section>
 
-    const listView = document.querySelector('#list-view');
-    const editorView = document.querySelector('#editor-view');
-    const editorHeading = editorView.querySelector('h1');
-    const mainContent = document.querySelector('#main-content');
-    const promptField = document.querySelector('#automation-prompt');
-    const promptError = document.querySelector('#prompt-error');
-    const nameField = document.querySelector('#automation-name');
-    const cadenceButtons = [...document.querySelectorAll('.cadence')];
-    const runTime = document.querySelector('#run-time');
-    const weeklyDay = document.querySelector('#weekly-day');
-    const cronInput = document.querySelector('#cron-input');
-    const scheduleDetail = document.querySelector('#schedule-detail');
-    const scheduleDescription = document.querySelector('#schedule-description');
-    const watchDetail = document.querySelector('#watch-detail');
-    const runAs = document.querySelector('#runs-as');
-    const backButton = document.querySelector('[data-action="back"]');
-    const leaveDialog = document.querySelector('#leave-dialog');
-    const selectedItems = new Set();
-    let cadence = 'weekdays';
-    let commandMode = 'off';
-    let accessFilter = 'all';
-    let listScrollPosition = 0;
-    let promptTouched = false;
-    let submitAttempted = false;
-    let draftSaved = false;
-    const dateTimeFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
-    const longDateFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
-    const readableList = (values) => values.length < 2 ? (values[0] || '') : `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`;
+      <section class="sec"><h2>What it can use</h2>
+        <div class="uses">
+          <div class="use"><span class="ic">${I.bot}</span><span class="lbl">Runs as</span><span class="val">${a.agent ? `<span class="tag agent">${a.agent}</span>` : '<span class="tag">Cloth</span>'}<span class="tag">GPT-6 Luna · Medium</span></span><button class="edit">Change</button></div>
+          <div class="use"><span class="ic">${I.tool}</span><span class="lbl">Tools</span><span class="val">${a.tools.map((t) => `<span class="tag">${t}</span>`).join('')}</span><button class="edit">Change</button></div>
+          <div class="use"><span class="ic">${I.book}</span><span class="lbl">Knowledge</span><span class="val">${a.knowledge.length ? a.knowledge.map((t) => `<span class="tag">${t}</span>`).join('') : '<span style="color:var(--dim)">None</span>'}</span><button class="edit">Change</button></div>
+          <div class="use"><span class="ic">${I.folder}</span><span class="lbl">Folder</span><span class="val">${a.folder ? `<span class="tag mono" style="font-size:11.5px">${a.folder}</span>` : '<span style="color:var(--dim)">None</span>'}</span><button class="edit">Change</button></div>
+          <div class="use"><span class="ic">${I.term}</span><span class="lbl">Commands</span><span class="val">${a.commands === 'None' ? '<span style="color:var(--dim)">None</span>' : `<span class="tag mono" style="font-size:11.5px">${a.commands}</span>`}</span><button class="edit">Change</button></div>
+          <div class="use"><span class="ic">${I.bell}</span><span class="lbl">Reports</span><span class="val"><span style="color:var(--muted)">${a.report}</span></span><button class="edit">Change</button></div>
+        </div>
+        <div class="safety">${I.shield}<span>Nobody is there to approve while it runs, so risky actions (outside its folder, deleting, pushing, installing) are refused, not asked.</span></div>
+      </section>
 
-    function isDirty() {
-      if (draftSaved) return false;
-      const selectedWatch = document.querySelector('.watch-choice[aria-checked="true"]')?.textContent;
-      return nameField.value !== 'New automation' || !!promptField.value.trim() || cadence !== 'weekdays' || runTime.value !== '09:00' || weeklyDay.value !== 'Monday' || !!cronInput.value.trim() || selectedItems.size > 0 || commandMode !== 'off' || selectedWatch !== 'A file in its folder' || runAs.value !== 'Cloth';
-    }
-    const markDirty = () => { draftSaved = false; };
-    function updatePromptError(show) {
-      const invalid = show && !promptField.value.trim();
-      promptError.hidden = !invalid;
-      if (invalid) promptField.setAttribute('aria-invalid', 'true');
-      else promptField.removeAttribute('aria-invalid');
-    }
-    function showEditor(show) {
-      if (show) listScrollPosition = mainContent.scrollTop;
-      listView.hidden = show;
-      editorView.hidden = !show;
-      if (show) {
-        cadence = 'weekdays';
-        commandMode = 'off';
-        selectedItems.clear();
-        promptTouched = false;
-        submitAttempted = false;
-        draftSaved = false;
-        nameField.value = 'New automation';
-        promptField.value = '';
-        promptField.removeAttribute('aria-invalid');
-        promptError.hidden = true;
-        runTime.value = '09:00';
-        weeklyDay.value = 'Monday';
-        cronInput.value = '';
-        runAs.value = 'Cloth';
-        document.querySelector('#access-search').value = '';
-        accessFilter = 'all';
-        document.querySelectorAll('[data-filter]').forEach((item) => {
-          const active = item.dataset.filter === 'all';
-          item.setAttribute('aria-checked', String(active));
-          item.tabIndex = active ? 0 : -1;
-        });
-        document.querySelectorAll('[data-preset]').forEach((item) => item.setAttribute('aria-pressed', 'false'));
-        document.querySelectorAll('.watch-choice').forEach((item, i) => {
-          item.setAttribute('aria-checked', String(i === 0));
-          item.tabIndex = i === 0 ? 0 : -1;
-        });
-        document.querySelectorAll('.command-option').forEach((item, i) => {
-          item.setAttribute('aria-checked', String(i === 0));
-          item.tabIndex = i === 0 ? 0 : -1;
-        });
-        filterAccessItems();
-        updateEditor();
-        mainContent.scrollTop = 0;
-        if (matchMedia('(pointer: fine)').matches && innerWidth > 700) promptField.focus({ preventScroll: true });
-        else editorHeading.focus({ preventScroll: true });
-      } else {
-        mainContent.scrollTop = listScrollPosition;
-        requestAnimationFrame(() => document.querySelector('[data-action="new"]').focus({ preventScroll: true }));
-      }
-    }
-    function requestBack() {
-      if (isDirty()) {
-        leaveDialog.showModal();
-        leaveDialog.querySelector('[data-dialog-action="stay"]').focus();
-      } else showEditor(false);
-    }
-    document.querySelector('[data-action="new"]').addEventListener('click', () => showEditor(true));
-    backButton.addEventListener('click', requestBack);
-    leaveDialog.querySelector('[data-dialog-action="stay"]').addEventListener('click', () => leaveDialog.close());
-    leaveDialog.querySelector('[data-dialog-action="leave"]').addEventListener('click', () => {
-      leaveDialog.close();
-      showEditor(false);
-    });
-    leaveDialog.addEventListener('close', () => {
-      if (!editorView.hidden) backButton.focus({ preventScroll: true });
-    });
-    leaveDialog.addEventListener('cancel', (event) => {
-      event.preventDefault();
-      leaveDialog.close();
-    });
-    document.querySelectorAll('[data-action="save-draft"]').forEach((button) => button.addEventListener('click', () => {
-      submitAttempted = true;
-      if (!promptField.value.trim()) {
-        updatePromptError(true);
-        promptField.focus();
-        return;
-      }
-      updatePromptError(false);
-      draftSaved = true;
-      showToast('Automation saved and turned on — mockup only.');
-    }));
-    document.querySelectorAll('[data-action="run-draft"]').forEach((button) => button.addEventListener('click', () => {
-      submitAttempted = true;
-      if (!promptField.value.trim()) {
-        updatePromptError(true);
-        promptField.focus();
-        return;
-      }
-      updatePromptError(false);
-      draftSaved = true;
-      showToast(`Running “${nameField.value.trim() || 'New automation'}” — mockup only.`);
-    }));
-    promptField.addEventListener('blur', () => {
-      promptTouched = true;
-      updatePromptError(promptTouched || submitAttempted);
-    });
-    promptField.addEventListener('input', () => {
-      markDirty();
-      if (promptTouched || submitAttempted) updatePromptError(true);
-    });
-    window.addEventListener('beforeunload', (event) => {
-      if (editorView.hidden || !isDirty()) return;
-      event.preventDefault();
-      event.returnValue = '';
-    });
+      <section class="sec"><h2>Recent runs <small>${a.runs.length} in the last 30 days · $${(a.runs.length * 0.01).toFixed(2)}</small></h2>
+        <div class="runs">${a.running ? `<button class="run"><span class="spin"></span><span class="when">Now</span><span class="sum">Running the type check…</span><span class="num">0:12</span><span class="num"></span></button>` : ''}${a.runs.map((r) => `<button class="run" title="Open this run's chat">${I[r[0]] || I.failed}<span class="when">${r[1]}</span><span class="sum">${r[2]}</span><span class="num">${r[3]}</span><span class="num">${r[4]}</span></button>`).join('')}</div>
+        <a class="more" href="#">Open all runs in the Automation project →</a>
+      </section>
 
-    function cadenceText() {
-      const time = runTime.value || '09:00';
-      if (cadence === 'once') return 'Runs when you press Run now';
-      if (cadence === 'change') {
-        const watchChoice = document.querySelector('.watch-choice[aria-checked="true"]')?.textContent || 'A file in its folder';
-        return watchChoice === 'A file in its folder' ? 'Runs when a file in its folder changes' : watchChoice === 'A web page' ? 'Runs when a web page changes, checking every 15 minutes' : 'Runs when an MCP tool’s answer changes, checking every 15 minutes';
-      }
-      if (cadence === 'hourly') return 'Runs every hour, on the hour';
-      if (cadence === 'daily') return `Runs every day at ${time}`;
-      if (cadence === 'weekdays') return `Runs Monday to Friday at ${time}`;
-      if (cadence === 'weekly') return `Runs every ${weeklyDay.value} at ${time}`;
-      return cronInput.value.trim() ? `Runs on the schedule ${cronInput.value.trim()}` : 'Write a cron schedule';
-    }
-    function nextRunDates() {
-      if (cadence === 'once') return [];
-      if (cadence === 'change') return [];
-      if (cadence === 'custom') return [];
-      const now = new Date();
-      const found = [];
-      if (cadence === 'hourly') {
-        const next = new Date(now);
-        next.setMinutes(0, 0, 0);
-        next.setHours(next.getHours() + 1);
-        for (let i = 0; i < 3; i++) found.push(new Date(next.getTime() + i * 3600000));
-        return found;
-      }
-      const [hour, minute] = (runTime.value || '09:00').split(':').map(Number);
-      const day = weeklyDay.selectedIndex;
-      for (let step = 0; step < 21 && found.length < 3; step++) {
-        const candidate = new Date(now);
-        candidate.setDate(now.getDate() + step);
-        candidate.setHours(hour || 0, minute || 0, 0, 0);
-        const weekday = candidate.getDay();
-        const allowed = cadence === 'daily' || (cadence === 'weekdays' && weekday > 0 && weekday < 6) || (cadence === 'weekly' && weekday === day);
-        if (allowed && candidate > now) found.push(candidate);
-      }
-      return found;
-    }
-    function updateNextRuns() {
-      const container = document.querySelector('#next-runs');
-      const dates = nextRunDates();
-      if (!dates.length) {
-        const message = cadence === 'once' ? 'Only when you press Run now.' : cadence === 'change' ? 'Runs when the watched item changes.' : cadence === 'custom' && cronInput.value.trim() ? 'Custom run times are not calculated in this mockup.' : cadence === 'custom' ? 'Enter a cron expression. Custom run times are not calculated here.' : 'No upcoming runs to preview yet.';
-        container.innerHTML = `<p>${message}</p>`;
-        return;
-      }
-      container.innerHTML = dates.map((date) => `<div class="next-run"><span>${longDateFormatter.format(date)}</span><time>${dateTimeFormatter.format(date)}</time></div>`).join('');
-    }
-    function updateAllowed() {
-      const allowed = [...selectedItems];
-      const count = document.querySelector('#allowed-count');
-      count.textContent = String(allowed.length);
-      document.querySelector('#nothing-allowed').hidden = allowed.length > 0;
-      const allowedStatus = document.querySelector('#allowed-status');
-      const statusText = `Allowed items: ${allowed.length}.`;
-      if (allowedStatus.textContent !== statusText) allowedStatus.textContent = statusText;
-      document.querySelector('#allowed-list').innerHTML = allowed.map((key) => {
-        const item = document.querySelector(`.access-item[data-key="${CSS.escape(key)}"]`);
-        const label = item.querySelector('strong').textContent;
-        return `<li class="allowed-entry"><span>${label}</span><button type="button" aria-label="Remove ${label}" data-remove="${key}">Remove</button></li>`;
-      }).join('');
-      document.querySelectorAll('.add-button').forEach((button) => {
-        const key = button.closest('.access-item').dataset.key;
-        const on = selectedItems.has(key);
-        button.setAttribute('aria-pressed', String(on));
-        const label = button.closest('.access-item').querySelector('strong').textContent;
-        button.setAttribute('aria-label', `${on ? 'Remove' : 'Add'} ${label}`);
-        button.innerHTML = on ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Added' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add';
-      });
-      const keys = new Set(allowed);
-      const flags = {
-        files: keys.has('read files') || keys.has('edit files'),
-        web: keys.has('web search') || keys.has('web fetch'),
-        apps: keys.has('github'),
-        knowledge: keys.has('project notes'),
-        change: keys.has('edit files'),
-        commands: commandMode !== 'off'
-      };
-      Object.entries(flags).forEach(([key, active]) => {
-        const chip = document.querySelector(`[data-ability="${key}"]`);
-        chip.dataset.on = String(active);
-        if (key === 'change' || key === 'commands') chip.dataset.risk = 'true';
-        chip.querySelector('svg').innerHTML = active ? '<path d="m5 12 4 4L19 6"/>' : '<path d="M5 12h14"/>';
-      });
-      document.querySelectorAll('[data-remove]').forEach((button) => button.addEventListener('click', () => {
-        markDirty();
-        selectedItems.delete(button.dataset.remove);
-        document.querySelectorAll('[data-preset]').forEach((item) => item.setAttribute('aria-pressed', 'false'));
-        updateEditor();
-      }));
-    }
-    function updateEditor() {
-      cadenceButtons.forEach((button) => {
-        const active = button.dataset.cadence === cadence;
-        button.setAttribute('aria-checked', String(active));
-        button.tabIndex = active ? 0 : -1;
-      });
-      document.querySelectorAll('.watch-choice').forEach((button) => {
-        const active = button.getAttribute('aria-checked') === 'true';
-        button.tabIndex = active ? 0 : -1;
-      });
-      document.querySelectorAll('.command-option').forEach((button) => {
-        const active = button.dataset.mode === commandMode;
-        button.setAttribute('aria-checked', String(active));
-        button.tabIndex = active ? 0 : -1;
-      });
-      const needsTime = ['daily', 'weekdays', 'weekly'].includes(cadence);
-      scheduleDetail.hidden = cadence === 'change';
-      watchDetail.hidden = cadence !== 'change';
-      document.querySelector('#weekday-prefix').hidden = cadence !== 'weekly';
-      weeklyDay.hidden = cadence !== 'weekly';
-      document.querySelector('#time-prefix').hidden = !needsTime;
-      runTime.hidden = !needsTime;
-      document.querySelector('#cron-wrap').hidden = cadence !== 'custom';
-      scheduleDescription.hidden = cadence === 'custom';
-      scheduleDescription.textContent = cadenceText();
-      updateAllowed();
-      updateNextRuns();
-      const names = [...selectedItems].map((key) => document.querySelector(`.access-item[data-key="${CSS.escape(key)}"] strong`).textContent);
-      const commandSentence = commandMode === 'off' ? '' : commandMode === 'container' ? ' It can run commands in a container, on a copy of its folder.' : ' It can run only the commands you allow.';
-      const agentName = runAs.value || 'Cloth';
-      const watchDetailText = `${cadenceText()}. `;
-      document.querySelector('#plain-words').textContent = `${watchDetailText}${agentName} follows the prompt${names.length ? ` and may use ${readableList(names)}` : ' with nothing extra'}.${commandSentence} It reports how it sees fit.`;
-      document.querySelector('.runs-as-help').textContent = agentName === 'Cloth' ? 'The default assistant, with only what you pick here.' : `Uses ${agentName}’s instructions and model, with only what you pick here.`;
-    }
-    nameField.addEventListener('input', markDirty);
-    cadenceButtons.forEach((button) => button.addEventListener('click', () => {
-      markDirty();
-      cadence = button.dataset.cadence;
-      updateEditor();
-    }));
-    runTime.addEventListener('input', () => { markDirty(); updateEditor(); });
-    weeklyDay.addEventListener('change', () => { markDirty(); updateEditor(); });
-    cronInput.addEventListener('input', () => { markDirty(); updateEditor(); });
-    runAs.addEventListener('change', () => { markDirty(); updateEditor(); });
-    document.querySelectorAll('.watch-choice').forEach((button) => button.addEventListener('click', () => {
-      markDirty();
-      document.querySelectorAll('.watch-choice').forEach((item) => {
-        const active = item === button;
-        item.setAttribute('aria-checked', String(active));
-        item.tabIndex = active ? 0 : -1;
-      });
-      updateEditor();
-    }));
-    document.querySelectorAll('.add-button').forEach((button) => button.addEventListener('click', () => {
-      markDirty();
-      const key = button.closest('.access-item').dataset.key;
-      selectedItems.has(key) ? selectedItems.delete(key) : selectedItems.add(key);
-      document.querySelectorAll('[data-preset]').forEach((item) => item.setAttribute('aria-pressed', 'false'));
-      updateEditor();
-    }));
-    document.querySelectorAll('[data-preset]').forEach((button) => button.addEventListener('click', () => {
-      markDirty();
-      document.querySelectorAll('[data-preset]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
-      const presets = {
-        'Read-only': ['read files', 'web search', 'web fetch', 'project notes'],
-        'Research': ['web search', 'web fetch', 'project notes'],
-        'Hands-on': ['read files', 'edit files', 'web search', 'web fetch']
-      };
-      selectedItems.clear();
-      presets[button.dataset.preset].forEach((key) => selectedItems.add(key));
-      updateEditor();
-    }));
-    document.querySelectorAll('.command-option').forEach((button) => button.addEventListener('click', () => {
-      markDirty();
-      commandMode = button.dataset.mode;
-      updateEditor();
-    }));
-    document.querySelectorAll('.filter-tab').forEach((button) => button.addEventListener('click', () => {
-      accessFilter = button.dataset.filter;
-      document.querySelectorAll('.filter-tab').forEach((item) => {
-        const active = item === button;
-        item.setAttribute('aria-checked', String(active));
-        item.tabIndex = active ? 0 : -1;
-      });
-      filterAccessItems();
-    }));
-    document.querySelector('#access-search').addEventListener('input', filterAccessItems);
-    function filterAccessItems() {
-      const query = document.querySelector('#access-search').value.trim().toLowerCase();
-      let visible = 0;
-      document.querySelectorAll('.access-item').forEach((item) => {
-        item.hidden = (accessFilter !== 'all' && item.dataset.kind !== accessFilter) || !`${item.dataset.key} ${item.textContent}`.toLowerCase().includes(query);
-        if (!item.hidden) visible++;
-      });
-      document.querySelector('#access-empty').hidden = visible > 0;
-    }
-    function enableRadioArrowKeys(groupSelector, itemSelector) {
-      document.querySelectorAll(groupSelector).forEach((group) => group.addEventListener('keydown', (event) => {
-        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
-        const items = [...group.querySelectorAll(itemSelector)];
-        const current = items.indexOf(event.target.closest(itemSelector));
-        if (current < 0 || !items.length) return;
-        event.preventDefault();
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? items.length - 1 : 1)) % items.length;
-        items[next].focus();
-        items[next].click();
-      }));
-    }
-    enableRadioArrowKeys('.cadences', '.cadence');
-    enableRadioArrowKeys('.watch-choices', '.watch-choice');
-    enableRadioArrowKeys('.command-options', '.command-option');
-    enableRadioArrowKeys('.filter-tabs', '.filter-tab');
-    updateEditor();
-  </script>
+      <div class="danger"><button>Duplicate</button><span>·</span><button>Delete automation…</button></div>
+    </div>`
+  }
+  function render() { list(); detail() }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button,a'); if (!t) return
+    if (t.dataset.sel) { sel = +t.dataset.sel; composing = false }
+    else if (t.id === 'new') { composing = true; drafting = false }
+    else if (t.id === 'cancel') composing = false
+    else if (t.dataset.idea) { $('desc').value = t.dataset.idea; return }
+    else if (t.id === 'draft') { drafting = true; render(); setTimeout(() => { A.unshift({ name: 'New automation', on: false, every: 'Every weekday', at: '8:30', next: '—', nextIn: 'paused', last: 'ok', also: [], agent: null, tools: ['Read file', 'Search files'], knowledge: [], folder: 'E:\\Code Projects\\Cloth-v3', commands: 'Only: npm test', report: 'Chat in Automation', prompt: $('desc')?.value || 'Describe the job…', runs: [['ok', 'Not run yet', 'Check it, then turn it on.', '—', '—']] }); sel = 0; composing = false; drafting = false; render() }, 1200); return }
+    else if (t.id === 'toggle') A[sel].on = !A[sel].on
+    else if (t.id === 'runnow') { A[sel].running = true; setTimeout(() => { A[sel].running = false; A[sel].runs.unshift(['ok', 'Just now', 'Finished. Opened its chat in Automation.', '14s', '$0.002']); A[sel].last = 'ok'; render() }, 2500) }
+    else if (t.dataset.also) { const a = A[sel]; const k = t.dataset.also; a.also = a.also.includes(k) ? a.also.filter((x) => x !== k) : [...a.also, k] }
+    else return
+    e.preventDefault()
+    render()
+  })
+  render()
+</script>
 </body>
 </html>

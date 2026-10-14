@@ -343,6 +343,12 @@ export interface ClothApi {
     /** Start exporting; progress arrives as 'export' events. Returns the export id. */
     exportStart(input: import('./flow-bundle').ExportInput): Promise<string>
     exportCancel(exportId: string): Promise<void>
+    /**
+     * Drafts an automation from a plain description with the default model: a name, a clear prompt, the
+     * tools/servers/knowledge/skills it needs (only ones that exist), a schedule and a folder. Saves nothing.
+     * Throws when no default model is set.
+     */
+    draftAutomation(description: string): Promise<import('./types').AutomationDraft>
     /** A new automation: a prompt, how often it runs and what it may use. */
     createAutomation(input: import('./types').AutomationInput & { name: string; automation: import('./types').Automation }): Promise<Workflow>
     /** Saves an automation; also how it's turned on or off (`cronEnabled`). */
