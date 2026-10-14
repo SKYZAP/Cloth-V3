@@ -56,9 +56,12 @@ export function ComposerBar({
       {/* Phones: the icons and chips scroll sideways; the meter and send button stay put. */}
       <div className="flex min-w-0 flex-1 items-center gap-0.5 mobile:overflow-x-auto mobile:[scrollbar-width:none]">
         {leading}
+        {/* Too tight for everything: these three also live in the side panel's Setup tab. */}
+        <div className="hidden @[440px]:contents mobile:contents">
         <RowIcon icon={Books} label="Knowledge" state={knowledge ? `${knowledge} collection${knowledge === 1 ? '' : 's'} on · opens Setup` : 'Off · opens Setup'} on={knowledge > 0} count={knowledge || undefined} onClick={() => openSetupSection('knowledge')} />
         <RowIcon icon={Sparkle} label="Skills" state={skillsOn ? 'On · opens Setup' : 'Off · opens Setup'} on={skillsOn} onClick={() => openSetupSection('skills')} />
         <RowIcon icon={Wrench} label="Tools" state="Opens Setup" on={toolsOn} onClick={() => openSetupSection('tools')} />
+        </div>
         <ComposerPopover
           width={360}
           sheetTitle="Folder"
@@ -80,11 +83,12 @@ export function ComposerBar({
                 onClick={toggle}
                 aria-haspopup="menu"
                 aria-expanded={open}
-                title="Permissions (Shift+Tab to switch)"
+                title={`Permissions: ${permissionMode(session.permissions).name} (Shift+Tab to switch)`}
+                aria-label={`Permissions: ${permissionMode(session.permissions).name}`}
                 className={clsx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', MODE_TONE[session.permissions])}
               >
                 <I size={15} weight="fill" className="shrink-0" />
-                {permissionMode(session.permissions).name}
+                <span className="hidden @[440px]:inline mobile:inline">{permissionMode(session.permissions).name}</span>
                 <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
               </button>
             )
@@ -103,17 +107,18 @@ export function ComposerBar({
         <ComposerPopover
           width={440}
           sheetTitle="Model"
+          shrink
           trigger={(open, toggle) => (
             <button
               onClick={toggle}
               aria-haspopup="dialog"
               aria-expanded={open}
               title="Model and reasoning effort"
-              className={clsx('ml-1 flex h-8 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
+              className={clsx('ml-1 flex h-8 w-full min-w-0 max-w-max items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
             >
               <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
               <span className="max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
-              {model?.reasoning && <span className="shrink-0 text-dim mobile:hidden">– {effortLabel(session.thinking)}</span>}
+              {model?.reasoning && <span className="hidden shrink-0 text-dim @[680px]:inline mobile:hidden">– {effortLabel(session.thinking)}</span>}
               <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
             </button>
           )}
@@ -126,7 +131,9 @@ export function ComposerBar({
           {formatCost(usage.cost)}
         </span>
       )}
-      <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} />
+      <div className="hidden shrink-0 @[400px]:block">
+        <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} />
+      </div>
       <div className="ml-1 shrink-0">{send}</div>
     </div>
   )
