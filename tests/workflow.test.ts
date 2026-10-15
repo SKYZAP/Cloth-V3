@@ -117,6 +117,25 @@ describe('Spec → ship in a chat', () => {
     await expect(env.services.chat.advanceWorkflow(s.id)).rejects.toThrow(/not running/)
   })
 
+  it('gives review-stage reviewers only the tools to read the change', async () => {
+    const env = setup('manual')
+    env.services.chat.update(env.session.id, { subagents: true, webEnabled: true, knowledgeEnabled: true, workflow: { kind: 'spec-ship', stage: 'review', slug: 'x' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('task', { description: 'Review spec', prompt: 'Check the diff against docs/specs/x/spec.md', role: 'scout' }, { id: 't' })], { stopReason: 'toolUse' })),
+      (ctx) => (seen.push(ctx), fauxAssistantMessage('Result: done. No findings.')),
+      () => fauxAssistantMessage('Reviewed.')
+    ])
+    await env.services.chat.send(env.session.id, 'review it')
+    await settle(env)
+    // The chat itself keeps web search; its reviewer doesn't.
+    expect(system(seen[0])).toMatch(/"name":"web_search"/)
+    expect(system(seen[1])).not.toMatch(/"name":"web_search"/)
+    expect(system(seen[1])).not.toMatch(/"name":"rag_search"/)
+    expect(system(seen[1])).toMatch(/"name":"read"/)
+  }, 30_000)
+
   it('emits no approvals for documents before Build', async () => {
     const env = setup('manual')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
