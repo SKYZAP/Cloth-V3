@@ -688,6 +688,10 @@ export class AgentRuntime {
             await this.ws.mcp.ensure(scope.mcpServers)
           }
         }
+        // Spec → ship reviewers read the change and the spec: no browser, web, knowledge, MCP or custom tools to wander into.
+        if (parent.scope.workflow?.()?.stage === 'review' && role === 'scout') {
+          scope = { ...scope, mcpServers: [], webEnabled: false, knowledgeEnabled: false, customTools: false, computerUse: false, images: false }
+        }
         const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && this.providers.list().some((pr) => pr.id === m.providerId && pr.enabled)
         // The tier asked for, the agent's own model and effort, its tier, then Settings → Subagents and the chat.
         // A plain job (no saved agent) goes straight from the tier to Settings → Subagents and the chat.
