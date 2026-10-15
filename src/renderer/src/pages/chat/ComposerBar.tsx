@@ -11,6 +11,7 @@ import { Tooltip } from '@/components/Tooltip'
 import { ContextMeter } from '@/components/Planning'
 import { openSetupSection } from './setupNav'
 import { ComposerPopover, effortLabel, FolderMenu, ModelEffortMenu } from './StatusLine'
+import { STAGE_LABEL, stageIndex } from './Workflow'
 
 type Update = (p: Partial<ChatSession>) => Promise<void>
 
@@ -32,7 +33,8 @@ export function ComposerBar({
   compacting,
   onCompact,
   leading,
-  send
+  send,
+  onWorkflow
 }: {
   session: ChatSession
   update: Update
@@ -43,7 +45,10 @@ export function ComposerBar({
   leading?: ReactNode
   /** The send / stop button. */
   send: ReactNode
+  /** Spec → ship: start it (the draft becomes the idea), leave it, or show its documents. */
+  onWorkflow?(action: 'start' | 'stop' | 'docs'): void
 }) {
+  const flow = session.workflow && session.workflow.stage !== 'done' ? session.workflow : null
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
   const model = providers.find((p) => p.id === session.model?.providerId)?.models.find((m) => m.id === session.model?.modelId)
@@ -72,6 +77,42 @@ export function ComposerBar({
           {() => <FolderMenu session={session} update={update} />}
         </ComposerPopover>
         <span aria-hidden="true" className="mx-2 h-[22px] w-px shrink-0 bg-line-strong mobile:mx-1" />
+        {flow && (
+          <ComposerPopover
+            width={300}
+            sheetTitle="Spec → ship"
+            role="menu"
+            trigger={(open, toggle) => (
+              <button
+                onClick={toggle}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label={`Spec → ship, stage: ${STAGE_LABEL[flow.stage]}`}
+                title={`Spec → ship · ${STAGE_LABEL[flow.stage]}`}
+                className="mr-1.5 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-mode-line bg-mode-soft pl-2 pr-2.5 text-[12.5px] font-semibold text-mode transition-colors hover:bg-mode/15"
+              >
+                <ListChecks size={15} weight="bold" className="shrink-0" />
+                <span className="hidden @[520px]:inline mobile:inline">Spec → ship</span>
+                <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
+              </button>
+            )}
+          >
+            {(close) => (
+              <div className="grid p-1">
+                <p className="px-2.5 pb-1.5 pt-2 text-[11.5px] text-dim">
+                  Stage {stageIndex(flow.stage) + 1} of 5: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>
+                </p>
+                <button role="menuitem" onClick={() => (close(), onWorkflow?.('docs'))} className="rounded-[9px] px-2.5 py-2 text-left text-[13px] hover:bg-elev-2 focus-visible:bg-elev-2 focus-visible:outline-none">
+                  Show the documents
+                </button>
+                <button role="menuitem" onClick={() => (close(), onWorkflow?.('stop'))} className="rounded-[9px] px-2.5 py-2 text-left text-[13px] hover:bg-elev-2 focus-visible:bg-elev-2 focus-visible:outline-none">
+                  Leave Spec → ship
+                  <span className="block text-[11.5px] text-dim">The chat carries on as a normal chat; the documents stay.</span>
+                </button>
+              </div>
+            )}
+          </ComposerPopover>
+        )}
         <ComposerPopover
           width={340}
           sheetTitle="Permissions"
@@ -101,6 +142,7 @@ export function ComposerBar({
                 close()
                 if (permissions !== session.permissions) void update({ permissions })
               }}
+              workflow={onWorkflow && !flow ? { available: !!session.workspace, start: () => (close(), onWorkflow('start')) } : undefined}
             />
           )}
         </ComposerPopover>
@@ -185,7 +227,7 @@ function RowIcon({ icon: I, label, state, on, count, open, haspopup, onClick }: 
   )
 }
 
-function PermissionsMenu({ value, onPick }: { value: Permissions; onPick(p: Permissions): void }) {
+function PermissionsMenu({ value, onPick, workflow }: { value: Permissions; onPick(p: Permissions): void; workflow?: { available: boolean; start(): void } }) {
   const list = useRef<HTMLDivElement>(null)
   // Arrow keys move between the options, as in any menu.
   const onKey = (e: KeyboardEvent) => {
@@ -230,6 +272,21 @@ function PermissionsMenu({ value, onPick }: { value: Permissions; onPick(p: Perm
       <div className="mx-1.5 mb-1.5 mt-1 border-t border-line px-1.5 pb-0.5 pt-2 text-[11.5px] text-dim">
         <b className="font-semibold text-muted">{note.lead}</b> {note.rest}
       </div>
+      {workflow && (
+        <div className="mx-1 mb-1 border-t border-line pt-1">
+          <button
+            role="menuitem"
+            disabled={!workflow.available}
+            title={workflow.available ? undefined : 'Choose a folder for this chat first'}
+            onClick={workflow.start}
+            className="grid w-full grid-cols-[22px_minmax(0,1fr)] gap-x-2.5 gap-y-0.5 rounded-[10px] px-2.5 py-2 text-left outline-none hover:bg-elev-2 focus-visible:bg-elev-2 disabled:opacity-50"
+          >
+            <ListChecks size={16} weight="bold" className="mt-0.5 text-mode" />
+            <b className="text-[13px] font-semibold">Start Spec → ship</b>
+            <span className="col-start-2 text-[12px] text-dim">Grill, spec, tickets, build and review, with your OK between stages. What you've typed becomes the idea.</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

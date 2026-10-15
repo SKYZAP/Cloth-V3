@@ -7,7 +7,7 @@ interface SetupNav {
   /** Bumped on every request; the side panel opens (on `tab`) whenever it changes. */
   seq: number
   /** The tab the latest request opens. */
-  tab: 'setup' | 'agents'
+  tab: 'setup' | 'agents' | 'spec'
   /** The section the Setup tab should show next; cleared once it has. */
   pending: { section: SetupSection; seq: number } | null
   /** The agent run (its task trace's id) the Agents tab should show next; cleared once it has. */
@@ -36,4 +36,9 @@ export function openAgentRun(id: string): void {
 /** Mark an Agents tab request as shown (only that one). */
 export function takeAgentRun(seq: number): void {
   if (useSetupNav.getState().run?.seq === seq) useSetupNav.setState({ run: null })
+}
+
+/** Open the chat's side panel on the Spec tab (the Spec → ship documents). */
+export function openSpecDocs(): void {
+  useSetupNav.setState({ seq: useSetupNav.getState().seq + 1, tab: 'spec' })
 }

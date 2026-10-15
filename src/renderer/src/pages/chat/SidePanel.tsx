@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
-import { FolderSimple, GitBranch, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
+import { FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
 import type { ChatSession, UiMessage, WorkspaceFile } from '@shared/types'
 import { canStack, focusOrReplace, focusSection, migrate, resize, shownTabs, stackBelow, unstack, type PanelStack, type PanelTab } from '@shared/panel-stack'
 import { isMobile } from '@/lib/platform'
@@ -10,6 +10,7 @@ import { Files } from './Files'
 import { GitPanel } from './GitPanel'
 import { SetupPanel } from './Setup'
 import { AgentsPanel } from './AgentsPanel'
+import { SpecPanel } from './Workflow'
 import { useSetupNav } from './setupNav'
 
 export type { PanelTab } from '@shared/panel-stack'
@@ -59,7 +60,8 @@ const TABS: { id: PanelTab; label: string; icon: typeof TerminalWindow }[] = [
   { id: 'files', label: 'Files', icon: FolderSimple },
   { id: 'terminal', label: 'Terminal', icon: TerminalWindow },
   { id: 'git', label: 'Git', icon: GitBranch },
-  { id: 'agents', label: 'Agents', icon: Robot }
+  { id: 'agents', label: 'Agents', icon: Robot },
+  { id: 'spec', label: 'Spec', icon: ListChecks }
 ]
 
 const HEADER = 28
@@ -310,6 +312,13 @@ export function SidePanel({
           <div className="relative min-h-0" style={place('agents')} {...sectionEvents('agents')}>
             <div className="absolute inset-0">
               <AgentsPanel messages={messages} />
+            </div>
+          </div>
+        )}
+        {visible('spec') && (
+          <div className="relative min-h-0" style={place('spec')} {...sectionEvents('spec')}>
+            <div className="absolute inset-0">
+              <SpecPanel sessionId={session.id} workflow={session.workflow} version={messages.length} />
             </div>
           </div>
         )}

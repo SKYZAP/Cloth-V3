@@ -1,8 +1,8 @@
 // The chat side panel's stacked tabs: which tabs are shown top to bottom, how the height is shared, and
 // which section the tab bar acts on.
 
-export type PanelTab = 'setup' | 'terminal' | 'files' | 'git' | 'agents'
-export const PANEL_TABS: readonly PanelTab[] = ['setup', 'files', 'terminal', 'git', 'agents']
+export type PanelTab = 'setup' | 'terminal' | 'files' | 'git' | 'agents' | 'spec'
+export const PANEL_TABS: readonly PanelTab[] = ['setup', 'files', 'terminal', 'git', 'agents', 'spec']
 /** Sections the panel can stack at most. */
 export const MAX_STACK = 3
 /** The smallest height a section's content can be dragged to, in pixels. */
