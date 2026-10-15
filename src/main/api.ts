@@ -196,7 +196,10 @@ export function createApi(s: Services): ClothApi {
       contextUsage: (id) => s.chat.contextUsage(id),
       setup: (id) => s.chat.setup(id),
       useAgent: async (id, agentId) => s.chat.useAgent(id, agentId),
-      approvePlan: (id, mode) => s.chat.approvePlan(id, mode)
+      approvePlan: (id, mode) => s.chat.approvePlan(id, mode),
+      startWorkflow: (id, idea) => s.chat.startWorkflow(id, idea),
+      advanceWorkflow: (id) => s.chat.advanceWorkflow(id),
+      stopWorkflow: async (id) => s.chat.stopWorkflow(id)
     },
     agents: {
       activity: async () => s.agents.activity(),

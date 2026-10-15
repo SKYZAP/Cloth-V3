@@ -241,6 +241,12 @@ export interface ClothApi {
      * (a user line "Approved the plan" starts the run). Returns the chat with its new mode.
      */
     approvePlan(sessionId: string, mode: 'auto' | 'manual'): Promise<ChatSession>
+    /** Start Spec → ship (grill, spec, tickets, build, review); `idea` is sent as the first message. */
+    startWorkflow(sessionId: string, idea?: string): Promise<ChatSession>
+    /** Approve the current Spec → ship stage: the chat moves on and starts the next one. */
+    advanceWorkflow(sessionId: string): Promise<ChatSession>
+    /** Leave Spec → ship; the chat carries on as a normal chat. */
+    stopWorkflow(sessionId: string): Promise<ChatSession>
   }
   agents: {
     /** Jobs each agent ran as a subagent in the last 7 days, by agent id. */

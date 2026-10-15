@@ -23,6 +23,7 @@ import { newId } from '../core/context'
 import { Type } from 'typebox'
 import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
 import { commandRisk, commandRiskResolved, pathRiskResolved } from './risk'
+import { DOCS_ONLY_REFUSAL, isDocPath } from './workflow'
 import { fileURLToPath } from 'node:url'
 import {
   applyEdits,
@@ -274,6 +275,8 @@ export interface WorkspaceOptions {
   asksBeforeRisky?(): boolean
   /** Live: the chat is in Plan mode, so changes and commands are refused even if the tools are there. */
   readOnly?(): boolean
+  /** Live: a Spec → ship chat before Build may only write the glossary and docs/, and run no commands. */
+  docsOnly?(): boolean
 }
 
 /** What an unattended run is told when a risky action would need a person. */
@@ -325,6 +328,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
    */
   const ask = async (input: Omit<PendingApproval, 'id' | 'createdAt' | 'sessionId' | 'toolCallId'>, risk: string | null = null): Promise<void> => {
     if (o.readOnly?.()) throw new Error(PLAN_REFUSAL)
+    if (o.docsOnly?.() && input.kind === 'command') throw new Error(DOCS_ONLY_REFUSAL)
     if (input.kind === 'command' && o.commandAllow?.length) {
       if (!commandAllowed(input.command ?? '', o.commandAllow)) {
         throw new Error(`This automation may only run these commands, one at a time: ${o.commandAllow.join(', ')}. Use one of them, or do without.`)
@@ -361,6 +365,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
         return { ...f, rel, ...makeDiff(rel, f.before, f.after) }
       })
     if (!planned.length) return []
+    if (o.docsOnly?.() && !planned.every((p) => isDocPath(p.rel))) throw new Error(DOCS_ONLY_REFUSAL)
     const added = planned.reduce((n, p) => n + p.added, 0)
     const removed = planned.reduce((n, p) => n + p.removed, 0)
     // Paths are already confined to the folder; this also catches one that a link leads out of.
