@@ -49,6 +49,8 @@ import { SidePanel, usePanelState } from './chat/SidePanel'
 import { showTab, shownTabs } from '@shared/panel-stack'
 import { ComposerBar } from './chat/ComposerBar'
 import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
+import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
+import { openSpecDocs } from './chat/setupNav'
 import { cyclesPermission, nextPermission, planStatus } from '@/lib/permissions'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
@@ -552,6 +554,35 @@ function ChatView({
     const s = await attempt(() => api.chat.approvePlan(session.id, mode))
     if (s) onChange(s)
   }
+  const workflowAction = async (action: 'start' | 'stop' | 'docs') => {
+    if (action === 'docs') return openSpecDocs()
+    if (action === 'stop') {
+      const s = await attempt(() => api.chat.stopWorkflow(session.id))
+      if (s) onChange(s)
+      return
+    }
+    stick.current = true
+    const idea = draft
+    setDraft('')
+    const s = await attempt(() => api.chat.startWorkflow(session.id, idea))
+    if (s) {
+      onChange(s)
+      openSpecDocs()
+    } else setDraft(idea)
+  }
+  const answerRound = async (text: string) => {
+    stick.current = true
+    await attempt(() => api.chat.send(session.id, text))
+  }
+  const approveStage = async () => {
+    stick.current = true
+    const s = await attempt(() => api.chat.advanceWorkflow(session.id))
+    if (s) onChange(s)
+  }
+  const reviseStage = () => {
+    setHint('Say what to change')
+    textarea.current?.focus()
+  }
   const revisePlan = () => {
     setHint('Say what to change in the plan')
     textarea.current?.focus()
@@ -672,6 +703,8 @@ function ChatView({
   const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
   // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.
   const workBar = useMemo(() => buildWorkBar(messages), [messages])
+  const flowBar = !!session.workflow && session.workflow.stage !== 'done'
+  const showBar = !!workBar || flowBar
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
   const regenerate = async (assistantId: string) => {
@@ -800,7 +833,7 @@ function ChatView({
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
-        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pt-[64px]', workBar ? 'pb-[300px] mobile:pb-[240px]' : 'pb-[250px] mobile:pb-[190px]')}>
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pt-[64px]', showBar ? 'pb-[300px] mobile:pb-[240px]' : 'pb-[250px] mobile:pb-[190px]')}>
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -822,10 +855,10 @@ function ChatView({
             return m.role === 'user' ? (
               <div key={m.id}>
                 {m.summary !== undefined && <SummaryDivider summary={m.summary} />}
-                {m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
+                {m.workflowStage ? <StageDivider message={m} fresh={fresh} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage }} />
             )
           })}
           <AnimatePresence>
@@ -871,7 +904,7 @@ function ChatView({
               setUnseen(false)
               scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
             }}
-            className={clsx('absolute left-1/2 z-30', workBar ? 'bottom-[220px] mobile:bottom-[200px]' : 'bottom-[170px] mobile:bottom-[150px]', 'flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg')}
+            className={clsx('absolute left-1/2 z-30', showBar ? 'bottom-[220px] mobile:bottom-[200px]' : 'bottom-[170px] mobile:bottom-[150px]', 'flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg')}
           >
             <ArrowDown size={13} />
             {unseen && running ? 'New output' : 'Jump to latest'}
@@ -883,9 +916,9 @@ function ChatView({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 has-[[role=menu]]:z-40 has-[[role=dialog]]:z-40 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
         {/* The current turn's plan and agents, just above the message box. Opening it grows upward. */}
         <AnimatePresence>
-          {workBar && (
+          {showBar && (
             <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(724px,calc(100%-80px))] mobile:w-[calc(100%-36px)]">
-              <WorkBar bar={workBar} />
+              <WorkBar bar={workBar} flow={session.workflow} />
             </div>
           )}
         </AnimatePresence>
@@ -1007,6 +1040,7 @@ function ChatView({
             compacting={compacting}
             onCompact={() => void compactNow()}
             leading={<ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />}
+            onWorkflow={(action) => void workflowAction(action)}
             send={<SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
           />
         </div>
@@ -1261,7 +1295,8 @@ function AssistantTurn({
   onRegenerate,
   awaiting,
   onUndo,
-  plan
+  plan,
+  workflow
 }: {
   message: UiMessage
   /** Skills the user's message invoked with /name. */
@@ -1275,6 +1310,8 @@ function AssistantTurn({
   onUndo?(toolCallId: string): Promise<void>
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
+  /** Spec → ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
+  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -1304,6 +1341,8 @@ function AssistantTurn({
   const lastTodoIdx = all.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
   // Only the latest plan in a turn can be approved.
   const lastPlanIdx = all.map((b) => (b.type === 'tool' && b.trace.plan ? 'p' : '')).lastIndexOf('p')
+  // Likewise only the latest grilling round or stage gate.
+  const lastFlowIdx = all.map((b) => (b.type === 'tool' && (b.trace.questions || b.trace.stageGate) ? 'f' : '')).lastIndexOf('f')
   // Thinking and tool calls between pieces of the reply fold into one activity line. Plan updates other
   // than the latest are dropped (the plan panel shows the plan); images and questions keep their own cards; subagent runs show as agent lines.
   const items = useMemo(() => groupTurn(all, lastTodoIdx), [all, lastTodoIdx])
@@ -1328,6 +1367,10 @@ function AssistantTurn({
             const p: PlanProposal = block.trace.plan
             return <PlanCard key={block.trace.id} plan={p} actionable={!!plan?.actionable && i === lastPlanIdx} onApprove={(mode) => plan?.onApprove(mode) ?? Promise.resolve()} onRevise={() => plan?.onRevise()} />
           }
+          if (block.type === 'tool' && block.trace.questions)
+            return <RoundCard key={block.trace.id} round={block.trace.questions} actionable={!!workflow?.actionable && i === lastFlowIdx} onAnswer={(t) => workflow?.onAnswer(t) ?? Promise.resolve()} />
+          if (block.type === 'tool' && block.trace.stageGate)
+            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
