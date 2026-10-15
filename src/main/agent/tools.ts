@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, TodoItem } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem } from '@shared/types'
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
@@ -14,6 +14,7 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from './hub'
+import { docsOnly } from './workflow'
 
 export interface ToolDetails {
   durationMs?: number
@@ -93,6 +94,16 @@ export interface ToolScope {
   autoTiers?: boolean
   /** The chat's current todo list (from its latest todo_write), for `task`'s step. */
   todos?: () => TodoItem[]
+  /** The chat's Spec → ship workflow, live (none outside such chats). */
+  workflow?: () => SpecWorkflow | null
+  /** Record the feature's docs folder name once the spec stage picks it. */
+  setWorkflowSlug?: (slug: string) => void
+}
+
+/** The chat is running Spec → ship and isn't finished. */
+export function inWorkflow(scope: ToolScope): boolean {
+  const w = scope.workflow?.()
+  return !!w && w.stage !== 'done'
 }
 
 /** The agent is in Plan mode now: read-only until the user approves a plan. */
@@ -194,6 +205,67 @@ export const BUILTINS: BuiltinSpec[] = [
       return {
         text: `Plan presented to the user (${steps.length} step${steps.length === 1 ? '' : 's'}). Stop here: the user will approve it or ask for changes.`,
         details: { plan: plan as unknown as ToolDetails[string] },
+        terminate: true
+      }
+    }
+  }),
+  spec({
+    name: 'ask_questions',
+    label: 'Ask questions',
+    group: 'planning',
+    availability: 'Chats grilling in Spec → ship',
+    parameters: Type.Object({
+      round: Type.Integer({ description: 'Which round this is, from 1' }),
+      questions: Type.Array(
+        Type.Object({
+          title: Type.String({ description: 'The decision, as a short question' }),
+          context: Type.Optional(Type.String({ description: 'What the person needs to know to decide: the options, what the code does today' })),
+          recommendation: Type.String({ description: 'Your recommended answer, worded so that "yes" accepts it' })
+        }),
+        { description: 'Every decision that can be settled now (its prerequisites are answered)' }
+      ),
+      recorded: Type.Optional(Type.String({ description: 'What you wrote down this round, e.g. "Glossary +2 terms · 1 decision record"' }))
+    }),
+    description: () =>
+      'Ask the person this round of grilling questions and stop. Each question gets your recommended answer. They answer each one (or accept all your recommendations) and the next round starts from their answers.',
+    when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && ctx.scope.workflow?.()?.stage === 'grill',
+    async run(p) {
+      const questions = (p.questions ?? [])
+        .map((q) => ({ title: String(q.title ?? '').trim(), ...(q.context?.trim() ? { context: q.context.trim() } : {}), recommendation: String(q.recommendation ?? '').trim() }))
+        .filter((q) => q.title && q.recommendation)
+      if (!questions.length) throw new Error('A round needs at least one question with a recommendation')
+      const round: QuestionRound = { round: Math.max(1, Math.round(Number(p.round) || 1)), questions, ...(p.recorded?.trim() ? { recorded: p.recorded.trim() } : {}) }
+      return {
+        text: `Round ${round.round} sent (${questions.length} question${questions.length === 1 ? '' : 's'}). Stop here and wait for the answers.`,
+        details: { questions: round as unknown as ToolDetails[string] },
+        terminate: true
+      }
+    }
+  }),
+  spec({
+    name: 'finish_stage',
+    label: 'Finish stage',
+    group: 'planning',
+    availability: 'Chats running Spec → ship',
+    parameters: Type.Object({
+      summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
+      files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
+      slug: Type.Optional(Type.String({ description: 'Spec stage only: the feature folder name under docs/specs/' }))
+    }),
+    description: () => "Finish the workflow's current stage: show the person what it produced and stop. The next stage starts only when they approve it; if they ask for changes, make them and call this again.",
+    when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inWorkflow(ctx.scope),
+    async run(p, ctx) {
+      const w = ctx.scope.workflow?.()
+      if (!w || w.stage === 'done') throw new Error('This chat is not running a workflow stage')
+      const summary = (p.summary ?? []).map((x) => String(x).trim()).filter(Boolean)
+      if (!summary.length) throw new Error('Say what the stage produced')
+      const slug = p.slug?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+      if (slug) ctx.scope.setWorkflowSlug?.(slug)
+      const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]
+      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}) }
+      return {
+        text: 'Shown to the person. Stop here: they approve it (the next stage starts) or ask for changes.',
+        details: { stageGate: gate as unknown as ToolDetails[string] },
         terminate: true
       }
     }
@@ -431,6 +503,8 @@ const W = (chats: boolean, subagents: boolean, flows: boolean, apps: boolean): T
 const WHERE: Record<string, ToolWhere> = {
   todo_write: W(true, false, false, false),
   present_plan: W(true, false, false, false),
+  ask_questions: W(true, false, false, false),
+  finish_stage: W(true, false, false, false),
   ask_user: W(true, false, false, false),
   rag_search: W(true, true, true, true),
   rag_index: W(true, false, false, true),
@@ -515,14 +589,15 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         checkRisk: !scope.container,
         // A chat in Auto takes risky actions without asking; unattended runs keep refusing them.
         asksBeforeRisky: () => asksBeforeRisky(scope.permissions?.(), !!scope.sessionId),
-        readOnly: () => inPlanMode(scope)
+        readOnly: () => inPlanMode(scope),
+        docsOnly: () => docsOnly(scope.workflow?.())
       })
     )
   }
   if (scope.customTools !== false) {
     // Custom code may only write where file edits are already allowed without asking; Plan mode runs no custom commands.
     const env = scope.workspace ? { workspace: { root: scope.workspace, writable: scope.fileAccess === 'write' && autoEdits, onWrite: scope.onFile } } : {}
-    const plan = inPlanMode(scope)
+    const plan = inPlanMode(scope) || docsOnly(scope.workflow?.())
     for (const t of deps.custom.list()) if (t.enabled && (!scope.toolNames || scope.toolNames.includes(t.name)) && !(plan && t.kind === 'command')) tools.push(deps.custom.toAgentTool(t, env))
   }
   const usage = deps.usage

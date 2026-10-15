@@ -321,6 +321,8 @@ export interface ChatSession {
    * manual (changes and commands run, risky actions ask) or plan (read-only until a plan is approved).
    */
   permissions: Permissions
+  /** The Spec → ship workflow this chat is running, or null for a plain chat. */
+  workflow?: SpecWorkflow | null
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
   fileAccess: FileAccess
   /** Derived from `permissions`: a shell tool (bash, or PowerShell on Windows) in the workspace. */
@@ -587,6 +589,34 @@ export type AutoApprove = 'none' | 'edits' | 'all'
 export type Permissions = 'auto' | 'manual' | 'plan'
 
 /** A plan the agent proposed with `present_plan` (Plan mode). */
+/** The stages of Spec → ship, in order; `done` once the review is accepted. */
+export type WorkflowStage = 'grill' | 'spec' | 'tickets' | 'build' | 'review' | 'done'
+export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec', 'tickets', 'build', 'review']
+
+/** A chat running Spec → ship: grill, write the spec, cut tickets, build them, review against the spec. */
+export interface SpecWorkflow {
+  kind: 'spec-ship'
+  stage: WorkflowStage
+  /** The feature's folder name under docs/specs/, set once the spec is written. */
+  slug: string | null
+}
+
+/** One grilling round: the decisions that can be settled now, each with a recommended answer. */
+export interface QuestionRound {
+  round: number
+  questions: { title: string; context?: string; recommendation: string }[]
+  /** What was written down this round (glossary terms, decision records), for the card's footer. */
+  recorded?: string
+}
+
+/** A stage that's finished and waits for the user's OK before the next one starts. */
+export interface StageGate {
+  stage: Exclude<WorkflowStage, 'done'>
+  summary: string[]
+  /** Files this stage wrote, relative to the workspace. */
+  files?: string[]
+}
+
 export interface PlanProposal {
   title: string
   steps: string[]
@@ -657,6 +687,10 @@ export interface ToolTrace {
   computer?: ComputerTrace
   /** For `present_plan` calls: the plan waiting for the user's approval. */
   plan?: PlanProposal
+  /** For `ask_questions` calls: a grilling round waiting for answers. */
+  questions?: QuestionRound
+  /** For `finish_stage` calls: a Spec → ship stage waiting for the user's OK. */
+  stageGate?: StageGate
 }
 
 export interface ComputerTrace {
@@ -752,6 +786,8 @@ export interface UiMessage {
   archived?: boolean
   /** Set on the user message that approved a plan: the mode the chat switched to. */
   planApproval?: 'auto' | 'manual'
+  /** Set on the user message that moved a Spec → ship chat to a new stage: that stage. */
+  workflowStage?: WorkflowStage
 }
 
 /** An attachment as the chat shows it: images carry their bytes, files only what was read from them. */

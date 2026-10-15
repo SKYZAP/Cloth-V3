@@ -2,7 +2,8 @@ import { basename } from 'node:path'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
-import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal } from '@shared/types'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, StageGate, WorkflowStage } from '@shared/types'
+import { nextStage, STAGE_OPEN, STAGE_TEXT, stageNote, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
@@ -90,7 +91,7 @@ const PLAN_CLOSE = '</plan-approval>'
 /** What the user sees for the message that approves a plan. */
 export const PLAN_APPROVED_TEXT = 'Approved the plan'
 /** Blocks the user message carries for the model only (never shown as the user's text). */
-const hidden = (text: string) => text.startsWith(SKILL_OPEN) || text.startsWith(AGENT_OPEN) || text.startsWith(FILE_OPEN) || text.startsWith(PLAN_OPEN)
+const hidden = (text: string) => text.startsWith(SKILL_OPEN) || text.startsWith(AGENT_OPEN) || text.startsWith(FILE_OPEN) || text.startsWith(PLAN_OPEN) || text.startsWith(STAGE_OPEN)
 
 /** The system prompt section that says which permission mode the chat is in now. */
 export const PERMISSIONS_SECTION = 'permissions'
@@ -908,6 +909,7 @@ export class ChatService {
       agentId: cur.agentId,
       autoTiers: cur.autoTiers,
       origin: cur.origin,
+      workflow: cur.workflow ?? null,
       ...config
     }
     // Screens that still set the old switches: they become the matching permission mode.
@@ -1254,6 +1256,11 @@ export class ChatService {
       todos: () => latestTodos(this.active.get(id)?.state.messages ?? this.rawMessages(id)),
       depth: 0,
       permissions: () => this.get(id).permissions,
+      workflow: () => this.get(id).workflow ?? null,
+      setWorkflowSlug: (slug: string) => {
+        const w = this.get(id).workflow
+        if (w && w.slug !== slug) this.update(id, { workflow: { ...w, slug } })
+      },
       autoApprove: () => permissionCaps(this.get(id).permissions).autoApprove,
       // "Switch to Auto" on an approval card: the chat switches to Auto (and stops asking).
       onAlways: () => {
@@ -1277,6 +1284,37 @@ export class ChatService {
     const note = [`${PLAN_OPEN}${mode}">`, `Plan approved. Carry it out. ${how} Work through the plan step by step (keep the todo list current), then report what you did.`, PLAN_CLOSE].join('\n')
     await this.run(id, { role: 'user', content: [{ type: 'text', text: note }, { type: 'text', text: PLAN_APPROVED_TEXT }], timestamp: Date.now() }, '')
     return session
+  }
+
+  /**
+   * Start Spec → ship in this chat: it grills first, then writes the spec and tickets (documents only), builds and
+   * reviews, waiting for the person's OK between stages. `idea` (optional) is what to build, sent as the first message.
+   */
+  async startWorkflow(id: string, idea?: string): Promise<ChatSession> {
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const cur = this.get(id)
+    if (!cur.workspace) throw new Error('Spec → ship needs a folder: choose one for this chat first')
+    // Plan mode is read-only, and the documents need writing: drop to Manual (risky actions still ask).
+    const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: 'manual' as const } : {}) })
+    const text = idea?.trim()
+    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote('grill', null) }, { type: 'text', text: text || STAGE_TEXT.grill }], timestamp: Date.now() }, text ? text.slice(0, 60) : '')
+    return session
+  }
+
+  /** The person approved the current stage: move to the next one and start it. */
+  async advanceWorkflow(id: string): Promise<ChatSession> {
+    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    const w = this.get(id).workflow
+    if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → ship')
+    const stage = nextStage(w.stage)
+    const session = this.update(id, { workflow: { ...w, stage } })
+    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug) }, { type: 'text', text: STAGE_TEXT[stage] }], timestamp: Date.now() }, '')
+    return session
+  }
+
+  /** Leave Spec → ship: the chat carries on as a normal chat (the documents stay). */
+  stopWorkflow(id: string): ChatSession {
+    return this.update(id, { workflow: null })
   }
 
   async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = [], agentNames: string[] = []): Promise<void> {
@@ -1329,6 +1367,13 @@ export class ChatService {
     const told = getCurrentSystemMessage(agent.state.messages)?.sections?.[PERMISSIONS_SECTION] ?? null
     if (mode !== told) {
       const update: SystemMessage = { role: 'system', content: '', sections: { [PERMISSIONS_SECTION]: mode }, timestamp: Date.now() }
+      agent.state.messages = [...agent.state.messages, update]
+    }
+    // And the Spec → ship stage, the same way: a section replaced whenever the stage moves on.
+    const stage = workflowSection(session.workflow)
+    const toldStage = getCurrentSystemMessage(agent.state.messages)?.sections?.[WORKFLOW_SECTION] ?? null
+    if (stage !== toldStage) {
+      const update: SystemMessage = { role: 'system', content: '', sections: { [WORKFLOW_SECTION]: stage }, timestamp: Date.now() }
       agent.state.messages = [...agent.state.messages, update]
     }
     this.active.set(id, agent)
@@ -1552,8 +1597,10 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
       const attachments: UiAttachment[] = []
       let summary: string | undefined
       let planApproval: UiMessage['planApproval']
+      let workflowStage: UiMessage['workflowStage']
       for (const c of typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content) {
         if (c.type === 'image') attachments.push({ kind: 'image', mimeType: c.mimeType, data: c.data })
+        else if (c.text.startsWith(STAGE_OPEN)) workflowStage = c.text.slice(STAGE_OPEN.length, c.text.indexOf('"', STAGE_OPEN.length)) as WorkflowStage
         else if (c.text.startsWith(PLAN_OPEN)) planApproval = c.text.startsWith(`${PLAN_OPEN}manual"`) ? 'manual' : 'auto'
         else if (c.text.startsWith(FILE_OPEN)) attachments.push(parseFileBlock(c.text)!)
         else if (c.text.startsWith(SUMMARY_OPEN)) summary = splitSummary({ role: 'user', content: [c], timestamp: 0 }).summary ?? ''
@@ -1561,7 +1608,7 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
         else if (c.text.startsWith(AGENT_OPEN)) agents.push(c.text.slice(AGENT_OPEN.length, c.text.indexOf('"', AGENT_OPEN.length)).replace(/&quot;/g, '"'))
         else parts.push(c.text)
       }
-      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(agents.length ? { agents } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}), ...(planApproval ? { planApproval } : {}) })
+      out.push({ id: `m${m.timestamp}`, role: 'user', blocks: [{ type: 'text', text: parts.join('\n') }], createdAt: m.timestamp, ...(skills.length ? { skills } : {}), ...(agents.length ? { agents } : {}), ...(attachments.length ? { attachments } : {}), ...(summary !== undefined ? { summary } : {}), ...(planApproval ? { planApproval } : {}), ...(workflowStage ? { workflowStage } : {}) })
       continue
     }
     if (m.role !== 'assistant') continue
@@ -1589,7 +1636,9 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
           ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {}),
           ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {}),
-          ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {})
+          ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {}),
+          ...(block.name === 'ask_questions' && r?.details?.questions ? { questions: r.details.questions as unknown as QuestionRound } : {}),
+          ...(block.name === 'finish_stage' && r?.details?.stageGate ? { stageGate: r.details.stageGate as unknown as StageGate } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })
