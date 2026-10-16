@@ -24,6 +24,11 @@ const MODE_TONE: Record<ChatMode, string> = {
 const MODE_ICON_TONE: Record<ChatMode, string> = { chat: 'text-muted', plan: 'text-info', spec: 'text-mode' }
 export const ACCESS_ICON: Record<Access, Icon> = { auto: Lightning, manual: Hand }
 const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-crimson-hi', manual: 'text-warn' }
+/** The access chip: outlined and tinted in its own colour (crimson for Auto, amber for Manual). */
+const ACCESS_TONE: Record<Access, string> = {
+  auto: 'border-crimson-line bg-crimson-soft text-crimson-hi hover:bg-crimson/20',
+  manual: 'border-warn/35 bg-warn/[0.08] text-warn hover:bg-warn/15'
+}
 
 /**
  * The message box's bottom row, read left to right: what to add (files, knowledge, skills, tools),
@@ -175,15 +180,11 @@ export function ComposerBar({
               aria-expanded={open}
               aria-label={`Access: ${accessLevel(access).name}`}
               title={`Access: ${accessLevel(access).name}${mode === 'plan' ? ' (once the plan is approved)' : ''}`}
-              className={clsx(
-                'ml-0.5 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] font-medium transition-colors',
-                // Auto never asks: it keeps a crimson tint as a standing warning.
-                access === 'auto' ? 'bg-crimson-soft text-crimson-hi hover:bg-crimson/20' : open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg'
-              )}
+              className={clsx('ml-1 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', ACCESS_TONE[access])}
             >
-              <AccessIcon size={15} weight="fill" className={clsx('shrink-0', ACCESS_ICON_TONE[access])} />
+              <AccessIcon size={15} weight="fill" className="shrink-0" />
               <span className="hidden @[600px]:inline mobile:inline">{accessLevel(access).name}</span>
-              <CaretDown size={10} weight="bold" className={clsx('hidden shrink-0 opacity-70 transition-transform @[600px]:inline mobile:inline', open && 'rotate-180')} />
+              <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
             </button>
           )}
         >
