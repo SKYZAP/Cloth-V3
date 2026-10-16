@@ -193,7 +193,8 @@ export function SidePanel({
           title="Drag to resize · double-click to reset"
         />
       )}
-      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-2">
+      {/* Narrow panels: the tabs drop to icons (the open one keeps its name while there is room). */}
+      <div className="@container flex h-14 shrink-0 items-center gap-0.5 border-b border-line px-2 @[520px]:gap-1">
         {TABS.map((t) => {
           const on = shown.includes(t.id)
           const focused = on && shown[focus] === t.id
@@ -215,14 +216,16 @@ export function SidePanel({
                   setMenu({ tab: t.id, x: Math.min(keyboard ? r.left : e.clientX, window.innerWidth - 168), y: keyboard ? r.bottom + 4 : e.clientY, from: e.currentTarget })
                 }}
                 className={clsx(
-                  'flex h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] transition-colors',
+                  'flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[12.5px] transition-colors',
                   focused ? 'bg-elev-2 text-fg' : on ? 'bg-elev text-fg hover:bg-elev-2' : 'text-muted hover:bg-elev hover:text-fg'
                 )}
                 aria-pressed={on}
+                aria-label={t.label}
+                title={t.label}
                 aria-keyshortcuts={isMobile ? undefined : 'Shift+Enter'}
               >
-                <t.icon size={14} weight={focused ? 'fill' : 'regular'} />
-                {t.label}
+                <t.icon size={14} weight={focused ? 'fill' : 'regular'} className="shrink-0" />
+                <span className={clsx('whitespace-nowrap', focused ? 'hidden @[380px]:inline' : 'hidden @[520px]:inline')}>{t.label}</span>
               </button>
               {!isMobile && (
                 <button
@@ -239,7 +242,7 @@ export function SidePanel({
           )
         })}
         <div className="flex-1" />
-        <button onClick={() => set({ open: false })} className="flex h-8 w-8 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg" aria-label="Close panel" title="Close (Ctrl+`)">
+        <button onClick={() => set({ open: false })} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg" aria-label="Close panel" title="Close (Ctrl+`)">
           <X size={15} />
         </button>
       </div>
