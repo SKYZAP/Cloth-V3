@@ -136,6 +136,8 @@ export function ChatPage() {
   }
 
   const remove = async (id: string) => {
+    const title = sessions.find((s) => s.id === id)?.title ?? 'this chat'
+    if (!(await confirmAction(`“${title}” and its messages are deleted. This can’t be undone.`, { title: 'Delete chat?', confirmLabel: 'Delete chat', danger: true }))) return
     await attempt(() => api.chat.remove(id))
     const rest = sessions.filter((s) => s.id !== id)
     setSessions(rest)

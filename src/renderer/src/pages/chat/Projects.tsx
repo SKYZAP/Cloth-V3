@@ -103,11 +103,12 @@ export function ProjectDialog({
       width={540}
       footer={
         <>
-          {project && (
+          {project && !project.builtin && (
             <Button variant="ghost" className="mr-auto !text-crimson-hi" onClick={() => void remove()}>
               Delete project
             </Button>
           )}
+          {project?.builtin && <span className="mr-auto text-[12px] text-dim">Built in: your automations’ chats are filed here.</span>}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>

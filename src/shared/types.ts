@@ -579,6 +579,8 @@ export interface Project {
   defaults: ProjectDefaults
   /** Design system the project's chats follow (its DESIGN.md joins their instructions). */
   designId: string | null
+  /** Set on a project Cloth keeps itself (the Automation folder): it can be edited but not deleted. */
+  builtin?: 'automation'
   createdAt: number
   updatedAt: number
 }
