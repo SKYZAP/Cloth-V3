@@ -98,6 +98,34 @@ describe('worker worktrees', () => {
     await expect(createWorkerTree(root, trees, { slug: 'feat', label: 'x', id: 'p3', from: 'main' })).rejects.toThrow(/no worker branch/)
   }, 60_000)
 
+  it('merges commits the worker made itself', async () => {
+    const { root, trees } = await repo()
+    const t = (await createWorkerTree(root, trees, { slug: 'feat', label: 'self', id: 's1' }))!
+    writeFileSync(join(t.workspace, 'own.txt'), 'mine')
+    await git(t.dir, ['add', '-A'])
+    await git(t.dir, ['-c', 'user.name=w', '-c', 'user.email=w@w', 'commit', '-q', '-m', 'worker commit'])
+    expect(await finishWorkerTree(t, 'self')).toEqual({ merged: true, files: ['own.txt'] })
+    expect(readFileSync(join(root, 'own.txt'), 'utf8')).toBe('mine')
+  }, 60_000)
+
+  it('links node_modules into the worker copy and never deletes the real one', async () => {
+    const { root, trees } = await repo()
+    writeFileSync(join(root, '.gitignore'), 'node_modules')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'ignore'])
+    mkdirSync(join(root, 'node_modules', 'pkg'), { recursive: true })
+    writeFileSync(join(root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1')
+    const t = (await createWorkerTree(root, trees, { slug: 'feat', label: 'deps', id: 'd1' }))!
+    expect(readFileSync(join(t.workspace, 'node_modules', 'pkg', 'index.js'), 'utf8')).toBe('module.exports = 1')
+    writeFileSync(join(t.workspace, 'x.txt'), 'x')
+    expect(await finishWorkerTree(t, 'deps')).toEqual({ merged: true, files: ['x.txt'] })
+    expect(existsSync(t.dir)).toBe(false)
+    expect(readFileSync(join(root, 'node_modules', 'pkg', 'index.js'), 'utf8')).toBe('module.exports = 1')
+    const u = (await createWorkerTree(root, trees, { slug: 'feat', label: 'deps2', id: 'd2' }))!
+    await parkWorkerTree(u, 'deps2')
+    expect(readFileSync(join(root, 'node_modules', 'pkg', 'index.js'), 'utf8')).toBe('module.exports = 1')
+  }, 60_000)
+
   it('stays out of folders that are not git repositories', async () => {
     const plain = mkdtempSync(join(tmpdir(), 'cloth-plain-'))
     expect(await createWorkerTree(plain, join(plain, '.trees'), { slug: 'x', label: 'y', id: 'z' })).toBeNull()
