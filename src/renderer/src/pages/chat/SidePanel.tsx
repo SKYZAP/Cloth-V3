@@ -11,6 +11,7 @@ import { GitPanel } from './GitPanel'
 import { SetupPanel } from './Setup'
 import { AgentsPanel } from './AgentsPanel'
 import { SpecPanel } from './Workflow'
+import { activeTickets } from '@/lib/tickets'
 import { useSetupNav } from './setupNav'
 
 export type { PanelTab } from '@shared/panel-stack'
@@ -318,7 +319,7 @@ export function SidePanel({
         {visible('spec') && (
           <div className="relative min-h-0" style={place('spec')} {...sectionEvents('spec')}>
             <div className="absolute inset-0">
-              <SpecPanel sessionId={session.id} workflow={session.workflow} version={messages.length} />
+              <SpecPanel sessionId={session.id} workflow={session.workflow} version={messages.length} active={activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && b.trace.status === 'running' ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : [])))} />
             </div>
           </div>
         )}
