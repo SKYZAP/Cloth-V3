@@ -58,6 +58,18 @@ describe('projects', () => {
     expect(services.chat.list().some((c) => c.id === gone.id)).toBe(false)
   })
 
+  it('the Automation project is built in: it can be renamed but not deleted', () => {
+    const { services } = makeServices()
+    const auto = services.projects.automationProject()
+    const mine = services.projects.create({ name: 'Mine' })
+    expect(auto.builtin).toBe('automation')
+    expect(mine.builtin).toBeUndefined()
+    expect(services.projects.list().find((p) => p.id === auto.id)?.builtin).toBe('automation')
+    expect(services.projects.update(auto.id, { name: 'Robots' })).toMatchObject({ name: 'Robots', builtin: 'automation' })
+    expect(() => services.projects.remove(auto.id)).toThrow(/built in/)
+    expect(services.projects.automationProject().id).toBe(auto.id)
+  })
+
   it("the project's instructions and AGENTS.md reach the chat's system prompt", async () => {
     const { services } = makeServices()
     const folder = mkdtempSync(join(tmpdir(), 'cloth-project-'))

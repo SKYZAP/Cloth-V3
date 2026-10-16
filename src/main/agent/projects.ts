@@ -27,7 +27,7 @@ const AUTOMATION_KEY = 'automation.projectId'
 const AUTOMATION_MIGRATED_KEY = 'automation.chatsMigrated'
 const AUTOMATION_COLOR = PROJECT_COLORS[6]
 
-const toProject = (r: ProjectRow): Project => ({
+const toProject = (r: ProjectRow, automationId: string | null): Project => ({
   id: r.id,
   name: r.name,
   folder: r.folder,
@@ -35,6 +35,7 @@ const toProject = (r: ProjectRow): Project => ({
   instructions: r.instructions,
   defaults: json<ProjectDefaults>(r.defaults, {}),
   designId: r.design_id ?? null,
+  ...(r.id === automationId ? { builtin: 'automation' as const } : {}),
   createdAt: r.created_at,
   updatedAt: r.updated_at
 })
@@ -49,13 +50,14 @@ export class ProjectService {
   ) {}
 
   list(): Project[] {
-    return (this.ctx.db.prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE').all() as unknown as ProjectRow[]).map(toProject)
+    const automationId = this.automationId()
+    return (this.ctx.db.prepare('SELECT * FROM projects ORDER BY name COLLATE NOCASE').all() as unknown as ProjectRow[]).map((r) => toProject(r, automationId))
   }
 
   get(id: string): Project {
     const row = this.ctx.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as unknown as ProjectRow | undefined
     if (!row) throw new Error('Project not found')
-    return toProject(row)
+    return toProject(row, this.automationId())
   }
 
   find(id: string | null | undefined): Project | null {
@@ -96,7 +98,8 @@ export class ProjectService {
 
   /** Deletes the project; its chats are kept (moved out of it) unless `deleteChats`. */
   remove(id: string, opts: { deleteChats?: boolean } = {}): void {
-    this.get(id)
+    const p = this.get(id)
+    if (p.builtin) throw new Error(`${p.name} is built in: automations file their chats there, so it can be edited but not deleted`)
     for (const c of this.chatsIn(id)) {
       if (opts.deleteChats) this.chats().remove(c.id)
       else this.chats().update(c.id, { projectId: null })
@@ -106,14 +109,18 @@ export class ProjectService {
 
   /**
    * The project automation chats are filed under, made on first use. Found by the id kept in kv, so a
-   * rename keeps it; deleted, it is made again.
+   * rename keeps it. It is built in and cannot be deleted (one deleted before that rule is made again).
    */
   automationProject(): Project {
-    const known = this.find(this.ctx.kv.get<string | null>(AUTOMATION_KEY, null))
+    const known = this.find(this.automationId())
     if (known) return known
     const p = this.create({ name: 'Automation', folder: null, color: AUTOMATION_COLOR, designId: null })
     this.ctx.kv.set(AUTOMATION_KEY, p.id)
-    return p
+    return this.get(p.id)
+  }
+
+  private automationId(): string | null {
+    return this.ctx.kv.get<string | null>(AUTOMATION_KEY, null)
   }
 
   /**

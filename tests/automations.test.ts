@@ -220,7 +220,7 @@ describe('the Automation project', () => {
     services.workflows.stopScheduler()
   })
 
-  it('is made again when deleted, and kept when renamed', async () => {
+  it('is kept when renamed, cannot be deleted, and is made again if missing', async () => {
     const { services, events } = setup()
     const wf = services.workflows.createAutomation({ name: 'Morning brief', automation: base })
     const first = await reportedChat(services, events, wf.id)
@@ -229,7 +229,9 @@ describe('the Automation project', () => {
     expect(renamed.projectId).toBe(first.projectId)
     expect(services.projects.get(first.projectId!).name).toBe('Bots')
 
-    services.projects.remove(first.projectId!)
+    expect(() => services.projects.remove(first.projectId!)).toThrow(/built in/)
+    // One deleted before it was built in is made again.
+    ;(services.projects as unknown as { ctx: { db: { prepare(sql: string): { run(id: string): void } } } }).ctx.db.prepare('DELETE FROM projects WHERE id = ?').run(first.projectId!)
     const again = await reportedChat(services, events, wf.id)
     expect(again.projectId).not.toBe(first.projectId)
     expect(services.projects.get(again.projectId!).name).toBe('Automation')
