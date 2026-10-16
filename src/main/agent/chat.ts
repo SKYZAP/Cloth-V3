@@ -745,7 +745,14 @@ export class AgentRuntime {
               SUBAGENT_INSTRUCTIONS(role),
               tier?.instructions?.trim() ? `Rules for this job (${tier.name} tier):\n${tier.instructions.trim()}` : '',
               tree
-                ? `You are working in your own git copy of the project, on branch ${tree.branch}. Don't commit, merge or switch branches: when you finish, Cloth commits your changes and merges them into ${tree.base} itself, and tells the agent that sent you whether that worked.`
+                ? [
+                    `You are working in your own git copy of the project, on branch ${tree.branch}. Don't commit, merge or switch branches: when you finish, Cloth commits your changes and merges them into ${tree.base} itself, and tells the agent that sent you whether that worked.`,
+                    tree.from
+                      ? `It carries on from earlier unfinished work (${tree.from}), with the latest ${tree.base} already merged in${tree.conflicts?.length ? `. These files have merge conflicts (<<<<<<< / ======= / >>>>>>> markers): resolve them first, keeping both sides' intent: ${tree.conflicts.join(', ')}` : ', cleanly'}.`
+                      : ''
+                  ]
+                    .filter(Boolean)
+                    .join(' ')
                 : '',
               named ? `You are the "${named.name}" agent. ${named.purpose}` : '',
               named ? named.instructions.trim() : cfg.instructions.trim()

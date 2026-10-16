@@ -21,6 +21,8 @@ export interface WorkerTree {
   base: string
   /** The unfinished branch it carried on from, dropped once this one merges. */
   from?: string
+  /** Carrying on from an older branch: the base is merged in first; these files came out with conflicts to resolve. */
+  conflicts?: string[]
 }
 
 export interface MergeResult {
@@ -97,6 +99,15 @@ export async function createWorkerTree(workspace: string, dir: string, opts: { s
   await serial(root, () => run(root, ['worktree', 'add', '-b', branch, tree, start]))
   const sub = relative(root, workspace)
   const made: WorkerTree = { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base, ...(opts.from ? { from: opts.from } : {}) }
+  // Older work catches up with everything merged since, so it can merge back: the merge is left open (and any
+  // conflicts marked in the files) for the worker to finish; Cloth's commit at the end concludes it.
+  if (opts.from) {
+    const m = await git(tree, ['-c', 'user.name=Cloth', '-c', 'user.email=cloth@localhost', 'merge', '--no-ff', '--no-commit', base], { timeoutMs: 120_000 })
+    if (m.code !== 0) {
+      const conflicts = (await git(tree, ['diff', '--name-only', '--diff-filter=U'])).stdout.split('\n').map((f) => f.trim()).filter(Boolean)
+      if (conflicts.length) made.conflicts = conflicts
+    }
+  }
   await linkDeps(made)
   return made
 }
