@@ -51,6 +51,7 @@ import { ComposerBar } from './chat/ComposerBar'
 import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
 import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
+import { activeTickets } from '@/lib/tickets'
 import { cyclesPermission, nextPermission, planStatus } from '@/lib/permissions'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
@@ -704,6 +705,9 @@ function ChatView({
   // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.
   const workBar = useMemo(() => buildWorkBar(messages), [messages])
   const flowBar = !!session.workflow && session.workflow.stage !== 'done'
+  // Tickets agents are working on now, for the board's In progress column.
+  const activeTix = useMemo(() => activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && (b.trace.status === 'running' || b.trace.subagent?.running) ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : []))), [messages])
+  const specDocs = useMemo(() => (session.workflow ? { sessionId: session.id, slug: session.workflow.slug, version: messages.length, active: activeTix } : undefined), [session.id, session.workflow, messages.length, activeTix])
   const showBar = !!workBar || flowBar
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
@@ -858,7 +862,7 @@ function ChatView({
                 {m.workflowStage ? <StageDivider message={m} fresh={fresh} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage, docs: specDocs }} />
             )
           })}
           <AnimatePresence>
@@ -1311,7 +1315,7 @@ function AssistantTurn({
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
   /** Spec → ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
-  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void }
+  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> } }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -1370,7 +1374,7 @@ function AssistantTurn({
           if (block.type === 'tool' && block.trace.questions)
             return <RoundCard key={block.trace.id} round={block.trace.questions} actionable={!!workflow?.actionable && i === lastFlowIdx} onAnswer={(t) => workflow?.onAnswer(t) ?? Promise.resolve()} />
           if (block.type === 'tool' && block.trace.stageGate)
-            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} />
+            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} docs={workflow?.docs} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />

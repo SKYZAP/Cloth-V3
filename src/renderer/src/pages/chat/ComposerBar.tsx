@@ -92,7 +92,7 @@ export function ComposerBar({
                 className="mr-1.5 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-mode-line bg-mode-soft pl-2 pr-2.5 text-[12.5px] font-semibold text-mode transition-colors hover:bg-mode/15"
               >
                 <ListChecks size={15} weight="bold" className="shrink-0" />
-                <span className="hidden @[520px]:inline mobile:inline">Spec → ship</span>
+                <span className="hidden @[900px]:inline">Spec → ship</span>
                 <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
               </button>
             )}
@@ -156,11 +156,12 @@ export function ComposerBar({
               aria-haspopup="dialog"
               aria-expanded={open}
               title="Model and reasoning effort"
-              className={clsx('ml-1 flex h-8 w-full min-w-0 max-w-max items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
+              className={clsx('ml-1 flex h-8 w-full min-w-[64px] max-w-max items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
             >
               <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
-              <span className="max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
-              {model?.reasoning && <span className="hidden shrink-0 text-dim @[680px]:inline mobile:hidden">– {effortLabel(session.thinking)}</span>}
+              <span className="min-w-[3ch] max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
+              {/* The effort gives way first; sooner when the Spec → ship chip takes room. */}
+              {model?.reasoning && <span className={clsx('hidden shrink-0 text-dim mobile:hidden', flow ? '@[860px]:inline' : '@[680px]:inline')}>– {effortLabel(session.thinking)}</span>}
               <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
             </button>
           )}
