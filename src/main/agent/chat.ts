@@ -744,6 +744,9 @@ export class AgentRuntime {
             systemPrompt: [
               SUBAGENT_INSTRUCTIONS(role),
               tier?.instructions?.trim() ? `Rules for this job (${tier.name} tier):\n${tier.instructions.trim()}` : '',
+              tree
+                ? `You are working in your own git copy of the project, on branch ${tree.branch}. Don't commit, merge or switch branches: when you finish, Cloth commits your changes and merges them into ${tree.base} itself, and tells the agent that sent you whether that worked.`
+                : '',
               named ? `You are the "${named.name}" agent. ${named.purpose}` : '',
               named ? named.instructions.trim() : cfg.instructions.trim()
             ]
