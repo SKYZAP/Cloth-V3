@@ -126,6 +126,25 @@ describe('worker worktrees', () => {
     expect(readFileSync(join(root, 'node_modules', 'pkg', 'index.js'), 'utf8')).toBe('module.exports = 1')
   }, 60_000)
 
+  it('catches continued work up with the base, marking conflicts to resolve', async () => {
+    const NL = String.fromCharCode(10)
+    const { root, trees, g } = await repo()
+    const first = (await createWorkerTree(root, trees, { slug: 'feat', label: 'old', id: 'c1' }))!
+    writeFileSync(join(first.workspace, 'app.txt'), ['one', 'TWO from old work', 'three', ''].join(NL))
+    const parked = (await parkWorkerTree(first, 'old'))!
+    // Meanwhile something else lands on main, changing the same line.
+    writeFileSync(join(root, 'app.txt'), ['one', 'TWO on main', 'three', ''].join(NL))
+    await g('commit', '-qam', 'main moves on')
+    const next = (await createWorkerTree(root, trees, { slug: 'feat', label: 'new', id: 'c2', from: parked }))!
+    expect(next.conflicts).toEqual(['app.txt'])
+    expect(readFileSync(join(next.workspace, 'app.txt'), 'utf8')).toContain('<<<<<<<')
+    // The worker resolves it; finishing concludes the merge and lands cleanly on main.
+    writeFileSync(join(next.workspace, 'app.txt'), ['one', 'TWO on main, with old work', 'three', ''].join(NL))
+    expect((await finishWorkerTree(next, 'new')).merged).toBe(true)
+    expect(readFileSync(join(root, 'app.txt'), 'utf8')).toBe(['one', 'TWO on main, with old work', 'three', ''].join(NL))
+    expect(await branches(root)).toEqual(['main'])
+  }, 60_000)
+
   it('stays out of folders that are not git repositories', async () => {
     const plain = mkdtempSync(join(tmpdir(), 'cloth-plain-'))
     expect(await createWorkerTree(plain, join(plain, '.trees'), { slug: 'x', label: 'y', id: 'z' })).toBeNull()
