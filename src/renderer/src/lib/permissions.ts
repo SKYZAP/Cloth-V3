@@ -29,7 +29,7 @@ export type ChatMode = 'chat' | 'plan' | 'spec'
 export const CHAT_MODES: { id: ChatMode; name: string; sub: string }[] = [
   { id: 'chat', name: 'Chat', sub: 'Talks and works straight away.' },
   { id: 'plan', name: 'Plan', sub: 'Reads and drafts a plan first. Nothing changes until you approve it.' },
-  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build and review, with your OK between stages. What you’ve typed becomes the idea.' }
+  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build and review, with your OK between stages. Starts when you send what you want built.' }
 ]
 
 export const chatModeInfo = (id: ChatMode) => CHAT_MODES.find((m) => m.id === id) ?? CHAT_MODES[0]
