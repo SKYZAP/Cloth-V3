@@ -1,9 +1,11 @@
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, StageGate, WorkflowStage } from '@shared/types'
 import { nextStage, STAGE_OPEN, STAGE_TEXT, stageNote, WORKFLOW_SECTION, workflowSection } from './workflow'
+import { createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
@@ -719,6 +721,17 @@ export class AgentRuntime {
         )
         const started = Date.now()
         let files: string[] = []
+        // Spec → ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends.
+        const flow = parent.scope.workflow?.()
+        let tree: WorkerTree | null = null
+        let treeNote = ''
+        if (flow?.stage === 'build' && role === 'worker' && scope.workspace && !scope.container) {
+          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label: p.description || 'ticket', id }).catch((err) => {
+            treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder.`
+            return null
+          })
+          if (tree) scope = { ...scope, workspace: tree.workspace }
+        }
         // Live progress for the chat, at most four updates a second.
         const progress = throttle((run: SubagentRun) => onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: run } as unknown as ToolDetails }), 250)
         const { result, changes } = await runAsCall(id, 'task', signal, () =>
@@ -743,9 +756,10 @@ export class AgentRuntime {
             }
           })
         )
-          .catch((err) => {
+          .catch(async (err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
             if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, false)
+            if (tree) await parkWorkerTree(tree, p.description || 'ticket').catch(() => null)
             throw err
           })
           .finally(() => {
@@ -755,11 +769,21 @@ export class AgentRuntime {
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
         if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, true)
         for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
+        // Its own checkout: commit and merge back. Its changes are commits now, so they aren't offered for undo.
+        let merged = ''
+        if (tree) {
+          const t = tree
+          const m = await finishWorkerTree(t, p.description || 'Ticket').catch((err): MergeResult => ({ merged: false, files: [], error: `Couldn't merge its work: ${errorMessage(err)}. It is kept on branch ${t.branch}.` }))
+          merged = m.merged ? (m.files.length ? `Worked in its own git copy; merged into ${t.base} (${m.files.length} file${m.files.length === 1 ? '' : 's'}).` : 'Worked in its own git copy; it changed nothing.') : (m.error ?? 'Not merged.')
+          files = m.files
+        }
         const report = result.text || '(the subagent finished without a report)'
         const outcome = parseOutcome(result.text)
+        const notes = [note, treeNote, merged].filter(Boolean)
+        const keep = tree ? [] : changes
         return {
-          content: [{ type: 'text', text: note ? `${report}\n\n(${note})` : report }],
-          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}), ...(outcome ? { outcome } : {}) }, ...(changes.length ? { changes } : {}) } as unknown as ToolDetails
+          content: [{ type: 'text', text: notes.length ? `${report}\n\n(${notes.join(' ')})` : report }],
+          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}), ...(outcome ? { outcome } : {}) }, ...(keep.length ? { changes: keep } : {}) } as unknown as ToolDetails
         }
       }
     }
