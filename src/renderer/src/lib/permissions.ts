@@ -1,7 +1,9 @@
 import type { ChatSession, Permissions, UiMessage } from '@shared/types'
 
-/** The three permission modes in Shift+Tab order, with the copy the composer's menu shows. */
-export const PERMISSION_MODES: { id: Permissions; name: string; sub: string; note: { lead: string; rest: string } }[] = [
+/** What the agent may do without asking, in the Access menu's order. */
+export type Access = 'auto' | 'manual'
+
+export const ACCESS_LEVELS: { id: Access; name: string; sub: string; note: { lead: string; rest: string } }[] = [
   {
     id: 'auto',
     name: 'Auto',
@@ -16,21 +18,39 @@ export const PERMISSION_MODES: { id: Permissions; name: string; sub: string; not
       lead: 'Asks before:',
       rest: 'deleting or writing outside the folder, git push, installing packages, downloading from the network, admin rights. In a Linux container it doesn’t ask; you review the changes instead.'
     }
-  },
-  {
-    id: 'plan',
-    name: 'Plan',
-    sub: 'Reads and drafts a plan. Nothing changes until you approve it.',
-    note: { lead: 'Read-only until you approve.', rest: 'Approving switches the chat to Auto or Manual and it carries on.' }
   }
 ]
 
-export const permissionMode = (id: Permissions) => PERMISSION_MODES.find((m) => m.id === id) ?? PERMISSION_MODES[0]
+export const accessLevel = (id: Access) => ACCESS_LEVELS.find((m) => m.id === id) ?? ACCESS_LEVELS[1]
 
-/** The mode Shift+Tab switches to: auto → manual → plan → auto. */
-export function nextPermission(current: Permissions): Permissions {
-  const i = PERMISSION_MODES.findIndex((m) => m.id === current)
-  return PERMISSION_MODES[(i + 1) % PERMISSION_MODES.length].id
+/** How the chat works: separate from what it may do without asking (its access). */
+export type ChatMode = 'chat' | 'plan' | 'spec'
+
+export const CHAT_MODES: { id: ChatMode; name: string; sub: string }[] = [
+  { id: 'chat', name: 'Chat', sub: 'Talks and works straight away.' },
+  { id: 'plan', name: 'Plan', sub: 'Reads and drafts a plan first. Nothing changes until you approve it.' },
+  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build and review, with your OK between stages. What you’ve typed becomes the idea.' }
+]
+
+export const chatModeInfo = (id: ChatMode) => CHAT_MODES.find((m) => m.id === id) ?? CHAT_MODES[0]
+
+/** The chat's mode: Spec → ship while its workflow runs, Plan while planning, else Chat. */
+export function chatMode(session: Pick<ChatSession, 'permissions' | 'workflow'>): ChatMode {
+  if (session.workflow && session.workflow.stage !== 'done') return 'spec'
+  return session.permissions === 'plan' ? 'plan' : 'chat'
+}
+
+/** The access that applies outside Plan mode (and after a plan is approved). */
+export function accessOf(session: Pick<ChatSession, 'permissions' | 'access'>): Access {
+  if (session.permissions === 'auto' || session.permissions === 'manual') return session.permissions
+  return session.access ?? 'manual'
+}
+
+/** Shift+Tab: Chat ⇄ Plan, as the permissions patch to apply. Spec → ship is only left from the menu (null). */
+export function nextModePatch(session: Pick<ChatSession, 'permissions' | 'access' | 'workflow'>): { permissions: Permissions } | null {
+  const mode = chatMode(session)
+  if (mode === 'spec') return null
+  return { permissions: mode === 'plan' ? accessOf(session) : 'plan' }
 }
 
 /**

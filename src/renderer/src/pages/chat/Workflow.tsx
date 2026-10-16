@@ -347,7 +347,7 @@ export function SpecPanel({ sessionId, workflow, version, active }: { sessionId:
     { id: 'spec', label: 'Spec', count: docs.spec ? 1 : 0 },
     { id: 'tickets', label: 'Tickets', count: docs.tickets.length }
   ]
-  if (!workflow) return <p className="px-4 py-6 text-[12.5px] text-dim">This chat isn’t running Spec → ship. Start it from the permissions menu in the message box.</p>
+  if (!workflow) return <p className="px-4 py-6 text-[12.5px] text-dim">This chat isn’t running Spec → ship. Start it from the mode menu in the message box.</p>
   const shown: DocFile[] = tab === 'glossary' ? (docs.glossary ? [docs.glossary] : []) : tab === 'decisions' ? docs.adrs : tab === 'spec' ? (docs.spec ? [docs.spec] : []) : []
   return (
     <div className="flex h-full min-h-0 flex-col">
