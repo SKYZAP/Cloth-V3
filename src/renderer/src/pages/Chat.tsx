@@ -20,8 +20,7 @@ import {
   Plus,
   Sparkle,
   Stop,
-  Trash,
-  type Icon
+  Trash
 } from '@phosphor-icons/react'
 import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
@@ -52,7 +51,7 @@ import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
 import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
 import { activeTickets } from '@/lib/tickets'
-import { cyclesPermission, nextPermission, planStatus } from '@/lib/permissions'
+import { cyclesPermission, nextModePatch, planStatus } from '@/lib/permissions'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
 
@@ -535,8 +534,11 @@ function ChatView({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
-  // Shift+Tab switches the permission mode while the message box has focus or nothing does.
-  const cyclePermission = () => void update({ permissions: nextPermission(session.permissions) })
+  // Shift+Tab switches between Chat and Plan while the message box has focus or nothing does (Spec → ship is left from the mode menu).
+  const cyclePermission = () => {
+    const patch = nextModePatch(session)
+    if (patch) void update(patch)
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
@@ -1043,8 +1045,8 @@ function ChatView({
             usage={usage}
             compacting={compacting}
             onCompact={() => void compactNow()}
-            leading={<ComposerToggle icon={Paperclip} label="Attach" active={attachments.length > 0} state="Files and images · or drop / paste them" count={attachments.length || undefined} onClick={() => fileInput.current?.click()} />}
-            onWorkflow={(action) => void workflowAction(action)}
+            attach={{ count: attachments.length, onClick: () => fileInput.current?.click() }}
+            onWorkflow={workflowAction}
             send={<SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
           />
         </div>
@@ -1149,53 +1151,6 @@ const tokensOf = (sk: Skill) => {
 
 function Key({ children }: { children: React.ReactNode }) {
   return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
-}
-
-function ComposerToggle({ icon: I, label, active, state, count, onClick }: { icon: Icon; label: string; active: boolean; state?: string; count?: number; onClick(): void }) {
-  return (
-    <Tooltip
-      content={
-        <>
-          <b className="font-semibold">{label}</b>
-          <span className={clsx('ml-1.5 capitalize', active ? 'text-crimson-hi' : 'text-dim')}>{state ?? (active ? 'On' : 'Off')}</span>
-        </>
-      }
-    >
-      <motion.button
-        whileTap={{ scale: 0.86 }}
-        transition={SPRING_PRESS}
-        onClick={onClick}
-        aria-pressed={active}
-        aria-label={label}
-        className={clsx(
-          'relative flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-colors duration-200',
-          active ? 'text-crimson-hi' : 'text-dim hover:bg-elev-2 hover:text-muted'
-        )}
-      >
-        <I size={18} weight={active ? 'fill' : 'regular'} className={active ? 'glow-crimson' : ''} />
-        <motion.span
-          initial={false}
-          animate={{ scale: active && count === undefined ? 1 : 0 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-          className="absolute bottom-[3px] left-1/2 -ml-0.5 h-1 w-1 rounded-full bg-crimson-hi"
-        />
-        <AnimatePresence>
-          {count !== undefined && (
-            <motion.span
-              key={count}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-              className="absolute right-0.5 top-[3px] h-3.5 min-w-3.5 rounded-full bg-crimson px-[3px] text-center text-[9px] font-bold leading-[14px] text-white"
-            >
-              {count}
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </motion.button>
-    </Tooltip>
-  )
 }
 
 function SendButton({ running, disabled, onSend, onStop }: { running: boolean; disabled: boolean; onSend(): void; onStop(): void }) {

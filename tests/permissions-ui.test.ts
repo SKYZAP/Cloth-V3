@@ -1,18 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { cyclesPermission, knowledgeCount, nextPermission, permissionMode, planStatus } from '../src/renderer/src/lib/permissions'
+import type { ChatSession } from '../src/shared/types'
+import { accessLevel, accessOf, chatMode, chatModeInfo, cyclesPermission, knowledgeCount, nextModePatch, planStatus } from '../src/renderer/src/lib/permissions'
 
 const key = (over: Partial<{ key: string; shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) => ({ key: 'Tab', shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, ...over })
 
-describe('permission mode cycling', () => {
-  it('goes auto → manual → plan → auto', () => {
-    expect(nextPermission('auto')).toBe('manual')
-    expect(nextPermission('manual')).toBe('plan')
-    expect(nextPermission('plan')).toBe('auto')
+describe('mode and access', () => {
+  const chat = (permissions: 'auto' | 'manual' | 'plan', access?: 'auto' | 'manual', workflow: ChatSession['workflow'] = null) => ({ permissions, access, workflow })
+
+  it('reads the mode apart from the access', () => {
+    expect(chatMode(chat('auto'))).toBe('chat')
+    expect(chatMode(chat('plan', 'auto'))).toBe('plan')
+    expect(chatMode(chat('manual', 'manual', { kind: 'spec-ship', stage: 'build', slug: 'x' }))).toBe('spec')
+    expect(chatMode(chat('manual', 'manual', { kind: 'spec-ship', stage: 'done', slug: 'x' }))).toBe('chat')
+    expect(accessOf(chat('auto'))).toBe('auto')
+    expect(accessOf(chat('plan', 'auto'))).toBe('auto')
+    // Older chats in Plan mode have no access saved: Manual.
+    expect(accessOf(chat('plan'))).toBe('manual')
   })
 
-  it('names each mode', () => {
-    expect(permissionMode('manual').name).toBe('Manual')
-    expect(permissionMode('plan').sub).toMatch(/Nothing changes until you approve it/)
+  it('switches Chat and Plan on Shift+Tab, keeping the access, and leaves Spec → ship alone', () => {
+    expect(nextModePatch(chat('auto'))).toEqual({ permissions: 'plan' })
+    expect(nextModePatch(chat('plan', 'auto'))).toEqual({ permissions: 'auto' })
+    expect(nextModePatch(chat('plan'))).toEqual({ permissions: 'manual' })
+    expect(nextModePatch(chat('manual', 'manual', { kind: 'spec-ship', stage: 'grill', slug: null }))).toBeNull()
+  })
+
+  it('names each mode and access level', () => {
+    expect(accessLevel('manual').name).toBe('Manual')
+    expect(chatModeInfo('plan').sub).toMatch(/Nothing changes until you approve it/)
+    expect(chatModeInfo('spec').name).toBe('Spec → ship')
   })
 
   it('cycles on Shift+Tab only in the composer or with nothing focused', () => {

@@ -321,6 +321,11 @@ export interface ChatSession {
    * manual (changes and commands run, risky actions ask) or plan (read-only until a plan is approved).
    */
   permissions: Permissions
+  /**
+   * The access (auto or manual) the chat works with outside Plan mode: the same as `permissions` then,
+   * and what a chat in Plan mode goes back to. Missing on older chats (manual).
+   */
+  access?: 'auto' | 'manual'
   /** The Spec → ship workflow this chat is running, or null for a plain chat. */
   workflow?: SpecWorkflow | null
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */

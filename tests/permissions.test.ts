@@ -112,6 +112,19 @@ describe('permission modes', () => {
     expect(services.chat.update(s.id, { permissions: 'auto' })).toMatchObject({ permissions: 'auto', fileAccess: 'write', shell: true, autoApprove: 'all' })
   })
 
+  it('remembers the access while in Plan mode, apart from the mode', () => {
+    const { services } = makeServices()
+    const s = services.chat.create({ workspace: '/w', permissions: 'auto' })
+    expect(s.access).toBe('auto')
+    // Into Plan: read-only, but Auto is what it goes back to.
+    expect(services.chat.update(s.id, { permissions: 'plan' })).toMatchObject({ permissions: 'plan', access: 'auto', fileAccess: 'read' })
+    // Changing the access while planning leaves the chat in Plan.
+    expect(services.chat.update(s.id, { access: 'manual' })).toMatchObject({ permissions: 'plan', access: 'manual' })
+    expect(services.chat.update(s.id, { title: 'x' }).access).toBe('manual')
+    // Outside Plan the access follows the mode.
+    expect(services.chat.update(s.id, { permissions: 'auto' })).toMatchObject({ permissions: 'auto', access: 'auto' })
+  })
+
   it('moves chats, project defaults and the default saved as Auto to Manual, once', () => {
     const { services } = makeServices()
     const db = services.ctx.db

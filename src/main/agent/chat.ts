@@ -919,6 +919,7 @@ export class ChatService {
     const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...withoutCaps(fromProject), ...withoutCaps(config) }
     // Its permission mode: asked for, else the project's, else the default for new chats.
     full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'manual')
+    full.access = full.permissions === 'plan' ? (full.access ?? 'manual') : full.permissions
     if (!full.model) full.model = s.defaultModel
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
@@ -937,6 +938,7 @@ export class ChatService {
       customTools: cur.customTools,
       workspace: cur.workspace,
       permissions: cur.permissions,
+      access: cur.access,
       subagents: cur.subagents,
       codeIntel: cur.codeIntel,
       imagesEnabled: cur.imagesEnabled,
@@ -962,6 +964,9 @@ export class ChatService {
     if (!isPermissions(config.permissions) && hasLegacyCaps({ fileAccess, shell, autoApprove })) {
       next.permissions = legacyPermissions({ fileAccess: fileAccess ?? cur.fileAccess, shell: shell ?? cur.shell, autoApprove: autoApprove ?? cur.autoApprove }, next)
     }
+    // Outside Plan mode the access is the mode itself; Plan mode keeps the one to go back to.
+    if (next.permissions !== 'plan') next.access = next.permissions
+    else if (!next.access) next.access = cur.permissions === 'auto' ? 'auto' : 'manual'
     // Switching computer use off takes back the chat's consent: switched on again, it asks again.
     if (config.computerUse === false) next.computerConsent = false
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
@@ -1339,8 +1344,8 @@ export class ChatService {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
     const cur = this.get(id)
     if (!cur.workspace) throw new Error('Spec → ship needs a folder: choose one for this chat first')
-    // Plan mode is read-only, and the documents need writing: drop to Manual (risky actions still ask).
-    const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: 'manual' as const } : {}) })
+    // Plan mode is read-only, and the documents need writing: back to the chat's access (Manual if it has none).
+    const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: cur.access ?? 'manual' } : {}) })
     const text = idea?.trim()
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote('grill', null) }, { type: 'text', text: text || STAGE_TEXT.grill }], timestamp: Date.now() }, text ? text.slice(0, 60) : '')
     return session
