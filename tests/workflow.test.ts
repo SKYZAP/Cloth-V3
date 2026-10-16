@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, type Context } from '@earendil-works/pi-ai'
@@ -7,6 +7,7 @@ import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ChatEvent, Permissions, ToolTrace } from '../src/shared/types'
 import { DOCS_ONLY_REFUSAL, docsOnly, isDocPath, nextStage, workflowSection } from '../src/main/agent/workflow'
 import { makeServices } from './helpers'
+import { git } from '../src/main/panel/git'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const system = (ctx: Context) => JSON.stringify(ctx.messages.filter((m) => (m.role as string) === 'system'))
@@ -135,6 +136,37 @@ describe('Spec → ship in a chat', () => {
     expect(system(seen[1])).not.toMatch(/"name":"rag_search"/)
     expect(system(seen[1])).toMatch(/"name":"read"/)
   }, 30_000)
+
+  it('builds a worker in its own git copy and merges it back', async () => {
+    const env = setup('manual')
+    const g = (...args: string[]) => git(env.root, ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+    await g('init', '-q', '-b', 'main')
+    await g('config', 'core.autocrlf', 'false')
+    writeFileSync(join(env.root, 'README.md'), '# app')
+    await g('add', '-A')
+    await g('commit', '-q', '-m', 'start')
+    env.services.chat.update(env.session.id, { subagents: true, workflow: { kind: 'spec-ship', stage: 'build', slug: 'feat' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('task', { description: 'Ticket 01', prompt: 'Build docs/specs/feat/tickets/01', role: 'worker' }, { id: 't' })], { stopReason: 'toolUse' })),
+      // The worker writes in its checkout, then reports.
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('write', { path: 'feature.txt', content: 'built' }, { id: 'w' })], { stopReason: 'toolUse' })),
+      () => fauxAssistantMessage('Result: done. Wrote feature.txt.'),
+      () => fauxAssistantMessage('Merged.')
+    ])
+    await env.services.chat.send(env.session.id, 'build ticket 01')
+    const { traces } = await settle(env)
+    const task = traces.find((t) => t.id === 't')!
+    expect(task.result).toContain('merged into main (1 file)')
+    expect(task.subagent?.files).toEqual(['feature.txt'])
+    // Merged into the chat's folder; the worker's branch and checkout are gone.
+    expect(readFileSync(join(env.root, 'feature.txt'), 'utf8')).toBe('built')
+    expect((await git(env.root, ['branch', '--format=%(refname:short)'])).stdout.trim()).toBe('main')
+    expect((await git(env.root, ['log', '-1', '--format=%s'])).stdout.trim()).toMatch(/^Merge cloth\/feat\/ticket-01-/)
+    // The worker's workspace was its checkout, not the chat's folder.
+    expect(system(seen[1])).toContain('cloth-worktrees')
+  }, 60_000)
 
   it('emits no approvals for documents before Build', async () => {
     const env = setup('manual')

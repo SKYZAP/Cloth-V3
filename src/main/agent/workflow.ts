@@ -68,6 +68,7 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
   build: [
     '### Stage 4 of 5: Build',
     'Build the tickets. Put them on the todo list (one item per ticket, in order). Work the frontier: every ticket whose blockers are done can start; hand independent ones to agents with `task` in parallel (role worker, the cheapest tier that gets it right), each brief pointing at its ticket file, the spec and the glossary rather than repeating them, and asking for test-first work: one failing test at the agreed seam, make it pass, refactor, repeat. Check each report against its ticket\'s acceptance criteria before marking it done; send it back with the specific defects if needed.',
+    'When the folder is a git repository, each worker you start gets its own git copy of the project on a branch of its own, and its work is merged back into this branch when it finishes (the documents are committed first), so independent tickets really do build at the same time. A worker’s result says whether its work merged; on a conflict its branch is kept: merge and resolve it yourself, or send the ticket back. Leave files the running workers are changing alone, and run the tests here after each merge.',
     'Run the type check and the tests as you go, and the full suite once at the end. Tick each acceptance criterion in its ticket file when it is met.',
     'When every ticket is done and the full suite passes, call `finish_stage` with what was built, the test results, and any ticket left partly done.'
   ].join('\n'),
