@@ -353,6 +353,9 @@ export function ChatPage() {
   )
 }
 
+/** Chats switched to Spec → ship that wait for their first message (kept while you look at other chats). */
+const specWaiting = new Set<string>()
+
 function ChatView({
   session,
   project,
@@ -386,6 +389,15 @@ function ChatView({
   const [dragging, setDragging] = useState(false)
   // A one-off prompt in the empty message box (after "Change the plan…"); cleared on send.
   const [hint, setHint] = useState<string | null>(null)
+  // Spec → ship picked but not started: the next message is the idea it starts from.
+  const [specArmed, setSpecArmedState] = useState(() => specWaiting.has(session.id))
+  const setSpecArmed = (on: boolean) => {
+    if (on) specWaiting.add(session.id)
+    else specWaiting.delete(session.id)
+    setSpecArmedState(on)
+  }
+  const flowRunning = !!session.workflow && session.workflow.stage !== 'done'
+  if (specArmed && flowRunning) setSpecArmed(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
@@ -497,6 +509,7 @@ function ChatView({
     const withSkills = invokedSkills(t, known)
     const withAgents = mentionedAgents(t, slugs).map((slug) => agentsBySlug.get(slug)!)
     if ((!t && !files.length) || running) return
+    if (specArmed) return startSpec(t, files.length > 0)
     stick.current = true
     setDraft('')
     setHint(null)
@@ -538,6 +551,8 @@ function ChatView({
   })
   // Shift+Tab switches between Chat and Plan while the message box has focus or nothing does (Spec → ship is left from the mode menu).
   const cyclePermission = () => {
+    // Spec → ship still waiting for its first message: Shift+Tab goes back to Chat.
+    if (specArmed) return setSpecArmed(false)
     const patch = nextModePatch(session)
     if (patch) void update(patch)
   }
@@ -559,18 +574,26 @@ function ChatView({
     const s = await attempt(() => api.chat.approvePlan(session.id, mode))
     if (s) onChange(s)
   }
-  const workflowAction = async (action: 'start' | 'stop' | 'docs') => {
+  const workflowAction = async (action: 'arm' | 'disarm' | 'stop' | 'docs') => {
     if (action === 'docs') return openSpecDocs()
-    if (action === 'stop') {
-      const s = await attempt(() => api.chat.stopWorkflow(session.id))
-      if (s) onChange(s)
+    if (action === 'arm' || action === 'disarm') {
+      setSpecArmed(action === 'arm')
+      if (action === 'arm') textarea.current?.focus()
       return
     }
+    const s = await attempt(() => api.chat.stopWorkflow(session.id))
+    if (s) onChange(s)
+  }
+  /** The first message in Spec → ship: start it with the message as the idea. */
+  const startSpec = async (idea: string, hasFiles: boolean) => {
+    if (!idea) return void useApp.getState().toast('Describe what you want to build to start Spec → ship', 'error')
+    if (hasFiles) return void useApp.getState().toast('Spec → ship starts from text: remove the attachments, then send', 'error')
     stick.current = true
-    const idea = draft
     setDraft('')
+    setHint(null)
     const s = await attempt(() => api.chat.startWorkflow(session.id, idea))
     if (s) {
+      setSpecArmed(false)
       onChange(s)
       openSpecDocs()
     } else setDraft(idea)
@@ -1019,7 +1042,7 @@ function ChatView({
               }
             }}
             rows={1}
-            placeholder={!session.model ? 'Pick a model below to start' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
+            placeholder={!session.model ? 'Pick a model below to start' : specArmed ? 'Describe what you want to build. Spec → ship starts when you send it.' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
             className={clsx(
               'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
               (inline.length > 0 || tagged.length > 0) && 'text-transparent caret-fg'
@@ -1049,6 +1072,7 @@ function ChatView({
             onCompact={() => void compactNow()}
             attach={{ count: attachments.length, onClick: () => fileInput.current?.click() }}
             onWorkflow={workflowAction}
+            specArmed={specArmed}
             send={<SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
           />
         </div>

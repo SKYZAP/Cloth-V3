@@ -43,7 +43,8 @@ export function ComposerBar({
   onCompact,
   attach,
   send,
-  onWorkflow
+  onWorkflow,
+  specArmed = false
 }: {
   session: ChatSession
   update: Update
@@ -54,11 +55,13 @@ export function ComposerBar({
   attach: { count: number; onClick(): void }
   /** The send / stop button. */
   send: ReactNode
-  /** Spec → ship: start it (the draft becomes the idea), leave it, or show its documents. */
-  onWorkflow?(action: 'start' | 'stop' | 'docs'): Promise<void> | void
+  /** Spec → ship: pick it (it starts with the next message) or un-pick it, leave a running one, or show its documents. */
+  onWorkflow?(action: 'arm' | 'disarm' | 'stop' | 'docs'): Promise<void> | void
+  /** Spec → ship is picked and waits for the first message. */
+  specArmed?: boolean
 }) {
   const flow = session.workflow && session.workflow.stage !== 'done' ? session.workflow : null
-  const mode = chatMode(session)
+  const mode: ChatMode = specArmed ? 'spec' : chatMode(session)
   const access = accessOf(session)
   const collections = useApp((s) => s.collections)
   const providers = useApp((s) => s.providers)
@@ -70,9 +73,11 @@ export function ComposerBar({
 
   const pickMode = async (next: ChatMode) => {
     if (next === mode) return
-    if (next === 'spec') return void (await onWorkflow?.('start'))
-    if (mode === 'spec') await onWorkflow?.('stop')
-    await update({ permissions: next === 'plan' ? 'plan' : access })
+    if (next === 'spec') return void (await onWorkflow?.('arm'))
+    if (specArmed) await onWorkflow?.('disarm')
+    else if (mode === 'spec') await onWorkflow?.('stop')
+    const permissions = next === 'plan' ? 'plan' : access
+    if (permissions !== session.permissions) await update({ permissions })
   }
   const pickAccess = (next: Access) => {
     if (next === access) return
@@ -143,7 +148,7 @@ export function ComposerBar({
               aria-haspopup="menu"
               aria-expanded={open}
               aria-label={`Mode: ${chatModeInfo(mode).name}${flow ? `, stage: ${STAGE_LABEL[flow.stage]}` : ''}`}
-              title={flow ? `Spec → ship · ${STAGE_LABEL[flow.stage]}` : `Mode: ${chatModeInfo(mode).name} (Shift+Tab switches Chat and Plan)`}
+              title={flow ? `Spec → ship · ${STAGE_LABEL[flow.stage]}` : specArmed ? 'Spec → ship · starts with your next message' : `Mode: ${chatModeInfo(mode).name} (Shift+Tab switches Chat and Plan)`}
               className={clsx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', MODE_TONE[mode])}
             >
               <ModeIcon size={15} weight={mode === 'chat' ? 'regular' : 'bold'} className="shrink-0" />
@@ -165,6 +170,7 @@ export function ComposerBar({
               hasFolder={!!session.workspace}
               canSpec={!!onWorkflow}
               flow={flow ? { stage: flow.stage, docs: () => (close(), void onWorkflow?.('docs')) } : null}
+              waiting={specArmed}
               onPick={(m) => (close(), void pickMode(m))}
             />
           )}
@@ -336,7 +342,7 @@ function MenuRow({
   )
 }
 
-function ModeMenu({ value, hasFolder, canSpec, flow, onPick }: { value: ChatMode; hasFolder: boolean; canSpec: boolean; flow: { stage: WorkflowStage; docs(): void } | null; onPick(m: ChatMode): void }) {
+function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value: ChatMode; hasFolder: boolean; canSpec: boolean; flow: { stage: WorkflowStage; docs(): void } | null; waiting: boolean; onPick(m: ChatMode): void }) {
   return (
     <MenuList>
       {!isMobile && (
@@ -364,6 +370,11 @@ function ModeMenu({ value, hasFolder, canSpec, flow, onPick }: { value: ChatMode
           />
         )
       })}
+      {waiting && (
+        <p className="mx-1.5 mt-1 border-t border-line px-1 pb-1 pt-2 text-[11.5px] text-dim">
+          <b className="font-semibold text-muted">Waiting for your first message.</b> Describe what you want to build and send it to start.
+        </p>
+      )}
       {flow && (
         <div className="mx-1.5 mt-1 border-t border-line pt-1">
           <p className="px-1 pb-1 pt-1.5 text-[11.5px] text-dim">
