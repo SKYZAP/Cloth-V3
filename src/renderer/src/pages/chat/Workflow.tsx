@@ -125,8 +125,10 @@ export function StageGateCard({
   docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> }
 }) {
   const [busy, setBusy] = useState(false)
-  const wants = gate.stage === 'spec' || gate.stage === 'tickets' || gate.stage === 'build'
+  const wants = gate.stage !== 'review'
   const loaded = useSpecDocs(wants ? (docs?.sessionId ?? null) : null, docs?.slug ?? null, docs?.version ?? 0)
+  // The proposed UI comes with the grilling; it's still there to compare while approving the spec.
+  const showMockup = (gate.stage === 'grill' || gate.stage === 'spec') && !!loaded.mockup && !!docs
   const showSpec = gate.stage === 'spec' && !!loaded.spec
   const showBoard = (gate.stage === 'tickets' || gate.stage === 'build') && loaded.tickets.length > 0
   return (
@@ -142,13 +144,14 @@ export function StageGateCard({
           </li>
         ))}
       </ul>
+      {showMockup && loaded.mockup && docs && <MockupPreview sessionId={docs.sessionId} doc={loaded.mockup} compact={gate.stage === 'spec'} />}
       {showSpec && loaded.spec && <SpecPreview doc={loaded.spec} />}
       {showBoard && (
         <div className="mb-3">
           <TicketBoard tickets={loaded.tickets} active={docs?.active ?? NONE} compact />
         </div>
       )}
-      {!showSpec && !showBoard && gate.files?.length ? (
+      {!showSpec && !showBoard && !showMockup && gate.files?.length ? (
         <p className="mb-3 truncate font-mono text-[11.5px] text-dim" title={gate.files.join('\n')}>
           {gate.files.join(' · ')}
         </p>
@@ -180,6 +183,29 @@ export function StageGateCard({
 }
 
 const NONE: ReadonlySet<string> = new Set()
+
+/**
+ * The proposed UI (docs/specs/<slug>/mockup.html), drawn in a sandboxed frame: no scripts, no access to
+ * the app. It inherits the app's content rules, so external fonts and images don't load; the full page
+ * opens in the browser.
+ */
+export function MockupPreview({ sessionId, doc, compact, fill }: { sessionId: string; doc: DocFile; compact?: boolean; fill?: boolean }) {
+  return (
+    <div className={clsx('flex flex-col overflow-hidden rounded-[12px] border border-line bg-panel', fill ? 'h-full min-h-[320px]' : 'mb-3')}>
+      <div className="flex items-center gap-2 border-b border-line py-1 pl-3 pr-1">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-dim">{doc.path}</span>
+        <button
+          type="button"
+          onClick={() => void api.panel.open(sessionId, doc.path).catch(() => undefined)}
+          className="h-7 shrink-0 rounded-[8px] px-2.5 text-[12px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+        >
+          Open in browser
+        </button>
+      </div>
+      <iframe title="Proposed UI" sandbox="" srcDoc={doc.text} className={clsx('w-full bg-white', fill ? 'min-h-0 flex-1' : compact ? 'h-[280px]' : 'h-[460px]')} />
+    </div>
+  )
+}
 
 /** The spec, inline: the first part shown, the rest a click away. */
 function SpecPreview({ doc }: { doc: { path: string; text: string } }) {
@@ -305,7 +331,7 @@ type DocFile = { path: string; text: string }
 
 /** The workflow's documents in the chat's folder: glossary, decision records, the spec and its tickets. */
 export function useSpecDocs(sessionId: string | null, slug: string | null, version: number) {
-  const [docs, setDocs] = useState<{ glossary: DocFile | null; adrs: DocFile[]; spec: DocFile | null; tickets: Ticket[] }>({ glossary: null, adrs: [], spec: null, tickets: [] })
+  const [docs, setDocs] = useState<{ glossary: DocFile | null; adrs: DocFile[]; mockup: DocFile | null; spec: DocFile | null; tickets: Ticket[] }>({ glossary: null, adrs: [], mockup: null, spec: null, tickets: [] })
   useEffect(() => {
     if (!sessionId) return
     let cancelled = false
@@ -315,18 +341,21 @@ export function useSpecDocs(sessionId: string | null, slug: string | null, versi
       const root = await list('')
       const glossaryPath = root.find((e) => e.name === 'GLOSSARY.md')?.path
       const adrPaths = (await list('docs/adr')).filter((e) => !e.dir && e.name.endsWith('.md')).map((e) => e.path)
-      const specPath = slug ? (await list(`docs/specs/${slug}`)).find((e) => e.name === 'spec.md')?.path : undefined
+      const feature = slug ? await list(`docs/specs/${slug}`) : []
+      const specPath = feature.find((e) => e.name === 'spec.md')?.path
+      const mockupPath = feature.find((e) => e.name === 'mockup.html')?.path
       const ticketPaths = slug ? (await list(`docs/specs/${slug}/tickets`)).filter((e) => !e.dir && e.name.endsWith('.md')).map((e) => e.path) : []
-      const [glossary, adrs, spec, tickets] = await Promise.all([
+      const [glossary, adrs, mockup, spec, tickets] = await Promise.all([
         glossaryPath ? read(glossaryPath) : null,
         Promise.all(adrPaths.map(read)),
+        mockupPath ? read(mockupPath) : null,
         specPath ? read(specPath) : null,
         Promise.all(ticketPaths.map(async (p) => {
           const d = await read(p)
           return parseTicket(d.path, d.text)
         }))
       ])
-      if (!cancelled) setDocs({ glossary, adrs, spec, tickets })
+      if (!cancelled) setDocs({ glossary, adrs, mockup, spec, tickets })
     })()
     return () => {
       cancelled = true
@@ -335,7 +364,7 @@ export function useSpecDocs(sessionId: string | null, slug: string | null, versi
   return docs
 }
 
-type DocTab = 'glossary' | 'decisions' | 'spec' | 'tickets'
+type DocTab = 'glossary' | 'decisions' | 'mockup' | 'spec' | 'tickets'
 
 /** The side panel's Spec tab: the workflow's documents, read from the chat's folder; tickets as a board. */
 export function SpecPanel({ sessionId, workflow, version, active }: { sessionId: string; workflow: SpecWorkflow | null | undefined; version: number; active?: ReadonlySet<string> }) {
@@ -344,6 +373,7 @@ export function SpecPanel({ sessionId, workflow, version, active }: { sessionId:
   const tabs: { id: DocTab; label: string; count: number }[] = [
     { id: 'glossary', label: 'Glossary', count: docs.glossary?.text.match(/^\*\*[^*]+\*\*:/gm)?.length ?? 0 },
     { id: 'decisions', label: 'Decisions', count: docs.adrs.length },
+    ...(docs.mockup ? [{ id: 'mockup' as const, label: 'Mockup', count: 1 }] : []),
     { id: 'spec', label: 'Spec', count: docs.spec ? 1 : 0 },
     { id: 'tickets', label: 'Tickets', count: docs.tickets.length }
   ]
@@ -362,12 +392,16 @@ export function SpecPanel({ sessionId, workflow, version, active }: { sessionId:
             className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] disabled:opacity-40', tab === d.id ? 'bg-elev-2 font-semibold text-fg' : 'text-muted hover:text-fg')}
           >
             {d.label}
-            {d.count > 0 && d.id !== 'spec' && <span className="text-[11px] tabular-nums text-dim">{d.count}</span>}
+            {d.count > 0 && d.id !== 'spec' && d.id !== 'mockup' && <span className="text-[11px] tabular-nums text-dim">{d.count}</span>}
           </button>
         ))}
       </div>
       <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 text-[13px]">
-        {tab === 'tickets' ? (
+        {tab === 'mockup' && docs.mockup ? (
+          <div className="h-full pt-1">
+            <MockupPreview sessionId={sessionId} doc={docs.mockup} fill />
+          </div>
+        ) : tab === 'tickets' ? (
           docs.tickets.length ? (
             <TicketBoard tickets={docs.tickets} active={active ?? NONE} />
           ) : (

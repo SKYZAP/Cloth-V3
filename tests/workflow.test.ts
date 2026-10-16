@@ -55,6 +55,10 @@ describe('Spec → ship helpers', () => {
     expect(workflowSection(null)).toBeNull()
     expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches' })).toContain('docs/specs/saved-searches')
     expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toContain('Stage 1 of 5: Grill')
+    // A feature with visible changes shows its UI as a one-page mockup before the spec, and the spec keeps to it.
+    expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toMatch(/docs\/specs\/<slug>\/mockup\.html/)
+    expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'x' })).toContain('the approved mockup is part of it')
+    expect(isDocPath('docs/specs/x/mockup.html')).toBe(true)
   })
 })
 

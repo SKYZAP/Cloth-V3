@@ -34,7 +34,7 @@ export const STAGE_NAME: Record<WorkflowStage, string> = { grill: 'Grill', spec:
 
 const COMMON = [
   'This chat runs the Spec → ship workflow: Grill → Spec → Tickets → Build → Review. Each stage ends with `finish_stage`, which shows the person what the stage produced and waits for their OK; the next stage starts when they approve it. Never start the next stage on your own.',
-  'Documents live in the workspace: the glossary in GLOSSARY.md, decision records in docs/adr/NNNN-slug.md, the spec in docs/specs/<slug>/spec.md and one file per ticket in docs/specs/<slug>/tickets/NN-slug.md. <slug> is a short kebab-case name for the feature. Read what already exists before writing, and use the glossary\'s terms everywhere.'
+  'Documents live in the workspace: the glossary in GLOSSARY.md, decision records in docs/adr/NNNN-slug.md, a UI mockup (when the feature changes what people see) in docs/specs/<slug>/mockup.html, the spec in docs/specs/<slug>/spec.md and one file per ticket in docs/specs/<slug>/tickets/NN-slug.md. <slug> is a short kebab-case name for the feature. Read what already exists before writing, and use the glossary\'s terms everywhere.'
 ].join('\n')
 
 const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
@@ -45,13 +45,14 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
     'Finding facts is your job: read the code, the existing glossary and decision records before asking, and never ask what you can look up. The decisions are the person\'s.',
     'As terms get settled, write them to GLOSSARY.md right away (a bold term, a one- or two-sentence definition of what it is, and an "_Avoid_:" line of synonyms not to use; no implementation details). Challenge terms that clash with the glossary, sharpen vague ones, and test relationships with concrete edge-case scenarios. When the code contradicts what the person says, say so.',
     'Write a decision record in docs/adr/ only when all three hold: it is hard to reverse, it would surprise a future reader, and it was a real trade-off. One to three sentences: the context, the decision, and why; add rejected options only when the rejection is not obvious.',
-    'When no decision is left open, call `finish_stage` with a summary of the decisions made and the files you wrote.'
+    'If the feature changes anything people see (a screen, panel, dialog, layout, or the flow between them), show the proposed UI before the spec is written. Once the decisions are settled, choose the feature slug and write docs/specs/<slug>/mockup.html: one self-contained page showing the main screens and their states (empty, loading, error, full) with realistic content. If a UI or design skill is available (for example frontend-design), load it first and follow it. Match the existing app: read its stylesheet and components and reuse its colours, fonts, spacing and patterns rather than inventing new ones. Inline all CSS, and use no scripts or external files (fonts, images, CDNs): the page is shown inside the app, where they are blocked. Where more than one layout is plausible, show up to three labelled options side by side with your recommendation. Skip the mockup when nothing visible changes.',
+    'When no decision is left open, call `finish_stage` with a summary of the decisions made and the files you wrote; include the slug when you wrote a mockup, so the person sees it with the summary and can ask for changes before approving.'
   ].join('\n'),
   spec: [
     '### Stage 2 of 5: Spec',
-    'Write the spec from what was settled while grilling; do not interview again (ask only if something essential is missing). Choose the feature slug and write docs/specs/<slug>/spec.md with these sections:',
+    'Write the spec from what was settled while grilling; do not interview again (ask only if something essential is missing). Choose the feature slug (keep the one the mockup used, if any) and write docs/specs/<slug>/spec.md with these sections:',
     '- Problem: the problem from the person\'s point of view.',
-    '- Solution: the solution from the person\'s point of view.',
+    '- Solution: the solution from the person\'s point of view. When docs/specs/<slug>/mockup.html exists, the approved mockup is part of it: link it and keep the spec consistent with it.',
     '- User stories: a long numbered list, "As a <who>, I want <what>, so that <why>", covering every aspect of the feature.',
     '- Decisions: modules to build or change and their interfaces, schema and API shapes, architectural choices, linking the decision records that apply. No file paths or code; they go stale.',
     '- Testing: what makes a good test here (external behaviour only), which modules get tested, at the highest seam possible (ideally one), and similar existing tests to follow.',

@@ -250,7 +250,7 @@ export const BUILTINS: BuiltinSpec[] = [
     parameters: Type.Object({
       summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
-      slug: Type.Optional(Type.String({ description: 'Spec stage only: the feature folder name under docs/specs/' }))
+      slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup there' }))
     }),
     description: () => "Finish the workflow's current stage: show the person what it produced and stop. The next stage starts only when they approve it; if they ask for changes, make them and call this again.",
     when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inWorkflow(ctx.scope),
