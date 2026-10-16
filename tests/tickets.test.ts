@@ -19,6 +19,12 @@ describe('tickets', () => {
   it('falls back to the file name and treats "None" as no blockers', () => {
     expect(parseTicket('docs/specs/x/tickets/07-rename-and-delete.md', 'Blocked by: None (can start immediately)\n- [ ] a')).toMatchObject({ n: '07', title: 'Rename and delete', blockedBy: [], done: 0, total: 1 })
   })
+  it('reads a "Blocked by" heading with the list under it', () => {
+    const t = ['# 06: Set up MLX', '', '## What to build', 'x', '', '## Blocked by', '', '- 05: Add local MLX', '- #2', '', '## Acceptance criteria', '', '- [ ] a', ''].join('\n')
+    expect(parseTicket('t/06-x.md', t)).toMatchObject({ n: '06', blockedBy: ['05', '02'], total: 1 })
+    const first = ['# 01: First', '', '## Blocked by', '', 'None - can start immediately.', '', '## Acceptance criteria', '- [ ] a', ''].join('\n')
+    expect(parseTicket('t/01-x.md', first).blockedBy).toEqual([])
+  })
   it('works out the column', () => {
     expect(ticketStatus({ n: '01', done: 2, total: 2 }, new Set())).toBe('done')
     expect(ticketStatus({ n: '01', done: 1, total: 2 }, new Set())).toBe('doing')

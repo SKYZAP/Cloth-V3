@@ -22,7 +22,10 @@ export function parseTicket(path: string, text: string): Ticket {
   const fromName = /^(\d+)-(.+)\.md$/i.exec(file)
   const n = pad(head?.[1] ?? fromName?.[1] ?? '?')
   const title = head?.[2] ?? (fromName ? fromName[2].replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()) : file)
-  const blockedLine = /blocked by\**\s*:?\**\s*(.*)$/im.exec(text)?.[1] ?? ''
+  // "Blocked by: 01, 02" on one line, or a "## Blocked by" heading with the list under it.
+  const sameLine = /blocked by\**[ \t]*:?\**[ \t]*(\S.*)?$/im.exec(text)
+  const underHeading = /^#{1,6}[ \t]*blocked by[ \t]*\r?\n([\s\S]*?)(?=^#{1,6}\s|(?![\s\S]))/im.exec(text)?.[1] ?? ''
+  const blockedLine = sameLine?.[1] ?? underHeading
   const blockedBy = /\bnone\b/i.test(blockedLine) ? [] : [...new Set((blockedLine.match(/\d+/g) ?? []).map(pad))].filter((b) => b !== n)
   const boxes = [...text.matchAll(/^\s*[-*]\s*\[( |x|X)\]/gm)]
   return { path, n, title: title.replace(/\*\*/g, ''), blockedBy, done: boxes.filter((b) => b[1] !== ' ').length, total: boxes.length, text }
