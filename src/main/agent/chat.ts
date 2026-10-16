@@ -673,10 +673,13 @@ export class AgentRuntime {
               )
             }
           : {}),
-        ...(steps ? { step: Type.Optional(Type.Integer({ description: 'Which step of your todo list this work is for.' })) } : {})
+        ...(steps ? { step: Type.Optional(Type.Integer({ description: 'Which step of your todo list this work is for.' })) } : {}),
+        ...(parent.scope.workflow?.()?.stage === 'build'
+          ? { continueFrom: Type.Optional(Type.String({ description: 'Spec → ship Build only: a branch an earlier worker left unfinished work on (named in its error). The new worker starts from that work instead of from scratch.' })) }
+          : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string; tier?: string; step?: number }
+        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string; tier?: string; step?: number; continueFrom?: string }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
         if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
@@ -726,7 +729,7 @@ export class AgentRuntime {
         let tree: WorkerTree | null = null
         let treeNote = ''
         if (flow?.stage === 'build' && role === 'worker' && scope.workspace && !scope.container) {
-          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label: p.description || 'ticket', id }).catch((err) => {
+          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label: p.description || 'ticket', id, from: p.continueFrom?.trim() || undefined }).catch((err) => {
             treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder.`
             return null
           })
@@ -749,7 +752,8 @@ export class AgentRuntime {
             scope,
             thinking,
             signal,
-            maxTurns: Math.max(1, cfg.maxTurns),
+            // A ticket is a whole vertical slice: Build workers get more room than a quick job.
+            maxTurns: Math.max(1, cfg.maxTurns, tree ? 80 : 0),
             onEvent: (turn, now) => {
               files = now.files
               progress({ ...base, blocks: turn.blocks, running: true, ...(turn.usage ? { usage: turn.usage } : {}), ...(now.current ? { current: now.current } : {}), ...(files.length ? { files } : {}) })
@@ -759,7 +763,10 @@ export class AgentRuntime {
           .catch(async (err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
             if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, false)
-            if (tree) await parkWorkerTree(tree, p.description || 'ticket').catch(() => null)
+            if (tree) {
+              const kept = await parkWorkerTree(tree, p.description || 'ticket').catch(() => null)
+              if (kept) throw new Error(`${errorMessage(err)}. Its unfinished work is kept on branch ${kept}: start the next worker with continueFrom "${kept}" to carry on from it.`)
+            }
             throw err
           })
           .finally(() => {

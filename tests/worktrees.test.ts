@@ -83,6 +83,21 @@ describe('worker worktrees', () => {
     expect(existsSync(t.dir)).toBe(false)
   }, 60_000)
 
+  it('carries on from a parked branch and cleans both up once merged', async () => {
+    const { root, trees } = await repo()
+    const first = (await createWorkerTree(root, trees, { slug: 'feat', label: 'half', id: 'p1' }))!
+    writeFileSync(join(first.workspace, 'part1.txt'), 'one')
+    const parked = (await parkWorkerTree(first, 'half'))!
+    const next = (await createWorkerTree(root, trees, { slug: 'feat', label: 'rest', id: 'p2', from: parked }))!
+    expect(readFileSync(join(next.workspace, 'part1.txt'), 'utf8')).toBe('one')
+    writeFileSync(join(next.workspace, 'part2.txt'), 'two')
+    expect((await finishWorkerTree(next, 'rest')).merged).toBe(true)
+    expect(readFileSync(join(root, 'part1.txt'), 'utf8')).toBe('one')
+    expect(readFileSync(join(root, 'part2.txt'), 'utf8')).toBe('two')
+    expect(await branches(root)).toEqual(['main'])
+    await expect(createWorkerTree(root, trees, { slug: 'feat', label: 'x', id: 'p3', from: 'main' })).rejects.toThrow(/no worker branch/)
+  }, 60_000)
+
   it('stays out of folders that are not git repositories', async () => {
     const plain = mkdtempSync(join(tmpdir(), 'cloth-plain-'))
     expect(await createWorkerTree(plain, join(plain, '.trees'), { slug: 'x', label: 'y', id: 'z' })).toBeNull()

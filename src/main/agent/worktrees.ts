@@ -19,6 +19,8 @@ export interface WorkerTree {
   /** The worker's branch, and the branch it merges into. */
   branch: string
   base: string
+  /** The unfinished branch it carried on from, dropped once this one merges. */
+  from?: string
 }
 
 export interface MergeResult {
@@ -77,7 +79,7 @@ export async function commitWorkflowDocs(root: string, workspace: string, slug: 
  * Start a worker's checkout: a new branch from the chat's branch, in its own folder under `dir`. null when the
  * chat's folder isn't in a git repository or isn't on a branch (the worker then shares the chat's folder).
  */
-export async function createWorkerTree(workspace: string, dir: string, opts: { slug: string | null; label: string; id: string }): Promise<WorkerTree | null> {
+export async function createWorkerTree(workspace: string, dir: string, opts: { slug: string | null; label: string; id: string; from?: string }): Promise<WorkerTree | null> {
   const root = await repoRoot(workspace)
   if (!root) return null
   const base = (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
@@ -86,9 +88,15 @@ export async function createWorkerTree(workspace: string, dir: string, opts: { s
   const branch = `cloth/${slugPart(opts.slug ?? 'build')}/${slugPart(opts.label)}-${opts.id.slice(-6)}`
   const tree = join(dir, `${slugPart(opts.label)}-${opts.id.slice(-6)}`)
   await mkdir(dir, { recursive: true })
-  await serial(root, () => run(root, ['worktree', 'add', '-b', branch, tree, base]))
+  // Carry on from an earlier worker's unfinished branch (only Cloth's own worker branches).
+  let start = base
+  if (opts.from) {
+    if (!opts.from.startsWith('cloth/') || (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${opts.from}`])).code !== 0) throw new Error(`There is no worker branch called ${opts.from}`)
+    start = opts.from
+  }
+  await serial(root, () => run(root, ['worktree', 'add', '-b', branch, tree, start]))
   const sub = relative(root, workspace)
-  return { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base }
+  return { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base, ...(opts.from ? { from: opts.from } : {}) }
 }
 
 /**
@@ -121,6 +129,7 @@ export async function removeWorkerTree(t: WorkerTree, dropBranch: boolean): Prom
     await rm(t.dir, { recursive: true, force: true }).catch(() => undefined)
     await git(t.root, ['worktree', 'prune'])
     if (dropBranch) await git(t.root, ['branch', '-D', t.branch])
+    if (dropBranch && t.from) await git(t.root, ['branch', '-D', t.from])
   })
 }
 
