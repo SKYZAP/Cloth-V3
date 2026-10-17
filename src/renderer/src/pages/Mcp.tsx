@@ -8,6 +8,7 @@ import { duration, preview, timeAgo } from '@/lib/format'
 import { Button, Segmented, Switch } from '@/components/ui'
 import { Inspector, refocus } from '@/components/Inspector'
 import { STATE, ServerDetail, ServerForm, commandLine, useExternalServers } from './mcp/ExternalServers'
+import { GuidedServerForm } from './mcp/GuidedServerForm'
 
 type Client = 'claude-code' | 'cursor' | 'claude-desktop' | 'curl'
 type Open = { kind: 'server'; id: string } | { kind: 'add' } | { kind: 'cloth' } | null
@@ -35,6 +36,7 @@ export function McpPage() {
   const [status, setStatus] = useState<McpStatus | null>(null)
   const [outCalls, setOutCalls] = useState<McpCallLog[]>([])
   const [open, setOpen] = useState<Open>(null)
+  const [addMode, setAddMode] = useState<'fields' | 'json'>('fields')
   const settings = useApp((s) => s.settings)
   const updateSettings = useApp((s) => s.updateSettings)
   const servers = useExternalServers()
@@ -242,17 +244,39 @@ export function McpPage() {
                   </div>
                 </div>
               )}
-              <div className="grid gap-2">
-                <h3 className="text-[12px] font-medium text-muted">Any MCP server, as JSON: a program Cloth starts, or one at a web address</h3>
-                <ServerForm
-                  taken={servers.configs.map((c) => c.name)}
-                  onSave={async (list) => {
-                    let id = ''
-                    for (const c of list) id = await servers.add({ ...c, enabled: true, defaultOn: false, approval: 'ask' })
-                    setOpen({ kind: 'server', id })
-                  }}
-                  onCancel={close}
-                />
+              <div className="grid gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3 className="text-[12px] font-medium text-muted">{servers.unused.length ? 'Or any other server' : 'Any MCP server'}</h3>
+                  <span className="flex-1" />
+                  <Segmented
+                    value={addMode}
+                    onChange={setAddMode}
+                    items={[
+                      { value: 'fields', label: 'Fill in' },
+                      { value: 'json', label: 'Paste JSON', title: 'A config from Claude Desktop, Cursor or VS Code; several servers at once' }
+                    ]}
+                  />
+                </div>
+                {addMode === 'fields' ? (
+                  <GuidedServerForm
+                    taken={servers.configs.map((c) => c.name)}
+                    onSave={async (c) => {
+                      const id = await servers.add({ ...c, enabled: true, defaultOn: false, approval: 'ask' })
+                      setOpen({ kind: 'server', id })
+                    }}
+                    onCancel={close}
+                  />
+                ) : (
+                  <ServerForm
+                    taken={servers.configs.map((c) => c.name)}
+                    onSave={async (list) => {
+                      let id = ''
+                      for (const c of list) id = await servers.add({ ...c, enabled: true, defaultOn: false, approval: 'ask' })
+                      setOpen({ kind: 'server', id })
+                    }}
+                    onCancel={close}
+                  />
+                )}
               </div>
             </div>
           )}
