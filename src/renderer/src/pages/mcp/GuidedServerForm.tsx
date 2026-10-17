@@ -75,7 +75,7 @@ export function GuidedServerForm({ initial, taken, onSave, onCancel }: { initial
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-1.5">
+      <div className="grid justify-items-start gap-1.5">
         <span className="text-[11.5px] font-medium text-muted">How Cloth reaches it</span>
         <Segmented
           value={kind}
