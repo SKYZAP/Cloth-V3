@@ -446,7 +446,7 @@ export class AgentRuntime {
     const external = this.ws.mcp?.tools(scope) ?? []
     if (external.length) {
       const servers = [...new Set(external.map((t) => t.name.split('__')[1]))]
-      lines.push('', '## External tools', `Tools from these MCP servers are available (named mcp__<server>__<tool>): ${servers.join(', ')}.${servers.includes('playwright') ? ' With Playwright you can open pages in a real browser, interact with them and take screenshots — use it to check UI you build (open the page, look at the screenshot or snapshot, fix what is off).' : ''}`)
+      lines.push('', '## External tools', `Tools from these MCP servers are available (named mcp__<server>__<tool>): ${servers.join(', ')}.${servers.includes('playwright') ? ' With Playwright you can open pages in a real browser, interact with them and take screenshots — use it to check UI you build (open the page, look at the screenshot or snapshot, fix what is off).' : ''}${servers.includes('obsidian') ? " obsidian is the user's notes vault (their second brain): search and read it for context on their projects and setup, and record durable decisions there when asked; read `_CLAUDE.md` in the vault first for its conventions." : ''}${servers.includes('homelab') ? ' homelab deploys docker-compose apps to the Raspberry Pi through Dokploy and gives them a *.example.internal address (attach the domain, then redeploy).' : ''}`)
     }
     if (this.imagesAvailable(scope)) lines.push('', '## Images', 'You can create images with `generate_image` when the user asks for a picture, illustration, logo, mockup or similar. The image appears inline for the user.')
     // A chat's current permission mode is told in its own section (permissionSection), which can change later.

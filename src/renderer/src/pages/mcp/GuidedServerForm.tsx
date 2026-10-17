@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ClipboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import clsx from 'clsx'
 import { Eye, EyeSlash, Plus, X } from '@phosphor-icons/react'
 import type { McpClientConfig } from '@shared/types'
@@ -35,11 +35,28 @@ function fromConfig(c?: McpServerEntry) {
  * A server filled in field by field: first how Cloth reaches it (a web address or a program it
  * starts), then just the fields that kind needs. Pasting a whole command line into Program splits it.
  */
-export function GuidedServerForm({ initial, taken, onSave, onCancel }: { initial?: McpClientConfig; taken: string[]; onSave(server: McpServerEntry): void; onCancel?(): void }) {
-  const start = useMemo(() => fromConfig(initial), [initial])
+export function GuidedServerForm({
+  initial,
+  prefill,
+  focusToken,
+  taken,
+  onSave,
+  onCancel
+}: {
+  initial?: McpClientConfig
+  /** A new server started from a preset (a ready-made address and name). */
+  prefill?: McpServerEntry
+  /** Put the cursor in the access token box (a preset that needs one). */
+  /** The server needs a token (a preset that asks for one): the box is required and gets the cursor. */
+  focusToken?: boolean
+  taken: string[]
+  onSave(server: McpServerEntry): void
+  onCancel?(): void
+}) {
+  const start = useMemo(() => fromConfig(initial ?? prefill), [initial, prefill])
   const [kind, setKind] = useState<Kind>(start.kind)
   const [name, setName] = useState(start.name)
-  const [named, setNamed] = useState(!!initial)
+  const [named, setNamed] = useState(!!initial || !!prefill)
   const [url, setUrl] = useState(start.url)
   const [token, setToken] = useState(start.token)
   const [showToken, setShowToken] = useState(false)
@@ -61,6 +78,15 @@ export function GuidedServerForm({ initial, taken, onSave, onCancel }: { initial
   }, [named, kind, url, command, args])
 
   const problem = serverProblem(entry, taken)
+  // A server that needs a token can't be added without one (the button waits; nothing turns red).
+  const tokenMissing = !!focusToken && kind === 'http' && !token.trim()
+  // The side panel slides in and takes focus as it opens; move it to the token box once it has.
+  const tokenBox = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!focusToken) return
+    const t = setTimeout(() => tokenBox.current?.focus(), 350)
+    return () => clearTimeout(t)
+  }, [focusToken])
   const dirty = !initial || JSON.stringify(entry) !== JSON.stringify({ ...fromConfigEntry(initial) })
   const touched = kind === 'http' ? !!url.trim() : !!command.trim()
 
@@ -92,9 +118,9 @@ export function GuidedServerForm({ initial, taken, onSave, onCancel }: { initial
           <Field label="Address" hint="The server’s MCP endpoint, often ending in /mcp.">
             <Input type="url" inputMode="url" spellCheck={false} autoComplete="off" placeholder="http://localhost:4401/mcp" value={url} onChange={(e) => setUrl(e.target.value)} />
           </Field>
-          <Field label="Access token (optional)" hint="Sent as Authorization: Bearer … with every request. Leave empty if the server is open.">
+          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={focusToken ? 'Sent as Authorization: Bearer … with every request.' : 'Sent as Authorization: Bearer … with every request. Leave empty if the server is open.'}>
             <div className="relative">
-              <Input type={showToken ? 'text' : 'password'} spellCheck={false} autoComplete="off" placeholder="Paste a token if the server needs one" value={token} onChange={(e) => setToken(e.target.value)} className="pr-9" />
+              <Input ref={tokenBox} type={showToken ? 'text' : 'password'} spellCheck={false} autoComplete="off" placeholder={focusToken ? 'Paste its access token' : 'Paste a token if the server needs one'} value={token} onChange={(e) => setToken(e.target.value)} className="pr-9" />
               <button
                 type="button"
                 onClick={() => setShowToken((s) => !s)}
@@ -163,7 +189,7 @@ export function GuidedServerForm({ initial, taken, onSave, onCancel }: { initial
               Undo changes
             </Button>
           )}
-          <Button size="sm" variant="primary" disabled={!!problem} onClick={() => onSave(entry)}>
+          <Button size="sm" variant="primary" disabled={!!problem || tokenMissing} title={tokenMissing ? 'Paste its access token first' : undefined} onClick={() => onSave(entry)}>
             {initial ? 'Save' : 'Add server'}
           </Button>
         </div>
