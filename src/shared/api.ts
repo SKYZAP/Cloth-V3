@@ -380,7 +380,7 @@ export interface ClothApi {
     rotateToken(): Promise<McpStatus>
     /** External servers Cloth connects to (configs live in settings.mcpClients). */
     clients(): Promise<import('./types').McpClientStatus[]>
-    clientPresets(): Promise<Omit<import('./types').McpClientConfig, 'id'>[]>
+    clientPresets(): Promise<import('./types').McpPreset[]>
     startClient(id: string): Promise<import('./types').McpClientStatus>
     stopClient(id: string): Promise<void>
     /** Recent calls Cloth made to external servers, newest first. */

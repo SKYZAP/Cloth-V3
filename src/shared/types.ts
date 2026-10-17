@@ -1456,6 +1456,14 @@ export interface McpClientConfig {
   approval: 'ask' | 'auto'
 }
 
+/** A server Cloth knows how to set up (the MCP page's "Add …" buttons): its config, plus what it still needs. */
+export type McpPreset = Omit<McpClientConfig, 'id'> & {
+  /** One line on what it gives chats. */
+  about?: string
+  /** It needs an access token (sent as Authorization: Bearer …): adding it opens the form to paste one. */
+  needsToken?: boolean
+}
+
 /** The name an agent sees for an external server's tool. */
 export function mcpToolName(server: string, tool: string): string {
   const clean = (s: string) => s.replace(/[^a-zA-Z0-9_-]+/g, '_')

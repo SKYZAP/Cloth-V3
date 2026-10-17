@@ -8,7 +8,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
-import type { McpCallLog, McpClientConfig, McpClientStatus } from '@shared/types'
+import type { McpCallLog, McpClientConfig, McpClientStatus, McpPreset } from '@shared/types'
 import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import type { ApprovalService } from '../agent/workspace'
@@ -46,11 +46,15 @@ const CALL_TIMEOUT = 5 * 60_000
 import { mcpToolName } from '@shared/types'
 export { mcpToolName }
 
-/** Ready-made servers for the settings page. */
-export const MCP_PRESETS: Omit<McpClientConfig, 'id'>[] = [
+/** Ready-made servers for the MCP page. */
+export const MCP_PRESETS: McpPreset[] = [
   // File access lets it open pages built in a chat folder (file:// URLs); every call still asks first.
-  { name: 'playwright', command: 'npx', args: ['-y', '@playwright/mcp@latest', '--allow-unrestricted-file-access'], env: {}, enabled: true, defaultOn: false, approval: 'ask' },
-  { name: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'], env: {}, enabled: true, defaultOn: false, approval: 'auto' }
+  { name: 'playwright', command: 'npx', args: ['-y', '@playwright/mcp@latest', '--allow-unrestricted-file-access'], env: {}, enabled: true, defaultOn: false, approval: 'ask', about: 'Opens pages in a real browser to check the UI chats build' },
+  { name: 'context7', command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'], env: {}, enabled: true, defaultOn: false, approval: 'auto', about: 'Up-to-date library and framework docs' },
+  // The homelab on the Raspberry Pi, reached over the LAN; each needs its bearer token pasted in.
+  // Deploying and stopping apps changes the Pi, so those calls ask first; reading and writing notes runs.
+  { name: 'homelab', transport: 'http', url: 'http://mcp.pi.lan/mcp', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'ask', needsToken: true, about: 'Deploys and controls apps on the Pi through Dokploy' },
+  { name: 'obsidian', transport: 'http', url: 'http://obsidian.pi.lan/mcp', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'auto', needsToken: true, about: 'Reads, searches and writes notes in the Obsidian vault' }
 ]
 
 /**

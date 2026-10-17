@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Check, Copy, KeyRound, Plus, RotateCw, X } from 'lucide-react'
-import type { McpCallLog, McpClientConfig, McpStatus } from '@shared/types'
+import type { McpCallLog, McpPreset, McpStatus } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, timeAgo } from '@/lib/format'
@@ -11,7 +11,7 @@ import { STATE, ServerDetail, ServerForm, commandLine, useExternalServers } from
 import { GuidedServerForm } from './mcp/GuidedServerForm'
 
 type Client = 'claude-code' | 'cursor' | 'claude-desktop' | 'curl'
-type Open = { kind: 'server'; id: string } | { kind: 'add' } | { kind: 'cloth' } | null
+type Open = { kind: 'server'; id: string } | { kind: 'add'; preset?: McpPreset } | { kind: 'cloth' } | null
 
 const APP_NAMES: [RegExp, string][] = [
   [/^claude-code/i, 'Claude Code'],
@@ -67,10 +67,13 @@ export function McpPage() {
     servers.configs.length ? `${plural(servers.configs.length, 'server')} feed${servers.configs.length === 1 ? 's' : ''} in` : 'No servers feed in yet',
     apps.length ? `${plural(apps.length, 'app')} ${apps.length === 1 ? 'uses' : 'use'} Cloth` : 'no apps use Cloth yet'
   ].join(', ')
-  const addPreset = async (p: Omit<McpClientConfig, 'id'>) => {
-    const id = await servers.add(p)
+  // A preset that needs a token opens the form filled in, to paste it; the rest are added straight away.
+  const addPreset = async ({ about: _about, needsToken, ...config }: McpPreset) => {
+    if (needsToken) return setOpen({ kind: 'add', preset: { ...config, about: _about, needsToken } })
+    const id = await servers.add(config)
     setOpen({ kind: 'server', id })
   }
+  const preset = open?.kind === 'add' ? open.preset : undefined
 
   return (
     <div className="relative h-full">
@@ -132,7 +135,7 @@ export function McpPage() {
               </button>
               <div className="flex flex-wrap gap-2">
                 {servers.unused.map((p) => (
-                  <Button key={p.name} size="sm" icon={<Plus size={12} />} onClick={() => void addPreset(p)}>
+                  <Button key={p.name} size="sm" icon={<Plus size={12} />} title={p.about} onClick={() => void addPreset(p)}>
                     Add {p.name}
                   </Button>
                 ))}
@@ -236,14 +239,34 @@ export function McpPage() {
         <PanelHead title={open?.kind === 'server' ? (openServer?.name ?? '') : open?.kind === 'add' ? 'Add a server' : "Cloth's server"} onClose={close} />
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {open?.kind === 'server' && openServer && <ServerDetail config={openServer} servers={servers} onRemoved={() => setOpen(null)} />}
-          {open?.kind === 'add' && (
+          {open?.kind === 'add' && preset && (
+            <div className="grid gap-4">
+              <div className="grid gap-1 rounded-[12px] border border-line bg-elev px-3.5 py-3">
+                <span className="text-[13px] font-semibold">{preset.name}</span>
+                {preset.about && <span className="text-[12.5px] text-muted">{preset.about}</span>}
+                <span className="text-[12px] text-dim">Paste its access token below, then add it. The address is filled in; change it if yours differs.</span>
+              </div>
+              <GuidedServerForm
+                key={preset.name}
+                prefill={preset}
+                focusToken
+                taken={servers.configs.map((c) => c.name)}
+                onSave={async (c) => {
+                  const id = await servers.add({ ...c, enabled: preset.enabled, defaultOn: preset.defaultOn, approval: preset.approval })
+                  setOpen({ kind: 'server', id })
+                }}
+                onCancel={() => setOpen({ kind: 'add' })}
+              />
+            </div>
+          )}
+          {open?.kind === 'add' && !preset && (
             <div className="grid gap-5">
               {servers.unused.length > 0 && (
                 <div className="grid gap-2">
                   <h3 className="text-[12px] font-medium text-muted">Ready to add</h3>
                   <div className="flex flex-wrap gap-2">
                     {servers.unused.map((p) => (
-                      <Button key={p.name} size="sm" icon={<Plus size={12} />} onClick={() => void addPreset(p)}>
+                      <Button key={p.name} size="sm" icon={<Plus size={12} />} title={p.about} onClick={() => void addPreset(p)}>
                         {p.name}
                       </Button>
                     ))}

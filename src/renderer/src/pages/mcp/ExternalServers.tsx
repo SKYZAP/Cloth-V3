@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { Trash } from '@phosphor-icons/react'
-import type { McpClientConfig, McpClientStatus } from '@shared/types'
+import type { McpClientConfig, McpClientStatus, McpPreset } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Segmented, Switch, confirmAction } from '@/components/ui'
@@ -27,7 +27,7 @@ export function useExternalServers() {
   const settings = useApp((s) => s.settings)
   const updateSettings = useApp((s) => s.updateSettings)
   const [status, setStatus] = useState<McpClientStatus[]>([])
-  const [presets, setPresets] = useState<Omit<McpClientConfig, 'id'>[]>([])
+  const [presets, setPresets] = useState<McpPreset[]>([])
   const load = () => void api.mcp.clients().then(setStatus)
   useEffect(() => {
     load()
