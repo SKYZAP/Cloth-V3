@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mcpServerJson, parseMcpServers } from '../src/shared/mcp-config'
+import { mcpServerJson, parseMcpServers, serverProblem, splitCommandLine, suggestName } from '../src/shared/mcp-config'
 
 describe('MCP server JSON', () => {
   it('reads the usual shapes, including a pasted "mcpServers" fragment', () => {
@@ -41,5 +41,30 @@ describe('MCP server JSON', () => {
     expect(parseMcpServers(json).servers[0]).toEqual(stdio)
     const http = { name: 'remote', transport: 'http' as const, url: 'https://r.dev/mcp', headers: {}, command: '', args: [], env: {} }
     expect(JSON.parse(mcpServerJson(http))).toEqual({ remote: { type: 'http', url: 'https://r.dev/mcp' } })
+  })
+
+  it('splits a pasted command line into the program and its arguments', () => {
+    expect(splitCommandLine('npx -y @playwright/mcp@latest')).toEqual({ command: 'npx', args: ['-y', '@playwright/mcp@latest'] })
+    expect(splitCommandLine('node "C:/My Tools/server.js" --port 4401')).toEqual({ command: 'node', args: ['C:/My Tools/server.js', '--port', '4401'] })
+    expect(splitCommandLine('  ')).toEqual({ command: '', args: [] })
+  })
+
+  it('suggests a name from the package or the address', () => {
+    expect(suggestName({ transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@latest'] })).toBe('playwright')
+    expect(suggestName({ transport: 'stdio', command: 'npx', args: ['@modelcontextprotocol/server-filesystem', 'C:/x'] })).toBe('filesystem')
+    expect(suggestName({ transport: 'http', command: '', args: [], url: 'http://obsidian.example.internal/mcp' })).toBe('obsidian')
+    expect(suggestName({ transport: 'http', command: '', args: [], url: 'http://localhost:4401/mcp' })).toBe('localhost')
+  })
+
+  it('checks a server filled in field by field', () => {
+    const http = { name: 'penpot', transport: 'http' as const, url: 'http://localhost:4401/mcp', headers: {}, command: '', args: [], env: {} }
+    expect(serverProblem(http, [])).toBeNull()
+    expect(serverProblem({ ...http, url: 'localhost:4401' }, [])).toMatch(/http:\/\//)
+    expect(serverProblem(http, ['penpot'])).toMatch(/already/)
+    expect(serverProblem({ ...http, name: 'bad name' }, [])).toMatch(/letters/)
+    const stdio = { name: 'pw', transport: 'stdio' as const, command: 'npx', args: ['-y'], env: { API_KEY: 'x' } }
+    expect(serverProblem(stdio, [])).toBeNull()
+    expect(serverProblem({ ...stdio, command: 'npx -y pkg' }, [])).toMatch(/own box/)
+    expect(serverProblem({ ...stdio, env: { '1BAD': 'x' } }, [])).toMatch(/Variable names/)
   })
 })

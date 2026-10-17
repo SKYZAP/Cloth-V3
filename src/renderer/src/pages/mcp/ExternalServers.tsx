@@ -7,6 +7,7 @@ import { attempt, useApp } from '@/lib/store'
 import { Button, Segmented, Switch, confirmAction } from '@/components/ui'
 import { Editor } from '@/components/Editor'
 import { mcpServerJson, parseMcpServers, type McpServerEntry } from '@shared/mcp-config'
+import { GuidedServerForm } from './GuidedServerForm'
 
 const newId = () => `mcs_${Math.random().toString(36).slice(2, 10)}`
 export const STATE: Record<McpClientStatus['state'], { label: string; dot: string }> = {
@@ -68,6 +69,7 @@ export type ExternalServers = ReturnType<typeof useExternalServers>
 export function ServerDetail({ config: c, servers, onRemoved }: { config: McpClientConfig; servers: ExternalServers; onRemoved(): void }) {
   const st = servers.status.find((s) => s.id === c.id)
   const state = servers.stateOf(c)
+  const [asJson, setAsJson] = useState(false)
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -107,8 +109,23 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         </div>
       </div>
       <div className="grid gap-2">
-        <h3 className="text-[12px] font-medium text-muted">Connection</h3>
-        <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
+        <div className="flex items-center gap-3">
+          <h3 className="text-[12px] font-medium text-muted">Connection</h3>
+          <span className="flex-1" />
+          <Segmented
+            value={asJson ? 'json' : 'fields'}
+            onChange={(v) => setAsJson(v === 'json')}
+            items={[
+              { value: 'fields', label: 'Fields' },
+              { value: 'json', label: 'JSON' }
+            ]}
+          />
+        </div>
+        {asJson ? (
+          <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
+        ) : (
+          <GuidedServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={(next) => servers.patch(c.id, next)} />
+        )}
       </div>
       <div className="grid gap-2">
         <h3 className="text-[12px] font-medium text-muted">Tools{st?.state === 'ready' ? ` (${st.tools.length})` : ''}</h3>

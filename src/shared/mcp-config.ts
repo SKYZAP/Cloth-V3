@@ -74,3 +74,48 @@ function strings(v: unknown): Record<string, string> | null {
   }
   return out
 }
+
+/** What's wrong with a server filled in field by field (null when it can be saved). */
+export function serverProblem(e: McpServerEntry, taken: string[]): string | null {
+  if (!e.name.trim()) return 'Give it a name.'
+  if (!NAME.test(e.name)) return 'Names use up to 32 letters, digits, - or _.'
+  if (taken.includes(e.name)) return `There’s already a server called “${e.name}”. Pick another name.`
+  if (e.transport === 'http') {
+    if (!/^https?:\/\/\S+$/i.test((e.url ?? '').trim())) return 'Enter its address, starting with http:// or https://.'
+    if (Object.keys(e.headers ?? {}).some((k) => !k.trim())) return 'Each header needs a name.'
+  } else {
+    if (!e.command.trim()) return 'Enter the program to run, like npx.'
+    if (/\s/.test(e.command.trim())) return 'Put only the program in Program; each argument goes in its own box.'
+    if (Object.keys(e.env ?? {}).some((k) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))) return 'Variable names use letters, digits and _, and don’t start with a digit.'
+  }
+  return null
+}
+
+/**
+ * A pasted command line as a program and its arguments: `npx -y "@scope/pkg" --flag` →
+ * npx, [-y, @scope/pkg, --flag]. Quotes group words; nothing else is interpreted.
+ */
+export function splitCommandLine(line: string): { command: string; args: string[] } {
+  const words: string[] = []
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+  for (let m = re.exec(line); m; m = re.exec(line)) words.push(m[1] ?? m[2] ?? m[3])
+  return { command: words[0] ?? '', args: words.slice(1) }
+}
+
+/** A suggested server name from what it runs or where it is: @playwright/mcp → playwright, mcp.example.internal → mcp. */
+export function suggestName(e: Pick<McpServerEntry, 'transport' | 'command' | 'args' | 'url'>): string {
+  let base = ''
+  if (e.transport === 'http') {
+    try {
+      const host = new URL(e.url ?? '').hostname
+      base = host.split('.').filter((p) => !['www', 'mcp', 'api', 'localhost'].includes(p))[0] ?? host.split('.')[0] ?? ''
+    } catch {
+      base = ''
+    }
+  } else {
+    const pkg = e.args.find((a) => !a.startsWith('-')) ?? e.command
+    base = pkg.replace(/@[^/]*$/, '').replace(/^@[^/]+\//, (s) => (/(^@)(modelcontextprotocol|mcp)\//.test(s) ? '' : s.slice(1, -1) + '-')).replace(/[-_]?mcp(-server)?$|^mcp[-_]?(server[-_])?|^server[-_]/g, '')
+    base = base.split(/[\/]/).pop() ?? base
+  }
+  return base.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
+}
