@@ -10,6 +10,7 @@ import {
   CaretRight,
   Check,
   ChatCircleDots,
+  ClockCountdown,
   Copy,
   FolderPlus,
   FolderSimple,
@@ -17,10 +18,12 @@ import {
   MagnifyingGlass,
   NotePencil,
   Paperclip,
+  PencilSimple,
   Plus,
   Sparkle,
   Stop,
-  Trash
+  Trash,
+  X
 } from '@phosphor-icons/react'
 import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
@@ -52,6 +55,7 @@ import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
 import { activeTickets } from '@/lib/tickets'
 import { cyclesPermission, nextModePatch, planStatus } from '@/lib/permissions'
+import { drain, enqueue, promote, unqueue, useQueue, type QueuedMessage } from '@/lib/queue'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
 
@@ -119,6 +123,8 @@ export function ChatPage() {
         n.delete(e.sessionId)
         return n
       })
+      // A message written while it worked goes now.
+      void drain(e.sessionId)
       // The list shows each chat's latest line and order by activity.
       void api.chat.list().then(setSessions)
     }
@@ -389,6 +395,23 @@ function ChatView({
   const [dragging, setDragging] = useState(false)
   // A one-off prompt in the empty message box (after "Change the plan…"); cleared on send.
   const [hint, setHint] = useState<string | null>(null)
+  // Messages written while the chat works: sent in order once it's free (lib/queue.ts).
+  const queued = useQueue((s) => s.bySession[session.id]) ?? NO_QUEUE
+  // Backup to the end-of-reply drain in ChatPage: whenever this chat stops working, its queue moves on.
+  useEffect(() => {
+    if (!running) void drain(session.id)
+  }, [running, session.id])
+  /** Send a queued message now: it goes first, and the reply in progress stops to make way. */
+  const sendNow = (m: QueuedMessage) => {
+    promote(session.id, m.id)
+    if (running) void api.chat.abort(session.id)
+    else void drain(session.id)
+  }
+  const editQueued = (m: QueuedMessage) => {
+    unqueue(session.id, m.id)
+    setDraft((d) => (d.trim() ? `${d}\n${m.text}` : m.text))
+    textarea.current?.focus()
+  }
   // Spec → ship picked but not started: the next message is the idea it starts from.
   const [specArmed, setSpecArmedState] = useState(() => specWaiting.has(session.id))
   const setSpecArmed = (on: boolean) => {
@@ -508,7 +531,18 @@ function ChatView({
     const files = attachments
     const withSkills = invokedSkills(t, known)
     const withAgents = mentionedAgents(t, slugs).map((slug) => agentsBySlug.get(slug)!)
-    if ((!t && !files.length) || running) return
+    if (!t && !files.length) return
+    // Still working: the message waits its turn (or is sent now from the queue).
+    if (running) {
+      enqueue(session.id, { text: t, skills: withSkills, agents: withAgents, attachments: files.map(({ name, mimeType, data }) => ({ name, mimeType, data })) })
+      setDraft('')
+      setHint(null)
+      setSlash(null)
+      setMention(null)
+      setAttachments([])
+      files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview))
+      return
+    }
     if (specArmed) return startSpec(t, files.length > 0)
     stick.current = true
     setDraft('')
@@ -963,6 +997,7 @@ function ChatView({
             {slash && <SlashMenu key="slash" skills={matches} total={skills.length} index={slashIndex} query={slash.query} onPick={pickSkill} onHover={setSlashIndex} />}
             {mention && <AgentMenu key="mention" agents={agentMatches} total={taggable.length} index={mentionIndex} query={mention.query} onPick={pickAgent} onHover={setMentionIndex} />}
           </AnimatePresence>
+          <QueuedList items={queued} running={running} onSendNow={sendNow} onEdit={editQueued} onRemove={(m) => unqueue(session.id, m.id)} />
           <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
           <div className="relative">
           {(inline.length > 0 || tagged.length > 0) && (
@@ -1073,7 +1108,7 @@ function ChatView({
             attach={{ count: attachments.length, onClick: () => fileInput.current?.click() }}
             onWorkflow={workflowAction}
             specArmed={specArmed}
-            send={<SendButton running={running} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
+            send={<SendButton running={running} queue={running && (!!draft.trim() || attachments.length > 0)} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
           />
         </div>
       </div>
@@ -1179,29 +1214,74 @@ function Key({ children }: { children: React.ReactNode }) {
   return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
 }
 
-function SendButton({ running, disabled, onSend, onStop }: { running: boolean; disabled: boolean; onSend(): void; onStop(): void }) {
+/** Send; Stop while the chat works; Queue while it works and there's something written (it goes when the reply ends). */
+function SendButton({ running, queue, disabled, onSend, onStop }: { running: boolean; queue: boolean; disabled: boolean; onSend(): void; onStop(): void }) {
+  const stop = running && !queue
   return (
     <motion.button
       whileTap={{ scale: 0.92 }}
-      onClick={running ? onStop : onSend}
+      onClick={stop ? onStop : onSend}
       disabled={disabled}
-      title={running ? 'Stop' : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
-      aria-label={running ? 'Stop the reply' : 'Send message'}
+      title={stop ? 'Stop' : queue ? (isMobile ? 'Queue: sends when the reply finishes' : 'Queue (Enter): sends when the reply finishes') : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
+      aria-label={stop ? 'Stop the reply' : queue ? 'Queue message' : 'Send message'}
       className="relative h-9 w-9 overflow-hidden rounded-[10px] bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
     >
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
-          key={running ? 'stop' : 'send'}
-          initial={{ opacity: 0, scale: 0.6, y: running ? 8 : -8 }}
+          key={stop ? 'stop' : queue ? 'queue' : 'send'}
+          initial={{ opacity: 0, scale: 0.6, y: stop ? 8 : -8 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.6, y: running ? -8 : 8 }}
+          exit={{ opacity: 0, scale: 0.6, y: stop ? -8 : 8 }}
           transition={{ type: 'spring', stiffness: 500, damping: 26 }}
           className="absolute inset-0 flex items-center justify-center"
         >
-          {running ? <Stop size={16} weight="fill" /> : <ArrowUp size={17} weight="bold" />}
+          {stop ? <Stop size={16} weight="fill" /> : queue ? <ClockCountdown size={17} weight="bold" /> : <ArrowUp size={17} weight="bold" />}
         </motion.span>
       </AnimatePresence>
     </motion.button>
+  )
+}
+
+const NO_QUEUE: QueuedMessage[] = []
+
+/** Messages waiting for the chat to finish, above the message box: each can go now, go back for editing, or be dropped. */
+function QueuedList({ items, running, onSendNow, onEdit, onRemove }: { items: QueuedMessage[]; running: boolean; onSendNow(m: QueuedMessage): void; onEdit(m: QueuedMessage): void; onRemove(m: QueuedMessage): void }) {
+  if (!items.length) return null
+  return (
+    <ul aria-label="Queued messages" className="flex flex-col gap-1 border-b border-line px-2.5 pb-2 pt-2.5">
+      {items.map((m, i) => (
+        <li key={m.id} className="flex min-w-0 items-center gap-2 rounded-[10px] bg-elev py-1 pl-2.5 pr-1 text-[12.5px]">
+          <ClockCountdown size={14} className="shrink-0 text-dim" aria-hidden="true" />
+          <span className="shrink-0 text-dim">{i === 0 ? (running ? 'Next' : 'Sending') : `Queued ${i + 1}`}</span>
+          <span className="min-w-0 flex-1 truncate text-fg" title={m.text}>
+            {m.text || `${m.attachments.length} file${m.attachments.length === 1 ? '' : 's'}`}
+          </span>
+          {m.attachments.length > 0 && m.text && (
+            <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] text-dim" title={m.attachments.map((a) => a.name).join(', ')}>
+              <Paperclip size={12} aria-hidden="true" />
+              {m.attachments.length}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => onSendNow(m)}
+            title={running ? 'Stop the current reply and send this now' : 'Send this now'}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-[8px] px-2 font-medium text-crimson-hi hover:bg-crimson-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+          >
+            <ArrowUp size={13} weight="bold" aria-hidden="true" />
+            Send now
+          </button>
+          {!m.attachments.length && (
+            <button type="button" onClick={() => onEdit(m)} aria-label="Edit queued message" title="Edit: back into the message box" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-dim hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
+              <PencilSimple size={14} />
+            </button>
+          )}
+          <button type="button" onClick={() => onRemove(m)} aria-label="Remove queued message" title="Remove" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-dim hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
+            <X size={14} />
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 
