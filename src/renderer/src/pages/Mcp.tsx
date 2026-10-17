@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import clsx from 'clsx'
 import { Check, Copy, KeyRound, Plus, RotateCw, X } from 'lucide-react'
 import type { McpCallLog, McpClientConfig, McpStatus } from '@shared/types'
@@ -37,6 +37,10 @@ export function McpPage() {
   const [outCalls, setOutCalls] = useState<McpCallLog[]>([])
   const [open, setOpen] = useState<Open>(null)
   const [addMode, setAddMode] = useState<'fields' | 'json'>('fields')
+  // The diagram: arrows run from each server card into Cloth, and from Cloth to each app row.
+  const serverCol = useRef<HTMLElement>(null)
+  const appCol = useRef<HTMLElement>(null)
+  const hub = useRef<HTMLDivElement>(null)
   const settings = useApp((s) => s.settings)
   const updateSettings = useApp((s) => s.updateSettings)
   const servers = useExternalServers()
@@ -83,7 +87,7 @@ export function McpPage() {
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_56px_210px_56px_minmax(0,1fr)] items-center gap-y-4 max-[1000px]:grid-cols-1">
-            <section aria-label="Servers Cloth uses" className="grid content-start gap-2">
+            <section ref={serverCol} aria-label="Servers Cloth uses" className="grid content-start gap-2">
               <h2 className="text-[12.5px] font-medium text-dim">Servers Cloth uses</h2>
               {servers.configs.map((c) => {
                 const state = servers.stateOf(c)
@@ -91,6 +95,7 @@ export function McpPage() {
                 return (
                   <button
                     key={c.id}
+                    data-arrow
                     data-focus-key={c.id}
                     onClick={() => setOpen({ kind: 'server', id: c.id })}
                     aria-haspopup="dialog"
@@ -134,9 +139,9 @@ export function McpPage() {
               </div>
             </section>
 
-            <Arrows dir="in" />
+            <Arrows dir="in" nodes={serverCol} hub={hub} />
 
-            <div className="grid justify-items-center gap-1.5 rounded-[16px] border border-crimson-line bg-crimson-soft px-4 py-5 text-center">
+            <div ref={hub} className="grid justify-items-center gap-1.5 rounded-[16px] border border-crimson-line bg-crimson-soft px-4 py-5 text-center">
               <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-crimson text-[14px] font-bold text-white">
                 C
               </span>
@@ -144,9 +149,9 @@ export function McpPage() {
               <span className="text-[12px] text-muted">Chats, flows and subagents call the servers that feed in. Connected apps use Cloth's skills and knowledge.</span>
             </div>
 
-            <Arrows dir="out" />
+            <Arrows dir="out" nodes={appCol} hub={hub} />
 
-            <section aria-label="Apps using Cloth" className="grid content-start gap-2">
+            <section ref={appCol} aria-label="Apps using Cloth" className="grid content-start gap-2">
               <h2 className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] font-medium text-dim">
                 Apps using Cloth
                 <span className="font-mono text-[11.5px]" translate="no">
@@ -154,6 +159,7 @@ export function McpPage() {
                 </span>
               </h2>
               <button
+                data-arrow
                 data-focus-key="cloth"
                 onClick={() => setOpen({ kind: 'cloth' })}
                 aria-haspopup="dialog"
@@ -168,7 +174,7 @@ export function McpPage() {
               {apps.map((a) => {
                 const recent = Date.now() - a.lastSeen < RECENT
                 return (
-                  <div key={a.name} className="flex items-center gap-2 rounded-[12px] border border-line bg-elev px-3.5 py-2.5">
+                  <div key={a.name} data-arrow className="flex items-center gap-2 rounded-[12px] border border-line bg-elev px-3.5 py-2.5">
                     <span className={clsx('h-2 w-2 shrink-0 rounded-full', recent ? 'bg-ok' : 'bg-line-strong')} aria-hidden="true" />
                     <span className="min-w-0 truncate text-[13px] font-semibold" title={a.name}>
                       {appName(a.name)}
@@ -179,7 +185,7 @@ export function McpPage() {
                   </div>
                 )
               })}
-              <button onClick={() => setOpen({ kind: 'cloth' })} className="rounded-[12px] border border-dashed border-line-strong px-3.5 py-2.5 text-left text-[12.5px] text-muted hover:border-crimson-line hover:text-fg">
+              <button data-arrow onClick={() => setOpen({ kind: 'cloth' })} className="rounded-[12px] border border-dashed border-line-strong px-3.5 py-2.5 text-left text-[12.5px] text-muted hover:border-crimson-line hover:text-fg">
                 Connect {apps.length ? 'another' : 'an'} app: Claude Code, Cursor, Claude Desktop or curl
               </button>
             </section>
@@ -300,22 +306,48 @@ function PanelHead({ title, onClose }: { title: string; onClose(): void }) {
   )
 }
 
-/** Decorative arrows between the columns (the headings already say which way things go). */
-function Arrows({ dir }: { dir: 'in' | 'out' }) {
+/**
+ * Decorative arrows between the columns (the headings already say which way things go): one curve
+ * per card (each `[data-arrow]` in `nodes`) into the middle of the Cloth box, or out of it to each
+ * row, redrawn whenever the columns change size.
+ */
+function Arrows({ dir, nodes, hub }: { dir: 'in' | 'out'; nodes: RefObject<HTMLElement | null>; hub: RefObject<HTMLElement | null> }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [geo, setGeo] = useState<{ w: number; h: number; hub: number; ends: number[] } | null>(null)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const b = box.current?.getBoundingClientRect()
+      const c = hub.current?.getBoundingClientRect()
+      if (!b || !c || !b.width || !b.height) return setGeo(null)
+      const ends = [...(nodes.current?.querySelectorAll('[data-arrow]') ?? [])].map((e) => {
+        const r = e.getBoundingClientRect()
+        return r.top + r.height / 2 - b.top
+      })
+      setGeo({ w: b.width, h: b.height, hub: c.top + c.height / 2 - b.top, ends })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    for (const e of [box.current, hub.current, nodes.current]) if (e) ro.observe(e)
+    // Cards come and go (servers added or removed) without the column always resizing first.
+    const mo = new MutationObserver(measure)
+    if (nodes.current) mo.observe(nodes.current, { childList: true })
+    return () => (ro.disconnect(), mo.disconnect())
+  }, [nodes, hub])
+  const stroke = { fill: 'none', stroke: 'var(--color-line-strong)', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  const head = (x: number, y: number) => `M${x - 7} ${y - 4} L${x} ${y} L${x - 7} ${y + 4}`
   return (
-    <svg aria-hidden="true" viewBox="0 0 56 160" preserveAspectRatio="none" className="h-40 w-full max-[1000px]:hidden">
-      {dir === 'in' ? (
-        <>
-          <path d="M0 48 C28 48 28 80 56 80 M0 112 C28 112 28 80 56 80" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          <path d="M48 76 L56 80 L48 84" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        </>
-      ) : (
-        <>
-          <path d="M0 80 C28 80 28 48 56 48 M0 80 C28 80 28 112 56 112" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          <path d="M48 44 L56 48 L48 52 M48 108 L56 112 L48 116" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        </>
+    <div ref={box} aria-hidden="true" className="relative self-stretch max-[1000px]:hidden">
+      {geo && (
+        <svg width={geo.w} height={geo.h} className="absolute inset-0 overflow-visible">
+          {geo.ends.map((y, i) => {
+            const [y0, y1] = dir === 'in' ? [y, geo.hub] : [geo.hub, y]
+            const m = geo.w / 2
+            return <path key={i} d={`M0 ${y0} C${m} ${y0} ${m} ${y1} ${geo.w - 1} ${y1}`} {...stroke} />
+          })}
+          {dir === 'in' ? geo.ends.length > 0 && <path d={head(geo.w - 1, geo.hub)} {...stroke} /> : geo.ends.map((y, i) => <path key={i} d={head(geo.w - 1, y)} {...stroke} />)}
+        </svg>
       )}
-    </svg>
+    </div>
   )
 }
 
