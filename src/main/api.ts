@@ -1,5 +1,6 @@
 import { app, dialog, shell, BrowserWindow } from 'electron'
 import { MCP_PRESETS, mcpToolName } from './mcp/client'
+import { presetsWithTokens, readEnvFile } from './mcp/homelab'
 import type { ClothApi } from '@shared/api'
 import type { ToolRunResult } from '@shared/types'
 import { copyFile } from 'node:fs/promises'
@@ -310,7 +311,7 @@ export function createApi(s: Services): ClothApi {
       restart: () => s.mcp.restart(),
       rotateToken: async () => s.mcp.rotateToken(),
       clients: async () => s.mcpClients.status(),
-      clientPresets: async () => MCP_PRESETS,
+      clientPresets: async () => presetsWithTokens(MCP_PRESETS, readEnvFile()),
       startClient: (id) => s.mcpClients.start(id),
       stopClient: (id) => s.mcpClients.stop(id),
       externalCalls: async () => s.mcpClients.calls()

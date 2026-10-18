@@ -1462,6 +1462,8 @@ export type McpPreset = Omit<McpClientConfig, 'id'> & {
   about?: string
   /** It needs an access token (sent as Authorization: Bearer …): adding it opens the form to paste one. */
   needsToken?: boolean
+  /** The token goes in this query parameter of the address instead of a header (Penpot's `userToken`). */
+  tokenQuery?: string
 }
 
 /** The name an agent sees for an external server's tool. */

@@ -1,6 +1,8 @@
 import { join } from 'node:path'
+import { MCP_PRESETS } from './mcp/client'
+import { readEnvFile, serversToSeed } from './mcp/homelab'
 import { openDb, Kv } from './core/db'
-import type { Ctx, EventChannel, Secrets } from './core/context'
+import { newId, type Ctx, type EventChannel, type Secrets } from './core/context'
 import { SettingsService } from './core/settings'
 import { ProviderService } from './providers/providers'
 import { RagService } from './rag/rag'
@@ -160,6 +162,10 @@ export function createServices(opts: {
   const toManual = chat.migrateAutoToManual()
   if (toManual) ctx.log('permissions', `Moved ${toManual} chat${toManual === 1 ? '' : 's'} from Auto to Manual`)
 
+  // The homelab servers (deploy control, the notes vault, Penpot) are set up for you when their
+  // tokens are in ~/.homelab/env: each once, so one you remove stays removed.
+  seedHomelabServers(ctx, settings)
+
   // Chats automations made before the Automation project existed move into it, once.
   const moved = projects.migrateAutomationChats(workflows.reportedChatIds())
   if (moved) ctx.log('automation', `Filed ${moved} automation chat${moved === 1 ? '' : 's'} under the Automation project`)
@@ -173,4 +179,17 @@ export function createServices(opts: {
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals }
+}
+
+const SEEDED_KEY = 'mcp.homelabSeeded'
+
+/** Adds the homelab MCP servers whose tokens are on file and that haven't been added before. */
+function seedHomelabServers(ctx: Ctx, settings: SettingsService): void {
+  const cur = settings.get().mcpClients
+  const seeded = ctx.kv.get<string[]>(SEEDED_KEY, [])
+  const add = serversToSeed(MCP_PRESETS, readEnvFile(), cur.map((c) => c.name), seeded)
+  if (!add.length) return
+  settings.update({ mcpClients: [...cur, ...add.map((c) => ({ ...c, id: newId('mcs_') }))] })
+  ctx.kv.set(SEEDED_KEY, [...seeded, ...add.map((c) => c.name)])
+  ctx.log('mcp', `Set up ${add.map((c) => c.name).join(', ')} from ~/.homelab/env`)
 }

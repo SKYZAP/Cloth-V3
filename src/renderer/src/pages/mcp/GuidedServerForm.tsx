@@ -39,6 +39,7 @@ export function GuidedServerForm({
   initial,
   prefill,
   focusToken,
+  tokenHint,
   taken,
   onSave,
   onCancel
@@ -49,6 +50,8 @@ export function GuidedServerForm({
   /** Put the cursor in the access token box (a preset that needs one). */
   /** The server needs a token (a preset that asks for one): the box is required and gets the cursor. */
   focusToken?: boolean
+  /** Where the token goes, when not the usual bearer header (Penpot puts its key in the address). */
+  tokenHint?: string
   taken: string[]
   onSave(server: McpServerEntry): void
   onCancel?(): void
@@ -118,7 +121,7 @@ export function GuidedServerForm({
           <Field label="Address" hint="The server’s MCP endpoint, often ending in /mcp.">
             <Input type="url" inputMode="url" spellCheck={false} autoComplete="off" placeholder="http://localhost:4401/mcp" value={url} onChange={(e) => setUrl(e.target.value)} />
           </Field>
-          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={focusToken ? 'Sent as Authorization: Bearer … with every request.' : 'Sent as Authorization: Bearer … with every request. Leave empty if the server is open.'}>
+          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={tokenHint ?? (focusToken ? 'Sent as Authorization: Bearer … with every request.' : 'Sent as Authorization: Bearer … with every request. Leave empty if the server is open.')}>
             <div className="relative">
               <Input ref={tokenBox} type={showToken ? 'text' : 'password'} spellCheck={false} autoComplete="off" placeholder={focusToken ? 'Paste its access token' : 'Paste a token if the server needs one'} value={token} onChange={(e) => setToken(e.target.value)} className="pr-9" />
               <button
