@@ -68,8 +68,8 @@ export function McpPage() {
     apps.length ? `${plural(apps.length, 'app')} ${apps.length === 1 ? 'uses' : 'use'} Cloth` : 'no apps use Cloth yet'
   ].join(', ')
   // A preset that needs a token opens the form filled in, to paste it; the rest are added straight away.
-  const addPreset = async ({ about: _about, needsToken, ...config }: McpPreset) => {
-    if (needsToken) return setOpen({ kind: 'add', preset: { ...config, about: _about, needsToken } })
+  const addPreset = async ({ about: _about, needsToken, tokenQuery, ...config }: McpPreset) => {
+    if (needsToken) return setOpen({ kind: 'add', preset: { ...config, about: _about, needsToken, tokenQuery } })
     const id = await servers.add(config)
     setOpen({ kind: 'server', id })
   }
@@ -250,8 +250,18 @@ export function McpPage() {
                 key={preset.name}
                 prefill={preset}
                 focusToken
+                tokenHint={preset.tokenQuery ? `Added to the address as ?${preset.tokenQuery}=…` : undefined}
                 taken={servers.configs.map((c) => c.name)}
-                onSave={async (c) => {
+                onSave={async (form) => {
+                  // A server that takes its token in the address (Penpot): move it out of the header.
+                  let c = form
+                  const auth = form.headers?.Authorization
+                  if (preset.tokenQuery && auth) {
+                    const { Authorization: _a, ...headers } = form.headers ?? {}
+                    const url = new URL(form.url ?? '')
+                    url.searchParams.set(preset.tokenQuery, auth.replace(/^Bearer\s+/i, ''))
+                    c = { ...form, headers, url: url.toString() }
+                  }
                   const id = await servers.add({ ...c, enabled: preset.enabled, defaultOn: preset.defaultOn, approval: preset.approval })
                   setOpen({ kind: 'server', id })
                 }}
