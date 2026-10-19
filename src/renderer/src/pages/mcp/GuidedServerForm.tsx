@@ -103,7 +103,7 @@ export function GuidedServerForm({
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <div className="grid justify-items-start gap-1.5">
         <span className="text-[11.5px] font-medium text-muted">How Cloth reaches it</span>
         <Segmented
@@ -177,7 +177,7 @@ export function GuidedServerForm({
       </Field>
 
       <div aria-live="polite" className="min-h-4 text-[11.5px]">
-        {problem && touched ? <span className="text-crimson-hi">{problem}</span> : touched && !problem ? <span className="font-mono text-dim">{kind === 'http' ? entry.url : [entry.command, ...entry.args].join(' ')}</span> : null}
+        {problem && touched ? <span className="text-crimson-hi">{problem}</span> : touched && !problem ? <span className="break-all font-mono text-dim">{kind === 'http' ? (entry.url ?? '').replace(/([?&](?:userToken|token|key|api_key)=)[^&]+/i, '$1…') : [entry.command, ...entry.args].join(' ')}</span> : null}
       </div>
 
       {dirty && (

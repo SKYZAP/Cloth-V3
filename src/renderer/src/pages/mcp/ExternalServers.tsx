@@ -71,7 +71,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
   const state = servers.stateOf(c)
   const [asJson, setAsJson] = useState(false)
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-[13px]">
           <span className={clsx('h-2 w-2 rounded-full', STATE[state].dot)} aria-hidden="true" />
