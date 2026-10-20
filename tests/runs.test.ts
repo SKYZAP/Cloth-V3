@@ -154,6 +154,8 @@ function runner(over: Partial<Runner> = {}): Runner {
     extraArgs: '',
     alias: 'm',
     useInChats: true,
+    reasoning: 'default',
+    source: null,
     createdAt: 0,
     updatedAt: 0,
     ...over

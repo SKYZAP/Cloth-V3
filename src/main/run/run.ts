@@ -6,8 +6,17 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type {
+  EngineBackend,
+  EngineBuild,
+  EngineFlavour,
+  EnginesState,
+  Hardware,
+  HubFiles,
+  HubModel,
   ModelDownloadInfo,
   ModelInfo,
+  ModelMeta,
+  ReasoningKind,
   Provider,
   RunDetection,
   RunDevice,
@@ -16,6 +25,7 @@ import type {
   RunnerBuiltin,
   RunnerInput,
   RunnerPatch,
+  RunnerReasoning,
   RunnerStatus,
   RuntimeBackend,
   RuntimeOptions
@@ -26,6 +36,10 @@ import { isReasoningModelId, type ProviderService } from '../providers/providers
 import { killTree, run } from '../web/process'
 import { downloadFile, remoteSize, USER_AGENT, type Fetch } from './download'
 import { unzip } from './zip'
+import { modelMeta } from './gguf'
+import { groupFiles, listRepoFiles, searchHub, HF_BASE } from './hub'
+import { fromDevices, hardwareFrom, parseWindowsGpus, WINDOWS_GPU_SCRIPT } from './hardware'
+import { ENGINE_BACKENDS, ENGINE_REPOS, isNewer, newestRelease, type EngineAssets, type ReleaseJson as EngineReleaseJson } from './engines'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,7 +75,9 @@ const BUILTINS: Record<RunnerBuiltin, { name: string; config: RunnerConfig }> = 
       sampling: { temp: 1.0, topP: 0.95, topK: 20, minP: 0.05 },
       extraArgs: '--jinja',
       alias: 'bonsai-2-27b',
-      useInChats: true
+      useInChats: true,
+      reasoning: 'default',
+      source: { repo: BONSAI_REPO, quant: 'PQ2_0' }
     }
   }
 }
@@ -78,7 +94,9 @@ const DEFAULTS: RunnerConfig = {
   sampling: {},
   extraArgs: '',
   alias: 'local-model',
-  useInChats: true
+  useInChats: true,
+  reasoning: 'default',
+  source: null
 }
 
 // ─── Pure helpers (exported for tests) ───────────────────────────────────────
@@ -130,8 +148,19 @@ export function resolveServer(serverPath: string | null, platform: NodeJS.Platfo
   return null
 }
 
+/**
+ * llama-server arguments for a runner's reasoning setting, given what its chat template allows:
+ * an effort level goes to the template; turning thinking off sets a zero reasoning budget.
+ */
+export function reasoningArgs(reasoning: RunnerReasoning | undefined, kind: ReasoningKind): string[] {
+  if (!reasoning || reasoning === 'default' || !kind) return []
+  if (kind === 'levels' && (reasoning === 'low' || reasoning === 'medium' || reasoning === 'high')) return ['--chat-template-kwargs', JSON.stringify({ reasoning_effort: reasoning })]
+  if (kind === 'toggle' && reasoning === 'off') return ['--reasoning-budget', '0']
+  return []
+}
+
 /** The command that starts a runner: always the full path, run from its own folder. */
-export function buildCommand(runner: Runner, server: string): { file: string; args: string[]; cwd: string } {
+export function buildCommand(runner: Runner, server: string, kind: ReasoningKind = null): { file: string; args: string[]; cwd: string } {
   if (!runner.modelPath) throw new Error(`${runner.name} has no model file set`)
   const args = ['-m', runner.modelPath]
   if (runner.mmprojPath) args.push('--mmproj', runner.mmprojPath)
@@ -143,6 +172,7 @@ export function buildCommand(runner: Runner, server: string): { file: string; ar
   if (s.topP !== undefined && s.topP !== null) args.push('--top-p', String(s.topP))
   if (s.topK !== undefined && s.topK !== null) args.push('--top-k', String(s.topK))
   if (s.minP !== undefined && s.minP !== null) args.push('--min-p', String(s.minP))
+  args.push(...reasoningArgs(runner.reasoning, kind))
   args.push(...splitArgs(runner.extraArgs ?? ''))
   return { file: server, args, cwd: dirname(server) }
 }
@@ -395,7 +425,13 @@ export class RunService {
     if (!(await this.deps.portFree(runner.port))) return this.fail(id, `Port ${runner.port} is already in use by another program. Pick a different port.`)
     if (this.live.has(id)) return this.statusOf(id)
 
-    const { file, args, cwd } = buildCommand(runner, server)
+    let kind: ReasoningKind = null
+    try {
+      kind = modelMeta(runner.modelPath).reasoning
+    } catch {
+      /* unreadable header: no reasoning flags */
+    }
+    const { file, args, cwd } = buildCommand(runner, server, kind)
     this.logs.set(id, [])
     this.pushLines(id, [`> ${file} ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`])
     let child: RunChild
@@ -556,7 +592,7 @@ export class RunService {
       name: runner.name,
       contextWindow: runner.contextSize,
       maxTokens: Math.min(8192, runner.contextSize),
-      reasoning: isReasoningModelId(runner.alias),
+      reasoning: runner.reasoning === 'off' ? false : this.reasoningKindOf(runner) !== null || isReasoningModelId(runner.alias),
       vision: !!runner.mmprojPath,
       embedding: false,
       contextSource: 'server'
@@ -742,9 +778,228 @@ export class RunService {
     this.downloads.get(id)?.abort()
   }
 
+  // ── Model file details ──
+
+  private metaCache = new Map<string, { key: string; meta: ModelMeta }>()
+
+  /** What a runner's model file says about itself (cached until the file changes). */
+  modelMeta(id: string): ModelMeta | null {
+    const r = this.get(id)
+    if (!r.modelPath || !existsSync(r.modelPath)) return null
+    const key = `${r.modelPath}|${statSync(r.modelPath).mtimeMs}|${r.mmprojPath ?? ''}`
+    const hit = this.metaCache.get(id)
+    if (hit?.key === key) return hit.meta
+    const meta = modelMeta(r.modelPath, r.mmprojPath)
+    this.metaCache.set(id, { key, meta })
+    return meta
+  }
+
+  private reasoningKindOf(r: Runner): ReasoningKind {
+    try {
+      return this.modelMeta(r.id)?.reasoning ?? null
+    } catch {
+      return null
+    }
+  }
+
+  // ── Hardware ──
+
+  private hw: Hardware | null = null
+
+  /** This PC's GPUs and memory: from the current llama.cpp's device list, else from Windows. */
+  async hardware(refresh = false): Promise<Hardware> {
+    if (this.hw && !refresh) return this.hw
+    const build = this.currentBuild()
+    if (build) {
+      try {
+        const { stdout, stderr } = await this.deps.exec(build.path, ['--list-devices'], dirname(build.path))
+        const gpus = fromDevices(parseDevices(`${stdout}\n${stderr}`))
+        if (gpus.length) return (this.hw = hardwareFrom(gpus, 'llama'))
+      } catch {
+        /* fall back to the system's view */
+      }
+    }
+    if (this.deps.platform === 'win32') {
+      try {
+        const { stdout } = await this.deps.exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_GPU_SCRIPT], this.deps.home)
+        return (this.hw = hardwareFrom(parseWindowsGpus(stdout), 'system'))
+      } catch {
+        /* none found */
+      }
+    }
+    return (this.hw = hardwareFrom([], 'none'))
+  }
+
+  // ── Engines (llama.cpp builds) ──
+
+  private enginesDir(flavour: EngineFlavour): string {
+    return join(this.ctx.dataDir, 'runtimes', flavour)
+  }
+
+  /** Every llama.cpp build Cloth installed, plus older PrismML downloads and ~/llama-prism. */
+  installedEngines(): EngineBuild[] {
+    const exe = exeName(this.deps.platform)
+    const out: EngineBuild[] = []
+    for (const flavour of Object.keys(ENGINE_REPOS) as EngineFlavour[]) {
+      const root = this.enginesDir(flavour)
+      for (const dir of safeReaddir(root)) {
+        const m = /^(.+)-(vulkan|rocm|cuda|cpu)$/.exec(dir)
+        const path = m && findFile(join(root, dir), exe, 2)
+        if (m && path) out.push({ flavour, tag: m[1], backend: m[2] as EngineBackend, path, installedAt: statSync(path).mtimeMs })
+      }
+    }
+    // Builds from before engines were tracked: PrismML's, backend unknown (assume Vulkan).
+    const legacy = join(this.ctx.dataDir, 'runtimes', 'prism-llama')
+    for (const tag of safeReaddir(legacy)) {
+      const path = findFile(join(legacy, tag), exe, 2)
+      if (path) out.push({ flavour: 'prism', tag, backend: /hip|rocm/i.test(path) ? 'rocm' : /cuda/i.test(path) ? 'cuda' : 'vulkan', path, installedAt: statSync(path).mtimeMs })
+    }
+    const home = join(this.deps.home, 'llama-prism', exe)
+    if (existsSync(home)) out.push({ flavour: 'prism', tag: 'local', backend: 'rocm', path: home, installedAt: statSync(home).mtimeMs })
+    return out.sort((a, b) => b.installedAt - a.installedAt)
+  }
+
+  /** The build new models use: the one last installed or chosen. */
+  currentBuild(): EngineBuild | null {
+    const all = this.installedEngines()
+    const cur = this.ctx.kv.get<{ flavour: EngineFlavour; backend: EngineBackend } | null>('run.engine', null)
+    const same = cur ? all.filter((b) => b.flavour === cur.flavour && b.backend === cur.backend) : []
+    return (same.length ? same : all).sort((a, b) => (isNewer(a.tag, b.tag) ? -1 : isNewer(b.tag, a.tag) ? 1 : b.installedAt - a.installedAt))[0] ?? null
+  }
+
+  engines(): EnginesState {
+    const cached = this.ctx.kv.get<{ latest: EnginesState['latest']; checkedAt: number } | null>('run.engineLatest', null)
+    const cur = this.currentBuild()
+    return {
+      installed: this.installedEngines(),
+      current: cur ? { flavour: cur.flavour, backend: cur.backend } : null,
+      latest: cached?.latest ?? null,
+      checkedAt: cached?.checkedAt ?? null,
+      autoCheck: this.ctx.kv.get<boolean>('run.engineAutoCheck', true)
+    }
+  }
+
+  setEngineAutoCheck(on: boolean): EnginesState {
+    this.ctx.kv.set('run.engineAutoCheck', on)
+    return this.engines()
+  }
+
+  private async engineAssets(flavour: EngineFlavour): Promise<EngineAssets | null> {
+    const res = await this.deps.fetch(`https://api.github.com/repos/${ENGINE_REPOS[flavour]}/releases?per_page=15`, {
+      signal: AbortSignal.timeout(20_000),
+      headers: { accept: 'application/vnd.github+json', 'user-agent': USER_AGENT }
+    })
+    if (!res.ok) throw new Error(`Couldn't read ${flavour === 'prism' ? "PrismML's" : 'llama.cpp'} releases (HTTP ${res.status})`)
+    return newestRelease(flavour, (await res.json()) as EngineReleaseJson[])
+  }
+
+  /** Look up the newest build of each llama.cpp (GitHub). */
+  async checkEngines(): Promise<EnginesState> {
+    const latest: NonNullable<EnginesState['latest']> = {}
+    for (const flavour of Object.keys(ENGINE_REPOS) as EngineFlavour[]) {
+      const a = await this.engineAssets(flavour).catch(() => null)
+      if (a) latest[flavour] = a.release
+    }
+    this.ctx.kv.set('run.engineLatest', { latest, checkedAt: Date.now() })
+    return this.engines()
+  }
+
+  /**
+   * Download and unpack the newest build of a llama.cpp for a backend, make it the one new models use,
+   * and move runners on an older build of the same kind to it (they pick it up on their next start).
+   */
+  async installEngine(flavour: EngineFlavour, backend: EngineBackend): Promise<EnginesState> {
+    if (this.deps.platform !== 'win32') throw new Error('Installing llama.cpp is only supported on Windows here yet. Build it yourself and choose llama-server under Advanced.')
+    if (!ENGINE_BACKENDS.includes(backend)) throw new Error(`Unknown build ${backend}`)
+    await this.download(`engine-${flavour}`, 'engine', async (signal, progress) => {
+      const assets = await this.engineAssets(flavour)
+      const file = assets?.files[backend]
+      if (!assets || !file) throw new Error(`${flavour === 'prism' ? "PrismML's" : 'The official'} latest build has no ${backend} version for Windows`)
+      const dir = join(this.enginesDir(flavour), `${safeName(assets.release.tag)}-${backend}`)
+      const parts = [file, ...(file.extra ? [file.extra] : [])]
+      const total = parts.reduce((n, f) => n + f.size, 0)
+      let before = 0
+      for (const part of parts) {
+        const zip = join(this.enginesDir(flavour), part.name)
+        await downloadFile(part.url, zip, { fetch: this.deps.fetch, signal, expectedSize: part.size, onProgress: (r) => progress({ file: part.name, received: before + r, total, state: 'downloading' }) })
+        progress({ file: part.name, received: before + part.size, total, state: 'extracting' })
+        await unzip(zip, dir, { signal })
+        await rm(zip, { force: true })
+        before += part.size
+      }
+      const exe = findFile(dir, exeName(this.deps.platform), 3)
+      if (!exe) throw new Error(`The download didn't contain ${exeName(this.deps.platform)}`)
+      this.ctx.kv.set('run.engine', { flavour, backend })
+      const root = this.enginesDir(flavour)
+      for (const r of this.list()) {
+        const onOlder = r.serverPath && r.serverPath.startsWith(root) && r.serverPath.includes(`-${backend}`) && r.serverPath !== exe
+        if (onOlder || (!r.serverPath && !r.builtin)) this.update(r.id, { serverPath: exe })
+      }
+      this.hw = null
+      return this.list()[0]
+    })
+    return this.engines()
+  }
+
+  /** Make an installed build the one new models use. */
+  useEngine(flavour: EngineFlavour, backend: EngineBackend): EnginesState {
+    this.ctx.kv.set('run.engine', { flavour, backend })
+    this.hw = null
+    return this.engines()
+  }
+
+  // ── Hugging Face ──
+
+  async searchModels(query: string): Promise<HubModel[]> {
+    return searchHub(query, this.deps.fetch, this.deps.hfBase || HF_BASE)
+  }
+
+  async hubFiles(repo: string, params: number | null): Promise<HubFiles> {
+    const [entries, hw] = await Promise.all([listRepoFiles(repo, this.deps.fetch, this.deps.hfBase || HF_BASE), this.hardware()])
+    return groupFiles(repo, entries, hw, params)
+  }
+
+  /**
+   * Add a model from Hugging Face: a runner appears at once (on the current llama.cpp build) and its
+   * files download in the background; progress arrives as 'model' events for the runner.
+   */
+  async addHubModel(input: { repo: string; quant: string; projector?: string | null; name?: string; params?: number | null }): Promise<Runner> {
+    const files = await this.hubFiles(input.repo, input.params ?? null)
+    const group = files.groups.find((g) => g.quant === input.quant)
+    if (!group) throw new Error(`${input.repo} has no ${input.quant} files`)
+    const projector = input.projector ? files.projectors.find((p) => p.path === input.projector) ?? null : null
+    const repoName = input.repo.split('/')[1] ?? input.repo
+    const name = input.name?.trim() || repoName.replace(/[-_]?GGUF$/i, '').replace(/[-_]+/g, ' ').trim()
+    const dir = join(this.modelsDir(), safeName(input.repo.replace('/', '__')))
+    const runner = this.create({ name, serverPath: this.currentBuild()?.path ?? null, source: { repo: input.repo, quant: group.quant }, contextSize: 8192 })
+    const parts = [...group.files, ...(projector ? [projector] : [])]
+    const total = parts.reduce((n, f) => n + f.size, 0)
+    const base = `${(this.deps.hfBase || HF_BASE).replace(/\/+$/, '')}/${input.repo}/resolve/main`
+    void this.download(runner.id, 'model', async (signal, progress) => {
+      let before = 0
+      for (const f of parts) {
+        const dest = join(dir, ...f.path.split('/'))
+        if (!(existsSync(dest) && statSync(dest).size === f.size)) {
+          await downloadFile(`${base}/${f.path.split('/').map(encodeURIComponent).join('/')}`, dest, {
+            fetch: this.deps.fetch,
+            signal,
+            expectedSize: f.size || undefined,
+            onProgress: (r) => progress({ file: f.path, received: before + r, total, state: 'downloading' })
+          })
+        }
+        before += f.size
+      }
+      return this.update(runner.id, {
+        modelPath: join(dir, ...group.files[0].path.split('/')),
+        ...(projector ? { mmprojPath: join(dir, ...projector.path.split('/')) } : {})
+      })
+    }).catch((err) => this.ctx.log('run', `download for ${runner.name} failed: ${errorMessage(err)}`))
+    return runner
+  }
+
   private async download(
     id: string,
-    kind: 'runtime' | 'model',
+    kind: 'runtime' | 'model' | 'engine',
     work: (signal: AbortSignal, progress: (p: { file?: string; received: number; total: number; state: 'downloading' | 'extracting' }) => void) => Promise<Runner>
   ): Promise<Runner> {
     if (this.downloads.has(id)) throw new Error('A download for this runner is already running')
@@ -785,7 +1040,8 @@ function toRunner(r: RunnerRow): Runner {
   return { id: r.id, name: r.name, builtin, ...config, sampling: { ...(config.sampling ?? {}) }, createdAt: r.created_at, updatedAt: r.updated_at }
 }
 
-const CONFIG_KEYS: (keyof RunnerConfig)[] = ['serverPath', 'modelPath', 'mmprojPath', 'device', 'gpuLayers', 'contextSize', 'port', 'flashAttention', 'sampling', 'extraArgs', 'alias', 'useInChats']
+const CONFIG_KEYS: (keyof RunnerConfig)[] = ['serverPath', 'modelPath', 'mmprojPath', 'device', 'gpuLayers', 'contextSize', 'port', 'flashAttention', 'sampling', 'extraArgs', 'alias', 'useInChats', 'reasoning', 'source']
+const REASONING: RunnerReasoning[] = ['default', 'off', 'on', 'low', 'medium', 'high']
 
 function pickConfig(input: RunnerPatch): Partial<RunnerConfig> {
   const out: Partial<RunnerConfig> = {}
@@ -808,6 +1064,7 @@ function validate(c: RunnerConfig): RunnerConfig {
   if (!Number.isInteger(out.port) || out.port < 1 || out.port > 65535) throw new Error('Port must be a whole number from 1 to 65535')
   if (!Number.isInteger(out.contextSize) || out.contextSize < 0) throw new Error('Context size must be a whole number (0 = the model’s own)')
   if (!Number.isInteger(out.gpuLayers) || out.gpuLayers < -1) throw new Error('GPU layers must be a whole number (-1 = auto)')
+  if (!REASONING.includes(out.reasoning)) throw new Error(`Unknown reasoning setting ${out.reasoning}`)
   if (!out.alias) throw new Error('Give the model an alias (the id chats use)')
   if (/\s/.test(out.alias)) throw new Error('The alias can’t contain spaces')
   return out

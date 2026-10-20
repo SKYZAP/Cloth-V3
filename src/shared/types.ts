@@ -1513,9 +1513,21 @@ export interface Runner {
   alias: string
   /** Offer it in the chat model picker while it runs. */
   useInChats: boolean
+  /**
+   * How much the model thinks before answering, for models whose template allows it: 'default' leaves
+   * it to the model; 'off'/'on' for models that can turn thinking off; 'low'/'medium'/'high' for those
+   * with a reasoning effort.
+   */
+  reasoning: RunnerReasoning
+  /** Where the model came from, when added from Hugging Face. */
+  source: { repo: string; quant: string } | null
   createdAt: number
   updatedAt: number
 }
+
+export type RunnerReasoning = 'default' | 'off' | 'on' | 'low' | 'medium' | 'high'
+/** What a model's chat template allows: an effort level, thinking on/off, or nothing to set. */
+export type ReasoningKind = 'levels' | 'toggle' | null
 
 export type RunnerInput = Partial<Omit<Runner, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>> & { name: string }
 export type RunnerPatch = Partial<Omit<Runner, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>>
@@ -1576,7 +1588,7 @@ export type RunEvent =
   | { type: 'log'; id: string; lines: string[] }
   | {
       type: 'progress'
-      kind: 'runtime' | 'model'
+      kind: 'runtime' | 'model' | 'engine'
       id: string
       /** File being fetched or unpacked. */
       file?: string
@@ -1585,3 +1597,98 @@ export type RunEvent =
       state: 'downloading' | 'extracting' | 'done' | 'error' | 'cancelled'
       error?: string
     }
+
+// ─── Run: engines, hardware, model search ─────────────────────────────────────
+
+/** Which llama.cpp: the official ggml-org builds or PrismML's fork (needed for ternary models like Bonsai). */
+export type EngineFlavour = 'official' | 'prism'
+/** The kind of build: what hardware it uses. */
+export type EngineBackend = 'vulkan' | 'rocm' | 'cuda' | 'cpu'
+
+export interface EngineBuild {
+  flavour: EngineFlavour
+  /** Release tag, e.g. 'b11755' or 'prism-b10787-73bfe6c'. */
+  tag: string
+  backend: EngineBackend
+  /** llama-server(.exe). */
+  path: string
+  installedAt: number
+}
+
+export interface EngineRelease {
+  flavour: EngineFlavour
+  tag: string
+  publishedAt: string
+  /** The release page. */
+  url: string
+  /** Download size per backend this release has for this PC. */
+  sizes: Partial<Record<EngineBackend, number>>
+}
+
+export interface EnginesState {
+  installed: EngineBuild[]
+  /** The build new models use. */
+  current: { flavour: EngineFlavour; backend: EngineBackend } | null
+  /** Latest releases, once checked (null when not checked or offline). */
+  latest: Partial<Record<EngineFlavour, EngineRelease>> | null
+  checkedAt: number | null
+  autoCheck: boolean
+}
+
+export interface Hardware {
+  gpus: { name: string; totalMiB: number; freeMiB: number | null; vendor: 'amd' | 'nvidia' | 'intel' | 'apple' | 'other' }[]
+  ramMiB: number
+  /** The build that suits the main GPU. */
+  recommendedBackend: EngineBackend
+  /** Where the GPU numbers came from: llama.cpp's own device list, or Windows. */
+  source: 'llama' | 'system' | 'none'
+}
+
+export interface HubModel {
+  /** e.g. 'unsloth/Qwen3-8B-GGUF'. */
+  id: string
+  author: string
+  name: string
+  downloads: number
+  likes: number
+  gated: boolean
+  /** Parameter count, when known. */
+  params: number | null
+  architecture: string | null
+  contextLength: number | null
+  reasoning: ReasoningKind
+}
+
+export type HubFit = 'gpu' | 'ram' | 'too-big'
+
+export interface HubFileGroup {
+  /** e.g. 'Q4_K_M'. */
+  quant: string
+  /** One file, or the shards of a split model in order. */
+  files: { path: string; size: number }[]
+  size: number
+  fit: HubFit
+  /** GB of memory it needs with an 8K context (estimate). */
+  needGB: number
+  recommended: boolean
+}
+
+export interface HubFiles {
+  repo: string
+  groups: HubFileGroup[]
+  /** Vision projectors in the repo (mmproj). */
+  projectors: { path: string; size: number }[]
+}
+
+/** What a runner's model file says about itself (read from the GGUF header). */
+export interface ModelMeta {
+  architecture: string | null
+  name: string | null
+  /** The context it was trained for. */
+  trainedContext: number | null
+  /** Bytes the context cache needs per token (f16), when the header says enough to work it out. */
+  kvBytesPerToken: number | null
+  fileBytes: number
+  projectorBytes: number
+  reasoning: ReasoningKind
+}
