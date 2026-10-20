@@ -152,7 +152,7 @@ export function KnowledgePage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           {active ? (
             <CollectionPage
               key={active.id}
@@ -182,7 +182,7 @@ export function KnowledgePage() {
 
               {collections.length > 0 && <SearchPanel collections={collections} placeholder="Search all knowledge" names={names} />}
 
-              <section aria-label="Collections" className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+              <section aria-label="Collections" className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">
                 {collections.map((c) => (
                   <CollectionCard key={c.id} collection={c} docs={docsBy[c.id]} onOpen={() => openCollection(c.id)} />
                 ))}

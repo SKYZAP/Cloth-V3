@@ -49,38 +49,48 @@ export function RunnerView({
   }
   const ready = !!runner.serverPath && !!runner.modelPath
 
+  const lock = locked && <span className="text-[12px] text-dim">Stop it to change</span>
+  // Wide enough: settings on the left, the log filling the height on the right.
   return (
-    <>
-      <Header runner={runner} status={status} meta={meta} ready={ready} />
-      <Setup runner={runner} progress={progress} engines={engines} locked={locked} save={save} onChange={onChange} onRemoved={onRemoved} onManageEngine={onManageEngine} />
-      {runner.modelPath && (
-        <Section title="Context window" aside={locked && <span className="text-[12px] text-dim">Stop it to change</span>}>
-          <div className="grid gap-4 px-3.5 py-3">
-            <MemoryMeter meta={meta} hardware={hardware} runner={runner} context={context} />
-            <ContextWindow meta={meta} hardware={hardware} runner={runner} value={context} locked={locked} onDraft={setContext} onCommit={(n) => save({ contextSize: n })} />
-          </div>
-        </Section>
-      )}
-      {meta?.reasoning && <Reasoning kind={meta.reasoning} value={runner.reasoning} locked={locked} onChange={(reasoning) => void save({ reasoning })} />}
-      <Section title="Hardware" aside={locked && <span className="text-[12px] text-dim">Stop it to change</span>}>
-        <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 px-3.5 py-3 mobile:grid-cols-1">
-          <Row label="GPU">
-            <Devices runner={runner} locked={locked} onSelect={(device) => void save({ device })} />
-          </Row>
-          <Row label="GPU layers">
-            <div className="flex items-center gap-2">
-              <CommitInput aria-label="GPU layers" type="number" inputMode="numeric" min={0} className="w-[90px]" value={String(runner.gpuLayers)} disabled={locked} onCommit={(v) => (v.trim() === '' ? Promise.resolve(false) : save({ gpuLayers: Number(v) }))} />
-              <span className="text-[12px] text-dim">{runner.gpuLayers >= 99 ? 'All on the GPU' : runner.gpuLayers === 0 ? 'All on the CPU' : 'The rest run on the CPU'}</span>
-            </div>
-          </Row>
-          <Row label="Flash attention">
-            <Switch checked={runner.flashAttention} disabled={locked} onChange={(v) => void save({ flashAttention: v })} label="Faster, and a smaller context cache" />
-          </Row>
+    <div className="@container">
+      <div className="grid gap-4 @[1040px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @[1040px]:items-start">
+        <div className="grid gap-4 @[1040px]:col-span-2">
+          <Header runner={runner} status={status} meta={meta} ready={ready} />
+          <Setup runner={runner} progress={progress} engines={engines} locked={locked} save={save} onChange={onChange} onRemoved={onRemoved} onManageEngine={onManageEngine} />
         </div>
-      </Section>
-      <Advanced runner={runner} locked={locked} save={save} onRemoved={onRemoved} />
-      <LogCard id={runner.id} />
-    </>
+        <div className="grid min-w-0 gap-4">
+          {runner.modelPath && (
+            <Section title="Context window" aside={lock}>
+              <div className="grid gap-4 px-3.5 py-3">
+                <MemoryMeter meta={meta} hardware={hardware} runner={runner} context={context} />
+                <ContextWindow meta={meta} hardware={hardware} runner={runner} value={context} locked={locked} onDraft={setContext} onCommit={(n) => save({ contextSize: n })} />
+              </div>
+            </Section>
+          )}
+          {meta?.reasoning && <Reasoning kind={meta.reasoning} value={runner.reasoning} locked={locked} onChange={(reasoning) => void save({ reasoning })} />}
+          <Section title="Hardware" aside={lock}>
+            <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 px-3.5 py-3 mobile:grid-cols-1">
+              <Row label="GPU">
+                <Devices runner={runner} locked={locked} onSelect={(device) => void save({ device })} />
+              </Row>
+              <Row label="GPU layers">
+                <div className="flex items-center gap-2">
+                  <CommitInput aria-label="GPU layers" type="number" inputMode="numeric" min={0} className="w-[90px]" value={String(runner.gpuLayers)} disabled={locked} onCommit={(v) => (v.trim() === '' ? Promise.resolve(false) : save({ gpuLayers: Number(v) }))} />
+                  <span className="text-[12px] text-dim">{runner.gpuLayers >= 99 ? 'All on the GPU' : runner.gpuLayers === 0 ? 'All on the CPU' : 'The rest run on the CPU'}</span>
+                </div>
+              </Row>
+              <Row label="Flash attention">
+                <Switch checked={runner.flashAttention} disabled={locked} onChange={(v) => void save({ flashAttention: v })} label="Faster, and a smaller context cache" />
+              </Row>
+            </div>
+          </Section>
+          <Advanced runner={runner} locked={locked} save={save} onRemoved={onRemoved} />
+        </div>
+        <div className="min-w-0 @[1040px]:sticky @[1040px]:top-4">
+          <LogCard id={runner.id} tall />
+        </div>
+      </div>
+    </div>
   )
 }
 

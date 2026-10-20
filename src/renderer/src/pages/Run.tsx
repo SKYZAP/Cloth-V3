@@ -123,7 +123,7 @@ export function RunPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Run</h1>
@@ -144,13 +144,13 @@ export function RunPage() {
           )}
 
           {runners && (
-            <div className={narrow ? 'grid gap-1' : 'grid grid-cols-[232px_minmax(0,1fr)] items-start gap-5'}>
-              <nav aria-label="Models" className="grid content-start gap-0.5">
+            <div className={narrow ? 'grid gap-1' : 'grid grid-cols-[248px_minmax(0,1fr)] items-start gap-5'}>
+              <nav aria-label="Models" className={clsx('grid content-start gap-0.5', !narrow && 'sticky top-4')}>
                 {runners.map((r) => (
                   <RunnerRow key={r.id} runner={r} status={statuses[r.id] ?? stopped(r.id)} download={active(progress[progressKey('model', r.id)])} selected={!narrow && r.id === selectedId} onClick={() => select(r.id)} />
                 ))}
               </nav>
-              {!narrow && <div className="grid min-w-0 gap-4">{detail}</div>}
+              {!narrow && <div className="min-w-0">{detail}</div>}
             </div>
           )}
         </div>
@@ -158,7 +158,7 @@ export function RunPage() {
 
       <Inspector open={narrow && inspecting && !!selected && !enginePanel} label={selected?.name ?? 'Model'} onClose={close} width={640}>
         <InspectorHead title={selected?.name ?? ''} onClose={close} />
-        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4">{detail}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{detail}</div>
       </Inspector>
 
       <Inspector open={enginePanel && !!engines} label="llama.cpp" onClose={() => setEnginePanel(false)} width={460}>

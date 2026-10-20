@@ -158,7 +158,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
   )
 
   return (
-    <Modal open={open} onClose={onClose} title="Add a model" width={900}>
+    <Modal open={open} onClose={onClose} title="Add a model" width={Math.min(1240, Math.round(window.innerWidth * 0.86))}>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <label className="relative min-w-[240px] flex-1">
@@ -187,7 +187,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
         {narrow ? (
           <div className="flex h-[60vh] min-h-0 flex-col">{picked ? <ModelDetail key={picked.id} model={picked} hardware={hardware} onBack={() => setPicked(null)} onAdded={onAdded} /> : list}</div>
         ) : (
-          <div className="grid h-[min(560px,64vh)] min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
+          <div className="grid h-[min(760px,68vh)] min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
             {list}
             <div className="flex min-h-0 flex-col rounded-[12px] border border-line bg-elev">
               {picked ? (

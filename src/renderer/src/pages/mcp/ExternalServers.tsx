@@ -19,8 +19,28 @@ export const STATE: Record<McpClientStatus['state'], { label: string; dot: strin
 
 const quote = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
 /** What a server is: its command line, or its address for a server reached over HTTP. */
-export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args' | 'transport' | 'url'>) => (c.transport === 'http' ? (c.url ?? '') : [c.command, ...c.args].map(quote).join(' '))
-
+const SECRET = /token|key|secret|password|auth/i
+/** An address with token-like query values hidden (Penpot's key travels in the address). */
+function maskUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    for (const k of [...u.searchParams.keys()]) if (SECRET.test(k)) u.searchParams.set(k, '•••')
+    return u.toString().replace(/%E2%80%A2/g, '•')
+  } catch {
+    return url
+  }
+}
+/** How a server is started, for display: secrets in addresses and after --token-like flags are hidden. */
+export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args' | 'transport' | 'url'>) => {
+  if (c.transport === 'http') return maskUrl(c.url ?? '')
+  const args = c.args.map((a, i) => {
+    const flag = /^(--?[\w-]+)=(.*)$/.exec(a)
+    if (flag && SECRET.test(flag[1])) return `${flag[1]}=•••`
+    if (i > 0 && /^--?[\w-]+$/.test(c.args[i - 1]) && SECRET.test(c.args[i - 1])) return '•••'
+    return /^https?:\/\//.test(a) ? maskUrl(a) : a
+  })
+  return [c.command, ...args].map(quote).join(' ')
+}
 
 /** External MCP servers Cloth connects to (configs live in settings), with their live status. */
 export function useExternalServers() {

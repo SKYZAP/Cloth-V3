@@ -78,7 +78,7 @@ export function McpPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">MCP</h1>
@@ -89,7 +89,7 @@ export function McpPage() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_56px_210px_56px_minmax(0,1fr)] items-center gap-y-4 max-[1000px]:grid-cols-1">
+          <div className="grid grid-cols-[minmax(0,1fr)_56px_210px_56px_minmax(0,1fr)] items-center gap-y-4 max-[1000px]:grid-cols-1 min-[1600px]:grid-cols-[minmax(0,1fr)_88px_260px_88px_minmax(0,1fr)]">
             <section ref={serverCol} aria-label="Servers Cloth uses" className="grid content-start gap-2">
               <h2 className="text-[12.5px] font-medium text-dim">Servers Cloth uses</h2>
               {servers.configs.map((c) => {
