@@ -186,7 +186,8 @@ export function Devices({ runner, locked, onSelect }: { runner: Runner; locked: 
 
 const MAX_LINES = 2000
 
-export function LogCard({ id }: { id: string }) {
+/** `tall`: in a wide layout the log fills the window's height. */
+export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
   const [lines, setLines] = useState<string[]>([])
   const [copied, setCopied] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -235,7 +236,7 @@ export function LogCard({ id }: { id: string }) {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className="selectable max-h-[280px] overflow-y-auto px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line"
+        className={clsx('selectable max-h-[280px] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line', tall && '@[1040px]:h-[calc(100vh-330px)] @[1040px]:max-h-none')}
         translate="no"
       >
         {lines.map((line, i) => (

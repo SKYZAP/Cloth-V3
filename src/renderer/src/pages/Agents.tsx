@@ -69,7 +69,7 @@ export function AgentsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Agents</h1>
@@ -95,7 +95,7 @@ export function AgentsPage() {
               </div>
             </div>
             <svg aria-hidden="true" className="h-6 w-full mobile:hidden max-[760px]:hidden" viewBox="0 0 900 24" preserveAspectRatio="none">
-              <path d="M450 0 V10 H150 V24 M450 10 H750 V24 M450 10 V24" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+              <path d="M450 0 V10 M112.5 24 V10 H787.5 V24 M337.5 10 V24 M562.5 10 V24" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
             </svg>
           </div>
 
@@ -148,7 +148,7 @@ function Lane({ title, hint, children }: { title: string; hint: string; children
       <h2 className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] font-semibold">
         {title} <span className="text-[12px] font-normal text-dim">{hint}</span>
       </h2>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">{children}</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">{children}</div>
     </section>
   )
 }
