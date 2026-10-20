@@ -229,7 +229,17 @@ export function createApi(s: Services): ClothApi {
       downloadRuntime: (id, backend) => s.runs.downloadRuntime(id, backend),
       modelDownloadInfo: () => s.runs.modelDownloadInfo(),
       downloadModel: (id) => s.runs.downloadModel(id),
-      cancelDownload: async (id) => s.runs.cancelDownload(id)
+      cancelDownload: async (id) => s.runs.cancelDownload(id),
+      modelMeta: async (id) => s.runs.modelMeta(id),
+      hardware: (refresh) => s.runs.hardware(refresh),
+      engines: async () => s.runs.engines(),
+      checkEngines: () => s.runs.checkEngines(),
+      installEngine: (flavour, backend) => s.runs.installEngine(flavour, backend),
+      useEngine: async (flavour, backend) => s.runs.useEngine(flavour, backend),
+      setEngineAutoCheck: async (on) => s.runs.setEngineAutoCheck(on),
+      searchModels: (query) => s.runs.searchModels(query),
+      hubFiles: (repo, params) => s.runs.hubFiles(repo, params),
+      addHubModel: (input) => s.runs.addHubModel(input)
     },
     containers: {
       status: (force) => s.containers.status(force),

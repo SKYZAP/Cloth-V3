@@ -293,6 +293,24 @@ export interface ClothApi {
     /** Download (resuming a partial file) and set the runner's model and projector. Progress: kind 'model'. */
     downloadModel(id: string): Promise<import('./types').Runner>
     cancelDownload(id: string): Promise<void>
+    /** What the runner's model file says about itself: trained context, context-cache size per token, reasoning. */
+    modelMeta(id: string): Promise<import('./types').ModelMeta | null>
+    /** This PC's GPUs and memory (cached; refresh to look again). */
+    hardware(refresh?: boolean): Promise<import('./types').Hardware>
+    /** Installed llama.cpp builds, the one in use, and the latest releases once checked. */
+    engines(): Promise<import('./types').EnginesState>
+    /** Look up the newest official and PrismML builds on GitHub. */
+    checkEngines(): Promise<import('./types').EnginesState>
+    /** Download the newest build and use it; runners on an older build of the same kind move to it. Progress: kind 'engine', id 'engine-<flavour>'. */
+    installEngine(flavour: import('./types').EngineFlavour, backend: import('./types').EngineBackend): Promise<import('./types').EnginesState>
+    useEngine(flavour: import('./types').EngineFlavour, backend: import('./types').EngineBackend): Promise<import('./types').EnginesState>
+    setEngineAutoCheck(on: boolean): Promise<import('./types').EnginesState>
+    /** GGUF models on Hugging Face. */
+    searchModels(query: string): Promise<import('./types').HubModel[]>
+    /** A repo's sizes, each checked against this PC, one recommended. */
+    hubFiles(repo: string, params: number | null): Promise<import('./types').HubFiles>
+    /** A new runner for a Hugging Face model; its files download in the background (progress: kind 'model'). */
+    addHubModel(input: { repo: string; quant: string; projector?: string | null; name?: string; params?: number | null }): Promise<import('./types').Runner>
   }
   containers: {
     status(force?: boolean): Promise<ContainerStatus>
