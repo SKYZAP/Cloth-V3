@@ -42,6 +42,21 @@ export const commandLine = (c: Pick<McpClientConfig, 'command' | 'args' | 'trans
   return [c.command, ...args].map(quote).join(' ')
 }
 
+/** One line on what a server is: its preset's description, else where it lives or what it runs. */
+export function aboutOf(c: Pick<McpClientConfig, 'name' | 'transport' | 'url' | 'command' | 'args'>, presets: McpPreset[]): string {
+  const known = presets.find((p) => p.name === c.name)?.about
+  if (known) return known
+  if (c.transport === 'http') {
+    try {
+      return `A server at ${new URL(c.url ?? '').host}`
+    } catch {
+      return 'A server at a web address'
+    }
+  }
+  const pkg = c.args.find((a) => !a.startsWith('-'))
+  return pkg ? `Runs ${pkg} on this computer` : `Runs ${c.command} on this computer`
+}
+
 /** External MCP servers Cloth connects to (configs live in settings), with their live status. */
 export function useExternalServers() {
   const settings = useApp((s) => s.settings)
@@ -80,58 +95,110 @@ export function useExternalServers() {
   const restart = (id: string) => void attempt(() => api.mcp.stopClient(id).then(() => api.mcp.startClient(id))).then(load)
   const stateOf = (c: McpClientConfig): McpClientStatus['state'] => (c.enabled ? (status.find((s) => s.id === c.id)?.state ?? 'off') : 'off')
   const unused = presets.filter((p) => !configs.some((c) => c.name === p.name))
-  return { configs, status, unused, patch, add, remove, restart, stateOf }
+  return { configs, status, presets, unused, patch, add, remove, restart, stateOf }
 }
 
 export type ExternalServers = ReturnType<typeof useExternalServers>
 
-/** One server's settings, state, tools and actions (shown in the MCP page's side panel). */
+/** One server's state, chat defaults, tools and connection (the MCP page's side panel). */
 export function ServerDetail({ config: c, servers, onRemoved }: { config: McpClientConfig; servers: ExternalServers; onRemoved(): void }) {
   const st = servers.status.find((s) => s.id === c.id)
   const state = servers.stateOf(c)
   const [asJson, setAsJson] = useState(false)
+  const [filter, setFilter] = useState('')
+  const live = st?.state === 'ready'
+  const tools = live ? st.tools : (st?.knownTools ?? [])
+  const q = filter.trim().toLowerCase()
+  const shown = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tools
+  const label = !c.enabled ? 'Turned off. Chats can’t use it.' : state === 'ready' ? 'Running' : state === 'starting' ? 'Starting…' : state === 'error' ? (c.transport === 'http' ? 'Couldn’t connect' : 'Couldn’t start') : 'Not running. It starts when a chat uses it.'
   return (
-    <div className="grid min-w-0 gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex items-center gap-2 text-[13px]">
-          <span className={clsx('h-2 w-2 rounded-full', STATE[state].dot)} aria-hidden="true" />
-          {c.enabled ? STATE[state].label : 'Turned off'}
-        </span>
-        <div className="flex-1" />
-        <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="Connect" />
-        <Button size="sm" disabled={!c.enabled || state === 'starting'} onClick={() => servers.restart(c.id)}>
-          {state === 'ready' ? 'Restart' : 'Start'}
-        </Button>
-      </div>
-      {st?.state === 'error' && st.error && (
-        <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">
-          <div className="font-medium">It stopped with this error:</div>
-          <div className="mt-1 font-mono text-[11.5px]">{st.error}</div>
-          <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and headers below, then Start it again.' : 'Check the command and environment below, then Start it again.'}</div>
+    <div className="grid min-w-0 gap-6">
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
+            <span className={clsx('h-2 w-2 shrink-0 rounded-full', c.enabled ? STATE[state].dot : 'bg-line-strong')} aria-hidden="true" />
+            <span role="status">{label}</span>
+          </span>
+          <Button size="sm" disabled={!c.enabled || state === 'starting'} onClick={() => servers.restart(c.id)}>
+            {state === 'ready' ? 'Restart' : state === 'error' ? 'Try again' : 'Start now'}
+          </Button>
         </div>
-      )}
-      <div className="grid gap-2">
-        <h3 className="text-[12px] font-medium text-muted">In chats</h3>
-        <label className="flex items-center gap-2 text-[12.5px]">
-          <Switch checked={c.defaultOn} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} />
-          On in new chats
-        </label>
-        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-          Tool calls
+        {st?.state === 'error' && st.error && (
+          <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px]">
+            <div className="selectable font-mono text-[11.5px] text-crimson-hi">{st.error}</div>
+            <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and token under Connection, then try again.' : 'Check the program and its arguments under Connection, then try again.'}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3">
+        <h3 className="text-[12.5px] font-semibold">In chats</h3>
+        <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="Let chats use it" />
+        <div className="grid gap-1">
+          <Switch checked={c.defaultOn} disabled={!c.enabled} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} label="On in new chats" />
+          <span className="pl-10 text-[12px] text-dim">Any chat can still turn it on or off from the composer.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
+          <span>Before a tool runs</span>
           <Segmented
             value={c.approval}
             onChange={(approval) => servers.patch(c.id, { approval })}
             items={[
-              { value: 'ask', label: 'Ask first' },
-              { value: 'auto', label: 'Run' }
+              { value: 'ask', label: 'Ask me first' },
+              { value: 'auto', label: 'Run without asking' }
             ]}
           />
         </div>
       </div>
+
       <div className="grid gap-2">
-        <div className="flex items-center gap-3">
-          <h3 className="text-[12px] font-medium text-muted">Connection</h3>
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-[12.5px] font-semibold">
+            Tools <span className="font-normal text-dim">{tools.length || ''}</span>
+          </h3>
           <span className="flex-1" />
+          {tools.length > 8 && (
+            <input
+              type="search"
+              aria-label={`Filter ${c.name}’s tools`}
+              placeholder="Filter tools…"
+              spellCheck={false}
+              autoComplete="off"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="h-7 w-[180px] rounded-md border border-line bg-panel px-2 text-[12px] text-fg placeholder:text-dim focus:border-crimson-line focus:outline-none"
+            />
+          )}
+        </div>
+        {tools.length ? (
+          <>
+            {!live && <p className="text-[12px] text-dim">From when it last ran. Start it to refresh the list.</p>}
+            <ul className="grid divide-y divide-line rounded-[10px] border border-line bg-panel">
+              {shown.map((t) => (
+                <li key={t.name} className="grid gap-0.5 px-3 py-2 text-[12px]">
+                  <span className="truncate font-mono text-fg/90" translate="no" title={t.name}>
+                    {t.name}
+                  </span>
+                  {t.description && <span className="line-clamp-2 text-dim">{t.description.split('\n')[0]}</span>}
+                </li>
+              ))}
+              {!shown.length && <li className="px-3 py-2 text-[12px] text-dim">No tool matches “{filter.trim()}”.</li>}
+            </ul>
+          </>
+        ) : (
+          <p className="text-[12px] text-dim">Its tools show here once it has run. Start it now to see them.</p>
+        )}
+      </div>
+
+      <details className="group grid gap-2">
+        <summary className="flex cursor-default list-none items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
+          <span className="text-[12.5px] font-semibold">Connection</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-dim" translate="no">
+            {commandLine(c)}
+          </span>
+          <span className="text-[12px] text-muted group-open:hidden">Edit</span>
+        </summary>
+        <div className="mt-3 grid gap-3">
           <Segmented
             value={asJson ? 'json' : 'fields'}
             onChange={(v) => setAsJson(v === 'json')}
@@ -140,32 +207,16 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
               { value: 'json', label: 'JSON' }
             ]}
           />
+          {asJson ? (
+            <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
+          ) : (
+            <GuidedServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={(next) => servers.patch(c.id, next)} />
+          )}
         </div>
-        {asJson ? (
-          <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
-        ) : (
-          <GuidedServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={(next) => servers.patch(c.id, next)} />
-        )}
-      </div>
-      <div className="grid gap-2">
-        <h3 className="text-[12px] font-medium text-muted">Tools{st?.state === 'ready' ? ` (${st.tools.length})` : ''}</h3>
-        {st?.state === 'ready' ? (
-          <div className="grid gap-1">
-            {st.tools.map((t) => (
-              <div key={t.name} className="grid grid-cols-[minmax(0,180px)_minmax(0,1fr)] gap-3 text-[12px]">
-                <span className="truncate font-mono text-fg/90" translate="no" title={t.name}>
-                  {t.name}
-                </span>
-                <span className="text-dim">{t.description.split('\n')[0].slice(0, 140)}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-[12px] text-dim">Its tools are listed once it's running.</p>
-        )}
-      </div>
+      </details>
+
       <div className="border-t border-line pt-4">
-        <Button size="sm" variant="ghost" icon={<Trash size={12} />} onClick={() => void servers.remove(c).then((gone) => gone && onRemoved())}>
+        <Button size="sm" variant="ghost" className="!text-crimson-hi hover:!bg-crimson-soft" icon={<Trash size={12} />} onClick={() => void servers.remove(c).then((gone) => gone && onRemoved())}>
           Remove {c.name}
         </Button>
       </div>

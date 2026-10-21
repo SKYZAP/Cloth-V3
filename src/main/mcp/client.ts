@@ -60,6 +60,10 @@ export const MCP_PRESETS: McpPreset[] = [
   { name: 'penpot', transport: 'http', url: 'http://design.example.internal/mcp/stream', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'auto', needsToken: true, tokenQuery: 'userToken', about: 'Reads and edits designs in the self-hosted Penpot (connect a file there first)' }
 ]
 
+/** Where a server's tool list from its last run is kept. */
+const knownKey = (id: string) => `mcp.knownTools.${id}`
+const brief = (t: { name: string; description: string }) => ({ name: t.name, description: t.description.split('\n')[0].slice(0, 200) })
+
 /**
  * Cloth as an MCP client: starts the external servers set up in Settings (stdio), lists their tools
  * and hands them to chats that turn them on. Calls go through the chat's approvals.
@@ -100,7 +104,9 @@ export class McpClientService {
   status(): McpClientStatus[] {
     return this.configs().map((c) => {
       const conn = this.conns.get(c.id)
-      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, tools: (conn?.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema })) }
+      const tools = (conn?.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema }))
+      const knownTools = conn?.state === 'ready' ? tools.map(brief) : this.ctx.kv.get<McpClientStatus['knownTools']>(knownKey(c.id), [])
+      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, tools, knownTools }
     })
   }
 
@@ -174,6 +180,7 @@ export class McpClientService {
         c.transport = transport
         c.tools = tools
         c.state = 'ready'
+        this.ctx.kv.set(knownKey(id), tools.map((t) => brief({ name: t.name, description: t.description ?? '' })))
         transport.onclose = () => {
           if (c.transport !== transport) return
           c.state = 'off'
@@ -249,7 +256,7 @@ export class McpClientService {
   }
 
   private statusOf(id: string): McpClientStatus {
-    return this.status().find((s) => s.id === id) ?? { id, state: 'off', error: null, tools: [] }
+    return this.status().find((s) => s.id === id) ?? { id, state: 'off', error: null, tools: [], knownTools: [] }
   }
 
   private changed(): void {
