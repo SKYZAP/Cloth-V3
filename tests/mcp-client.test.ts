@@ -45,6 +45,11 @@ describe('external MCP servers', () => {
     ])
     // A chat that didn't turn the server on gets nothing.
     expect(services.mcpClients.tools({ collectionIds: [], skillsEnabled: false, workspace: null, mcpServers: [] })).toEqual([])
+    // Once stopped, the MCP page still knows what it offers.
+    await services.mcpClients.stopAll()
+    const idle = services.mcpClients.status().find((s) => s.id === 'mcs_echo')!
+    expect(idle.state).toBe('off')
+    expect(idle.knownTools.map((t) => t.name).sort()).toEqual(['echo', 'fail', 'pixel'])
   }, 30_000)
 
   it('reports a server that fails to start', async () => {

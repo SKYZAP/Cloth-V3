@@ -1477,6 +1477,8 @@ export interface McpClientStatus {
   state: 'off' | 'starting' | 'ready' | 'error'
   error: string | null
   tools: { name: string; description: string; inputSchema?: Record<string, unknown> }[]
+  /** The tools it listed when it last ran (kept between runs), so a server not running yet still shows what it offers. */
+  knownTools: { name: string; description: string }[]
 }
 
 // ─── Run (local models with llama.cpp's llama-server) ────────────────────────
