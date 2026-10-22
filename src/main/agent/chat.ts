@@ -187,11 +187,21 @@ const DEFAULT_CONFIG: SessionConfig = {
   skillsOff: [],
   skillsAlways: [],
   agentId: null,
-  autoTiers: true
+  autoTiers: true,
+  contextLimit: null
 }
 
 /** The capability switches a chat copies from an agent when it is set up from one (its folder access becomes a permission mode). */
 const SETUP_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools']
+
+/**
+ * What the Setup panel sets for every chat at once: its tools, skills, servers, knowledge and context
+ * limit. Chats set up from an agent keep the agent's own; the rest share one saved setup.
+ */
+export const SHARED_KEYS = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools', 'autoTiers', 'contextLimit'] as const satisfies readonly (keyof SessionConfig)[]
+type SharedSetup = Partial<Pick<SessionConfig, (typeof SHARED_KEYS)[number]>>
+const SHARED_KV = 'chat.sharedSetup'
+const pickShared = (o: Partial<SessionConfig>): SharedSetup => Object.fromEntries(SHARED_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) as SharedSetup
 
 /** An agent's switches as a tool scope (its folder access capped at what the caller has). */
 export function agentScope(agent: AgentSetup, base: ToolScope): ToolScope {
@@ -911,12 +921,20 @@ export class ChatService {
     return toSession(this.row(id))
   }
 
+  /** The setup keys a project's defaults decide for its chats. */
+  private projectKeys(projectId: string | null): Set<string> {
+    const defaults = projectId ? this.projects?.find(projectId)?.defaults : undefined
+    return new Set(Object.keys(defaults ?? {}).filter((k) => (defaults as Record<string, unknown>)[k] !== undefined))
+  }
+
   create(config: SessionInput = {}, id = newId('ses_')): ChatSession {
     const now = Date.now()
     const s = this.settings.get()
     // A chat started in a project begins with the project's folder and settings.
     const fromProject: SessionInput = config.projectId && this.projects ? this.projects.chatConfig(config.projectId) : {}
-    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...withoutCaps(fromProject), ...withoutCaps(config) }
+    // New chats start from the shared setup; a project's defaults and anything asked for win over it.
+    const shared = this.ctx.kv.get<SharedSetup>(SHARED_KV, {})
+    const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...shared, ...withoutCaps(fromProject), ...withoutCaps(config) }
     // Its permission mode: asked for, else the project's, else the default for new chats.
     full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'manual')
     full.access = full.permissions === 'plan' ? (full.access ?? 'manual') : full.permissions
@@ -925,7 +943,8 @@ export class ChatService {
     return this.get(id)
   }
 
-  update(id: string, patch: SessionInput & { title?: string }): ChatSession {
+  /** Change a chat. With `share`, setup changes (tools, skills, servers, knowledge, context limit) also become every other chat's. */
+  update(id: string, patch: SessionInput & { title?: string }, opts: { share?: boolean } = {}): ChatSession {
     const cur = this.get(id)
     const { title, fileAccess, shell, autoApprove, ...config } = patch
     const next: SessionConfig = {
@@ -955,6 +974,7 @@ export class ChatService {
       skillsAlways: cur.skillsAlways,
       agentId: cur.agentId,
       autoTiers: cur.autoTiers,
+      contextLimit: cur.contextLimit,
       origin: cur.origin,
       workflow: cur.workflow ?? null,
       ...config
@@ -971,8 +991,32 @@ export class ChatService {
     if (config.computerUse === false) next.computerConsent = false
     // A title set without saying where it came from was typed by the user: AI titles leave it alone.
     if (title !== undefined && config.titleSource === undefined) next.titleSource = 'user'
+    // A change to the shared setup (in a chat not set up from an agent) applies to every such chat.
     this.ctx.db.prepare('UPDATE sessions SET title = ?, config = ?, updated_at = ? WHERE id = ?').run(title ?? cur.title, JSON.stringify(next), Date.now(), id)
+    // A setup change in a chat not set up from an agent is the setup for every such chat (what a
+    // project's defaults decide stays with the project's chats).
+    const own = this.projectKeys(next.projectId)
+    const sharedPatch = Object.fromEntries(Object.entries(pickShared(config)).filter(([k]) => !own.has(k))) as SharedSetup
+    if (opts.share && !next.agentId && config.agentId === undefined && Object.keys(sharedPatch).length) this.shareSetup(id, sharedPatch)
     return this.get(id)
+  }
+
+  /** Save setup keys as the shared setup and apply them to every other chat that isn't an agent's (without reordering the chat list). */
+  private shareSetup(from: string, patch: SharedSetup): void {
+    this.ctx.kv.set(SHARED_KV, { ...this.ctx.kv.get<SharedSetup>(SHARED_KV, {}), ...patch })
+    const rows = this.ctx.db.prepare('SELECT id, config FROM sessions WHERE id != ?').all(from) as { id: string; config: string }[]
+    const write = this.ctx.db.prepare('UPDATE sessions SET config = ? WHERE id = ?')
+    let changed = 0
+    for (const r of rows) {
+      const stored = json<SessionInput>(r.config, {})
+      if (stored.agentId) continue
+      const own = this.projectKeys(stored.projectId ?? null)
+      const apply = Object.entries(patch).filter(([k, v]) => !own.has(k) && JSON.stringify((stored as Record<string, unknown>)[k]) !== JSON.stringify(v))
+      if (!apply.length) continue
+      write.run(JSON.stringify({ ...stored, ...Object.fromEntries(apply) }), r.id)
+      changed++
+    }
+    if (changed) this.ctx.emit('chat', { sessionId: from, type: 'setup' } satisfies ChatEvent)
   }
 
   remove(id: string): void {
@@ -1025,7 +1069,7 @@ export class ChatService {
     const session = this.get(id)
     // Keep the model's limit current (throttled; offline providers keep what they had).
     if (session.model) await this.runtime.providers.refreshModel(session.model).catch(() => undefined)
-    const window = session.model ? this.contextWindow(session.model) : null
+    const window = session.model ? this.contextWindow(session.model, session.contextLimit) : null
     const raw = this.rawMessages(id)
     const scope = this.scope(id)
     const est = (s: string) => Math.ceil(s.length / 4)
@@ -1058,7 +1102,7 @@ export class ChatService {
     const breakdown: ContextSlice[] = (Object.keys(SLICE_LABELS) as ContextSliceKey[])
       .map((key) => ({ key, label: SLICE_LABELS[key], tokens: Math.round(parts[key] * scale) }))
       .filter((s) => s.tokens > 0)
-    return { tokens, window, estimated: session.model ? this.contextEstimated(session.model) : false, threshold: window ? budget(window).threshold : null, breakdown, cost: this.usage?.costFor('chat', id) ?? 0 }
+    return { tokens, window, estimated: session.model && !session.contextLimit ? this.contextEstimated(session.model) : false, threshold: window ? budget(window).threshold : null, breakdown, cost: this.usage?.costFor('chat', id) ?? 0 }
   }
 
   /**
@@ -1085,7 +1129,7 @@ export class ChatService {
    * any summarising, with the error when it fails.
    */
   private async summariseHistory(id: string, model: ModelRef, raw: AgentMessage[], opts: { instructions?: string; signal?: AbortSignal; splitTurns?: boolean }): Promise<AgentMessage[]> {
-    const window = this.contextWindow(model)
+    const window = this.contextWindow(model, this.get(id).contextLimit)
     const plan = planCompaction(raw, budget(window).keep, { steps: opts.splitTurns })
     if (!plan) throw new Error('Not enough conversation to summarise yet')
     this.ctx.emit('chat', { sessionId: id, type: 'compacting' })
@@ -1123,7 +1167,9 @@ export class ChatService {
     }
   }
 
-  private contextWindow(ref: ModelRef): number {
+  /** The model's context window, or the chat's own limit when it sets one. */
+  private contextWindow(ref: ModelRef, limit?: number | null): number {
+    if (limit && limit > 0) return limit
     try {
       const info = this.runtime.providers.get(ref.providerId).models.find((m) => m.id === ref.modelId)
       return info?.contextWindow || 32_768
@@ -1437,7 +1483,7 @@ export class ChatService {
     let retryAbove = 0
     agent.prepareRequest = async ({ context }, signal) => {
       if (!this.settings.get().autoCompact || context.messages.findLast((m) => m.role !== 'system')?.role !== 'toolResult') return
-      const window = this.contextWindow(model)
+      const window = this.contextWindow(model, this.get(id).contextLimit)
       const { threshold } = budget(window)
       const tokens = estimateHistory(context.messages, this.ctx.kv.get<number>('compactedAt:' + id, 0))
       if (tokens <= Math.max(threshold, retryAbove)) return

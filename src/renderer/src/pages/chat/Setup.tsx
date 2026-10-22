@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowSquareOut, CaretLeft, CaretRight, FolderSimple, MagnifyingGlass, X } from '@phosphor-icons/react'
-import type { Agent, AgentSetup, ChatSession, ChatSetup, McpClientStatus, Project, SkillMode } from '@shared/types'
+import { contextIsGuess, type Agent, type AgentSetup, type ChatSession, type ChatSetup, type McpClientStatus, type Project, type SkillMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Segmented } from './StatusLine'
@@ -152,6 +152,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
   }, [opened])
 
   const m = useCapabilities(session, update, setup)
+  const modelWindow = useModelWindow(session)
   const { configs, chosen, isOn, builtin, external, skillsOn, selected, parts, total } = m
   const agent = agents.find((a) => a.id === session.agentId) ?? null
   const changed = !!agent && AGENT_KEYS.some((key) => JSON.stringify(agent[key]) !== JSON.stringify(session[key]))
@@ -179,6 +180,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
     if (view === 'mcp') return <ServersView back={back} target={session} update={update} m={m} status={servers} />
     if (view === 'tools') return <ToolsView back={back} target={session} update={update} m={m} />
     if (view === 'knowledge') return <KnowledgeView back={back} target={session} update={update} total={parts.knowledge} />
+    if (view === 'context') return <ContextView back={back} session={session} update={update} />
     return <InstructionsView back={back} session={session} update={update} />
   }
   if (view !== 'overview')
@@ -231,8 +233,12 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         <SummaryLine label="Tools" count={builtinOn} tokens={parts.builtin} onOpen={() => setView('tools')} />
         <SummaryLine label="Knowledge" count={selected.length} tokens={parts.knowledge} onOpen={() => setView('knowledge')} />
         {computerSupported && <ToggleLine label="Computer Use" sub="Allow Cloth to use your computer" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
+        <SummaryLine label="Context window" onOpen={() => setView('context')} value={session.contextLimit ? `${tokensLabel(session.contextLimit)} (set)` : modelWindow ? `${tokensLabel(modelWindow)}, the model’s` : 'the model’s'} />
         <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'set' : 'none'} />
       </div>
+      <p className="px-4 pb-4 text-[11px] leading-relaxed text-dim">
+        {session.agentId ? 'This chat was set up from an agent, so changes here stay in this chat.' : 'Skills, tools, MCP, knowledge and the context window are shared: a change here applies to all your chats. Instructions stay with this chat.'}
+      </p>
     </div>
   )
 }
@@ -756,6 +762,80 @@ export function KnowledgeView({ back, target: session, update, total }: { back?:
       {collections.length > 0 && !shown.length && <Nothing>{nothingMatches(q)}</Nothing>}
       {!collections.length && <Nothing>No collections yet. Add knowledge on the Knowledge page.</Nothing>}
       <p className="px-2 pb-2 pt-3 text-[11px] leading-relaxed text-dim">The agent searches the collections that are on with rag_search, and cites what it finds.</p>
+    </Drill>
+  )
+}
+
+/** 131072 → "128K", 1_000_000 → "1M". */
+export function tokensLabel(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`
+  return `${Math.round(n / 1024)}K`
+}
+
+/** The chat model's own context window (null when it isn't known), and whether that size is a guess. */
+function useModelWindow(session: ChatSession): number | null {
+  const providers = useApp((s) => s.providers)
+  const m = session.model && providers.find((p) => p.id === session.model!.providerId)?.models.find((x) => x.id === session.model!.modelId)
+  return m ? m.contextWindow : null
+}
+
+const LIMITS = [8_192, 16_384, 32_768, 65_536, 131_072, 262_144, 1_000_000]
+
+/** The context window override: the model's own size, a preset, or any number of tokens. */
+function ContextView({ back, session, update }: { back(): void; session: ChatSession; update: (p: Partial<ChatSession>) => Promise<void> }) {
+  const providers = useApp((s) => s.providers)
+  const model = session.model && providers.find((p) => p.id === session.model!.providerId)?.models.find((x) => x.id === session.model!.modelId)
+  const own = model?.contextWindow ?? null
+  const guessed = !!model && contextIsGuess(model)
+  const limit = session.contextLimit
+  const [draft, setDraft] = useState(limit ? String(limit) : '')
+  useEffect(() => setDraft(limit ? String(limit) : ''), [limit])
+  const set = (n: number | null) => void update({ contextLimit: n })
+  const commit = () => {
+    const n = Math.round(Number(draft.replace(/[,_\s]/g, '')))
+    if (!draft.trim()) return set(null)
+    if (!Number.isFinite(n) || n < 1024) return setDraft(limit ? String(limit) : '')
+    if (n !== limit) set(n)
+  }
+  const chip = (on: boolean) => clsx('flex h-7 items-center rounded-lg border px-2.5 text-[12px] tabular-nums transition-colors', on ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-muted hover:border-line-strong')
+  return (
+    <Drill title="Context window" back={back}>
+      <div className="grid gap-4 p-1.5">
+        <p className="text-[12px] leading-relaxed text-muted">
+          How much of the conversation the model gets. Near the limit, Cloth summarises older messages to make room.
+          {own ? ` ${model?.name ?? 'This model'} takes ${tokensLabel(own)}${guessed ? ' (a guess: its provider doesn’t say)' : ''}.` : ''}
+        </p>
+        <div className="grid gap-1.5">
+          <div className="text-[11.5px] text-dim">Limit</div>
+          <div className="flex flex-wrap gap-1.5">
+            <button onClick={() => set(null)} aria-pressed={!limit} className={chip(!limit)}>
+              The model’s{own ? ` (${tokensLabel(own)})` : ''}
+            </button>
+            {LIMITS.map((n) => (
+              <button key={n} onClick={() => set(n)} aria-pressed={limit === n} className={chip(limit === n)}>
+                {tokensLabel(n)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="grid gap-1.5">
+          <span className="text-[11.5px] text-dim">Or exactly, in tokens</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            spellCheck={false}
+            autoComplete="off"
+            placeholder={own ? String(own) : 'e.g. 48000'}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="h-8 w-[160px] rounded-lg border border-line bg-panel px-2.5 font-mono text-[12px] tabular-nums text-fg placeholder:text-dim focus:border-crimson-line focus:outline-none"
+          />
+        </label>
+        {!!limit && own !== null && limit > own && !guessed && <p className="text-[11.5px] text-warn">More than the model takes ({tokensLabel(own)}): long chats may fail before Cloth summarises.</p>}
+        {!!limit && own !== null && limit < own && <p className="text-[11.5px] text-dim">Smaller than the model’s, so requests stay shorter and cheaper.</p>}
+      </div>
     </Drill>
   )
 }

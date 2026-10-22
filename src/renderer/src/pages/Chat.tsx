@@ -129,6 +129,8 @@ export function ChatPage() {
       void api.chat.list().then(setSessions)
     }
     if (e.type === 'title') setSessions((ss) => ss.map((s) => (s.id === e.sessionId ? { ...s, title: e.title } : s)))
+    // Setup is shared between chats: one chat's change shows in the others.
+    if (e.type === 'setup') void api.chat.list().then(setSessions)
   })
 
   const create = async (projectId: string | null = null) => {
@@ -457,7 +459,7 @@ function ChatView({
   }, [session.id])
 
   const refreshUsage = () => void api.chat.contextUsage(session.id).then(setUsage).catch(() => setUsage(null))
-  useEffect(refreshUsage, [session.id, session.model?.modelId])
+  useEffect(refreshUsage, [session.id, session.model?.modelId, session.contextLimit])
 
   useEvent('chat', (e) => {
     if (e.sessionId !== session.id) return
