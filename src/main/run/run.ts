@@ -36,10 +36,11 @@ import { isReasoningModelId, type ProviderService } from '../providers/providers
 import { killTree, run } from '../web/process'
 import { downloadFile, remoteSize, USER_AGENT, type Fetch } from './download'
 import { unzip } from './zip'
+import { isTarGz, untarGz } from './untar'
 import { modelMeta } from './gguf'
 import { groupFiles, listRepoFiles, searchHub, HF_BASE } from './hub'
-import { fromDevices, hardwareFrom, parseWindowsGpus, WINDOWS_GPU_SCRIPT } from './hardware'
-import { ENGINE_BACKENDS, ENGINE_REPOS, isNewer, newestRelease, type EngineAssets, type ReleaseJson as EngineReleaseJson } from './engines'
+import { fromDevices, hardwareFrom, parseMacSysctl, parseWindowsGpus, WINDOWS_GPU_SCRIPT } from './hardware'
+import { assetPatterns, ENGINE_BACKENDS, ENGINE_REPOS, isNewer, newestRelease, type EngineAssets, type EngineTarget, type ReleaseJson as EngineReleaseJson } from './engines'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -262,6 +263,8 @@ export interface RunDeps {
   /** Whether nothing listens on 127.0.0.1:port. */
   portFree: (port: number) => Promise<boolean>
   platform: NodeJS.Platform
+  /** CPU architecture ('arm64' on Apple silicon), to pick the right download. */
+  arch: string
   home: string
   env: NodeJS.ProcessEnv
   releasesUrl: string
@@ -283,6 +286,7 @@ export function defaultRunDeps(): RunDeps {
     exec: (file, args, cwd) => run(file, args, { timeoutMs: 60_000, cwd }),
     portFree,
     platform: process.platform,
+    arch: process.arch,
     home: homedir(),
     env: process.env,
     releasesUrl: PRISM_RELEASES_LATEST,
@@ -814,7 +818,7 @@ export class RunService {
       try {
         const { stdout, stderr } = await this.deps.exec(build.path, ['--list-devices'], dirname(build.path))
         const gpus = fromDevices(parseDevices(`${stdout}\n${stderr}`))
-        if (gpus.length) return (this.hw = hardwareFrom(gpus, 'llama'))
+        if (gpus.length) return (this.hw = hardwareFrom(gpus, 'llama', undefined, this.deps.platform))
       } catch {
         /* fall back to the system's view */
       }
@@ -827,7 +831,15 @@ export class RunService {
         /* none found */
       }
     }
-    return (this.hw = hardwareFrom([], 'none'))
+    if (this.deps.platform === 'darwin') {
+      try {
+        const { stdout } = await this.deps.exec('sysctl', ['-n', 'hw.memsize', 'machdep.cpu.brand_string'], this.deps.home)
+        return (this.hw = hardwareFrom(parseMacSysctl(stdout), 'system', undefined, 'darwin'))
+      } catch {
+        /* none found */
+      }
+    }
+    return (this.hw = hardwareFrom([], 'none', undefined, this.deps.platform))
   }
 
   // ── Engines (llama.cpp builds) ──
@@ -843,7 +855,7 @@ export class RunService {
     for (const flavour of Object.keys(ENGINE_REPOS) as EngineFlavour[]) {
       const root = this.enginesDir(flavour)
       for (const dir of safeReaddir(root)) {
-        const m = /^(.+)-(vulkan|rocm|cuda|cpu)$/.exec(dir)
+        const m = /^(.+)-(vulkan|rocm|cuda|cpu|metal)$/.exec(dir)
         const path = m && findFile(join(root, dir), exe, 2)
         if (m && path) out.push({ flavour, tag: m[1], backend: m[2] as EngineBackend, path, installedAt: statSync(path).mtimeMs })
       }
@@ -890,7 +902,7 @@ export class RunService {
       headers: { accept: 'application/vnd.github+json', 'user-agent': USER_AGENT }
     })
     if (!res.ok) throw new Error(`Couldn't read ${flavour === 'prism' ? "PrismML's" : 'llama.cpp'} releases (HTTP ${res.status})`)
-    return newestRelease(flavour, (await res.json()) as EngineReleaseJson[])
+    return newestRelease(flavour, (await res.json()) as EngineReleaseJson[], this.target())
   }
 
   /** Look up the newest build of each llama.cpp (GitHub). */
@@ -909,12 +921,12 @@ export class RunService {
    * and move runners on an older build of the same kind to it (they pick it up on their next start).
    */
   async installEngine(flavour: EngineFlavour, backend: EngineBackend): Promise<EnginesState> {
-    if (this.deps.platform !== 'win32') throw new Error('Installing llama.cpp is only supported on Windows here yet. Build it yourself and choose llama-server under Advanced.')
-    if (!ENGINE_BACKENDS.includes(backend)) throw new Error(`Unknown build ${backend}`)
+    if (!Object.keys(assetPatterns(this.target())).length) throw new Error('Installing llama.cpp is supported on Windows and macOS. Build it yourself and choose llama-server under Advanced.')
+    if (!ENGINE_BACKENDS.includes(backend) || !assetPatterns(this.target())[backend]) throw new Error(`There's no ${backend} build of llama.cpp for this computer`)
     await this.download(`engine-${flavour}`, 'engine', async (signal, progress) => {
       const assets = await this.engineAssets(flavour)
       const file = assets?.files[backend]
-      if (!assets || !file) throw new Error(`${flavour === 'prism' ? "PrismML's" : 'The official'} latest build has no ${backend} version for Windows`)
+      if (!assets || !file) throw new Error(`${flavour === 'prism' ? "PrismML's" : 'The official'} latest build has no ${backend} version for this computer`)
       const dir = join(this.enginesDir(flavour), `${safeName(assets.release.tag)}-${backend}`)
       const parts = [file, ...(file.extra ? [file.extra] : [])]
       const total = parts.reduce((n, f) => n + f.size, 0)
@@ -923,11 +935,13 @@ export class RunService {
         const zip = join(this.enginesDir(flavour), part.name)
         await downloadFile(part.url, zip, { fetch: this.deps.fetch, signal, expectedSize: part.size, onProgress: (r) => progress({ file: part.name, received: before + r, total, state: 'downloading' }) })
         progress({ file: part.name, received: before + part.size, total, state: 'extracting' })
-        await unzip(zip, dir, { signal })
+        // macOS builds come as .tar.gz (keeping the executable bit and library links), Windows ones as .zip.
+        if (isTarGz(part.name)) await untarGz(zip, dir, { signal })
+        else await unzip(zip, dir, { signal })
         await rm(zip, { force: true })
         before += part.size
       }
-      const exe = findFile(dir, exeName(this.deps.platform), 3)
+      const exe = findFile(dir, exeName(this.deps.platform), 4)
       if (!exe) throw new Error(`The download didn't contain ${exeName(this.deps.platform)}`)
       this.ctx.kv.set('run.engine', { flavour, backend })
       const root = this.enginesDir(flavour)
@@ -939,6 +953,11 @@ export class RunService {
       return this.list()[0]
     })
     return this.engines()
+  }
+
+  /** This computer, for picking downloads. */
+  private target(): EngineTarget {
+    return { platform: this.deps.platform, arch: this.deps.arch }
   }
 
   /** Make an installed build the one new models use. */

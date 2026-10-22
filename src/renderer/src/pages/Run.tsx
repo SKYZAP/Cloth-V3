@@ -7,7 +7,7 @@ import { attempt, useApp } from '@/lib/store'
 import { Button } from '@/components/ui'
 import { Inspector, InspectorHead, refocus } from '@/components/Inspector'
 import { AddModelModal, hardwareLine } from './run/AddModel'
-import { BACKEND, EnginePanel, EngineStrip, FLAVOUR, engineProgress, installEngine, useEngineAutoCheck } from './run/Engine'
+import { BACKEND, EnginePanel, EngineStrip, FLAVOUR, PLATFORM_BACKENDS, engineProgress, installEngine, useEngineAutoCheck } from './run/Engine'
 import { RunnerView } from './run/RunnerView'
 import { ProgressBar, active, live, progressKey, stopped, useNarrow, type Progress } from './run/shared'
 
@@ -221,7 +221,7 @@ function FirstRun({
   onAdd(): void
   onDisk(): void
 }) {
-  const backend = hardware?.recommendedBackend ?? 'vulkan'
+  const backend = hardware?.recommendedBackend ?? PLATFORM_BACKENDS[0]
   const downloading = engineProgress(progress, 'prism') ?? engineProgress(progress, 'official')
   return (
     <section aria-label="Get started" className="grid gap-4 rounded-[12px] border border-line bg-elev px-5 py-4">

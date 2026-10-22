@@ -81,6 +81,8 @@ export function fitOf(need: number, hw: Pick<Hardware, 'gpus' | 'ramMiB'>): HubF
   const vram = (hw.gpus[0]?.totalMiB ?? 0) * 1024 * 1024
   const ram = hw.ramMiB * 1024 * 1024
   if (vram && need <= vram * 0.95) return 'gpu'
+  // A Mac's GPU shares the system memory: there's no slower pool to spill into.
+  if (hw.gpus[0]?.vendor === 'apple') return 'too-big'
   // Spilling over: what doesn't fit on the GPU comes from system memory, leaving room for the OS.
   if (need <= vram + ram * 0.6) return 'ram'
   return 'too-big'
