@@ -365,6 +365,11 @@ export interface ChatSession {
   agentId: string | null
   /** The agent picks a tier (model and effort) for each job it delegates with `task`. */
   autoTiers: boolean
+  /**
+   * Tokens to treat as the chat's context window instead of the model's own (null = the model's).
+   * Summarising, the context meter and the request budget all follow it.
+   */
+  contextLimit: number | null
   /** What made this chat when it wasn't the user (an automation's report). */
   origin?: ChatOrigin
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
@@ -840,6 +845,8 @@ export type ChatEvent =
   | { sessionId: string; type: 'message'; message: UiMessage }
   | { sessionId: string; type: 'end'; error?: string }
   | { sessionId: string; type: 'title'; title: string }
+  /** A setup change in this chat was applied to the other chats too: lists holding chats should reload. */
+  | { sessionId: string; type: 'setup' }
   | { sessionId: string; type: 'approval'; approval: PendingApproval }
   | { sessionId: string; type: 'approval-done'; id: string }
   | { sessionId: string; type: 'question'; question: PendingQuestion }

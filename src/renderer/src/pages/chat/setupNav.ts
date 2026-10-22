@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 /** The Setup tab's drill-in pages that can be opened from elsewhere (e.g. the message box). */
-export type SetupSection = 'knowledge' | 'skills' | 'tools' | 'mcp' | 'agent' | 'instructions'
+export type SetupSection = 'knowledge' | 'skills' | 'tools' | 'mcp' | 'agent' | 'instructions' | 'context'
 
 interface SetupNav {
   /** Bumped on every request; the side panel opens (on `tab`) whenever it changes. */

@@ -172,7 +172,8 @@ export function createApi(s: Services): ClothApi {
       list: async () => s.chat.list(),
       create: async (config) => s.chat.create(config),
       update: async (id, patch) => {
-        const next = s.chat.update(id, patch)
+        // Changes made in a chat's Setup are the setup for every chat.
+        const next = s.chat.update(id, patch, { share: true })
         // A different model: fetch its current context size before the meter asks for it.
         if (patch.model) await s.providers.refreshModel(patch.model, { force: true }).catch(() => undefined)
         return next
