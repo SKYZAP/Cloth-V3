@@ -11,11 +11,27 @@ export function vendorOf(name: string): Vendor {
   return 'other'
 }
 
-/** The build that suits a GPU: CUDA for NVIDIA, Vulkan for everything else with a GPU, CPU without one. */
-export function recommendedBackend(gpus: Hardware['gpus']): EngineBackend {
+/** The build that suits a GPU: Metal on a Mac, CUDA for NVIDIA, Vulkan for everything else with a GPU, CPU without one. */
+export function recommendedBackend(gpus: Hardware['gpus'], platform: NodeJS.Platform = 'win32'): EngineBackend {
+  if (platform === 'darwin') return 'metal'
   const main = gpus[0]
   if (!main) return 'cpu'
   return main.vendor === 'nvidia' ? 'cuda' : 'vulkan'
+}
+
+/** Share of a Mac's memory the GPU may use (macOS's working-set limit is about two thirds to three quarters). */
+export const MAC_GPU_SHARE = 0.7
+
+/**
+ * A Mac's GPU from `sysctl -n hw.memsize machdep.cpu.brand_string`: Apple silicon shares memory between
+ * the CPU and GPU, so the GPU gets most of it.
+ */
+export function parseMacSysctl(stdout: string): Hardware['gpus'] {
+  const [mem, ...rest] = stdout.trim().split('\n')
+  const bytes = Number(mem)
+  const chip = rest.join(' ').trim()
+  if (!bytes || !/apple/i.test(chip)) return []
+  return [{ name: `${chip} GPU`, totalMiB: Math.round((bytes / 1024 / 1024) * MAC_GPU_SHARE), freeMiB: null, vendor: 'apple' }]
 }
 
 /** GPUs from llama.cpp's own device list (`--list-devices`): the most reliable sizes and free memory. */
@@ -63,6 +79,6 @@ export function parseWindowsGpus(stdout: string): Hardware['gpus'] {
   return [...byName.values()].sort((a, b) => b.totalMiB - a.totalMiB)
 }
 
-export function hardwareFrom(gpus: Hardware['gpus'], source: Hardware['source'], ramMiB = Math.round(totalmem() / 1024 / 1024)): Hardware {
-  return { gpus, ramMiB, recommendedBackend: recommendedBackend(gpus), source: gpus.length ? source : 'none' }
+export function hardwareFrom(gpus: Hardware['gpus'], source: Hardware['source'], ramMiB = Math.round(totalmem() / 1024 / 1024), platform: NodeJS.Platform = process.platform): Hardware {
+  return { gpus, ramMiB, recommendedBackend: recommendedBackend(gpus, platform), source: gpus.length ? source : 'none' }
 }

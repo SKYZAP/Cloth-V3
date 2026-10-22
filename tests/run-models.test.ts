@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdtempSync, readFileSync, readlinkSync, statSync, writeFileSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { modelMeta, readGgufMeta, reasoningKind } from '../src/main/run/gguf'
 import { fitOf, groupFiles, paramsOf, prettyName, quantOf } from '../src/main/run/hub'
-import { buildNumber, isNewer, newestRelease, releaseAssets } from '../src/main/run/engines'
-import { fromDevices, parseWindowsGpus, recommendedBackend } from '../src/main/run/hardware'
+import { backendsFor, buildNumber, isNewer, newestRelease, releaseAssets } from '../src/main/run/engines'
+import { untarGz } from '../src/main/run/untar'
+import { fromDevices, parseMacSysctl, parseWindowsGpus, recommendedBackend } from '../src/main/run/hardware'
 import { buildCommand, reasoningArgs } from '../src/main/run/run'
 import type { Runner } from '../src/shared/types'
 
@@ -178,5 +180,70 @@ describe('reasoning flags', () => {
     expect(args.slice(args.indexOf('--chat-template-kwargs'), args.indexOf('--chat-template-kwargs') + 2)).toEqual(['--chat-template-kwargs', '{"reasoning_effort":"medium"}'])
     // Extra flags still come last, so they can override.
     expect(args.at(-1)).toBe('--jinja')
+  })
+})
+
+describe('macOS', () => {
+  const asset = (name: string, size = 10) => ({ name, size, browser_download_url: `https://x/${name}` })
+  const mac = { platform: 'darwin' as const, arch: 'arm64' }
+
+  it('picks the Apple silicon build of either llama.cpp', () => {
+    const official = { tag_name: 'b11815', assets: [asset('llama-b11815-bin-win-vulkan-x64.zip'), asset('llama-b11815-bin-macos-arm64.tar.gz', 30), asset('llama-b11815-bin-macos-x64.tar.gz')] }
+    const prism = { tag_name: 'prism-b10787-73bfe6c', assets: [asset('llama-prism-b10787-73bfe6c-bin-macos-arm64-kleidiai.tar.gz'), asset('llama-prism-b10787-73bfe6c-bin-macos-arm64.tar.gz', 40)] }
+    const a = releaseAssets('official', official, mac)!
+    expect(Object.keys(a.files)).toEqual(['metal'])
+    expect(a.files.metal?.name).toBe('llama-b11815-bin-macos-arm64.tar.gz')
+    expect(releaseAssets('prism', prism, mac)!.files.metal?.name).toBe('llama-prism-b10787-73bfe6c-bin-macos-arm64.tar.gz')
+    expect(releaseAssets('official', official, { platform: 'darwin', arch: 'x64' })!.files.metal?.name).toBe('llama-b11815-bin-macos-x64.tar.gz')
+    // A release with only Windows builds is skipped for the newest Mac one.
+    expect(newestRelease('official', [{ tag_name: 'b11816', assets: [asset('llama-b11816-bin-win-cpu-x64.zip')] }, official], mac)?.release.tag).toBe('b11815')
+    expect(backendsFor(mac)).toEqual(['metal'])
+    expect(backendsFor({ platform: 'linux', arch: 'x64' })).toEqual([])
+  })
+
+  it('reads the chip and its share of memory, and fits models to it', () => {
+    const gpus = parseMacSysctl(`${36 * GB}\nApple M3 Pro\n`)
+    expect(gpus).toEqual([{ name: 'Apple M3 Pro GPU', totalMiB: Math.round(36 * 1024 * 0.7), freeMiB: null, vendor: 'apple' }])
+    expect(parseMacSysctl(`${16 * GB}\nIntel(R) Core(TM) i7\n`)).toEqual([])
+    expect(recommendedBackend(gpus, 'darwin')).toBe('metal')
+    // Unified memory: no slower pool to spill into.
+    expect(fitOf(20 * GB, { gpus, ramMiB: 36 * 1024 })).toBe('gpu')
+    expect(fitOf(30 * GB, { gpus, ramMiB: 36 * 1024 })).toBe('too-big')
+  })
+
+  it('unpacks a .tar.gz with executables and library links', async () => {
+    const block = (name: string, body: Buffer, type: string, opts: { mode?: number; link?: string } = {}) => {
+      const h = Buffer.alloc(512)
+      h.write(name, 0)
+      h.write(`${(opts.mode ?? 0o644).toString(8).padStart(7, '0')}\0`, 100)
+      h.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124)
+      h.write(type, 156)
+      if (opts.link) h.write(opts.link, 157)
+      h.write('ustar\0', 257)
+      const pad = Buffer.alloc((512 - (body.length % 512)) % 512)
+      return Buffer.concat([h, body, pad])
+    }
+    const good = [
+      block('build/', Buffer.alloc(0), '5', { mode: 0o755 }),
+      block('build/bin/llama-server', Buffer.from('#!/bin/sh\necho hi\n'), '0', { mode: 0o755 }),
+      block('build/bin/libllama.0.dylib', Buffer.from('lib'), '0'),
+      block('build/bin/libllama.dylib', Buffer.alloc(0), '2', { link: 'libllama.0.dylib' })
+    ]
+    const dir = mkdtempSync(join(tmpdir(), 'cloth-untar-'))
+    const file = join(dir, 'llama.tar.gz')
+    writeFileSync(file, gzipSync(Buffer.concat([...good, block('../escape.txt', Buffer.from('x'), '0'), Buffer.alloc(1024)])))
+    await expect(untarGz(file, join(dir, 'bad'))).rejects.toThrow('outside')
+
+    writeFileSync(file, gzipSync(Buffer.concat([...good, Buffer.alloc(1024)])))
+    const written = await untarGz(file, join(dir, 'ok'))
+    expect(written).toEqual(['build/bin/llama-server', 'build/bin/libllama.0.dylib', 'build/bin/libllama.dylib'])
+    const exe = join(dir, 'ok', 'build', 'bin', 'llama-server')
+    expect(readFileSync(exe, 'utf8')).toContain('echo hi')
+    if (process.platform !== 'win32') {
+      expect(statSync(exe).mode & 0o111).not.toBe(0)
+      const link = join(dir, 'ok', 'build', 'bin', 'libllama.dylib')
+      expect(lstatSync(link).isSymbolicLink()).toBe(true)
+      expect(readlinkSync(link)).toBe('libllama.0.dylib')
+    }
   })
 })

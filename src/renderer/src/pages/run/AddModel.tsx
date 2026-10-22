@@ -19,6 +19,8 @@ function estimateFit(params: number | null, hw: Hardware | null): HubFit | null 
   const need = params * 0.6 + 0.6 * GB + Math.min(params / 8e9, 6) * 0.5 * GB
   const vram = (hw.gpus[0]?.totalMiB ?? 0) * MiB
   if (vram && need <= vram * 0.95) return 'gpu'
+  // A Mac's GPU shares the system memory: nothing slower to spill into.
+  if (hw.gpus[0]?.vendor === 'apple') return 'too-big'
   if (need <= vram + hw.ramMiB * MiB * 0.6) return 'ram'
   return 'too-big'
 }

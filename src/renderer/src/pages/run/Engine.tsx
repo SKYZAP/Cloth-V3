@@ -17,14 +17,19 @@ export const BACKEND: Record<EngineBackend, string> = {
   vulkan: 'Vulkan',
   rocm: 'ROCm',
   cuda: 'CUDA',
-  cpu: 'CPU'
+  cpu: 'CPU',
+  metal: 'Metal'
 }
 const BACKEND_ABOUT: Record<EngineBackend, string> = {
   vulkan: 'Any recent GPU',
   rocm: 'AMD Radeon',
   cuda: 'NVIDIA',
-  cpu: 'No GPU'
+  cpu: 'No GPU',
+  metal: 'Apple silicon and Mac GPUs'
 }
+
+/** The builds this computer can run: Metal on a Mac, the Windows builds elsewhere. */
+export const PLATFORM_BACKENDS: EngineBackend[] = window.cloth.platform === 'darwin' ? ['metal'] : ['vulkan', 'rocm', 'cuda', 'cpu']
 
 const buildNumber = (tag: string) => Number(/b(\d+)/.exec(tag)?.[1] ?? 0)
 /** A tag as shown: "your own build" for one found on disk rather than installed by Cloth. */
@@ -130,7 +135,7 @@ export function EnginePanel({
   onClose(): void
 }) {
   const [flavour, setFlavour] = useState<EngineFlavour>(engines.current?.flavour ?? 'prism')
-  const [backend, setBackend] = useState<EngineBackend>(engines.current?.backend ?? hardware?.recommendedBackend ?? 'vulkan')
+  const [backend, setBackend] = useState<EngineBackend>(engines.current?.backend ?? hardware?.recommendedBackend ?? PLATFORM_BACKENDS[0])
   const [checking, setChecking] = useState(false)
 
   const check = async (loud: boolean) => {
@@ -144,10 +149,13 @@ export function EnginePanel({
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const latest = engines.latest?.[flavour]
-  const offered = (Object.keys(BACKEND) as EngineBackend[]).filter((b) => !latest || latest.sizes[b] !== undefined)
+  const offered = PLATFORM_BACKENDS.filter((b) => !latest || latest.sizes[b] !== undefined)
   // A release without this build (PrismML has no CUDA one): fall back to the first it has.
   useEffect(() => {
-    if (latest && latest.sizes[backend] === undefined && offered.length) setBackend(offered.includes(hardware?.recommendedBackend ?? 'vulkan') ? hardware!.recommendedBackend : offered[0])
+    if (latest && latest.sizes[backend] === undefined && offered.length) {
+      const rec = hardware?.recommendedBackend ?? PLATFORM_BACKENDS[0]
+      setBackend(offered.includes(rec) ? rec : offered[0])
+    }
   }, [flavour, latest]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const installed = installedOf(engines, flavour, backend)
@@ -194,7 +202,7 @@ export function EnginePanel({
           </div>
           <p className="text-[12px] text-dim">
             {BACKEND_ABOUT[backend]}.{' '}
-            {hardware && (backend === hardware.recommendedBackend ? (gpu ? `Recommended for your ${gpu.name}.` : 'Recommended, since no GPU was found.') : `${BACKEND[hardware.recommendedBackend]} suits ${gpu ? `your ${gpu.name}` : 'this PC'} best.`)}
+            {hardware && (backend === hardware.recommendedBackend ? (gpu ? `Recommended for your ${gpu.name}.` : 'Recommended, since no GPU was found.') : `${BACKEND[hardware.recommendedBackend]} suits ${gpu ? `your ${gpu.name}` : 'this computer'} best.`)}
           </p>
         </div>
 

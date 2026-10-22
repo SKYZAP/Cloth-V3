@@ -1612,7 +1612,7 @@ export type RunEvent =
 /** Which llama.cpp: the official ggml-org builds or PrismML's fork (needed for ternary models like Bonsai). */
 export type EngineFlavour = 'official' | 'prism'
 /** The kind of build: what hardware it uses. */
-export type EngineBackend = 'vulkan' | 'rocm' | 'cuda' | 'cpu'
+export type EngineBackend = 'vulkan' | 'rocm' | 'cuda' | 'cpu' | 'metal'
 
 export interface EngineBuild {
   flavour: EngineFlavour
