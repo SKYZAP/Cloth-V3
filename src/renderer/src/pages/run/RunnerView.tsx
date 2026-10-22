@@ -6,11 +6,11 @@ import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Segmented, Spinner, Switch, confirmAction } from '@/components/ui'
 import { FLAVOUR, engineStatus, tagLabel } from './Engine'
+import { ContextSlider } from '@/components/ContextSlider'
 import { CommitInput, Devices, GB, LogCard, MiB, PathRow, ProgressBar, Row, Section, active, fileSize, live, message, progressKey, tokens, type Progress } from './shared'
 
 /** Working buffers llama.cpp keeps besides the weights and the context cache (rough, for the meter). */
 const BUFFERS = 0.45 * GB
-const STOPS = [4096, 8192, 16384, 32768, 65536, 131072, 262144]
 
 type Save = (patch: RunnerPatch) => Promise<boolean>
 
@@ -329,59 +329,9 @@ function ContextWindow({
   onCommit(n: number): Promise<boolean>
 }) {
   const trained = meta?.trainedContext ?? null
-  const stops = STOPS.filter((s) => !trained || s <= trained)
-  if (trained && !stops.includes(trained) && trained > (stops.at(-1) ?? 0)) stops.push(trained)
-  const index = stops.reduce((best, s, i) => (Math.abs(s - value) < Math.abs(stops[best] - value) ? i : best), 0)
   const { maxFit, gpu } = usage(meta, hardware, runner, value)
-  const commit = () => value !== runner.contextSize && void onCommit(value).then((ok) => !ok && onDraft(runner.contextSize))
-
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center gap-3">
-        <label htmlFor={`ctx-${runner.id}`} className="text-[12.5px] font-medium">
-          Context window
-        </label>
-        <span className="min-w-0 flex-1 text-[12px] text-dim">How much of a chat the model can see at once</span>
-        <CommitInput
-          aria-label="Context window in tokens"
-          type="number"
-          inputMode="numeric"
-          min={512}
-          max={trained ?? undefined}
-          step={1024}
-          className="w-[96px] tabular-nums"
-          value={String(runner.contextSize)}
-          disabled={locked}
-          onCommit={(v) => {
-            const n = Number(v)
-            if (!Number.isFinite(n) || n < 512) return Promise.resolve(false)
-            onDraft(n)
-            return onCommit(n)
-          }}
-        />
-      </div>
-      <input
-        id={`ctx-${runner.id}`}
-        type="range"
-        min={0}
-        max={stops.length - 1}
-        step={1}
-        value={index}
-        disabled={locked}
-        aria-valuetext={`${tokens(stops[index])} tokens`}
-        onChange={(e) => onDraft(stops[Number(e.target.value)])}
-        onPointerUp={commit}
-        onKeyUp={commit}
-        onBlur={commit}
-        className="w-full accent-[var(--color-crimson)] disabled:opacity-50"
-      />
-      <div className="flex justify-between text-[11px] tabular-nums text-dim" aria-hidden="true">
-        {stops.map((s) => (
-          <span key={s} className={clsx(s === stops[index] && 'font-medium text-fg')}>
-            {tokens(s)}
-          </span>
-        ))}
-      </div>
+    <ContextSlider id={`ctx-${runner.id}`} value={value} saved={runner.contextSize} max={trained} disabled={locked} onDraft={onDraft} onCommit={onCommit}>
       <p className="text-[12px] text-dim">
         {trained && <>Trained for {tokens(trained)}. </>}
         {maxFit !== null &&
@@ -393,7 +343,7 @@ function ContextWindow({
               : `Above about ${tokens(maxFit)} part of it spills into system memory.`)}
         {trained && value > trained && <span className="text-warn"> Longer than it was trained for: answers may fall apart.</span>}
       </p>
-    </div>
+    </ContextSlider>
   )
 }
 

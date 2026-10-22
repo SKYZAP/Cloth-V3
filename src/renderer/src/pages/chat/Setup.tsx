@@ -7,6 +7,7 @@ import { attempt, useApp } from '@/lib/store'
 import { Segmented } from './StatusLine'
 import { filterOnOff, firstSentence, matches, nothingMatches, onOffCounts, serverMatches, type OnOff } from './setupFilter'
 import { takeSetupSection, useSetupNav, type SetupSection } from './setupNav'
+import { ContextSlider } from '@/components/ContextSlider'
 
 /** What the capability lists edit: a chat, or a saved agent. */
 export type Target = Pick<AgentSetup, 'skillsEnabled' | 'skillsOff' | 'skillsAlways' | 'webEnabled' | 'customTools' | 'subagents' | 'codeIntel' | 'imagesEnabled' | 'knowledgeEnabled' | 'collectionIds' | 'mcpServers' | 'disabledTools'>
@@ -779,60 +780,35 @@ function useModelWindow(session: ChatSession): number | null {
   return m ? m.contextWindow : null
 }
 
-const LIMITS = [8_192, 16_384, 32_768, 65_536, 131_072, 262_144, 1_000_000]
-
-/** The context window override: the model's own size, a preset, or any number of tokens. */
+/** The context window override: a slider (as on the Run page) from 4K up to the model's size, or any exact number. */
 function ContextView({ back, session, update }: { back(): void; session: ChatSession; update: (p: Partial<ChatSession>) => Promise<void> }) {
   const providers = useApp((s) => s.providers)
   const model = session.model && providers.find((p) => p.id === session.model!.providerId)?.models.find((x) => x.id === session.model!.modelId)
   const own = model?.contextWindow ?? null
   const guessed = !!model && contextIsGuess(model)
   const limit = session.contextLimit
-  const [draft, setDraft] = useState(limit ? String(limit) : '')
-  useEffect(() => setDraft(limit ? String(limit) : ''), [limit])
-  const set = (n: number | null) => void update({ contextLimit: n })
-  const commit = () => {
-    const n = Math.round(Number(draft.replace(/[,_\s]/g, '')))
-    if (!draft.trim()) return set(null)
-    if (!Number.isFinite(n) || n < 1024) return setDraft(limit ? String(limit) : '')
-    if (n !== limit) set(n)
+  const shown = limit ?? own ?? 32_768
+  const [draft, setDraft] = useState(shown)
+  useEffect(() => setDraft(shown), [shown])
+  // The model's own size means no override.
+  const save = async (n: number) => {
+    await update({ contextLimit: own !== null && n === own ? null : n })
+    return true
   }
-  const chip = (on: boolean) => clsx('flex h-7 items-center rounded-lg border px-2.5 text-[12px] tabular-nums transition-colors', on ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-muted hover:border-line-strong')
   return (
     <Drill title="Context window" back={back}>
       <div className="grid gap-4 p-1.5">
-        <p className="text-[12px] leading-relaxed text-muted">
-          How much of the conversation the model gets. Near the limit, Cloth summarises older messages to make room.
-          {own ? ` ${model?.name ?? 'This model'} takes ${tokensLabel(own)}${guessed ? ' (a guess: its provider doesn’t say)' : ''}.` : ''}
-        </p>
-        <div className="grid gap-1.5">
-          <div className="text-[11.5px] text-dim">Limit</div>
-          <div className="flex flex-wrap gap-1.5">
-            <button onClick={() => set(null)} aria-pressed={!limit} className={chip(!limit)}>
-              The model’s{own ? ` (${tokensLabel(own)})` : ''}
-            </button>
-            {LIMITS.map((n) => (
-              <button key={n} onClick={() => set(n)} aria-pressed={limit === n} className={chip(limit === n)}>
-                {tokensLabel(n)}
+        <p className="text-[12px] leading-relaxed text-muted">How much of the conversation the model gets. Near the limit, Cloth summarises older messages to make room.</p>
+        <ContextSlider id={`chat-ctx-${session.id}`} label="Limit" hint={limit ? 'Set for all chats' : 'The model’s own'} value={draft} saved={shown} max={guessed ? null : own} onDraft={setDraft} onCommit={save}>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-dim">
+            <span className="min-w-0 flex-1">{own ? `${model?.name ?? 'This model'} takes ${tokensLabel(own)}${guessed ? ', a guess: its provider doesn’t say' : ''}.` : 'This model’s size isn’t known.'}</span>
+            {!!limit && (
+              <button onClick={() => void update({ contextLimit: null })} className="rounded text-[12px] text-muted underline decoration-line-strong underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
+                Use the model’s
               </button>
-            ))}
+            )}
           </div>
-        </div>
-        <label className="grid gap-1.5">
-          <span className="text-[11.5px] text-dim">Or exactly, in tokens</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder={own ? String(own) : 'e.g. 48000'}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            className="h-8 w-[160px] rounded-lg border border-line bg-panel px-2.5 font-mono text-[12px] tabular-nums text-fg placeholder:text-dim focus:border-crimson-line focus:outline-none"
-          />
-        </label>
+        </ContextSlider>
         {!!limit && own !== null && limit > own && !guessed && <p className="text-[11.5px] text-warn">More than the model takes ({tokensLabel(own)}): long chats may fail before Cloth summarises.</p>}
         {!!limit && own !== null && limit < own && <p className="text-[11.5px] text-dim">Smaller than the model’s, so requests stay shorter and cheaper.</p>}
       </div>
