@@ -343,3 +343,33 @@ html.mobile .prose-cloth pre {
     animation: none;
   }
 }
+
+/* Mermaid diagrams (Pele) in replies and plans, in Cloth's colours. */
+.pele-host {
+  --pele-bg: var(--color-panel);
+  --pele-fg: var(--color-fg);
+  --pele-muted: var(--color-muted);
+  --pele-line: var(--color-muted);
+  --pele-surface: var(--color-elev-2);
+  --pele-surface-alt: var(--color-hover);
+  --pele-border: var(--color-line-strong);
+  --pele-accent: var(--color-crimson-hi);
+  --pele-font: var(--font-sans);
+  --pele-radius: 6px;
+  /* Pele measures labels with the container's font: the chat's own size. */
+  font-size: 13px;
+  --pele-series-1: var(--color-info);
+  --pele-series-2: var(--color-ok);
+  --pele-series-3: var(--color-warn);
+  --pele-series-4: var(--color-crimson-hi);
+  --pele-series-5: var(--color-skill-dot);
+  --pele-series-6: var(--color-agent-dot);
+  --pele-series-7: #f59e8b;
+  --pele-series-8: var(--color-muted);
+}
+.pele-host svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
