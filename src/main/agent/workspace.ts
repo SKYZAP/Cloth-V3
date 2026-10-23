@@ -39,6 +39,7 @@ import {
   type LspManager,
   type WorkspaceEdit
 } from './lsp'
+import { ruleNotes } from './rules'
 
 const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target', '.venv', '__pycache__']
 const MAX_DIFF_LINES = 600
@@ -262,6 +263,8 @@ export interface WorkspaceOptions {
   onAlways?(scope: 'edits' | 'all'): void
   /** Language servers for the `lsp` tool and post-edit type checking; null = off. */
   lsp?: LspManager | null
+  /** Global coding rules folder; changed files are also checked against the folder's own sgconfig.yml rules (rules.ts). */
+  rulesDir?: string | null
   /** Commands that run without asking; any other command is refused (unattended automations). */
   commandAllow?: string[] | null
   /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
@@ -394,6 +397,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
         }
       }
     }
+    // And whether it breaks the user's coding rules.
+    if (state) state.notes.push(...(await ruleNotes(rootReal, o.rulesDir ?? null, planned).catch(() => [])))
     return changes
   }
 

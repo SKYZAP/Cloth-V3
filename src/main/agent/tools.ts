@@ -34,6 +34,8 @@ export interface ToolDeps {
   approvals?: ApprovalService
   checkpoints?: CheckpointStore
   lsp?: LspManager
+  /** The global coding rules folder (rules.ts). */
+  rulesDir?: string
 }
 
 export interface ToolScope {
@@ -584,6 +586,7 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         autoApprove: scope.autoApprove ?? (() => 'none'),
         onAlways: scope.onAlways,
         lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null,
+        rulesDir: deps.rulesDir ?? null,
         shellExec: scope.container?.exec,
         // A container's changes are reviewed with Apply / Discard, so nothing in it counts as risky.
         checkRisk: !scope.container,

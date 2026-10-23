@@ -1107,6 +1107,8 @@ export interface Settings {
   agentTiers: AgentTier[]
   /** The permission mode new chats start in (a project's defaults win). */
   defaultPermissions: Permissions
+  /** Rules for all code agents write: added to every chat and agent that works in a folder, before the folder's AGENTS.md. */
+  codingRules: string
 }
 
 export interface SubagentSettings {
@@ -1164,6 +1166,8 @@ export interface McpCallLog {
 export interface AppInfo {
   version: string
   dataDir: string
+  /** ast-grep rule files here are checked after every edit, in every folder. */
+  rulesDir: string
   platform: string
   electron: string
   node: string
