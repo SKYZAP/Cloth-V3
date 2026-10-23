@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, type ProjectInput } from '@shared/types'
 import { json } from '../core/db'
 import { newId, type Ctx } from '../core/context'
@@ -17,10 +15,6 @@ interface ProjectRow {
   created_at: number
   updated_at: number
 }
-
-/** Files in a project folder whose contents become part of every chat's instructions. */
-const NOTE_FILES = ['AGENTS.md', 'CLAUDE.md']
-const NOTE_LIMIT = 12_000
 
 /** kv key holding the Automation project's id (its stable marker: the name may change). */
 const AUTOMATION_KEY = 'automation.projectId'
@@ -147,21 +141,12 @@ export class ProjectService {
     return { ...p.defaults, projectId: p.id, ...(p.folder ? { workspace: p.folder } : {}) }
   }
 
-  /** The project's part of a chat's system prompt: its instructions and the folder's AGENTS.md / CLAUDE.md. */
+  /** The project's part of a chat's system prompt: its instructions and design system (the folder's AGENTS.md comes with the workspace, rules.ts). */
   async instructions(id: string | null): Promise<string> {
     const p = this.find(id)
     if (!p) return ''
     const parts = [`This chat belongs to the project "${p.name}".`]
     if (p.instructions.trim()) parts.push(p.instructions.trim())
-    if (p.folder) {
-      for (const file of NOTE_FILES) {
-        const text = await readFile(join(p.folder, file), 'utf8').catch(() => null)
-        if (text === null || !text.trim()) continue
-        const body = text.length > NOTE_LIMIT ? `${text.slice(0, NOTE_LIMIT)}\n… (truncated)` : text
-        parts.push(`Project notes from ${file}:\n\n${body.trim()}`)
-        break
-      }
-    }
     const design = this.designs?.find(p.designId)
     if (design) parts.push(`The project follows the design system below: build any UI with its tokens and rules.\n\n${this.designs!.markdown(design.id)}`)
     return parts.join('\n\n')

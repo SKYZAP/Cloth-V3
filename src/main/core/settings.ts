@@ -47,7 +47,8 @@ export const DEFAULT_SETTINGS: Settings = {
     instructions: ''
   },
   agentTiers: DEFAULT_AGENT_TIERS,
-  defaultPermissions: 'manual'
+  defaultPermissions: 'manual',
+  codingRules: ''
 }
 
 export const DEFAULT_SUBAGENTS: SubagentSettings = DEFAULT_SETTINGS.subagents
