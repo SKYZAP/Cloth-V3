@@ -85,7 +85,6 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
         <Button icon={<Shuffle size={14} />} onClick={() => set(variation(input))} className="justify-self-start">
           Try a variation
         </Button>
-        <p className="text-[12px] text-dim">Greys, type sizes, shadows and each component's details follow from these.</p>
       </div>
     </div>
   )
@@ -161,7 +160,7 @@ export function UseInProject({ designId, version, forProjectId = null }: { desig
       {open && (
         <div role="dialog" aria-label="Use in a project" className="absolute right-0 top-full z-40 mt-2 grid w-[320px] max-w-[calc(100vw-24px)] gap-2 rounded-[14px] border border-line-strong bg-elev p-3 shadow-[0_24px_60px_-18px_rgb(0_0_0/0.85)]">
           <div className="text-[13px] font-semibold">Use in a project</div>
-          <p className="text-[12px] text-dim">Chats in the project follow this design. If the project has a folder, Cloth also writes the design files into its design/ folder.</p>
+          <p className="text-[12px] text-dim">Chats in the project follow this design.</p>
           <div className="grid max-h-[280px] gap-1 overflow-y-auto">
             {projects.map((p) => {
               const on = p.designId === designId

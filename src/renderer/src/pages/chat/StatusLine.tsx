@@ -86,13 +86,12 @@ export function ModelEffortMenu({ session, update, reasoning, onPicked }: { sess
       <ModelMenu autoFocus={!isMobile} value={session.model} onChange={(model) => void update({ model }).then(() => !reasoning && onPicked())} />
     </div>
   )
-  const effort = (
+  const effort = reasoning && (
     <div key="effort" className={clsx('shrink-0 px-3 py-2.5', isMobile ? 'border-b border-line' : 'border-t border-line')}>
-      <div className="mb-1.5 text-[11.5px] text-dim">{reasoning ? 'Reasoning effort' : "This model doesn't reason, so it has no effort setting."}</div>
+      <div className="mb-1.5 text-[11.5px] text-dim">Reasoning effort</div>
       {reasoning && (
         <>
           <Segmented value={normalizeEffort(session.thinking)} onChange={(thinking) => void update({ thinking })} options={EFFORT_OPTIONS} label="Reasoning effort" />
-          <div className="mt-1.5 text-[11px] text-dim">Higher effort thinks longer before answering: slower, better on tricky changes.</div>
         </>
       )}
     </div>

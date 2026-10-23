@@ -108,7 +108,7 @@ export function ProjectDialog({
               Delete project
             </Button>
           )}
-          {project?.builtin && <span className="mr-auto text-[12px] text-dim">Built in: your automations’ chats are filed here.</span>}
+          {project?.builtin && <span className="mr-auto text-[12px] text-dim">Built in</span>}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>

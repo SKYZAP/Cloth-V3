@@ -64,7 +64,7 @@ export function AgentsPage() {
   }
 
   // Cloth counts as one of the team.
-  const counts = `${plural(agents.length + 1, 'agent')}, all usable in chats and by other agents`
+  const counts = plural(agents.length + 1, 'agent')
 
   return (
     <div className="relative h-full">
@@ -91,7 +91,7 @@ export function AgentsPage() {
               </span>
               <div className="min-w-0">
                 <div className="text-[13.5px] font-semibold">Cloth</div>
-                <div className="text-[12px] text-muted">The main agent in every chat. It hands jobs to the agents below when they fit, and you can chat with any of them directly.</div>
+                <div className="text-[12px] text-muted">The main agent in every chat.</div>
               </div>
             </div>
             <svg aria-hidden="true" className="h-6 w-full mobile:hidden max-[760px]:hidden" viewBox="0 0 900 24" preserveAspectRatio="none">
@@ -99,14 +99,13 @@ export function AgentsPage() {
             </svg>
           </div>
 
-          <Lane title="Team" hint="Chat with any of them, or let Cloth hand them work by name">
+          <Lane title="Team">
             {shown.map((a) => (
               <AgentCard key={a.id} agent={a} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
             ))}
             {!q && (
               <div className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
                 <span className="text-[13px] font-semibold">Describe your own</span>
-                <span className="text-[12px] text-muted">Say what it's for; Cloth drafts the name, purpose and instructions.</span>
                 <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
                   Describe an agent
                 </Button>
@@ -142,11 +141,11 @@ export function AgentsPage() {
   )
 }
 
-function Lane({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+function Lane({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid gap-2.5" aria-label={title}>
       <h2 className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] font-semibold">
-        {title} <span className="text-[12px] font-normal text-dim">{hint}</span>
+        {title}
       </h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">{children}</div>
     </section>
@@ -294,7 +293,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
             {agent.name}
           </span>
         }
-        subtitle={agent.builtin ? 'Built in: you can change it, but not delete it' : undefined}
+        subtitle={agent.builtin ? 'Built in' : undefined}
         actions={
           <>
             <Button size="sm" icon={<ChatCircleDots size={14} />} onClick={() => void useInChat()}>
@@ -329,7 +328,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
               <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== agent.name && void save({ name })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} aria-label="Name" />
             </Section>
           )}
-          <Section title="Purpose" hint="How other agents decide to hand work to it, and what you see when picking it.">
+          <Section title="Purpose">
             <Textarea rows={2} value={purpose} onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== agent.purpose && void save({ purpose })} aria-label="Purpose" placeholder="e.g. Reviews and fixes interfaces against the project's design system." />
           </Section>
           <Section title="Model">
@@ -359,7 +358,6 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                     </option>
                   ))}
                 </Select>
-                <div className="text-[11px] text-dim">Its model and effort come from the tier. A job can still be given a different tier.</div>
               </>
             ) : (
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 mobile:grid-cols-1">
@@ -404,7 +402,6 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                           { value: 'shell', label: 'Edit + shell' }
                         ]}
                       />
-                      <span className="text-[11px] text-dim">The most it may do in a chat's folder; a chat with less access keeps its own.</span>
                     </div>
                   )
                 }
@@ -416,7 +413,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
           </div>
 
           {!agent.builtin && (
-            <Section title="Approvals" hint="Used when a chat is set up from this agent.">
+            <Section title="Approvals">
               <Segmented
                 label="Approvals"
                 value={agent.autoApprove}
@@ -514,7 +511,6 @@ function InstructionsEditor({ agent, value, onChange, onSave }: { agent: Agent; 
         aria-label="Instructions"
         placeholder="What it should do first, how to work, what to check before finishing, and what never to do."
       />
-      <div className="text-[11px] text-dim">Added to Cloth's system prompt wherever the agent works. Saved when you click away.</div>
     </div>
   )
 }
@@ -620,7 +616,6 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
                   Generate
                 </Button>
               </div>
-              <p className="text-[11px] text-dim">Generate writes its instructions and opens it, where you choose what it can use.</p>
             </>
           ) : (
             <p className="py-6 text-[12px] text-dim">Describe the agent and draft it: you'll check its name and purpose here before it's written.</p>

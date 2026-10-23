@@ -112,7 +112,6 @@ function TriggerCheck({ skill, info, model, onModel, onChanged }: { skill: Skill
   const passed = run ? run.results.filter((r) => r.ok).length : 0
   return (
     <Card title="Trigger check" meta={run ? `${passed} of ${run.results.length} as expected · ${run.model} · ${Math.max(1, Math.round(run.ms / 1000))}s · ${timeAgo(run.at)}` : 'Does it load when it should, and only then?'}>
-      <p className="text-[12px] text-dim">A model picks a skill for each request from every installed skill's description, the way a chat does. Failures usually mean the description needs the words people actually use.</p>
       <div className="grid gap-1">
         {rows.map((r, i) => {
           const res = result(r.prompt)
@@ -185,7 +184,7 @@ function UsageCard({ info }: { info: SkillInsight }) {
           {u.total} load{u.total === 1 ? '' : 's'} ({via.join(', ')}){u.chats ? ` in ${u.chats} chat${u.chats === 1 ? '' : 's'}` : ''}. Last used {timeAgo(u.lastUsedAt)}.
         </div>
       ) : (
-        <div className="text-[12px] text-muted">Never used yet. If it stays that way, switch it off where it costs context, or check its description with the trigger check.</div>
+        <div className="text-[12px] text-muted">Never used yet.</div>
       )}
     </Card>
   )
@@ -478,7 +477,6 @@ function LocalScan({ skill, info, onChanged }: { skill: Skill; info: SkillInsigh
   }
   return (
     <>
-      <div className="text-[12px] text-dim">What its scripts touch, and instructions that read like prompt injection. A list to read, not a verdict.</div>
       {groups.length ? (
         <div className="grid gap-2">
           {groups.map(({ k, items }) => (
@@ -535,7 +533,6 @@ function TryCard({ skill }: { skill: Skill }) {
   }
   return (
     <Card title="Try it">
-      <p className="text-[12px] text-dim">Opens a new chat with this skill set to Always, using your usual model and tools, so you can judge real output.</p>
       <div>
         <Button size="sm" icon={<ChatCircleDots size={14} />} onClick={() => void open()}>
           Open a chat with it

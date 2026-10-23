@@ -690,7 +690,7 @@ function Skills({ stats }: { stats: DashboardStats }) {
           </div>
         }
       />
-      {!stats.skills.length && <div className="px-4 pb-3 text-[12px] text-dim">No skills used in this period. Invoke one with / in chat, or let an agent load it.</div>}
+      {!stats.skills.length && <div className="px-4 pb-3 text-[12px] text-dim">No skills used in this period.</div>}
       {stats.skills.slice(0, 8).map((s, i) => (
         <Ranked
           key={s.name}

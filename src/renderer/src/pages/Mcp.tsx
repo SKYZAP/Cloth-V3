@@ -74,7 +74,6 @@ export function McpPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">MCP</h1>
-              <p className="mt-0.5 text-[12.5px] text-dim">Give Cloth’s chats extra tools, and let other apps use Cloth.</p>
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setOpen({ kind: 'add' })} data-focus-key="add">
               Add server
@@ -99,7 +98,6 @@ export function McpPage() {
           {open?.kind === 'add' && preset && (
             <div className="grid gap-4">
               {preset.about && <p className="text-[12.5px] text-muted">{preset.about}.</p>}
-              <p className="text-[12px] text-dim">Paste its access token, then add it. The address is filled in; change it if yours differs.</p>
               <GuidedServerForm
                 key={preset.name}
                 prefill={preset}
@@ -220,7 +218,6 @@ function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServer
         <h2 id="mcp-servers" className="text-[14px] font-semibold">
           Tools for Cloth’s chats
         </h2>
-        <span className="text-[12px] text-dim">Each server adds tools. Chats turn servers on in the composer; these settings are the defaults.</span>
       </div>
 
       {servers.configs.length > 0 ? (
@@ -232,7 +229,7 @@ function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServer
       ) : (
         <div className="rounded-[12px] border border-dashed border-line-strong px-4 py-6 text-center">
           <p className="text-[13px] font-medium">No servers yet</p>
-          <p className="mt-1 text-[12.5px] text-dim">Add a ready-made one below, or any MCP server by its web address or the program that runs it.</p>
+          <p className="mt-1 text-[12.5px] text-dim">Add a ready-made one below, or any MCP server.</p>
         </div>
       )}
 
@@ -249,7 +246,6 @@ function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServer
             <span className="flex items-center gap-1.5 text-[13px] font-semibold">
               <Plus size={14} aria-hidden="true" /> Any other server
             </span>
-            <span className="text-[12px] text-dim">A web address, a program, or a config pasted from another app</span>
           </button>
         </div>
       </div>
@@ -361,7 +357,6 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
           </h2>
           <Switch checked={on} onChange={(v) => void updateSettings({ mcpEnabled: v })} label={on ? 'On' : 'Off'} />
         </div>
-        <p className="text-[12px] text-dim">Claude Code, Cursor and other MCP apps can search Cloth’s knowledge and use its skills.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-[10px] border border-line bg-panel px-3 py-2">
@@ -425,7 +420,7 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
             })}
           </ul>
         ) : (
-          <p className="text-[12px] text-dim">None yet. An app shows here once it connects.</p>
+          <p className="text-[12px] text-dim">None yet.</p>
         )}
       </div>
 
@@ -447,7 +442,7 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
             <CopyIcon text={status.token} label="Copy token" />
           </div>
         )}
-        <p className="text-[12px] text-dim">Only apps on this computer can connect, and web pages other than localhost are refused. The port ({status.port}) is set in Settings → MCP.</p>
+        <p className="text-[12px] text-dim">Only this computer can connect. Port {status.port} (Settings → MCP).</p>
       </div>
 
       <details className="group">
@@ -500,7 +495,7 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
         <h2 id="mcp-activity" className="text-[13px] font-semibold">
           Activity
         </h2>
-        <span className="min-w-0 flex-1 text-[12px] text-dim">Tool calls as they happen, newest first</span>
+        <span className="flex-1" />
         <Segmented
           value={filter}
           onChange={setFilter}

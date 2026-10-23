@@ -31,15 +31,15 @@ interface Group {
 }
 /** Built-in tools by what they're for. Tools not listed here are custom tools (from the Tools page). */
 const GROUPS: Group[] = [
-  { id: 'files', label: 'Files', names: ['read', 'ls', 'find', 'grep', 'ast_grep', 'write', 'edit', 'ast_edit', 'read_file', 'list_dir'], note: 'Which of these the chat has follows the folder and access set under the message box.' },
-  { id: 'shell', label: 'Commands', names: ['bash', 'powershell'], note: 'Shown when access is Edit + shell.' },
+  { id: 'files', label: 'Files', names: ['read', 'ls', 'find', 'grep', 'ast_grep', 'write', 'edit', 'ast_edit', 'read_file', 'list_dir'] },
+  { id: 'shell', label: 'Commands', names: ['bash', 'powershell'] },
   { id: 'code', label: 'Code intelligence', names: ['lsp'], flag: 'codeIntel' },
   { id: 'web', label: 'Web', names: ['web_search', 'web_fetch'], flag: 'webEnabled' },
   { id: 'agents', label: 'Subagents', names: ['task'], flag: 'subagents' },
   { id: 'images', label: 'Images', names: ['generate_image'], flag: 'imagesEnabled' },
   { id: 'plan', label: 'Planning and questions', names: ['todo_write', 'ask_user'] },
   { id: 'make', label: 'Making skills and tools', names: ['skill_create', 'tool_create'] },
-  { id: 'custom', label: 'Custom tools', flag: 'customTools', note: 'Your own tools from the Tools page.' }
+  { id: 'custom', label: 'Custom tools', flag: 'customTools' }
 ]
 const KNOWLEDGE_TOOLS = ['rag_search', 'rag_index']
 const SKILL_TOOLS = ['skill_list', 'skill_use']
@@ -220,7 +220,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
       </div>
       <div className="grid gap-0.5 p-2">
         <SummaryLine label="Agent" onOpen={() => setView('agent')} value={agent ? `${agent.name}${changed ? ' (changed)' : ''}` : 'Default'} />
-        <ToggleLine label="Automatic agent tiers" sub="Cloth picks a tier for each job it hands to an agent." on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
+        <ToggleLine label="Automatic agent tiers" on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
         <SummaryLine label="Skills" count={skillsOn.length} tokens={parts.skills} onOpen={() => setView('skills')} hint={!session.skillsEnabled ? 'picked by you only' : undefined} />
         {!configs.length ? (
           <SummaryLine label="MCP" onOpen={() => setView('mcp')} hint="none set up" />
@@ -233,12 +233,12 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         )}
         <SummaryLine label="Tools" count={builtinOn} tokens={parts.builtin} onOpen={() => setView('tools')} />
         <SummaryLine label="Knowledge" count={selected.length} tokens={parts.knowledge} onOpen={() => setView('knowledge')} />
-        {computerSupported && <ToggleLine label="Computer Use" sub="Allow Cloth to use your computer" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
+        {computerSupported && <ToggleLine label="Computer Use" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
         <SummaryLine label="Context window" onOpen={() => setView('context')} value={session.contextLimit ? `${tokensLabel(session.contextLimit)} (set)` : modelWindow ? `${tokensLabel(modelWindow)}, the model’s` : 'the model’s'} />
         <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'set' : 'none'} />
       </div>
       <p className="px-4 pb-4 text-[11px] leading-relaxed text-dim">
-        {session.agentId ? 'This chat was set up from an agent, so changes here stay in this chat.' : 'Skills, tools, MCP, knowledge and the context window are shared: a change here applies to all your chats. Instructions stay with this chat.'}
+        {session.agentId ? 'Set up from an agent: changes stay in this chat.' : 'Shared by all chats, except Instructions.'}
       </p>
     </div>
   )
@@ -276,12 +276,12 @@ function SummaryLine({ label, count, tokens, hint, value, onOpen }: { label: str
 }
 
 /** An overview line with a switch instead of a page. */
-function ToggleLine({ label, sub, on, onChange }: { label: string; sub: string; on: boolean; onChange(): void }) {
+function ToggleLine({ label, sub, on, onChange }: { label: string; sub?: string; on: boolean; onChange(): void }) {
   return (
     <div className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2">
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-medium text-fg">{label}</div>
-        <div className="text-[11px] leading-snug text-dim">{sub}</div>
+        {sub && <div className="text-[11px] leading-snug text-dim">{sub}</div>}
       </div>
       <Toggle on={on} onChange={onChange} label={label} />
     </div>
@@ -391,7 +391,6 @@ function AgentPicker({ back, agents, tiers, current, changed, onPick, onManage }
       </div>
       {!showDefault && !shown.length && <Nothing>{nothingMatches(q)}</Nothing>}
       {changed && <p className="px-2.5 pt-2 text-[11px] text-dim">This chat's setup was changed after the agent was picked. Pick the agent again to go back to its setup.</p>}
-      <p className="px-2.5 pb-2 pt-3 text-[11px] leading-relaxed text-dim">Picking an agent sets this chat up with its skills, tools and knowledge, and its model if it has one. Its instructions come with every message.</p>
       <button onClick={onManage} className="mx-2.5 flex items-center gap-1.5 text-[12px] text-muted hover:text-fg">
         Manage agents <ArrowSquareOut size={12} />
       </button>
@@ -560,7 +559,6 @@ export function SkillsView({ back, target: session, update, m }: { back?: () => 
         </Row>
       ))}
       {!shown.length && <Nothing>{skills.length ? nothingMatches(q) : 'No skills yet. Create or import one on the Skills page.'}</Nothing>}
-      <p className="px-2 pb-2 pt-3 text-[11px] leading-relaxed text-dim">Auto skills cost one line each until the agent loads one. Always skills send their full instructions with every request. Type /name in the message box to use any skill once, even an Off one.</p>
     </Drill>
   )
 }
@@ -729,7 +727,6 @@ export function ToolsView({ back, target: session, update, m, access }: { back?:
         </Row>
       ))}
       {!tools.length ? <Nothing>Loading…</Nothing> : !shown.length && <Nothing>{nothingMatches(q)}</Nothing>}
-      {!access && <p className="px-2 pb-2 pt-3 text-[11px] leading-relaxed text-dim">Which file tools the chat has follows the folder and access set under the message box.</p>}
     </Drill>
   )
 }
@@ -762,7 +759,6 @@ export function KnowledgeView({ back, target: session, update, total }: { back?:
       ))}
       {collections.length > 0 && !shown.length && <Nothing>{nothingMatches(q)}</Nothing>}
       {!collections.length && <Nothing>No collections yet. Add knowledge on the Knowledge page.</Nothing>}
-      <p className="px-2 pb-2 pt-3 text-[11px] leading-relaxed text-dim">The agent searches the collections that are on with rag_search, and cites what it finds.</p>
     </Drill>
   )
 }
@@ -798,7 +794,6 @@ function ContextView({ back, session, update }: { back(): void; session: ChatSes
   return (
     <Drill title="Context window" back={back}>
       <div className="grid gap-4 p-1.5">
-        <p className="text-[12px] leading-relaxed text-muted">How much of the conversation the model gets. Near the limit, Cloth summarises older messages to make room.</p>
         <ContextSlider id={`chat-ctx-${session.id}`} label="Limit" hint={limit ? 'Set for all chats' : 'The model’s own'} value={draft} saved={shown} max={guessed ? null : own} onDraft={setDraft} onCommit={save}>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-dim">
             <span className="min-w-0 flex-1">{own ? `${model?.name ?? 'This model'} takes ${tokensLabel(own)}${guessed ? ', a guess: its provider doesn’t say' : ''}.` : 'This model’s size isn’t known.'}</span>
@@ -810,7 +805,6 @@ function ContextView({ back, session, update }: { back(): void; session: ChatSes
           </div>
         </ContextSlider>
         {!!limit && own !== null && limit > own && !guessed && <p className="text-[11.5px] text-warn">More than the model takes ({tokensLabel(own)}): long chats may fail before Cloth summarises.</p>}
-        {!!limit && own !== null && limit < own && <p className="text-[11.5px] text-dim">Smaller than the model’s, so requests stay shorter and cheaper.</p>}
       </div>
     </Drill>
   )
@@ -860,7 +854,6 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
             placeholder="e.g. Prefer idiomatic TypeScript; cite the knowledge base."
             className="min-h-[160px] w-full resize-y rounded-[10px] border border-line bg-bg px-3 py-2.5 text-[12.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus:border-crimson-line focus-visible:outline-none"
           />
-          <div className="text-[11px] text-dim">Added to Cloth's system prompt for this chat. Saved when you click away.</div>
         </div>
       </div>
     </Drill>

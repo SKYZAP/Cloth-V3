@@ -100,7 +100,7 @@ export function DesignPage() {
               ))}
             </div>
             <h1 className="text-[22px] font-semibold tracking-tight">Make your first design</h1>
-            <p className="text-[13px] text-muted">Answer a few questions and Cloth sets up the colours, fonts and components for what you're building. Chats in your projects then follow it. You can change anything later.</p>
+            <p className="text-[13px] text-muted">Colours, fonts and components that your projects’ chats follow.</p>
             {hint}
             <div className="mt-2 flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={() => setGuided('describe')}>
@@ -120,7 +120,6 @@ export function DesignPage() {
           <div className="flex items-end justify-between gap-4">
             <div>
               <h1 className="text-[18px] font-semibold tracking-tight">Design systems</h1>
-              <p className="mt-0.5 max-w-xl text-[12.5px] text-dim">Your palette, type and shape, set once and used in every project that follows it: chats get its DESIGN.md, and the token and shadcn files can be written into the project.</p>
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setGuided('describe')}>
               New
@@ -135,7 +134,6 @@ export function DesignPage() {
           <button onClick={() => setGuided('describe')} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-[12.5px] text-dim transition-colors hover:border-crimson-line hover:text-fg">
             <Plus size={18} />
             New design system
-            <span className="text-[11.5px] text-dim">Describe what you're making, or pick a finished look</span>
           </button>
         </div>
       </div>

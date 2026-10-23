@@ -106,7 +106,6 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
           <Button size="sm" icon={<GitBranch size={13} />} loading={busy === 'init'} disabled={!!busy} onClick={() => void init()}>
             Initialize git repository
           </Button>
-          <div className="text-[11px] text-dim">Runs git init in this folder. Nothing is committed.</div>
         </div>
       </Empty>
     )

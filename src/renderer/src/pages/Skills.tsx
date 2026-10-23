@@ -229,7 +229,7 @@ function NewSkill({ open, mode: initialMode, onClose, onCreated }: { open: boole
       />
       {mode === 'ai' ? (
         <div className="space-y-3">
-          <Field label="What should the skill do?" hint="Describe the task, the tools or stack involved, and anything the agent tends to get wrong. The model writes the SKILL.md; you can edit it afterwards.">
+          <Field label="What should the skill do?" >
             <Textarea
               autoFocus
               rows={6}
@@ -243,7 +243,7 @@ function NewSkill({ open, mode: initialMode, onClose, onCreated }: { open: boole
             />
           </Field>
           <div className="grid grid-cols-2 gap-3 mobile:grid-cols-1">
-            <Field label="Name (optional)" hint="Leave empty to let the model pick one.">
+            <Field label="Name (optional)">
               <Input value={name} disabled={generating} onChange={(e) => setName(e.target.value)} placeholder="drizzle-migrations" />
             </Field>
             <Field label="Model" hint={model ? 'Writes the skill.' : 'Add a model on the Providers page first.'}>
@@ -256,7 +256,7 @@ function NewSkill({ open, mode: initialMode, onClose, onCreated }: { open: boole
           <Field label="Name" hint="Lowercase, digits and dashes — it becomes the folder name.">
             <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="nestjs-guards" />
           </Field>
-          <Field label="Description" hint="What the skill does and when to use it. Agents decide whether to load a skill from this line alone.">
+          <Field label="Description" hint="Agents decide whether to load it from this line.">
             <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Write NestJS guards and role-based authorization. Use when protecting routes…" />
           </Field>
         </div>
@@ -727,7 +727,6 @@ function InstallModal({ open, onClose, skill }: { open: boolean; onClose(): void
   }
   return (
     <Modal open={open} onClose={onClose} title={`Install ${skill.name}`}>
-      <div className="mb-3 text-[12px] text-dim">Copies the skill folder into another tool's skills directory. Tools that speak MCP can use the hub directly via skill_list / skill_use instead.</div>
       <div className="space-y-1.5">
         {sources.map((s) => (
           <div key={s} className="flex items-center gap-2 rounded-md border border-line px-3 py-2">
@@ -816,7 +815,7 @@ function SkillFiles({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
             </div>
           </>
         ) : (
-          <Empty title="Bundled files">Skills can ship references, scripts and templates. The agent loads them on demand with skill_use(name, file).</Empty>
+          <Empty title="No bundled files" />
         )}
       </div>
     </div>

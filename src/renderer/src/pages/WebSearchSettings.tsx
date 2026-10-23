@@ -54,7 +54,7 @@ export function WebSearchSettings() {
             active={settings.webEngine === 'obscura'}
             name="Obscura"
             ok={status.obscura.available}
-            lines={[status.obscura.version ? `v${status.obscura.version}` : null, status.obscura.error, 'Headless browser: scrapes DuckDuckGo per search and renders pages for web_fetch.']}
+            lines={[status.obscura.version ? `v${status.obscura.version}` : null, status.obscura.error]}
           >
             <Field label="Custom binary (optional)">
               <div className="flex gap-1.5">
@@ -129,7 +129,7 @@ export function WebSearchSettings() {
               }
             }}>…</Button>
           </div>
-          <div className="mt-1 text-[10.5px] text-dim">PEM CA certificate for Obscura, SearXNG, and plain-HTTP web_fetch TLS trust. Select the certificate authority that issued the server certificate; this does not configure a client certificate.</div>
+          <div className="mt-1 text-[10.5px] text-dim">PEM certificate authority for web search and web_fetch.</div>
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">

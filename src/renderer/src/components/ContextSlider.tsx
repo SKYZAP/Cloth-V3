@@ -18,7 +18,7 @@ export function tokenLabel(n: number): string {
 export function ContextSlider({
   id,
   label = 'Context window',
-  hint = 'How much of a chat the model can see at once',
+  hint,
   value,
   saved,
   max,

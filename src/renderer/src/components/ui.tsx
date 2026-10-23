@@ -88,13 +88,14 @@ export function Select({ className, children, pill, ...rest }: SelectHTMLAttribu
 }
 const CHEVRON = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c6c76' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`
 
-export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange(v: boolean): void; label?: ReactNode; disabled?: boolean }) {
+export function Switch({ checked, onChange, label, ariaLabel, disabled }: { checked: boolean; onChange(v: boolean): void; label?: ReactNode; /** Its name when no visible label says it (a row label beside it). */ ariaLabel?: string; disabled?: boolean }) {
   return (
     <label className={clsx('inline-flex items-center gap-2 select-none', disabled ? 'opacity-50' : 'cursor-pointer')}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={clsx('relative h-[18px] w-8 rounded-full transition-colors', checked ? 'bg-crimson' : 'bg-line-strong')}

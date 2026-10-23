@@ -9,8 +9,8 @@ import { InspectorHead } from '@/components/Inspector'
 import { ProgressBar, active, fileSize, message, progressKey, type Progress } from './shared'
 
 export const FLAVOUR: Record<EngineFlavour, { name: string; about: string }> = {
-  prism: { name: 'PrismML', about: "PrismML's fork. Runs 1-bit models like Bonsai as well as ordinary ones." },
-  official: { name: 'Official', about: 'llama.cpp from ggml-org. New model architectures arrive here first.' }
+  prism: { name: 'PrismML', about: 'Also runs 1-bit models like Bonsai' },
+  official: { name: 'Official', about: 'Newest model support' }
 }
 
 export const BACKEND: Record<EngineBackend, string> = {
@@ -167,7 +167,7 @@ export function EnginePanel({
 
   return (
     <>
-      <InspectorHead title="llama.cpp" sub="The program that runs your models" onClose={onClose} />
+      <InspectorHead title="llama.cpp" onClose={onClose} />
       <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto px-5 py-4">
         <fieldset className="grid gap-2">
           <legend className="mb-2 text-[12.5px] font-semibold">Which llama.cpp</legend>
@@ -201,7 +201,6 @@ export function EnginePanel({
             />
           </div>
           <p className="text-[12px] text-dim">
-            {BACKEND_ABOUT[backend]}.{' '}
             {hardware && (backend === hardware.recommendedBackend ? (gpu ? `Recommended for your ${gpu.name}.` : 'Recommended, since no GPU was found.') : `${BACKEND[hardware.recommendedBackend]} suits ${gpu ? `your ${gpu.name}` : 'this computer'} best.`)}
           </p>
         </div>
@@ -285,7 +284,6 @@ export function EnginePanel({
                 )
               })}
             </ul>
-            <p className="text-[12px] text-dim">New models use the build in use. Updating moves models on an older build of the same kind; each picks it up on its next start.</p>
           </div>
         )}
 

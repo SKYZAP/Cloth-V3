@@ -252,7 +252,6 @@ export function ToolsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Tools</h1>
-              <p className="mt-0.5 text-[12.5px] text-dim">What Cloth and your agents can do. Try any of your tools, or make your own.</p>
             </div>
             <div className="relative w-[260px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
@@ -534,7 +533,6 @@ function ToolDetails({
         ) : (
           <p className="text-[13px] leading-relaxed">No agent or automation has it yet.</p>
         )}
-        <p className="text-[11.5px] text-dim">Each agent and automation chooses its own tools. Change it there.</p>
       </section>
 
       {aiSchema && (
@@ -741,7 +739,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
                 <Button size="sm" icon={<Sparkles size={13} />} loading={drafting} disabled={!draft.description.trim()} onClick={() => void draftIt()}>
                   Draft the rest for me
                 </Button>
-                <span className="text-[12px] text-dim">The AI reads this to decide when to use the tool. Cloth can fill in the next three steps from it.</span>
+                <span className="text-[12px] text-dim">The AI reads this to decide when to use it.</span>
               </div>
             </Step>
 
@@ -777,7 +775,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
               )}
             </Step>
 
-            <Step n={3} title="What does it need?" hint="The AI fills these in each time it uses the tool.">
+            <Step n={3} title="What does it need?">
               <ParamsEditor params={draft.params} onChange={(params) => set({ params })} />
             </Step>
 
@@ -789,7 +787,6 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
           <aside aria-label="Test" className="grid gap-3 min-[1000px]:sticky min-[1000px]:top-4">
             <div className="rounded-[16px] border border-line bg-panel px-4 pb-4">
               <TryIt key={draft.params.map((p) => p.name).join()} fields={draft.params} run={(args) => api.tools.test({ kind: draft.kind, config: draft.config, params: draft.params }, args)} title="Test it" />
-              <p className="mt-2 text-[11.5px] text-dim">Runs what’s on screen, saved or not.</p>
             </div>
             <details className="rounded-[16px] border border-line bg-panel px-4 py-3">
               <summary className="cursor-default text-[12.5px] font-medium">What the AI sees</summary>
@@ -929,7 +926,7 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
               </Button>
             </div>
           </Field>
-          <Field label="Arguments, one per line" hint="Each line is passed as exactly one argument, with no shell, so inputs can’t add extra commands.">
+          <Field label="Arguments, one per line" hint="No shell: each line is one argument.">
             <Textarea rows={5} className="font-mono text-[11.5px]" spellCheck={false} value={str('args')} onChange={(e) => setConfig({ args: e.target.value })} />
           </Field>
           {inserts('args')}

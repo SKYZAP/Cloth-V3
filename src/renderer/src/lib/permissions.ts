@@ -7,13 +7,13 @@ export const ACCESS_LEVELS: { id: Access; name: string; sub: string; note: { lea
   {
     id: 'auto',
     name: 'Auto',
-    sub: 'Edits, runs commands and takes risky actions without asking.',
-    note: { lead: 'Never asks,', rest: 'not even before risky actions. MCP servers you set to ask still ask, and you can undo file changes.' }
+    sub: 'Never asks first.',
+    note: { lead: 'MCP servers set to ask still ask.', rest: 'File changes can be undone.' }
   },
   {
     id: 'manual',
     name: 'Manual',
-    sub: 'Works on its own, but asks before risky actions: outside the folder, deleting, pushing, installing, downloading or admin rights.',
+    sub: 'Asks before risky actions.',
     note: {
       lead: 'Asks before:',
       rest: 'deleting or writing outside the folder, git push, installing packages, downloading from the network, admin rights. In a Linux container it doesn’t ask; you review the changes instead.'
@@ -27,9 +27,9 @@ export const accessLevel = (id: Access) => ACCESS_LEVELS.find((m) => m.id === id
 export type ChatMode = 'chat' | 'plan' | 'spec'
 
 export const CHAT_MODES: { id: ChatMode; name: string; sub: string }[] = [
-  { id: 'chat', name: 'Chat', sub: 'Talks and works straight away.' },
-  { id: 'plan', name: 'Plan', sub: 'Reads and drafts a plan first. Nothing changes until you approve it.' },
-  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build and review, with your OK between stages. Starts when you send what you want built.' }
+  { id: 'chat', name: 'Chat', sub: 'Works straight away' },
+  { id: 'plan', name: 'Plan', sub: 'Plans first; changes after you approve' },
+  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build, review' }
 ]
 
 export const chatModeInfo = (id: ChatMode) => CHAT_MODES.find((m) => m.id === id) ?? CHAT_MODES[0]
