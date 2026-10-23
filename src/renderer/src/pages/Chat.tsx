@@ -1306,7 +1306,6 @@ function Welcome({ onPick, session, project, agent, hasKnowledge }: { onPick(t: 
       <Logo size={40} />
       <div className="mt-5 text-[20px] font-semibold tracking-tight [text-wrap:balance]">{agent ? agent.name : project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
       {agent?.purpose && <div className="mt-1 max-w-md text-[13px] text-muted [text-wrap:balance]">{agent.purpose}</div>}
-      <div className="mt-1 text-[13px] text-dim">{folder ? `The agent can ${writes ? 'read and change' : 'read'} files in this folder${session.shell ? ' and run commands' : ''}.` : 'A local agent with traced tools, grounded in your knowledge, skills and the web.'}</div>
       <div className="mt-8 grid w-full max-w-xl gap-2">
         {prompts.map((p, i) => (
           <motion.button

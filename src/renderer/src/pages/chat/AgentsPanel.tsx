@@ -86,7 +86,7 @@ export function AgentsPanel({ messages }: { messages: UiMessage[] }) {
         {runs.length ? (
           runs.map((r) => <RunRow key={r.id} run={r} focused={r.id === focused} />)
         ) : (
-          <p className="px-3 py-6 text-center text-[12.5px] leading-relaxed text-dim">No agents yet. When Cloth hands work to an agent, it shows here with what it's doing and what it costs.</p>
+          <p className="px-3 py-6 text-center text-[12.5px] leading-relaxed text-dim">No agents yet.</p>
         )}
       </div>
     </div>

@@ -304,7 +304,6 @@ export function AutomationDetail({
 
         <Section title="What it does">
           <PromptBox value={prompt} onChange={setPrompt} items={items} onMention={mention} onBlur={() => void flush()} />
-          <p className="mt-1.5 text-[12px] text-dim">It decides how to report: a chat in the Automation project, a notification, or saving to knowledge.</p>
         </Section>
 
         <Section title="When it runs">
@@ -372,7 +371,6 @@ export function AutomationDetail({
                     </option>
                   ))}
                 </Select>
-                <span className="text-[12px] text-dim">{agent ? `Uses ${agent.name}’s instructions and model, with only what you pick here.` : 'The default assistant, with only what you pick here.'}</span>
               </label>
             </UseRow>
             <UseRow id="tools" icon={Wrench} label="Tools" open={open} setOpen={setOpen} value={<Tags items={toolItems.map((i) => i.label)} />}>
@@ -391,7 +389,7 @@ export function AutomationDetail({
                     Use no folder
                   </Button>
                 )}
-                <span className="text-dim">{workspace ? 'File tools and commands work here.' : 'Optional; file tools and commands need one.'}</span>
+                <span className="text-dim">{workspace ? '' : 'Optional; file tools and commands need one.'}</span>
               </div>
             </UseRow>
             <UseRow id="commands" icon={SquareTerminal} label="Commands" open={open} setOpen={setOpen} value={commandsLabel ? <Tag mono title={commandsLabel}>{commandsLabel}</Tag> : <None />}>
@@ -400,12 +398,12 @@ export function AutomationDetail({
             <div className="grid grid-cols-[28px_120px_minmax(0,1fr)] items-center gap-2.5 border-t border-line px-3.5 py-2.5 max-[700px]:grid-cols-[28px_minmax(0,1fr)] mobile:grid-cols-[28px_minmax(0,1fr)]">
               <Tile icon={Bell} />
               <span className="text-[12.5px] text-muted max-[700px]:sr-only mobile:sr-only">Reports</span>
-              <span className="text-[12.5px] text-muted">It picks: a chat in the Automation project, a notification, or a note in its knowledge.</span>
+              <span className="text-[12.5px] text-muted">A chat, a notification or a knowledge note</span>
             </div>
           </div>
           <p className="mt-2 flex items-start gap-2 text-[12px] text-dim">
             <ShieldCheck size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
-            <span>Nobody is there to approve while it runs, so risky actions (outside its folder, deleting, pushing, installing) are refused, not asked.</span>
+            <span>Risky actions are refused: nobody is there to approve them.</span>
           </p>
         </Section>
 
@@ -442,7 +440,7 @@ export function AutomationDetail({
               })}
             </ul>
           ) : (
-            <p className="text-[12.5px] text-dim">No runs yet. Run it now to see what it does.</p>
+            <p className="text-[12.5px] text-dim">No runs yet.</p>
           )}
           <button type="button" onClick={() => openChat(reported)} className={clsx('mt-1 inline-flex h-8 items-center rounded text-[12px] text-dim underline-offset-2 hover:text-fg hover:underline', FOCUS)}>
             Open all runs in the Automation project

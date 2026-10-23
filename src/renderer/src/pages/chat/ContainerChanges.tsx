@@ -143,7 +143,7 @@ function ChangesBody({ session, data, onData, ports: all }: { session: ChatSessi
       <>
         {servers}
         <div className={clsx('space-y-4 py-6 text-center', servers && 'mt-4')}>
-          <div className="text-[13px] text-muted">No changes yet. Your folder is untouched until you apply something here.</div>
+          <div className="text-[13px] text-muted">No changes yet.</div>
           <Button size="sm" variant="ghost" onClick={() => void reset()}>
             Reset container
           </Button>

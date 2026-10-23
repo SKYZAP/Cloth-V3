@@ -136,7 +136,6 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="Let chats use it" />
         <div className="grid gap-1">
           <Switch checked={c.defaultOn} disabled={!c.enabled} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} label="On in new chats" />
-          <span className="pl-10 text-[12px] text-dim">Any chat can still turn it on or off from the composer.</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
           <span>Before a tool runs</span>
@@ -172,7 +171,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         </div>
         {tools.length ? (
           <>
-            {!live && <p className="text-[12px] text-dim">From when it last ran. Start it to refresh the list.</p>}
+            {!live && <p className="text-[12px] text-dim">From its last run.</p>}
             <ul className="grid divide-y divide-line rounded-[10px] border border-line bg-panel">
               {shown.map((t) => (
                 <li key={t.name} className="grid gap-0.5 px-3 py-2 text-[12px]">
@@ -186,7 +185,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
             </ul>
           </>
         ) : (
-          <p className="text-[12px] text-dim">Its tools show here once it has run. Start it now to see them.</p>
+          <p className="text-[12px] text-dim">Start it to see its tools.</p>
         )}
       </div>
 

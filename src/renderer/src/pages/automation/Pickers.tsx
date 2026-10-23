@@ -76,7 +76,7 @@ export function PromptBox({ value, onChange, items, onMention, onBlur }: { value
           ))}
         </ul>
       )}
-      <p className="text-[12px] text-dim">Type @ to mention a tool, server, collection or skill. Mentions add it to what it may use.</p>
+      <p className="text-[12px] text-dim">Type @ to add a tool, server, collection or skill.</p>
     </div>
   )
 }
@@ -110,7 +110,6 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
         <label className="grid gap-1 text-[12.5px] text-muted">
           Page address
           <Input value={value.url} onChange={(e) => onChange({ ...value, url: e.target.value })} placeholder="https://example.com/pricing…" spellCheck={false} autoComplete="off" className="font-mono" />
-          <span className="text-[11.5px] text-dim">Only the page’s text counts, so ads and scripts changing don’t trigger it. It’s told what the page says now.</span>
         </label>
       )}
       {value.kind === 'mcp' && (
@@ -176,7 +175,6 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
               </option>
             ))}
           </Select>
-          <span className="text-dim">Checking is cheap: the agent only runs when the answer changes.</span>
         </label>
       )}
     </div>
@@ -229,7 +227,6 @@ export function CommandsPicker({ value, onChange, folder, docker }: { value: Aut
             <input type="checkbox" className="accent-[#dc2645]" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
             Can reach the internet (to install packages)
           </label>
-          <p className="text-[12px] text-dim">Its commands and edits only touch the copy. The result chat lists what changed, for you to apply to the real folder or throw away.</p>
         </div>
       )}
       {value?.mode === 'allowlist' && (

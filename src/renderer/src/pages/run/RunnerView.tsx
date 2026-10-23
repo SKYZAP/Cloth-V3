@@ -80,7 +80,7 @@ export function RunnerView({
                 </div>
               </Row>
               <Row label="Flash attention">
-                <Switch checked={runner.flashAttention} disabled={locked} onChange={(v) => void save({ flashAttention: v })} label="Faster, and a smaller context cache" />
+                <Switch checked={runner.flashAttention} disabled={locked} onChange={(v) => void save({ flashAttention: v })} ariaLabel="Flash attention" />
               </Row>
             </div>
           </Section>
@@ -367,9 +367,6 @@ function Reasoning({ kind, value, locked, onChange }: { kind: NonNullable<Reason
       <fieldset disabled={locked} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3 disabled:opacity-60">
         <legend className="sr-only">Reasoning</legend>
         <Segmented value={current} onChange={onChange} items={items} />
-        <span className="min-w-0 flex-1 text-[12px] text-dim">
-          {kind === 'levels' ? 'How long it thinks before answering. Higher is slower and more careful.' : 'Whether it thinks before answering. Off is faster.'}
-        </span>
       </fieldset>
     </Section>
   )
@@ -400,7 +397,6 @@ function Advanced({ runner, locked, save, onRemoved }: { runner: Runner; locked:
       <summary className="flex min-h-[38px] cursor-default list-none items-center gap-2 rounded-[12px] px-3.5 py-2 text-[12.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
         <CaretRight size={12} className="text-dim transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
         <span className="flex-1">Advanced</span>
-        <span className="text-[12px] font-normal text-dim">Files, port, sampling, flags</span>
       </summary>
       <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 border-t border-line px-3.5 py-3 mobile:grid-cols-1">
         <Row label="Name">
@@ -448,7 +444,7 @@ function Advanced({ runner, locked, save, onRemoved }: { runner: Runner; locked:
           <CommitInput aria-label="Extra flags" spellCheck={false} className="font-mono" value={runner.extraArgs} disabled={locked} onCommit={(v) => save({ extraArgs: v })} />
         </Row>
         <Row label="In chats">
-          <Switch checked={runner.useInChats} disabled={locked} onChange={(v) => void save({ useInChats: v })} label="Show as a model while running" />
+          <Switch checked={runner.useInChats} disabled={locked} onChange={(v) => void save({ useInChats: v })} ariaLabel="Show in chats while running" />
         </Row>
       </div>
       {!builtin && (

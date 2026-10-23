@@ -128,7 +128,6 @@ export function SettingsPage() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[12.5px] font-medium mobile:text-[14px]">{s.title}</span>
-                <span className="block truncate text-[11px] text-dim mobile:text-[12px]">{s.blurb}</span>
               </span>
               {!side && <CaretRight size={14} className="text-dim" />}
             </button>
@@ -144,7 +143,6 @@ export function SettingsPage() {
               <SplitBack className="mt-0.5" />
               <div>
                 <h1 className="text-[18px] font-semibold tracking-tight">{current.title}</h1>
-                <div className="text-[12.5px] text-dim">{current.blurb}</div>
               </div>
             </div>
             <SectionBody id={current.id} settings={settings} />
@@ -161,13 +159,13 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'models':
       return (
         <Group>
-          <Row label="Chat" hint="Default for new chats, flows and skill tests.">
+          <Row label="Chat">
             <ModelPicker className="w-72 mobile:w-full" value={settings.defaultModel} onChange={(m) => void update({ defaultModel: m })} allowNone noneLabel="None" />
           </Row>
-          <Row label="Embeddings" hint="Adds vector search. None means keyword search only.">
+          <Row label="Embeddings">
             <ModelPicker className="w-72 mobile:w-full" kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
           </Row>
-          <Row label="Images" hint="Used by generate_image.">
+          <Row label="Images">
             <ModelPicker className="w-72 mobile:w-full" kind="image" value={settings.imageModel} onChange={(m) => void update({ imageModel: m })} allowNone noneLabel="First image model available" />
           </Row>
         </Group>
@@ -175,14 +173,14 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'chat':
       return (
         <Group>
-          <Row label="Summarise long conversations" hint="Summarises older turns near the context limit.">
+          <Row label="Summarise long conversations">
             <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} />
           </Row>
-          <Row label="Name chats with AI" hint="Titles you type are kept.">
+          <Row label="Name chats with AI">
             <Switch checked={settings.aiTitles} onChange={(aiTitles) => void update({ aiTitles })} />
           </Row>
           {settings.aiTitles && (
-            <Row label="Title model" hint="Defaults to the chat's model.">
+            <Row label="Title model">
               <ModelPicker className="w-72 mobile:w-full" value={settings.titleModel} onChange={(titleModel) => void update({ titleModel })} allowNone noneLabel="Same as the chat" />
             </Row>
           )}
@@ -200,10 +198,10 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'knowledge':
       return (
         <Group title="Chunking" note="Applies to newly indexed documents.">
-          <Row label="Chunk size" hint="Characters per chunk.">
+          <Row label="Chunk size" hint="Characters">
             <NumberInput value={settings.chunkSize} min={300} max={8000} step={100} suffix="chars" onCommit={(chunkSize) => void update({ chunkSize })} />
           </Row>
-          <Row label="Overlap" hint="Characters shared between neighbouring chunks.">
+          <Row label="Overlap" hint="Characters">
             <NumberInput value={settings.chunkOverlap} min={0} max={2000} step={50} suffix="chars" onCommit={(chunkOverlap) => void update({ chunkOverlap })} />
           </Row>
         </Group>
@@ -212,7 +210,7 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       return (
         <Group>
           <div className="flex items-center gap-3 p-4 text-[12.5px] text-muted">
-            <span className="flex-1">Palettes, type and shape that projects follow; written into a project as DESIGN.md and theme files.</span>
+            <span className="flex-1">Design systems</span>
             <Button size="sm" onClick={() => useApp.getState().openDesign(null)}>
               Open design systems
             </Button>
@@ -246,13 +244,13 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
   return (
     <>
       <Group title="Defaults">
-        <Row label="On for new chats" hint="Existing chats keep their own setting.">
+        <Row label="On for new chats">
           <Switch checked={value.enabledByDefault} onChange={(enabledByDefault) => set({ enabledByDefault })} />
         </Row>
-        <Row label="Model" hint="Defaults to the chat's model.">
+        <Row label="Model">
           <ModelPicker className="w-72 mobile:w-full" value={value.model} onChange={(model) => set({ model })} allowNone noneLabel="Same as the chat" />
         </Row>
-        <Row label="Thinking" hint="On models that support it.">
+        <Row label="Thinking">
           <select
             value={value.thinking === 'inherit' ? 'inherit' : normalizeEffort(value.thinking)}
             onChange={(e) => set({ thinking: e.target.value as SubagentSettings['thinking'] })}
@@ -268,10 +266,10 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Limits">
-        <Row label="Steps per subagent" hint="Turns before it must report back.">
+        <Row label="Steps per subagent">
           <NumberInput value={value.maxTurns} min={1} max={100} onCommit={(maxTurns) => set({ maxTurns })} />
         </Row>
-        <Row label="Running at once" hint="Across all chats; extra jobs queue.">
+        <Row label="Running at once">
           <NumberInput value={value.maxParallel} min={1} max={16} onCommit={(maxParallel) => set({ maxParallel })} />
         </Row>
       </Group>
@@ -290,10 +288,9 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
             onChange={(e) => setInstructions(e.target.value)}
             onBlur={() => instructions !== value.instructions && set({ instructions })}
           />
-          <span className="text-[11.5px] text-dim">Added to every job handed out without a saved agent, read-only or editing.</span>
         </div>
         <div className="flex items-center gap-3 border-t border-line p-4 text-[12.5px] text-muted">
-          <span className="flex-1">Saved agents, with their own instructions, model and effort, are on the Agents page.</span>
+          <span className="flex-1">Saved agents</span>
           <Button size="sm" onClick={() => useApp.getState().setPage('agents')}>
             Open Agents
           </Button>
@@ -315,7 +312,7 @@ function TierSection({ tiers }: { tiers: AgentTier[] }) {
     save(tiers.filter((x) => x.id !== t.id))
   }
   return (
-    <Group title="Tiers" note="Agents can run at a tier. Cloth picks the cheapest one that should get each job right.">
+    <Group title="Tiers">
       {tiers.map((t) => (
         <TierRow key={t.id} tier={t} canRemove={tiers.length > 1} onChange={(p) => patch(t.id, p)} onRemove={() => void remove(t)} />
       ))}
@@ -374,7 +371,6 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
         onBlur={() => instructions !== tier.instructions && onChange({ instructions })}
       />
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[11.5px] text-dim">Added to the agent's instructions for every job run at this tier.</span>
         {preset !== undefined && tier.instructions !== preset && (
           <button type="button" className="shrink-0 text-[11.5px] text-dim hover:text-fg" onClick={() => onChange({ instructions: preset })}>
             Reset to default

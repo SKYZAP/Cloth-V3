@@ -127,7 +127,6 @@ export function RunPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Run</h1>
-              <p className="mt-0.5 text-[12.5px] text-dim">Models running on this PC with llama.cpp, usable in chats while they run</p>
             </div>
             <Button icon={<FolderOpen size={13} />} onClick={() => void addFromDisk()}>
               From disk
@@ -235,7 +234,7 @@ function FirstRun({
             <span className="tabular-nums text-crimson-hi">1</span> Install llama.cpp
           </div>
           <p className="text-[12px] text-dim">
-            {FLAVOUR.prism.name}'s build, {BACKEND[backend]} for {hardware?.gpus[0] ? `your ${hardware.gpus[0].name}` : 'this PC'}. It also runs the built-in Bonsai model.
+            {FLAVOUR.prism.name}'s build, {BACKEND[backend]} for {hardware?.gpus[0] ? `your ${hardware.gpus[0].name}` : 'this PC'}.
           </p>
           {downloading ? (
             <ProgressBar p={downloading} onCancel={() => void attempt(() => api.runs.cancelDownload(downloading.id))} />
@@ -254,7 +253,6 @@ function FirstRun({
           <div className="flex items-baseline gap-2 text-[13px] font-semibold">
             <span className="tabular-nums text-crimson-hi">2</span> Add a model
           </div>
-          <p className="text-[12px] text-dim">Search Hugging Face; each size is checked against your GPU and memory.</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button icon={<Plus size={13} />} onClick={onAdd}>
               Add model

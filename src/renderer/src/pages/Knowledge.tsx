@@ -135,7 +135,7 @@ export function KnowledgePage() {
       <div className="grid h-full place-items-center overflow-y-auto px-5">
         <div className="grid max-w-[520px] justify-items-center gap-3 py-10 text-center">
           <h1 className="text-[20px] font-semibold tracking-tight">Give Cloth something to know</h1>
-          <p className="text-[13px] text-muted">A collection holds documents, folders and web pages. Chats search it and cite what they find. Start with the bundled examples to see how search works, or make your own.</p>
+          <p className="text-[13px] text-muted">Chats search your collections and cite what they find.</p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
               Load the examples
@@ -203,7 +203,7 @@ export function KnowledgePage() {
       <Inspector open={!!open && !!active} label={open?.kind === 'add' ? 'Add sources' : open?.kind === 'settings' ? `${active?.name} settings` : 'Document'} onClose={close} width={760}>
         {active && open?.kind === 'add' && (
           <>
-            <InspectorHead title={`Add to ${active.name}`} sub="Files, folders, web pages or text" onClose={close} />
+            <InspectorHead title={`Add to ${active.name}`} onClose={close} />
             <div className="min-h-0 flex-1 overflow-y-auto">
               <AddSources collection={active} log={log.filter((l) => l.collectionId === active.id)} />
             </div>
@@ -426,7 +426,7 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
   if (docs && !docs.length)
     return (
       <div className="grid justify-items-center gap-3 rounded-[12px] border border-dashed border-line-strong px-4 py-8 text-center">
-        <p className="text-[12.5px] text-muted">No documents yet. Add a folder, a web page or some pasted text, and they show up here.</p>
+        <p className="text-[12.5px] text-muted">No documents yet.</p>
         <Button icon={<Plus size={13} />} onClick={onAdd}>
           Add sources
         </Button>
@@ -774,7 +774,7 @@ function CollectionSettings({ collection, docs, onClose, onDeleted }: { collecti
       <InspectorHead title={collection.name} sub="Collection settings" onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="grid gap-5">
-          <Field label="Description" hint="Chats read this to decide when to search the collection.">
+          <Field label="Description">
             <Textarea
               rows={3}
               value={description}
@@ -782,7 +782,7 @@ function CollectionSettings({ collection, docs, onClose, onDeleted }: { collecti
               onBlur={() => description !== collection.description && void attempt(() => api.rag.updateCollection(collection.id, { description })).then(() => useApp.getState().loadCollections())}
             />
           </Field>
-          <Field label="Embedding model" hint="Search by meaning as well as keywords. Changing it drops the existing vectors; embed again afterwards.">
+          <Field label="Embedding model">
             <ModelPicker
               kind="embedding"
               value={collection.embedding}
@@ -865,10 +865,10 @@ function NewCollection({ open, onClose, onCreated }: { open: boolean; onClose():
         <Field label="Name">
           <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="nestjs-docs" />
         </Field>
-        <Field label="Description" hint="Shown to the agent so it knows when to search this collection.">
+        <Field label="Description">
           <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Official NestJS documentation" />
         </Field>
-        <Field label="Embedding model" hint="Optional. Without one, search is keyword-only (BM25). Mark models as embedding models under Models.">
+        <Field label="Embedding model" hint="Optional. Without one, search is keyword-only.">
           <ModelPicker kind="embedding" value={embedding} onChange={setEmbedding} allowNone noneLabel="None — keyword only" />
         </Field>
       </div>
@@ -897,7 +897,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
           <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
             <FolderPlus size={14} className="text-crimson-hi" /> Files & folders
           </div>
-          <div className="mb-3 text-[12px] text-dim">Markdown, text, code (40+ languages), PDF, DOCX and HTML. Folders are walked recursively, skipping node_modules, .git and build output.</div>
+          <div className="mb-3 text-[12px] text-dim">Markdown, text, code, PDF, DOCX and HTML.</div>
           <div className="flex gap-2">
             <Button icon={<FilePlus2 size={13} />} onClick={() => void pick(false)}>
               Add files

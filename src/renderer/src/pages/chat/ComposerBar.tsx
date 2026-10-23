@@ -101,12 +101,11 @@ export function ComposerBar({
         >
           {(close) => (
             <MenuList>
-              <MenuRow icon={Paperclip} iconTone="text-muted" name="Attach files" sub="Or drop or paste them into the message" state={attach.count ? `${attach.count}` : undefined} onClick={() => (close(), attach.onClick())} />
+              <MenuRow icon={Paperclip} iconTone="text-muted" name="Attach files" state={attach.count ? `${attach.count}` : undefined} onClick={() => (close(), attach.onClick())} />
               <div className="mx-1.5 my-1 border-t border-line" />
               <MenuRow icon={Books} name="Knowledge" state={knowledge ? `${knowledge} on` : 'Off'} on={knowledge > 0} onClick={() => (close(), openSetupSection('knowledge'))} />
               <MenuRow icon={Sparkle} name="Skills" state={skillsOn ? 'On' : 'Off'} on={skillsOn} onClick={() => (close(), openSetupSection('skills'))} />
               <MenuRow icon={Wrench} name="Tools" state={toolsOn ? 'On' : 'Default'} on={toolsOn} onClick={() => (close(), openSetupSection('tools'))} />
-              <p className="mx-1.5 mt-1 border-t border-line px-1 pb-0.5 pt-2 text-[11.5px] text-dim">Knowledge, skills and tools open in the side panel’s Setup tab.</p>
             </MenuList>
           )}
         </ComposerPopover>
@@ -393,7 +392,7 @@ function AccessMenu({ value, planning, onPick }: { value: Access; planning: bool
   const note = accessLevel(value).note
   return (
     <MenuList>
-      {!isMobile && <div className="px-2.5 pb-1 pt-1.5 text-[11.5px] text-dim">Access: what it may do without asking</div>}
+      {!isMobile && <div className="px-2.5 pb-1 pt-1.5 text-[11.5px] text-dim">Access</div>}
       {ACCESS_LEVELS.map((m) => (
         <MenuRow key={m.id} icon={ACCESS_ICON[m.id]} iconTone={ACCESS_ICON_TONE[m.id]} name={m.name} sub={m.sub} checked={m.id === value} autoFocus={m.id === value} onClick={() => onPick(m.id)} />
       ))}

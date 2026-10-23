@@ -123,11 +123,11 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
                 <Input className="font-mono" value={version} onChange={(e) => setVersion(e.target.value)} placeholder="1.0.0" />
               </Field>
             </div>
-            <Field label="Description" hint="Shown on the app's first screen.">
+            <Field label="Description">
               <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Turns a brief into a finished slide deck" />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="OpenAI model (optional)" hint="Preselected in the app; users can change it.">
+              <Field label="OpenAI model (optional)">
                 <Input className="font-mono" value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. a GPT model id" />
               </Field>
               <Field label="Save the installer to">

@@ -118,10 +118,10 @@ export function GuidedServerForm({
 
       {kind === 'http' ? (
         <>
-          <Field label="Address" hint="The server’s MCP endpoint, often ending in /mcp.">
+          <Field label="Address">
             <Input type="url" inputMode="url" spellCheck={false} autoComplete="off" placeholder="http://localhost:4401/mcp" value={url} onChange={(e) => setUrl(e.target.value)} />
           </Field>
-          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={tokenHint ?? (focusToken ? 'Sent as Authorization: Bearer … with every request.' : 'Sent as Authorization: Bearer … with every request. Leave empty if the server is open.')}>
+          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={tokenHint ?? 'Sent as a Bearer token.'}>
             <div className="relative">
               <Input ref={tokenBox} type={showToken ? 'text' : 'password'} spellCheck={false} autoComplete="off" placeholder={focusToken ? 'Paste its access token' : 'Paste a token if the server needs one'} value={token} onChange={(e) => setToken(e.target.value)} className="pr-9" />
               <button
@@ -138,7 +138,7 @@ export function GuidedServerForm({
         </>
       ) : (
         <>
-          <Field label="Program" hint="Paste a whole command, like npx -y @playwright/mcp@latest, and it’s split into the program and its arguments.">
+          <Field label="Program" hint="Paste a whole command to split it.">
             <Input spellCheck={false} autoComplete="off" placeholder="npx" value={command} onChange={(e) => setCommand(e.target.value)} onPaste={pasteCommand} className="font-mono" />
           </Field>
           <div className="grid gap-1.5">
@@ -163,7 +163,7 @@ export function GuidedServerForm({
         </>
       )}
 
-      <Field label="Name" hint={<>Its tools show to agents as mcp__{entry.name || 'name'}__tool.</>}>
+      <Field label="Name">
         <Input
           spellCheck={false}
           autoComplete="off"

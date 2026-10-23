@@ -244,7 +244,7 @@ export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
             {line || ' '}
           </div>
         ))}
-        {!lines.length && <p className="font-sans text-[12px] text-dim">Nothing yet. llama-server's output shows here when it runs.</p>}
+        {!lines.length && <p className="font-sans text-[12px] text-dim">Nothing yet.</p>}
       </div>
     </Section>
   )

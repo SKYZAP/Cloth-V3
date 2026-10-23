@@ -27,7 +27,7 @@ describe('mode and access', () => {
 
   it('names each mode and access level', () => {
     expect(accessLevel('manual').name).toBe('Manual')
-    expect(chatModeInfo('plan').sub).toMatch(/Nothing changes until you approve it/)
+    expect(chatModeInfo('plan').sub).toMatch(/after you approve/)
     expect(chatModeInfo('spec').name).toBe('Spec → ship')
   })
 

@@ -113,7 +113,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
           <div className="mx-auto grid w-[min(620px,calc(100%-32px))] gap-5 py-10 mobile:py-6">
             <div className="grid gap-1.5">
               <h1 className="text-[22px] font-semibold tracking-tight">What are you making?</h1>
-              <p className="text-[13px] text-muted">A sentence or two is enough. Say who it's for and how it should feel, and name a colour if you already have one in mind.</p>
+              <p className="text-[13px] text-muted">Who it's for, how it should feel, and a colour if you have one.</p>
             </div>
             <Textarea rows={4} autoFocus={!isMobile} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="What you're making" placeholder="e.g. A booking site for a small yoga studio. Calm and warm; most people book on their phone." />
             <LogoField logo={logo} onLogo={setLogo} />
@@ -157,7 +157,6 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[240px] flex-1">
                 <h1 className="text-[19px] font-semibold tracking-tight">{fromPresets ? 'Pick a starting look' : loading ? 'Making three looks…' : 'Pick the closest look'}</h1>
-                <p className="mt-0.5 text-[13px] text-muted">{fromPresets ? 'Each one is a complete design. You can change its colour, text and shape next.' : "You'll fine-tune colour, text and shape in the next steps."}</p>
               </div>
               {!fromPresets && (
                 <Button icon={<ArrowsClockwise size={14} />} loading={loading} disabled={!model} onClick={() => void generate(true)}>
@@ -231,7 +230,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#0d0d0f]">
           <div className="flex shrink-0 items-center gap-3 px-5 py-3">
-            <span className="flex-1 text-[12.5px] text-dim">A screen of your product in this design. It changes as you choose.</span>
+            <span className="flex-1" />
             {input.mode === 'both' && (
               <Segmented
                 value={theme}
@@ -267,12 +266,12 @@ function Option({ on, onClick, children, suggested }: { on: boolean; onClick(): 
   )
 }
 
-function Ask({ title, why, children }: { title: string; why: string; children: ReactNode }) {
+function Ask({ title, why, children }: { title: string; why?: string; children: ReactNode }) {
   return (
     <div className="grid gap-4">
       <div className="grid gap-1">
         <h2 className="text-[18px] font-semibold leading-tight tracking-tight">{title}</h2>
-        <p className="text-[13px] text-muted">{why}</p>
+        {why && <p className="text-[13px] text-muted">{why}</p>}
       </div>
       {children}
     </div>
@@ -305,7 +304,7 @@ function StepChoices({
   if (id === 'colour') {
     const colours = [{ color: base.brand, name: 'This look' }, ...(logo ? [{ color: logo, name: 'Your logo' }] : []), ...SWATCHES].filter((c, i, all) => all.findIndex((x) => x.color.toLowerCase() === c.color.toLowerCase()) === i)
     return (
-      <Ask title="Pick your main colour" why="Used for buttons, links and anything people should notice. Cloth keeps text on it readable.">
+      <Ask title="Pick your main colour">
         <div className="grid grid-cols-3 gap-2">
           {colours.map((c) => (
             <button
@@ -334,7 +333,7 @@ function StepChoices({
     const own = !baseFeel
     const ownOn = own && input.fontHeading === base.fontHeading && input.fontSans === base.fontSans
     return (
-      <Ask title="How should text feel?" why="One choice sets the fonts for headings and everything else.">
+      <Ask title="How should text feel?">
         <div className="grid gap-2">
           {own && (
             <Option on={ownOn} suggested onClick={() => set({ ...input, fontHeading: base.fontHeading, fontSans: base.fontSans, fontMono: base.fontMono, headingWeight: base.headingWeight, headingTracking: base.headingTracking })}>
@@ -366,7 +365,7 @@ function StepChoices({
   if (id === 'shape') {
     const corners = cornersOf(input)
     return (
-      <Ask title="Corners and spacing" why="Rounder and roomier feels friendlier. Sharper and tighter fits more on screen.">
+      <Ask title="Corners and spacing">
         <div className="grid gap-2">
           {CORNER_IDS.map((c) => (
             <Option key={c} on={corners === c} suggested={cornersOf(base) === c} onClick={() => set(withCorners(input, c))}>
@@ -384,7 +383,7 @@ function StepChoices({
   }
   if (id === 'mode')
     return (
-      <Ask title="Light or dark?" why="With both, your product follows each person's device setting.">
+      <Ask title="Light or dark?">
         <div className="grid gap-2">
           {(Object.keys(MODES) as DesignInput['mode'][]).map((m) => (
             <Option key={m} on={input.mode === m} suggested={base.mode === m} onClick={() => set({ ...input, mode: m })}>
@@ -400,7 +399,7 @@ function StepChoices({
     )
   const feel = textFeelOf(input)
   return (
-    <Ask title="Name your design" why="You'll see the name in the gallery and when you add the design to a project.">
+    <Ask title="Name your design">
       <label className="grid gap-1.5">
         <span className="text-[12.5px] font-medium text-muted">Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} className="h-9 rounded-[10px] border border-line-strong bg-elev px-3 text-[13.5px] outline-none focus:border-crimson-line" />

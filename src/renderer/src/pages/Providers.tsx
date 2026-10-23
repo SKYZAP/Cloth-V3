@@ -88,10 +88,10 @@ function Defaults() {
   if (!settings) return null
   return (
     <div className="grid grid-cols-2 gap-4 border-b border-line bg-panel px-5 py-3.5">
-      <Field label="Default chat model" hint="Used for new chats, workflows, agentic search and skill tests.">
+      <Field label="Default chat model">
         <ModelPicker value={settings.defaultModel} onChange={(m) => void update({ defaultModel: m })} allowNone noneLabel="None" />
       </Field>
-      <Field label="Default embedding model" hint="Pre-selected for new knowledge collections.">
+      <Field label="Default embedding model">
         <ModelPicker kind="embedding" value={settings.embeddingModel} onChange={(m) => void update({ embeddingModel: m })} allowNone noneLabel="None (BM25 only)" />
       </Field>
     </div>
@@ -174,7 +174,7 @@ function AddProvider({ open, onClose, onAdded }: { open: boolean; onClose(): voi
           <Field label="Base URL" hint={preset.kind === 'anthropic' ? 'Without /v1' : 'Including /v1'}>
             <Input className="font-mono" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
           </Field>
-          <Field label={preset.needsKey ? 'API key' : 'API key (optional)'} hint="Encrypted with the OS keychain (Electron safeStorage).">
+          <Field label={preset.needsKey ? 'API key' : 'API key (optional)'} hint="Encrypted with the OS keychain.">
             <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={preset.needsKey ? 'sk-…' : 'not required for local servers'} />
           </Field>
         </div>
@@ -522,7 +522,7 @@ function ImagePlayground({ model, onClose }: { model: ModelRef | null; onClose()
           </Button>
         </div>
         {image && <GeneratedImageCard image={image} onRetry={() => void run()} className="mx-auto max-w-[400px] pt-1" />}
-        {!image && <div className="rounded-[10px] border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Generated images are saved in Cloth's data folder. Ctrl+Enter to generate.</div>}
+        {!image && <div className="rounded-[10px] border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Ctrl+Enter to generate.</div>}
       </div>
     </Modal>
   )

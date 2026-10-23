@@ -64,7 +64,6 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
       <div className="mx-auto mt-[8vh] max-w-[640px] px-6 pb-12 mobile:mt-4 mobile:px-4">
         <SplitBack />
         <h2 className="mb-1 text-[20px] font-semibold">New automation</h2>
-        <p className="mb-4 text-[13px] text-muted">Say what should happen and when. Cloth drafts the schedule and what it can use; you check it before it’s turned on.</p>
         <div className="rounded-[16px] border border-line-strong bg-panel p-3 focus-within:border-crimson-line">
           <label htmlFor="automation-description" className="sr-only">
             Describe the automation
