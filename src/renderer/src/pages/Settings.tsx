@@ -5,6 +5,7 @@ import {
   Books,
   CaretRight,
   ChatCircleDots,
+  Code,
   Cpu,
   DeviceMobile,
   FolderOpen,
@@ -31,7 +32,7 @@ import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 
-type SectionId = 'models' | 'chat' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
+type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -46,6 +47,7 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Default chat, embedding and image models', keywords: 'default model embedding image llm provider' },
   { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'Summarising long conversations and naming chats', keywords: 'compact summarise summarize context window title name rename ai titles' },
+  { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Delegation with the task tool', keywords: 'task delegate scout worker parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Search engine and page fetching', keywords: 'searxng obscura web_fetch internet results' },
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split for search', keywords: 'chunk chunking overlap rag index' },
@@ -186,6 +188,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           )}
         </Group>
       )
+    case 'coding':
+      return <CodingRulesSection value={settings.codingRules} />
     case 'subagents':
       return (
         <>
@@ -295,6 +299,45 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
             Open Agents
           </Button>
         </div>
+      </Group>
+    </>
+  )
+}
+
+/** Rules for all code agents write: instructions in their prompt, and the global ast-grep rules folder checked after each edit. */
+function CodingRulesSection({ value }: { value: string }) {
+  const update = useApp((s) => s.updateSettings)
+  const [rules, setRules] = useState(value)
+  const [rulesDir, setRulesDir] = useState<string | null>(null)
+  useEffect(() => setRules(value), [value])
+  useEffect(() => {
+    void api.app.info().then((info) => setRulesDir(info.rulesDir))
+  }, [])
+  return (
+    <>
+      <Group title="Instructions" note="Added to every chat and agent that works in a folder. A folder's AGENTS.md (or CLAUDE.md) comes after them and wins where they disagree.">
+        <div className="grid gap-2 p-4">
+          <Textarea
+            rows={10}
+            value={rules}
+            aria-label="Coding rules"
+            placeholder={'How you want code written, e.g.\n- Use early returns instead of nested if/else.\n- Name things after what they mean, not how they work.'}
+            onChange={(e) => setRules(e.target.value)}
+            onBlur={() => rules !== value && void update({ codingRules: rules })}
+          />
+        </div>
+      </Group>
+      <Group title="Rule checks" note="Agents see what these rules find right after each change, and fix it in the same turn.">
+        <Row label="Rule files" hint="ast-grep rules (.yml) in this folder are checked in every folder. A folder's own sgconfig.yml rules are checked too." stacked>
+          <div className="flex items-center gap-2">
+            <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-[12px] text-muted">{rulesDir ?? '…'}</span>
+            {!isMobile && rulesDir && (
+              <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => void api.app.openPath(rulesDir)}>
+                Open
+              </Button>
+            )}
+          </div>
+        </Row>
       </Group>
     </>
   )

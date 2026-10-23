@@ -19,6 +19,7 @@ import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
+import { folderNotes, loadRules } from './rules'
 import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
@@ -337,7 +338,7 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null } = {}
   ) {}
 
   /** Computer use on this machine (set by the app; absent in tests and on unsupported systems). */
@@ -514,9 +515,25 @@ export class AgentRuntime {
             ]
           : [])
       )
+      lines.push(...(await this.codingRulesSection(scope.workspace, writable)))
     }
     if (extra.trim()) lines.push('', '## Instructions', extra.trim())
     return lines.join('\n')
+  }
+
+  /** The user's coding rules (Settings) and the folder's AGENTS.md, for any agent working in a folder (rules.ts). */
+  private async codingRulesSection(folder: string, writable: boolean): Promise<string[]> {
+    const rules = this.ws.settings?.get().codingRules.trim() ?? ''
+    const notes = await folderNotes(folder)
+    const checked = writable && (await loadRules(folder, this.ws.rulesDir ?? null).catch(() => [])).length > 0
+    if (!rules && !notes && !checked) return []
+    return [
+      '',
+      '## Coding rules',
+      ...(rules ? ['Follow these rules in all code you write or change. Where the project notes below disagree, the project notes win.', '', rules] : []),
+      ...(notes ? ['', notes] : []),
+      ...(checked ? ['', 'Changed files are checked against the coding rules: violations are reported in the tool result — fix them before finishing.'] : [])
+    ]
   }
 
   /**

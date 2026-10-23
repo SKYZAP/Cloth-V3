@@ -9,6 +9,7 @@ import { validateCron } from './workflows/workflows'
 import { describeBuiltins } from './agent/tools'
 import { TRYABLE } from './agent/chat'
 import { openPermissionPane } from './computer/host'
+import { globalRulesDir } from './agent/rules'
 
 export function createApi(s: Services): ClothApi {
   return {
@@ -16,6 +17,7 @@ export function createApi(s: Services): ClothApi {
       info: async () => ({
         version: app.getVersion(),
         dataDir: s.ctx.dataDir,
+        rulesDir: globalRulesDir(s.ctx.dataDir),
         platform: process.platform,
         electron: process.versions.electron,
         node: process.versions.node

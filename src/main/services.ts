@@ -21,6 +21,7 @@ import { McpClientService } from './mcp/client'
 import { TerminalService, type PtySpawn } from './panel/terminals'
 import { ApprovalService, CheckpointStore } from './agent/workspace'
 import { LspManager } from './agent/lsp'
+import { globalRulesDir } from './agent/rules'
 import { BUILTIN_NAMES } from './agent/tools'
 import { CustomToolService } from './tools/custom'
 import { WebService } from './web/web'
@@ -30,7 +31,7 @@ import { DashboardService } from './dashboard'
 import { ImageService } from './images'
 import { RemoteHost } from './remote/server'
 import { FlowExporter, type ExportToolchain } from './export/exporter'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { RunService, type RunDeps } from './run/run'
 
 export interface Services {
@@ -110,10 +111,12 @@ export function createServices(opts: {
   const approvals = new ApprovalService((e) => ctx.emit('chat', e))
   const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
   const lsp = new LspManager()
+  const rulesDir = globalRulesDir(opts.dataDir)
+  mkdirSync(rulesDir, { recursive: true })
   const images = new ImageService(ctx, providers, settings)
   const mcpClients = new McpClientService(ctx, settings, approvals)
   const agents = new AgentService(ctx, providers, settings)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, images, settings, mcp: mcpClients, agents })
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents })
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)
