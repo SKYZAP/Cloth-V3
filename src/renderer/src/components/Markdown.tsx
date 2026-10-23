@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
 import { Check, Copy } from 'lucide-react'
 import type { RagHit } from '@shared/types'
+import { Diagram } from './Diagram'
 
 /** Markdown renderer with code-copy buttons and [n] citation chips linked to RAG hits. */
 export const Markdown = memo(function Markdown({ text, references, streaming, className }: { text: string; references?: RagHit[]; streaming?: boolean; className?: string }) {
@@ -25,6 +26,9 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
             )
           },
           pre({ children }) {
+            // ```mermaid blocks are drawn as diagrams.
+            const mermaid = mermaidSource(children)
+            if (mermaid !== null) return <Diagram source={mermaid} streaming={streaming} />
             return <CodeBlock>{children}</CodeBlock>
           }
         }}
@@ -70,6 +74,13 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
       <pre>{children}</pre>
     </div>
   )
+}
+
+/** The text of a ```mermaid code block, or null for any other block. */
+function mermaidSource(children: React.ReactNode): string | null {
+  const code = (Array.isArray(children) ? children[0] : children) as { props?: { className?: string; children?: React.ReactNode } } | null
+  if (!code?.props || !/\blanguage-mermaid\b/.test(code.props.className ?? '')) return null
+  return extractText(code.props.children).replace(/\n$/, '')
 }
 
 function extractText(node: React.ReactNode): string {

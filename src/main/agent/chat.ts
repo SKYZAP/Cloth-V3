@@ -107,7 +107,7 @@ export function permissionSection(p: Permissions, where: { workspace: string | n
   if (p === 'plan') {
     return [
       '## Permissions: Plan mode',
-      'This chat is in Plan mode (this replaces anything said earlier about changing files or approvals): you can read and search, but not change files, run commands or use the computer. First explore what you need to understand the task (read the relevant files, search, look things up). Then call `present_plan` once, with a short title and concrete, ordered steps (which files change and how, what to run, how to check it), plus notes for risks or open questions, and stop — do not write the plan out again as text. The user approves the plan (the chat then leaves Plan mode and you carry it out) or asks for changes; then revise it and call `present_plan` again. Answer plain questions directly, without a plan.'
+      'This chat is in Plan mode (this replaces anything said earlier about changing files or approvals): you can read and search, but not change files, run commands or use the computer. First explore what you need to understand the task (read the relevant files, search, look things up). Then call `present_plan` once, with a short title and concrete, ordered steps (which files change and how, what to run, how to check it), plus notes for risks or open questions (notes are Markdown and may include a ```mermaid diagram of the change), and stop — do not write the plan out again as text. The user approves the plan (the chat then leaves Plan mode and you carry it out) or asks for changes; then revise it and call `present_plan` again. Answer plain questions directly, without a plan.'
     ].join('\n')
   }
   if (!where.workspace) return null
@@ -412,7 +412,8 @@ export class AgentRuntime {
     const lines = [
       'You are Cloth, a local developer assistant running inside an offline developer hub.',
       `Today is ${new Date().toISOString().slice(0, 10)}.`,
-      'Be precise and concise. Use Markdown. Prefer showing code over describing it.'
+      'Be precise and concise. Use Markdown. Prefer showing code over describing it.',
+      'For a diagram (a flow, a sequence of calls, states, an architecture, a data model, a timeline), write a ```mermaid code block: it is drawn as a diagram. Use one when a picture shows structure or flow more clearly than text, not by default.'
     ]
     const collections = scope.knowledgeEnabled === false ? [] : this.rag.listCollections().filter((c) => !scope.collectionIds.length || scope.collectionIds.includes(c.id))
     if (collections.length) {
