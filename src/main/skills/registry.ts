@@ -7,6 +7,7 @@ import type {
   RegistryPreview,
   RegistrySkill,
   Skill,
+  SkillGroup,
   SkillAudits,
   SkillAuditStatus,
   SkillLinkCandidate,
@@ -72,7 +73,7 @@ export class SkillRegistry {
         name: s.name,
         installs: s.installs ?? 0,
         url: `${SKILLS_REGISTRY}/${s.id}`,
-        installedAs: installed.get(s.id) ?? null
+        installedAs: installed.get(s.id.toLowerCase()) ?? null
       }))
   }
 
@@ -91,7 +92,7 @@ export class SkillRegistry {
       files: files.map((f) => ({ path: f.path, bytes: Buffer.byteLength(f.contents ?? '') })),
       hash: data.hash ?? null,
       url: `${SKILLS_REGISTRY}/${id}`,
-      installedAs: installed.get(id) ?? null
+      installedAs: installed.get(id.toLowerCase()) ?? null
     }
   }
 
@@ -106,7 +107,7 @@ export class SkillRegistry {
     if (!name) throw new Error('Could not derive a skill name')
 
     const installed = await this.installedSources()
-    const existingName = installed.get(id)
+    const existingName = installed.get(id.toLowerCase())
     const dir = join(this.ctx.skillsDir, name)
     if (existsSync(dir) && existingName !== name && !opts.overwrite) {
       throw new Error(`A different skill named "${name}" already exists in the hub — rename it first, or install with overwrite`)
@@ -371,10 +372,32 @@ export class SkillRegistry {
     return data
   }
 
-  /** registry id → local skill name, for skills installed from skills.sh. */
+  /**
+   * Hub skills by the GitHub repository they came from: their skills.sh link, else the `skills` CLI lock file.
+   * Skills from neither (written here, or imported from a folder) are in no group.
+   */
+  async groups(): Promise<SkillGroup[]> {
+    const fromLock = lockSources(this.lockFile())
+    // GitHub names aren't case-sensitive, and skills.sh lowercases the owner where the lock file may not.
+    const repos = new Map<string, { repo: string; skills: string[] }>()
+    for (const s of await this.skills.list()) {
+      const repo = s.source ? s.source.id.split('/').slice(0, 2).join('/') : fromLock.get(s.name)
+      if (!repo) continue
+      const g = repos.get(repo.toLowerCase()) ?? { repo, skills: [] }
+      g.skills.push(s.name)
+      repos.set(repo.toLowerCase(), g)
+    }
+    return [...repos.values()].map(({ repo, skills }) => ({ repo, url: `https://github.com/${repo}`, skills }))
+  }
+
+  /** registry id (lowercase) → local skill name: linked skills, and ones the `skills` CLI lock file says came from that repository. */
   private async installedSources(): Promise<Map<string, string>> {
     const out = new Map<string, string>()
-    for (const s of await this.skills.list()) if (s.source) out.set(s.source.id, s.name)
+    const fromLock = lockSources(this.lockFile())
+    for (const s of await this.skills.list()) {
+      const id = s.source?.id ?? (fromLock.has(s.name) ? `${fromLock.get(s.name)}/${s.name}` : null)
+      if (id) out.set(id.toLowerCase(), s.name)
+    }
     return out
   }
 }
@@ -410,6 +433,22 @@ export function skillsLockFile(): string {
   const xdg = process.env.XDG_STATE_HOME?.trim()
   if (xdg && existsSync(join(xdg, 'skills', '.skill-lock.json'))) return join(xdg, 'skills', '.skill-lock.json')
   return join(homedir(), '.agents', '.skill-lock.json')
+}
+
+/** Each skill the `skills` CLI lock file records, with the owner/repo it came from. */
+export function lockSources(file: string): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!file || !existsSync(file)) return out
+  try {
+    const lock = JSON.parse(readFileSync(file, 'utf8')) as { skills?: Record<string, { source?: unknown } | undefined> }
+    for (const [name, entry] of Object.entries(lock?.skills ?? {})) {
+      const source = typeof entry?.source === 'string' ? entry.source.replace(/^\/+|\/+$/g, '') : ''
+      if (source.split('/').length === 2 && source.split('/').every(Boolean)) out.set(name, source)
+    }
+  } catch {
+    /* an unreadable lock file groups nothing */
+  }
+  return out
 }
 
 /** The skills.sh id the `skills` CLI lock file records for a skill (v3: skills[name] = { source: 'owner/repo', skillPath }). */

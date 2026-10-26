@@ -1,150 +1,173 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, ExternalLink, FileCode2, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Store, Trash2, Upload, Wand2 } from 'lucide-react'
-import type { ModelRef, RegistryPreview, RegistrySkill, Skill, SkillRegistryStatus, SkillUpdateFile } from '@shared/types'
+import { Download, ExternalLink, FileCode2, FolderOpen, Plus, RefreshCw, Save, Search, Sparkles, Layers, Store, Trash2, Upload, Wand2, X } from 'lucide-react'
+import clsx from 'clsx'
+import type { ModelRef, RegistryPreview, RegistrySkill, SharedSkills, Skill, SkillGroup, SkillRegistryStatus, SkillUpdateFile } from '@shared/types'
 import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, compact, timeAgo } from '@/lib/format'
-import { Badge, Button, Empty, Field, IconButton, Input, ListItem, ListPane, Modal, PageHeader, Spinner, Tabs, Textarea, confirmAction } from '@/components/ui'
-import { SplitDetail, SplitRoot } from '@/components/SplitView'
+import { Badge, Button, Empty, Field, IconButton, Input, ListItem, Modal, PageHeader, Spinner, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { Inspector, refocus } from '@/components/Inspector'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 import { Markdown } from '@/components/Markdown'
 import { DiffView } from '@/components/DiffView'
 import { SkillOverview } from './skills/Overview'
+import { SkillShelf, buildShelves, type Shelf, type Usage } from './skills/Library'
 
 type Tab = 'overview' | 'instructions' | 'files'
 
+type Filter = 'all' | 'used' | 'never'
+
+/**
+ * The skill library: skills grouped by where they came from. A repository two or more skills came from is a set,
+ * with one switch, update and removal for all of it; the rest share one shelf. Most used first. A skill opens beside it.
+ */
 export function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
+  const [groups, setGroups] = useState<SkillGroup[]>([])
+  const [used, setUsed] = useState<Usage>({})
+  const [modes, setModes] = useState<SharedSkills | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [activeName, setActiveName] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-  const [filter, setFilter] = useState('')
+  const [openName, setOpenName] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<Filter>('all')
   const [creating, setCreating] = useState<NewMode | null>(null)
   const [adding, setAdding] = useState<{ open: boolean; tab: AddTab }>({ open: false, tab: 'registry' })
-  const [used, setUsed] = useState<Record<string, { total: number; lastUsedAt: number }>>({})
 
-  const load = async (select?: string) => {
-    void api.skills.usageAll().then(setUsed, () => undefined)
-    const list = await api.skills.list()
+  const load = async (open?: string) => {
+    const [list, g, u, m] = await Promise.all([api.skills.list(), api.skills.groups().catch(() => []), api.skills.usageAll().catch(() => ({})), api.chat.sharedSkills().catch(() => null)])
     setSkills(list)
+    setGroups(g)
+    setUsed(u)
+    setModes(m)
     setLoaded(true)
-    if (select) {
-      setActiveName(select)
-      setOpen(true)
-    }
-    else if (!activeName || !list.some((s) => s.name === activeName)) setActiveName(list[0]?.name ?? null)
+    if (open) setOpenName(open)
+    else setOpenName((cur) => (cur && list.some((s) => s.name === cur) ? cur : null))
   }
   useEffect(() => {
     void load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEvent('skills', (e) => {
-    if (e.type === 'changed') void load(activeName ?? undefined)
+    if (e.type === 'changed') void load()
   })
 
-  const active = skills.find((s) => s.name === activeName)
-  const shown = skills.filter((s) => !filter || `${s.name} ${s.description}`.toLowerCase().includes(filter.toLowerCase()))
-  const unused = useMemo(() => skills.filter((s) => !used[s.name]).length, [skills, used])
+  const q = query.trim().toLowerCase()
+  const usedCount = skills.filter((s) => used[s.name]?.total).length
+  const shown = skills.filter((s) => (!q || `${s.name} ${s.description}`.toLowerCase().includes(q)) && (filter === 'all' || (filter === 'used') === !!used[s.name]?.total))
+  const shelves = buildShelves(shown, groups, used)
+  const most = Math.max(0, ...Object.values(used).map((u) => u.total))
+  const open = skills.find((s) => s.name === openName) ?? null
+  const close = () => {
+    const name = openName
+    setOpenName(null)
+    refocus(name ? `skill:${name}` : null)
+  }
+
+  const setMode = async (names: string[], on: boolean) => {
+    const next = await attempt(() => api.chat.setSharedSkills(names, on ? 'auto' : 'off'))
+    if (next) setModes(next)
+  }
+  const updateSet = async (shelf: Shelf) => {
+    const status = await Promise.all(shelf.skills.map((s) => api.skills.registryStatus(s.name).then((st) => (st.updateAvailable ? s.name : null), () => null)))
+    const due = status.filter((n): n is string => !!n)
+    if (!due.length) return useApp.getState().toast(`${shelf.title} is up to date`, 'ok')
+    if (!(await confirmAction(`skills.sh has newer versions of ${due.join(', ')}. Each skill’s folder is replaced; its evals.json is kept.`, { title: `Update ${due.length} skill${due.length === 1 ? '' : 's'}?`, confirmLabel: 'Update' }))) return
+    let done = 0
+    for (const name of due) if (await attempt(() => api.skills.registryUpdate(name))) done++
+    if (done) useApp.getState().toast(`Updated ${done} skill${done === 1 ? '' : 's'} in ${shelf.title}`, 'ok')
+    void load()
+  }
+  const removeSet = async (shelf: Shelf) => {
+    if (!(await confirmAction(`All ${shelf.skills.length} skills from ${shelf.repo} move to the skills-trash folder, where you can still recover them.`, { title: `Remove ${shelf.title}?`, confirmLabel: 'Move to trash', danger: true }))) return
+    for (const s of shelf.skills) await attempt(() => api.skills.remove(s.name))
+    void load()
+  }
 
   return (
-    <SplitRoot open={open} onBack={() => setOpen(false)}>
-      <ListPane
-        width={288}
-        header={
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-semibold">Skill hub</div>
-                <div className="text-[11px] text-dim">
-                  {skills.length} skill{skills.length === 1 ? '' : 's'}{unused && skills.length ? ` · ${unused} never used` : ''}
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <IconButton title="Browse skills.sh" onClick={() => setAdding({ open: true, tab: 'registry' })}>
-                  <Store size={14} />
-                </IconButton>
-                <IconButton title="Import from local folders" onClick={() => setAdding({ open: true, tab: 'local' })}>
-                  <FolderOpen size={14} />
-                </IconButton>
-                <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setCreating('ai')}>
-                  New
-                </Button>
-              </div>
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="min-w-[120px] flex-1 text-[18px] font-semibold tracking-tight">Skills</h1>
+            <div className="relative w-[300px] mobile:w-full">
+              <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
+              <Input className="pl-7" type="search" aria-label="Search skills" placeholder={`Search ${skills.length} skills…`} value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-2.5 text-dim" />
-              <Input className="pl-7" placeholder="Filter skills" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            </div>
+            <Button icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
+              Write one
+            </Button>
+            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
+              Add skills
+            </Button>
           </div>
-        }
-      >
-        {shown.map((s) => {
-          const u = used[s.name]
-          return (
-            <ListItem key={s.name} active={s.name === activeName} onClick={() => (setActiveName(s.name), setOpen(true))}>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{s.name}</span>
-                  <span className="shrink-0 font-mono text-[10.5px] text-dim" title={u ? `Last used ${timeAgo(u.lastUsedAt)}` : 'Not used yet'}>
-                    {u ? `${u.total} used` : 'never'}
-                  </span>
-                </div>
-                <div className="truncate text-[11px] text-dim">{s.description || 'No description'}</div>
-              </div>
-            </ListItem>
-          )
-        })}
-        {loaded && !skills.length && (
-          <div className="space-y-2 p-4 text-center">
-            <div className="text-[12px] text-dim">No skills yet. Describe one and let AI write it, or bring in existing ones.</div>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              <Button size="sm" variant="primary" icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
-                Generate with AI
-              </Button>
-              <Button size="sm" icon={<Store size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
-                Browse skills.sh
-              </Button>
-              <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => setAdding({ open: true, tab: 'local' })}>
-                Import
-              </Button>
+
+          {skills.length > 0 && (
+            <div role="group" aria-label="Show" className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ['all', 'All', skills.length],
+                  ['used', 'Used', usedCount],
+                  ['never', 'Never used', skills.length - usedCount]
+                ] as const
+              ).map(([value, label, n]) => (
+                <button
+                  key={value}
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                  className={clsx(
+                    'flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line',
+                    filter === value ? 'border-line-strong bg-elev text-fg' : 'border-line text-muted hover:text-fg'
+                  )}
+                >
+                  {label} <span className="tabular-nums text-dim">{n}</span>
+                </button>
+              ))}
             </div>
-          </div>
-        )}
-      </ListPane>
-      <SplitDetail>
-        {active ? (
-          <SkillView key={active.name} skill={active} onChanged={(name) => void load(name)} />
-        ) : (
-          <Empty
-            icon={<Sparkles size={20} />}
-            title="Your central skill hub"
-            action={
-              <div className="flex gap-2">
-                <Button icon={<Store size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
-                  Browse skills.sh
-                </Button>
-                <Button onClick={() => setAdding({ open: true, tab: 'local' })}>Import existing</Button>
-                <Button variant="primary" icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
-                  Generate with AI
-                </Button>
-              </div>
-            }
-          >
-            Skills are folders with a SKILL.md (Claude/Agent-Skills compatible). Cloth serves them to its own agent and over MCP, checks that they load when they should, and shows how much each one is used.
-          </Empty>
-        )}
-      </SplitDetail>
+          )}
+
+          {shelves.map((shelf) => (
+            <SkillShelf key={shelf.key} shelf={shelf} used={used} most={most} modes={modes} onOpen={setOpenName} onMode={(names, on) => void setMode(names, on)} onUpdate={updateSet} onRemove={(s) => void removeSet(s)} />
+          ))}
+          {loaded && skills.length > 0 && !shelves.length && <p className="py-10 text-center text-[12.5px] text-dim">No skills match{q ? ` “${query.trim()}”` : ''}.</p>}
+          {loaded && !skills.length && (
+            <div className="rounded-[14px] border border-dashed border-line-strong">
+              <Empty
+                icon={<Sparkles size={20} />}
+                title="Add your first skill"
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button icon={<Store size={13} />} onClick={() => setAdding({ open: true, tab: 'registry' })}>
+                      Browse skills.sh
+                    </Button>
+                    <Button icon={<FolderOpen size={13} />} onClick={() => setAdding({ open: true, tab: 'local' })}>
+                      Import existing
+                    </Button>
+                    <Button variant="primary" icon={<Wand2 size={13} />} onClick={() => setCreating('ai')}>
+                      Write one with AI
+                    </Button>
+                  </div>
+                }
+              >
+                Skills are folders with a SKILL.md. Cloth’s chats load one when a task calls for it, and other apps get them over MCP.
+              </Empty>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Inspector open={!!open} label={open ? open.name : ''} onClose={close} width={1100}>
+        {open && <SkillView key={open.name} skill={open} onClose={close} onChanged={(name) => void load(name)} />}
+      </Inspector>
       <NewSkill open={!!creating} mode={creating ?? 'ai'} onClose={() => setCreating(null)} onCreated={(n) => void load(n)} />
       <AddSkills
         open={adding.open}
         tab={adding.tab}
         onTab={(tab) => setAdding((a) => ({ ...a, tab }))}
         onClose={() => setAdding((a) => ({ ...a, open: false }))}
-        onImported={(name) => void load(name)}
+        onImported={() => void load()}
       />
-    </SplitRoot>
+    </div>
   )
 }
 
@@ -295,6 +318,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
   const [preview, setPreview] = useState<RegistryPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
+  const [installingSet, setInstallingSet] = useState<string | null>(null)
 
   useEffect(() => {
     const q = query.trim()
@@ -354,6 +378,22 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
     }
   }
 
+  /** Install every result from one repository that isn't installed yet. */
+  const installAll = async (source: string, items: RegistrySkill[]) => {
+    setInstallingSet(source)
+    let done = 0
+    for (const r of items.filter((x) => !x.installedAs)) {
+      const name = await attempt(() => api.skills.registryInstall(r.id))
+      if (!name) continue
+      done++
+      setResults((rs) => rs?.map((x) => (x.id === r.id ? { ...x, installedAs: name } : x)) ?? null)
+      if (preview?.id === r.id) setPreview({ ...preview, installedAs: name })
+      onInstalled(name)
+    }
+    setInstallingSet(null)
+    if (done) useApp.getState().toast(`Installed ${done} skill${done === 1 ? '' : 's'} from ${source}`, 'ok')
+  }
+
   return (
     <div className="grid h-[min(520px,60vh)] grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4">
       <div className="flex min-h-0 flex-col">
@@ -377,20 +417,38 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
             </div>
           )}
           {results && !results.length && <div className="p-3 text-[12px] text-dim">No skills match “{query}”.</div>}
-          {results?.map((r) => (
-            <ListItem key={r.id} active={r.id === selected} onClick={() => setSelected(r.id)}>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-mono text-[12px] text-fg">{r.name}</span>
-                  {r.installedAs && <Badge tone="ok">installed</Badge>}
+          {sourcesOf(results ?? []).map(([source, items]) => (
+            <div key={source} className={clsx(items.length > 1 && 'my-1.5 rounded-[10px] border border-line')}>
+              {items.length > 1 && (
+                <div className="flex items-center gap-2 border-b border-line px-2.5 py-1.5">
+                  <Layers size={13} className="shrink-0 text-skill-dot" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium" translate="no">
+                    {source}
+                  </span>
+                  <span className="text-[11px] tabular-nums text-dim">{items.length}</span>
+                  {items.some((r) => !r.installedAs) && (
+                    <Button size="sm" icon={<Download size={12} />} loading={installingSet === source} onClick={() => void installAll(source, items)}>
+                      Install all
+                    </Button>
+                  )}
                 </div>
-                <div className="truncate text-[11px] text-dim">{r.source}</div>
-              </div>
-              <span className="flex shrink-0 items-center gap-1 text-[11px] text-dim" title={`${r.installs.toLocaleString()} installs`}>
-                <Download size={11} />
-                {compact(r.installs)}
-              </span>
-            </ListItem>
+              )}
+              {items.map((r) => (
+                <ListItem key={r.id} active={r.id === selected} onClick={() => setSelected(r.id)}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-[12px] text-fg">{r.name}</span>
+                      {r.installedAs && <Badge tone="ok">installed</Badge>}
+                    </div>
+                    {items.length === 1 && <div className="truncate text-[11px] text-dim">{r.source}</div>}
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1 text-[11px] text-dim" title={`${r.installs.toLocaleString()} installs`}>
+                    <Download size={11} />
+                    {compact(r.installs)}
+                  </span>
+                </ListItem>
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -529,7 +587,7 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
   )
 }
 
-function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string): void }) {
+function SkillView({ skill, onChanged, onClose }: { skill: Skill; onChanged(name?: string): void; onClose(): void }) {
   const [tab, setTab] = useState<Tab>('overview')
   const [name, setName] = useState(skill.name)
   const [description, setDescription] = useState(skill.description)
@@ -642,6 +700,9 @@ function SkillView({ skill, onChanged }: { skill: Skill; onChanged(name?: string
             <Button variant="primary" icon={<Save size={13} />} disabled={!dirty} loading={saving} onClick={() => void save()}>
               Save
             </Button>
+            <IconButton title="Close (Esc)" aria-label="Close" onClick={onClose}>
+              <X size={15} />
+            </IconButton>
           </>
         }
       />
@@ -820,4 +881,11 @@ function SkillFiles({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
       </div>
     </div>
   )
+}
+
+/** Search results by repository, in the order each first appears (results come most-installed first). */
+function sourcesOf(results: RegistrySkill[]): [string, RegistrySkill[]][] {
+  const by = new Map<string, RegistrySkill[]>()
+  for (const r of results) by.set(r.source, [...(by.get(r.source) ?? []), r])
+  return [...by]
 }

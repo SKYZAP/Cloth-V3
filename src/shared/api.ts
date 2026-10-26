@@ -177,6 +177,8 @@ export interface ClothApi {
     runTriggers(name: string, model: ModelRef): Promise<import('./types').SkillTriggerRun>
     markReviewed(name: string, reviewed: boolean): Promise<void>
     usageAll(): Promise<Record<string, { total: number; lastUsedAt: number }>>
+    /** Hub skills by the GitHub repository they came from (skills.sh link, else the `skills` CLI lock file). */
+    groups(): Promise<import('./types').SkillGroup[]>
     /** A new chat with the skill set to Always. */
     tryInChat(name: string): Promise<ChatSession>
     dir(): Promise<string>
@@ -215,6 +217,10 @@ export interface ClothApi {
     update(id: string, patch: SessionPatch): Promise<ChatSession>
     remove(id: string): Promise<void>
     messages(id: string): Promise<UiMessage[]>
+    /** The skill switches every chat not set up from an agent shares (new chats too). */
+    sharedSkills(): Promise<import('./types').SharedSkills>
+    /** Set skills Off, Auto or Always for every such chat. */
+    setSharedSkills(names: string[], mode: import('./types').SkillMode): Promise<import('./types').SharedSkills>
     /** agents: the names of saved agents tagged with @name (ones that no longer exist are dropped). */
     send(id: string, text: string, skills?: string[], attachments?: ChatAttachment[], agents?: string[]): Promise<void>
     /** Run a user message again: drops it and everything after, then sends the same content (skills and attachments included). */

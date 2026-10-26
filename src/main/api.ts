@@ -132,6 +132,7 @@ export function createApi(s: Services): ClothApi {
       registryUpdate: (name) => s.registry.update(name),
       insight: (name) => s.skillInsights.insight(name),
       usageAll: async () => s.skillInsights.usageAll(),
+      groups: () => s.registry.groups(),
       saveTriggers: async (name, triggers) => s.skillInsights.saveTriggers(name, triggers),
       draftTriggers: (name, model) => s.skillInsights.draftTriggers(name, model),
       runTriggers: (name, model) => s.skillInsights.runTriggers(name, model),
@@ -173,6 +174,8 @@ export function createApi(s: Services): ClothApi {
     chat: {
       list: async () => s.chat.list(),
       create: async (config) => s.chat.create(config),
+      sharedSkills: async () => s.chat.sharedSkills(),
+      setSharedSkills: async (names, mode) => s.chat.setSharedSkills(names, mode),
       update: async (id, patch) => {
         // Changes made in a chat's Setup are the setup for every chat.
         const next = s.chat.update(id, patch, { share: true })

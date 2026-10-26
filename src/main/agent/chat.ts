@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
-import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, StageGate, WorkflowStage } from '@shared/types'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, StageGate, WorkflowStage } from '@shared/types'
 import { nextStage, STAGE_OPEN, STAGE_TEXT, stageNote, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
@@ -1017,6 +1017,24 @@ export class ChatService {
     const sharedPatch = Object.fromEntries(Object.entries(pickShared(config)).filter(([k]) => !own.has(k))) as SharedSetup
     if (opts.share && !next.agentId && config.agentId === undefined && Object.keys(sharedPatch).length) this.shareSetup(id, sharedPatch)
     return this.get(id)
+  }
+
+  /** The shared setup's skill switches: what new chats, and every chat not set up from an agent, use. */
+  sharedSkills(): SharedSkills {
+    const s = { ...DEFAULT_CONFIG, ...this.ctx.kv.get<SharedSetup>(SHARED_KV, {}) }
+    return { enabled: s.skillsEnabled, off: s.skillsOff ?? [], always: s.skillsAlways ?? [] }
+  }
+
+  /** Set skills Off, Auto or Always in the shared setup (so in every chat it applies to). Turning one on turns skills on. */
+  setSharedSkills(names: string[], mode: SkillMode): SharedSkills {
+    const cur = this.sharedSkills()
+    const these = new Set(names)
+    const off = cur.off.filter((n) => !these.has(n))
+    const always = cur.always.filter((n) => !these.has(n))
+    if (mode === 'off') off.push(...names)
+    if (mode === 'always') always.push(...names)
+    this.shareSetup('', { skillsOff: off, skillsAlways: always, ...(mode !== 'off' && !cur.enabled ? { skillsEnabled: true } : {}) })
+    return this.sharedSkills()
   }
 
   /** Save setup keys as the shared setup and apply them to every other chat that isn't an agent's (without reordering the chat list). */

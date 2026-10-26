@@ -318,3 +318,43 @@ describe('linking hub skills to skills.sh', () => {
     expect(hits.download).toBe(1)
   })
 })
+
+describe('skill groups', () => {
+  it('groups hub skills by the repository they came from: their link first, else the lock file', async () => {
+    const { services } = makeServices()
+    const md = (name: string) => `---
+name: ${name}
+description: ${name}
+---
+
+Body.`
+    for (const name of ['minimal-ui', 'brutal-ui', 'mine', 'guards']) hubSkill(services.ctx.skillsDir, name, { 'SKILL.md': md(name) })
+    writeFileSync(join(services.ctx.skillsDir, 'guards', SOURCE_FILE), JSON.stringify({ registry: 'skills.sh', id: 'acme/skills/guards', hash: null, installedAt: 1, url: 'x' }))
+    const lock = lockFile({
+      'minimal-ui': { source: 'leon/taste-skill', skillPath: 'skills/minimalist-skill/SKILL.md' },
+      'brutal-ui': { source: '/Leon/Taste-Skill/', skillPath: 'skills/brutalist-skill/SKILL.md' },
+      // The link wins over the lock file.
+      guards: { source: 'other/repo', skillPath: 'guards/SKILL.md' }
+    })
+    const registry = new SkillRegistry(services.ctx, services.skills, base, () => '', () => lock)
+    const groups = await registry.groups()
+    expect(groups).toEqual(
+      expect.arrayContaining([
+        // One set however each source writes the owner's case.
+        { repo: 'Leon/Taste-Skill', url: 'https://github.com/Leon/Taste-Skill', skills: ['brutal-ui', 'minimal-ui'] },
+        { repo: 'acme/skills', url: 'https://github.com/acme/skills', skills: ['guards'] }
+      ])
+    )
+    // A skill written here is in no group.
+    expect(groups.flatMap((g) => g.skills)).not.toContain('mine')
+    expect(hits.download).toBe(0)
+  })
+
+  it('counts a skill the skills CLI installed as installed in search, whatever the owner’s case', async () => {
+    const { services } = makeServices()
+    hubSkill(services.ctx.skillsDir, 'nest-guards', { 'SKILL.md': skillMd(1).replace('CanActivate', 'local edit') })
+    const lock = lockFile({ 'nest-guards': { source: 'Acme/skills', skillPath: 'skills/guards/SKILL.md' } })
+    const registry = new SkillRegistry(services.ctx, services.skills, base, () => '', () => lock)
+    expect((await registry.search('guards'))[0].installedAs).toBe('nest-guards')
+  })
+})

@@ -242,6 +242,20 @@ export interface Skill {
   source: SkillSource | null
 }
 
+/** Hub skills that came from the same GitHub repository (owner/repo). */
+export interface SkillGroup {
+  repo: string
+  url: string
+  skills: string[]
+}
+
+/** Which skills chats use: the shared setup's skill switches (new chats and every chat not set up from an agent). */
+export interface SharedSkills {
+  enabled: boolean
+  off: string[]
+  always: string[]
+}
+
 /** How a skill has been used: from the usage log. */
 export interface SkillUsage {
   total: number

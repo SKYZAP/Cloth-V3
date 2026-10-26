@@ -48,4 +48,24 @@ describe('shared chat setup', () => {
     expect(usage.window).toBe(32_768)
     expect(usage.estimated).toBe(false)
   })
+
+  it('turns skills off, on and always for every chat from the Skills page', () => {
+    const { services } = makeServices()
+    const chat = services.chat.create({})
+    expect(services.chat.sharedSkills()).toEqual({ enabled: true, off: [], always: [] })
+    services.chat.setSharedSkills(['a', 'b'], 'off')
+    services.chat.setSharedSkills(['c'], 'always')
+    expect(services.chat.get(chat.id)).toMatchObject({ skillsOff: ['a', 'b'], skillsAlways: ['c'] })
+    // Back on: out of Off, and Always is left as it was for the others.
+    expect(services.chat.setSharedSkills(['a', 'c'], 'auto')).toEqual({ enabled: true, off: ['b'], always: [] })
+    expect(services.chat.create({})).toMatchObject({ skillsOff: ['b'], skillsAlways: [] })
+  })
+
+  it('switches skills on for chats when one is turned on while skills are off', () => {
+    const { services } = makeServices()
+    const chat = services.chat.create({})
+    services.chat.update(chat.id, { skillsEnabled: false }, { share: true })
+    expect(services.chat.setSharedSkills(['a'], 'auto').enabled).toBe(true)
+    expect(services.chat.get(chat.id).skillsEnabled).toBe(true)
+  })
 })
