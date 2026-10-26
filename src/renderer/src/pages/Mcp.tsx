@@ -213,11 +213,7 @@ const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-crimson-hi', dim: 't
 
 function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServers; onOpen(id: string): void; onAdd(): void; onPreset(p: McpPreset): void }) {
   return (
-    <section aria-labelledby="mcp-servers" className="grid min-w-0 content-start gap-3">
-      <h2 id="mcp-servers" className="text-[14px] font-semibold">
-        Tools for Cloth’s chats
-      </h2>
-
+    <section aria-label="Tools for Cloth’s chats" className="grid min-w-0 content-start gap-3">
       <div className="grid gap-2">
         {servers.configs.length > 0 && (
           <ul className="divide-y divide-line overflow-hidden rounded-[12px] border border-line bg-elev">
