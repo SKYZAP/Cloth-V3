@@ -214,41 +214,36 @@ const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-crimson-hi', dim: 't
 function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServers; onOpen(id: string): void; onAdd(): void; onPreset(p: McpPreset): void }) {
   return (
     <section aria-labelledby="mcp-servers" className="grid min-w-0 content-start gap-3">
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h2 id="mcp-servers" className="text-[14px] font-semibold">
-          Tools for Cloth’s chats
-        </h2>
+      <h2 id="mcp-servers" className="text-[14px] font-semibold">
+        Tools for Cloth’s chats
+      </h2>
+
+      <div className="grid gap-2">
+        {servers.configs.length > 0 && (
+          <ul className="divide-y divide-line overflow-hidden rounded-[12px] border border-line bg-elev">
+            {servers.configs.map((c) => (
+              <ServerRow key={c.id} config={c} servers={servers} onOpen={() => onOpen(c.id)} />
+            ))}
+          </ul>
+        )}
+        <button
+          onClick={onAdd}
+          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-line-strong px-4 py-3.5 text-[13px] font-semibold text-muted transition-colors hover:border-muted/50 hover:bg-elev hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
+        >
+          <Plus size={14} aria-hidden="true" /> {servers.configs.length ? 'Any other server' : 'Add an MCP server'}
+        </button>
       </div>
 
-      {servers.configs.length > 0 ? (
-        <ul className="divide-y divide-line overflow-hidden rounded-[12px] border border-line bg-elev">
-          {servers.configs.map((c) => (
-            <ServerRow key={c.id} config={c} servers={servers} onOpen={() => onOpen(c.id)} />
-          ))}
-        </ul>
-      ) : (
-        <div className="rounded-[12px] border border-dashed border-line-strong px-4 py-6 text-center">
-          <p className="text-[13px] font-medium">No servers yet</p>
-          <p className="mt-1 text-[12.5px] text-dim">Add a ready-made one below, or any MCP server.</p>
+      {servers.unused.length > 0 && (
+        <div className="grid gap-2 pt-2">
+          <h3 className="text-[12.5px] font-semibold">Ready to add</h3>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
+            {servers.unused.map((p) => (
+              <PresetCard key={p.name} preset={p} onAdd={() => onPreset(p)} />
+            ))}
+          </div>
         </div>
       )}
-
-      <div className="grid gap-2 pt-2">
-        <h3 className="text-[12.5px] font-semibold">{servers.unused.length ? 'Ready to add' : 'Add more'}</h3>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
-          {servers.unused.map((p) => (
-            <PresetCard key={p.name} preset={p} onAdd={() => onPreset(p)} />
-          ))}
-          <button
-            onClick={onAdd}
-            className="grid content-center justify-items-start gap-1 rounded-[12px] border border-dashed border-line-strong px-3.5 py-3 text-left text-muted transition-colors hover:border-muted/50 hover:bg-elev hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
-          >
-            <span className="flex items-center gap-1.5 text-[13px] font-semibold">
-              <Plus size={14} aria-hidden="true" /> Any other server
-            </span>
-          </button>
-        </div>
-      </div>
     </section>
   )
 }
