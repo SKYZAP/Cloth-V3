@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, nativeImage, Notification, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
+import electronUpdater from 'electron-updater'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -101,6 +102,12 @@ function keepAwake(on: boolean): void {
   }
 }
 
+function devUpdates(): boolean {
+  if (app.isPackaged || process.env.CLOTH_DEV_UPDATES !== '1') return false
+  electronUpdater.autoUpdater.forceDevUpdateConfig = true
+  return true
+}
+
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 else {
@@ -128,6 +135,9 @@ else {
         defaultOutputDir: () => process.env.CLOTH_EXPORT_DIR ?? app.getPath('downloads'),
         clothVersion: app.getVersion()
       },
+      // Installed Windows and Linux builds update themselves; Mac needs a signed app for that, and a run from source has nothing to replace.
+      // CLOTH_DEV_UPDATES=1 lets a run from source check and download (not install) to try the feed.
+      updates: { version: app.getVersion(), updater: (app.isPackaged && process.platform !== 'darwin') || devUpdates() ? electronUpdater.autoUpdater : null },
       secrets,
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
@@ -151,6 +161,7 @@ else {
     services.remote.attach({ dispatch, keepAwake, version: app.getVersion() })
     createWindow()
     services.workflows.startScheduler()
+    void services.updates.checkIfDue()
     await services.mcp.restart()
     await services.remote.restart()
     // Dev: pair a phone (or the mobile web build) without clicking through Settings.

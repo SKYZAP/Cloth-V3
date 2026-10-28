@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
 import {
+  ArrowClockwise,
   Books,
   CaretRight,
   ChatCircleDots,
   Code,
   Cpu,
   DeviceMobile,
+  DownloadSimple,
   FolderOpen,
   GlobeHemisphereWest,
   Info,
@@ -20,8 +22,8 @@ import {
   X,
   type Icon
 } from '@phosphor-icons/react'
-import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings, type SubagentSettings, type ThinkingLevel } from '@shared/types'
-import { api } from '@/lib/api'
+import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings, type UpdateStatus, type SubagentSettings, type ThinkingLevel } from '@shared/types'
+import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, confirmAction } from '@/components/ui'
@@ -54,10 +56,20 @@ const SECTIONS: SectionDef[] = [
   { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Use Cloth from the Android app', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
   { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Expose skills and knowledge to other tools', keywords: 'mcp port server claude cursor' },
-  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and version', keywords: 'data folder version database about' }
+  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and version', keywords: 'data folder version database about update updates github release' }
 ]
 
 const LAST_SECTION = 'cloth.settingsSection'
+
+/** Opens Settings on one section (the toast for a found update uses it). */
+export function openSettingsSection(id: SectionId): void {
+  try {
+    localStorage.setItem(LAST_SECTION, id)
+  } catch {
+    // Without storage Settings opens on its first section.
+  }
+  useApp.getState().setPage('settings')
+}
 
 export function SettingsPage() {
   const settings = useApp((s) => s.settings)
@@ -453,7 +465,159 @@ function AboutSection() {
           </div>
         </div>
       </Card>
+      {!isMobile && <UpdatesGroup />}
     </>
+  )
+}
+
+const UPDATE_REPO = 'SKYZAP/Cloth-V3'
+const mb = (bytes: number) => `${Math.round(bytes / 1_048_576)} MB`
+
+/** Check for updates from the private GitHub releases, download when asked, restart into the new version. */
+function UpdatesGroup() {
+  const [st, setSt] = useState<UpdateStatus | null>(null)
+  const [token, setToken] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [tokenError, setTokenError] = useState<string | null>(null)
+  useEffect(() => {
+    void api.updates.status().then(setSt)
+  }, [])
+  useEvent('updates', setSt)
+  if (!st) return null
+
+  const saveToken = async () => {
+    setSaving(true)
+    setTokenError(null)
+    try {
+      setSt(await api.updates.setToken(token))
+      setToken('')
+      setEditing(false)
+    } catch (err) {
+      setTokenError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+  const forget = async () => {
+    if (!(await confirmAction('Cloth stops checking for updates until a token is added again.', { title: 'Forget the GitHub token?', confirmLabel: 'Forget' }))) return
+    setSt(await api.updates.setToken(''))
+  }
+
+  const pct = st.progress && st.progress.total ? Math.round((st.progress.transferred / st.progress.total) * 100) : 0
+  const summary = !st.supported
+    ? 'This build can’t update itself. Installed Windows and Linux builds can.'
+    : !st.hasToken
+      ? 'Add a GitHub token below to check for updates.'
+      : st.state === 'checking'
+        ? 'Checking GitHub…'
+        : st.state === 'none'
+          ? `Cloth ${st.current} is the newest version.`
+          : st.state === 'available'
+            ? `Cloth ${st.version} is available${st.size ? ` (${mb(st.size)})` : ''}.`
+            : st.state === 'downloading'
+              ? `Downloading Cloth ${st.version}… ${pct}%`
+              : st.state === 'ready'
+                ? `Cloth ${st.version} is downloaded. Restart to install it.`
+                : st.checkedAt
+                  ? `Last checked ${new Date(st.checkedAt).toLocaleString()}.`
+                  : 'Not checked yet.'
+
+  return (
+    <div className="mt-6">
+      <Group title="Updates" note={`Releases come from the private repository ${UPDATE_REPO}. Cloth checks once a day at launch; downloads start only when you ask.`}>
+        <Row
+          label={`Cloth ${st.current}`}
+          hint={
+            <>
+              <span aria-live="polite">{summary}</span>
+              {st.error && <span className="mt-1 block text-crimson-hi">{st.error}</span>}
+              {st.state === 'downloading' && (
+                <span className="mt-2 block h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-line-strong" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Download progress">
+                  <span className="block h-full rounded-full bg-crimson transition-[width]" style={{ width: `${pct}%` }} />
+                </span>
+              )}
+            </>
+          }
+        >
+          {st.supported && st.hasToken && (
+            <div className="flex gap-2">
+              {st.state === 'available' && (
+                <Button variant="primary" icon={<DownloadSimple size={13} />} onClick={() => void api.updates.download().then(setSt)}>
+                  Download {st.version}
+                </Button>
+              )}
+              {st.state === 'ready' ? (
+                <Button variant="primary" icon={<ArrowClockwise size={13} />} onClick={() => void api.updates.install()}>
+                  Restart to update
+                </Button>
+              ) : (
+                st.state !== 'downloading' && (
+                  <Button loading={st.state === 'checking'} onClick={() => void api.updates.check().then(setSt)}>
+                    Check for updates
+                  </Button>
+                )
+              )}
+            </div>
+          )}
+        </Row>
+        {st.supported && (
+          <Row
+            label="GitHub token"
+            stacked={!st.hasToken || editing}
+            hint={
+              st.hasToken && !editing
+                ? 'Saved, encrypted with the OS keychain.'
+                : `A fine-grained token with read-only access to Contents on ${UPDATE_REPO}. It stays encrypted on this PC.`
+            }
+          >
+            {st.hasToken && !editing ? (
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => setEditing(true)}>
+                  Replace
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void forget()}>
+                  Forget
+                </Button>
+              </div>
+            ) : (
+              <form
+                className="grid gap-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (token.trim()) void saveToken()
+                }}
+              >
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    className="min-w-0 flex-1 font-mono"
+                    aria-label="GitHub token"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="github_pat_…"
+                    value={token}
+                    onChange={(e) => {
+                      setToken(e.target.value)
+                      setTokenError(null)
+                    }}
+                  />
+                  <Button type="submit" variant="primary" loading={saving} disabled={!token.trim()}>
+                    Save token
+                  </Button>
+                  {editing && (
+                    <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+                {tokenError && <div className="text-[11.5px] text-crimson-hi">{tokenError}</div>}
+              </form>
+            )}
+          </Row>
+        )}
+      </Group>
+    </div>
   )
 }
 

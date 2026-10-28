@@ -33,6 +33,7 @@ import { RemoteHost } from './remote/server'
 import { FlowExporter, type ExportToolchain } from './export/exporter'
 import { existsSync, mkdirSync } from 'node:fs'
 import { RunService, type RunDeps } from './run/run'
+import { UpdateService, type UpdateDeps } from './updates'
 
 export interface Services {
   ctx: Ctx
@@ -62,6 +63,7 @@ export interface Services {
   remote: RemoteHost
   exporter: FlowExporter
   runs: RunService
+  updates: UpdateService
   approvals: ApprovalService
 }
 
@@ -85,6 +87,8 @@ export function createServices(opts: {
   pty?: PtySpawn
   /** Turn leftover graph flows into automations at startup (default true; an exported app's runner keeps its graph). */
   convertFlows?: boolean
+  /** Self-update from GitHub releases (default: none, which can't update). */
+  updates?: Partial<UpdateDeps>
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -181,7 +185,8 @@ export function createServices(opts: {
 
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals }
+  const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates }
 }
 
 const SEEDED_KEY = 'mcp.homelabSeeded'

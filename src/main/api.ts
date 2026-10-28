@@ -220,6 +220,13 @@ export function createApi(s: Services): ClothApi {
       generate: (input) => s.agents.generate(input),
       rewrite: (instructions, request, model, thinking) => s.agents.rewrite(instructions, request, model, thinking)
     },
+    updates: {
+      status: async () => s.updates.get(),
+      setToken: (token) => s.updates.setToken(token),
+      check: () => s.updates.check(),
+      download: () => s.updates.download(),
+      install: async () => s.updates.install()
+    },
     runs: {
       list: async () => s.runs.list(),
       status: async () => s.runs.status(),

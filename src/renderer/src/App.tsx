@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { GearSix } from '@phosphor-icons/react'
@@ -17,7 +17,7 @@ import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
 import { RunPage } from './pages/Run'
 import { DesignPage } from './pages/Design'
-import { SettingsPage } from './pages/Settings'
+import { SettingsPage, openSettingsSection } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
 import { useState } from 'react'
 import { api } from './lib/api'
@@ -76,6 +76,13 @@ function DesktopApp() {
   // Computer use is missing a macOS permission: say which and offer the settings pane.
   const toast = useApp((s) => s.toast)
   useEvent('computer', (n) => toast(n.text, 'error', { label: 'Open System Settings', run: () => void api.app.openPrivacySettings(n.kind) }))
+  // The launch check found a newer Cloth: say so once per version, wherever the user is.
+  const announced = useRef<string | null>(null)
+  useEvent('updates', (u) => {
+    if (u.state !== 'available' || !u.version || announced.current === u.version || useApp.getState().page === 'settings') return
+    announced.current = u.version
+    toast(`Cloth ${u.version} is available`, 'info', { label: 'Open Settings', run: () => openSettingsSection('about') })
+  })
 
   const isMac = window.cloth.platform === 'darwin'
 

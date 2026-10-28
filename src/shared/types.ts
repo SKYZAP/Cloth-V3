@@ -1187,6 +1187,24 @@ export interface AppInfo {
   node: string
 }
 
+/** Where Cloth stands on updates from its private GitHub releases. */
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
+  current: string
+  /** False in a dev build or a platform that can't update itself: checking only says so. */
+  supported: boolean
+  /** A GitHub token is saved: releases of the private repository can be read. */
+  hasToken: boolean
+  /** The newer version, once one is found. */
+  version?: string
+  /** Bytes to download for it. */
+  size?: number
+  progress?: { transferred: number; total: number }
+  error?: string
+  /** When the last check finished (ms). */
+  checkedAt?: number
+}
+
 // ─── Tools ────────────────────────────────────────────────────────────────────
 
 export type ToolParamType = 'string' | 'number' | 'boolean' | 'json'

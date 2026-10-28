@@ -18,6 +18,7 @@
     "test": "vitest run",
     "package": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --dir",
     "dist": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --publish never",
+    "release": "node scripts/release.mjs",
     "mock-llm": "node scripts/mock-llm.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "smoke": "electron-vite build && node scripts/smoke.mjs",
@@ -44,6 +45,7 @@
     "croner": "^10.0.1",
     "diff": "^8.0.4",
     "docx": "^9.8.1",
+    "electron-updater": "^6.8.11",
     "ignore": "^7.0.8",
     "koffi": "3.3.1",
     "linkedom": "^0.18.13",
@@ -131,6 +133,15 @@
   "author": "Cloth",
   "build": {
     "appId": "dev.cloth.app",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SKYZAP",
+        "repo": "Cloth-V3",
+        "private": true,
+        "releaseType": "draft"
+      }
+    ],
     "productName": "Cloth",
     "directories": {
       "output": "release",

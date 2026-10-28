@@ -272,6 +272,16 @@ export interface ClothApi {
     rewrite(instructions: string, request: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<string>
   }
   /** Run page: local models served by llama.cpp's llama-server. Events arrive on the 'runs' channel. */
+  /** Updates from the private GitHub releases of SKYZAP/Cloth-V3. */
+  updates: {
+    status(): Promise<import('./types').UpdateStatus>
+    /** Saves a GitHub token that can read the repository ('' forgets it); throws if GitHub refuses it. */
+    setToken(token: string): Promise<import('./types').UpdateStatus>
+    check(): Promise<import('./types').UpdateStatus>
+    download(): Promise<import('./types').UpdateStatus>
+    /** Quits, runs the installer and starts the new version. */
+    install(): Promise<void>
+  }
   runs: {
     /** Every runner; the built-in Bonsai runner first (its paths filled in when found on disk). */
     list(): Promise<import('./types').Runner[]>
@@ -444,4 +454,5 @@ export type EventMap = {
   runs: import('./types').RunEvent
   /** Computer use is missing a macOS permission. */
   computer: { kind: 'screen' | 'accessibility'; text: string }
+  updates: import('./types').UpdateStatus
 }
