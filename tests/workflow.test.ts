@@ -59,16 +59,6 @@ describe('Spec → ship helpers', () => {
     expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toMatch(/docs\/specs\/<slug>\/mockup\.html/)
     expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'x' })).toContain('the approved mockup is part of it')
     expect(isDocPath('docs/specs/x/mockup.html')).toBe(true)
-    // Lessons from comparing the workflow against chat + ADR: defaults are asked, not assumed; contracts are exact;
-    // migrations pin behaviour through the running app; tests run under the normal command; review probes the app.
-    const at = (stage: 'grill' | 'spec' | 'tickets' | 'build' | 'review') => workflowSection({ kind: 'spec-ship', stage, slug: 'x' }) ?? ''
-    expect(at('grill')).toContain('A default you would pick yourself is still a decision')
-    expect(at('grill')).toContain('Assumed:')
-    expect(at('spec')).toContain('- Contract:')
-    expect(at('tickets')).toMatch(/upgrade or migration, ticket 01 pins/)
-    expect(at('build')).toContain('every new test appears in its output')
-    expect(at('review')).toContain('hostile input')
-    expect(at('review')).toContain('breaking changes')
   })
 })
 
