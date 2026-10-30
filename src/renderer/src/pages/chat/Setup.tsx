@@ -687,7 +687,7 @@ export function ToolsView({ back, target: session, update, m, access }: { back?:
   const total = m.parts.builtin
   const [q, setQ] = useState('')
   const [chip, setChip] = useState<OnOff>('all')
-  const { items, web } = useMemo(() => {
+  const items = useMemo(() => {
     const switchGroup = (flag: FlagKey, members: { name: string }[]) => {
       const on = session[flag]
       void update({ [flag]: !on, ...(!on ? { disabledTools: session.disabledTools.filter((n) => !members.some((t) => t.name === n)) } : {}) })
@@ -696,11 +696,10 @@ export function ToolsView({ back, target: session, update, m, access }: { back?:
     const tool = (t: ChatSetup['tools'][number], desc: string): ToolItem => ({ id: t.name, name: t.name, desc, tokens: t.tokens, on: isOn(t.name), mono: true, toggle: () => toggleTool(t.name) })
     const out: ToolItem[] = []
     for (const { g, members } of groups)
-      if (g.flag && g.id !== 'web' && g.id !== 'custom') out.push({ id: `group:${g.id}`, name: g.label, desc: members.map((t) => t.name).join(', '), tokens: sum(members), on: session[g.flag], mono: false, toggle: () => switchGroup(g.flag!, members) })
+      if (g.flag && g.id !== 'custom') out.push({ id: `group:${g.id}`, name: g.label, desc: members.map((t) => t.name).join(', '), tokens: sum(members), on: session[g.flag], mono: false, toggle: () => switchGroup(g.flag!, members) })
     for (const { g, members } of groups) if (!g.flag) for (const t of members) out.push(tool(t, firstSentence(t.description)))
     for (const { g, members } of groups) if (g.id === 'custom') for (const t of members) out.push(tool(t, `Custom · ${firstSentence(t.description)}`))
-    const webMembers = groups.find((x) => x.g.id === 'web')?.members ?? []
-    return { items: out, web: { on: session.webEnabled, toggle: () => switchGroup('webEnabled', webMembers) } }
+    return out
   }, [tools, session, update, isOn, toggleTool])
   const counts = useMemo(() => onOffCounts(items, (i) => i.on), [items])
   const shown = useMemo(() => filterOnOff(items, q, chip, (i) => i.on, (i) => [i.name, i.desc]), [items, q, chip])
@@ -711,14 +710,7 @@ export function ToolsView({ back, target: session, update, m, access }: { back?:
       total={total}
       search={q}
       onSearch={setQ}
-      head={
-        <>
-          <Master on={web.on} onChange={web.toggle} label="Web search and fetch">
-            {web.on ? 'Web search and fetch are always available' : 'Web search and fetch are off'}
-          </Master>
-          {access && <div className="px-1">{access}</div>}
-        </>
-      }
+      head={access && <div className="px-1">{access}</div>}
       filters={<OnOffChips value={chip} onChange={setChip} counts={counts} />}
     >
       {shown.map((i) => (
