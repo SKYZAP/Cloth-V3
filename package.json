@@ -1,7 +1,7 @@
 {
   "name": "cloth",
   "productName": "Cloth",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "description": "Cloth — an offline developer hub: providers, agent chat, hybrid RAG, skills, workflows and an MCP server.",
   "type": "module",
   "main": "out/main/index.js",
