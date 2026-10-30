@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute } from '@shared/types'
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
@@ -100,6 +100,8 @@ export interface ToolScope {
   workflow?: () => SpecWorkflow | null
   /** Record the feature's docs folder name once the spec stage picks it. */
   setWorkflowSlug?: (slug: string) => void
+  /** Record the route agreed while grilling. */
+  setWorkflowRoute?: (route: WorkflowRoute) => void
 }
 
 /** The chat is running Spec → ship and isn't finished. */
@@ -252,7 +254,8 @@ export const BUILTINS: BuiltinSpec[] = [
     parameters: Type.Object({
       summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
-      slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup there' }))
+      slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup or (Quick route) the spec there' })),
+      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only, required there: the route the person agreed to' }))
     }),
     description: () => "Finish the workflow's current stage: show the person what it produced and stop. The next stage starts only when they approve it; if they ask for changes, make them and call this again.",
     when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inWorkflow(ctx.scope),
@@ -263,8 +266,12 @@ export const BUILTINS: BuiltinSpec[] = [
       if (!summary.length) throw new Error('Say what the stage produced')
       const slug = p.slug?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
       if (slug) ctx.scope.setWorkflowSlug?.(slug)
+      const route = w.stage === 'grill' ? p.route : undefined
+      if (w.stage === 'grill' && !route) throw new Error('Say which route the person agreed to: quick, standard or preserve')
+      if (route === 'quick' && !(slug || w.slug)) throw new Error('The Quick route writes the spec while grilling: give its slug')
+      if (route) ctx.scope.setWorkflowRoute?.(route)
       const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]
-      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}) }
+      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}), ...(route ? { route } : {}) }
       return {
         text: 'Shown to the person. Stop here: they approve it (the next stage starts) or ask for changes.',
         details: { stageGate: gate as unknown as ToolDetails[string] },

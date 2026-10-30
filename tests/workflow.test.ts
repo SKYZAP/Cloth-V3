@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, type Context } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ChatEvent, Permissions, ToolTrace } from '../src/shared/types'
-import { DOCS_ONLY_REFUSAL, docsOnly, isDocPath, nextStage, workflowSection } from '../src/main/agent/workflow'
+import { DOCS_ONLY_REFUSAL, docsOnly, isDocPath, nextStage, routeStages, stageNote, stageText, workflowSection } from '../src/main/agent/workflow'
 import { makeServices } from './helpers'
 import { git } from '../src/main/panel/git'
 
@@ -54,11 +54,35 @@ describe('Spec → ship helpers', () => {
     expect(nextStage('done')).toBe('done')
     expect(workflowSection(null)).toBeNull()
     expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches' })).toContain('docs/specs/saved-searches')
-    expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toContain('Stage 1 of 5: Grill')
+    expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toContain('### Stage: Grill')
     // A feature with visible changes shows its UI as a one-page mockup before the spec, and the spec keeps to it.
     expect(workflowSection({ kind: 'spec-ship', stage: 'grill', slug: null })).toMatch(/docs\/specs\/<slug>\/mockup\.html/)
-    expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'x' })).toContain('the approved mockup is part of it')
+    expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'x' })).toContain('the spec keeps to it')
     expect(isDocPath('docs/specs/x/mockup.html')).toBe(true)
+  })
+
+  it('sizes the stages to the route', () => {
+    // Quick writes its spec while grilling and has no tickets; Standard and Preserve walk every stage.
+    expect(routeStages('quick')).toEqual(['grill', 'build', 'review'])
+    expect(routeStages('preserve')).toEqual(routeStages(undefined))
+    expect(['grill', 'build', 'review'].map((s) => nextStage(s as never, 'quick'))).toEqual(['build', 'review', 'done'])
+    expect(nextStage('grill', 'preserve')).toBe('spec')
+    expect(stageText('build', 'quick')).toBe('Approved the spec')
+    expect(stageText('build')).toBe('Approved the tickets')
+    expect(stageNote('build', 'x', 'quick')).toContain('The grilling and spec are approved')
+    expect(workflowSection({ kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' })).toContain('Quick route')
+  })
+
+  it('asks for criteria, assumptions and a current spec', () => {
+    const at = (stage: 'grill' | 'spec' | 'tickets' | 'build' | 'review') => workflowSection({ kind: 'spec-ship', stage, slug: 'x' }) ?? ''
+    expect(at('grill')).toContain('A default you would pick yourself is still a decision')
+    expect(at('grill')).toContain('Round 1 always includes the route')
+    expect(at('spec')).toMatch(/numbered AC-1/)
+    expect(at('tickets')).toContain('never restate their text')
+    expect(at('build')).toContain('every new test appears in its output')
+    expect(at('review')).toContain('fix before ship')
+    expect(at('review')).toContain('"Assumed: …"')
+    expect(stageNote('done', 'x')).toContain('docs/specs/README.md')
   })
 })
 
@@ -73,7 +97,7 @@ describe('Spec → ship in a chat', () => {
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('ask_questions', { round: 1, questions: [{ title: 'Where do they appear?', recommendation: 'Beside the search box.' }], recorded: 'Glossary +1 term' }, { id: 'q' })], { stopReason: 'toolUse' })),
       // Answered: writes the glossary (allowed) and tries code (refused), then finishes the stage.
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('write', { path: 'GLOSSARY.md', content: '# Search\n' }, { id: 'g' }), fauxToolCall('write', { path: 'src/x.ts', content: 'x' }, { id: 'c' })], { stopReason: 'toolUse' })),
-      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 decision'], files: ['GLOSSARY.md'] }, { id: 'f1' })], { stopReason: 'toolUse' })),
+      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 decision'], files: ['GLOSSARY.md'], route: 'standard' }, { id: 'f1' })], { stopReason: 'toolUse' })),
       // Spec: writes it and names the slug.
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('write', { path: 'docs/specs/saved-searches/spec.md', content: '# Spec\n' }, { id: 's' })], { stopReason: 'toolUse' })),
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['3 stories'], slug: 'Saved Searches' }, { id: 'f2' })], { stopReason: 'toolUse' }))
@@ -83,7 +107,7 @@ describe('Spec → ship in a chat', () => {
     expect(started).toMatchObject({ permissions: 'manual', workflow: { kind: 'spec-ship', stage: 'grill', slug: null } })
     const r1 = await settle(env)
     expect(seen).toHaveLength(1)
-    expect(getCurrentSystemPrompt(seen[0].messages)).toContain('Stage 1 of 5: Grill')
+    expect(getCurrentSystemPrompt(seen[0].messages)).toContain('### Stage: Grill')
     expect(system(seen[0])).toMatch(/"name":"ask_questions"/)
     expect(r1.traces.find((t) => t.id === 'q')?.questions).toEqual({ round: 1, questions: [{ title: 'Where do they appear?', recommendation: 'Beside the search box.' }], recorded: 'Glossary +1 term' })
     // The first user line shows the idea, marked as the grill stage.
@@ -95,23 +119,45 @@ describe('Spec → ship in a chat', () => {
     expect(existsSync(join(env.root, 'src/x.ts'))).toBe(false)
     expect(r2.traces.find((t) => t.id === 'c')).toMatchObject({ status: 'error' })
     expect(r2.traces.find((t) => t.id === 'c')?.result).toContain(DOCS_ONLY_REFUSAL)
-    expect(r2.traces.find((t) => t.id === 'f1')?.stageGate).toEqual({ stage: 'grill', summary: ['1 decision'], files: ['GLOSSARY.md'] })
+    expect(r2.traces.find((t) => t.id === 'f1')?.stageGate).toEqual({ stage: 'grill', summary: ['1 decision'], files: ['GLOSSARY.md'], route: 'standard' })
 
     const advanced = await env.services.chat.advanceWorkflow(env.session.id)
     expect(advanced.workflow?.stage).toBe('spec')
     const r3 = await settle(env)
     const specPrompt = getCurrentSystemPrompt(seen[3].messages)
-    expect(specPrompt).toContain('Stage 2 of 5: Spec')
-    expect(specPrompt).not.toContain('Stage 1 of 5: Grill')
+    expect(specPrompt).toContain('### Stage: Spec')
+    expect(specPrompt).not.toContain('### Stage: Grill')
     expect(system(seen[3])).toMatch(/"toolsRemoved":\[[^\]]*"name":"ask_questions"/)
     expect(readFileSync(join(env.root, 'docs/specs/saved-searches/spec.md'), 'utf8')).toBe('# Spec\n')
     // finish_stage records the slug, cleaned up.
-    expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches' })
+    expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches', route: 'standard' })
     const line = r3.msgs.filter((m) => m.role === 'user').at(-1)!
     expect(line).toMatchObject({ workflowStage: 'spec', blocks: [{ type: 'text', text: 'Approved the grilling' }] })
 
     // Leaving the mode drops the section on the next run.
     expect(env.services.chat.stopWorkflow(env.session.id).workflow).toBeNull()
+  }, 30_000)
+
+  it('records the route while grilling, and the Quick route goes straight to Build', async () => {
+    const env = setup('manual')
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      // No route: refused. Quick without the spec's slug: refused. Then a proper finish.
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Fixed casing'] }, { id: 'a' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Fixed casing'], route: 'quick' }, { id: 'b' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Fixed casing', 'Assumed: nothing'], route: 'quick', slug: 'flag-casing' }, { id: 'c' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage('Building.')
+    ])
+    await env.services.chat.startWorkflow(env.session.id, 'Flag names should ignore case')
+    const r = await settle(env)
+    expect(r.traces.find((t) => t.id === 'a')?.result).toMatch(/which route/)
+    expect(r.traces.find((t) => t.id === 'b')?.result).toMatch(/give its slug/)
+    expect(r.traces.find((t) => t.id === 'c')?.stageGate).toMatchObject({ stage: 'grill', route: 'quick' })
+    expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'grill', slug: 'flag-casing', route: 'quick' })
+    const advanced = await env.services.chat.advanceWorkflow(env.session.id)
+    expect(advanced.workflow?.stage).toBe('build')
+    const r2 = await settle(env)
+    expect(r2.msgs.filter((m) => m.role === 'user').at(-1)).toMatchObject({ workflowStage: 'build', blocks: [{ type: 'text', text: 'Approved the spec' }] })
   }, 30_000)
 
   it('needs a folder, and refuses to advance a chat that is not running it', async () => {

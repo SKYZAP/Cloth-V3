@@ -4,7 +4,7 @@ import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, StageGate, WorkflowStage } from '@shared/types'
-import { nextStage, STAGE_OPEN, STAGE_TEXT, stageNote, WORKFLOW_SECTION, workflowSection } from './workflow'
+import { nextStage, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
@@ -1393,6 +1393,10 @@ export class ChatService {
         const w = this.get(id).workflow
         if (w && w.slug !== slug) this.update(id, { workflow: { ...w, slug } })
       },
+      setWorkflowRoute: (route) => {
+        const w = this.get(id).workflow
+        if (w && w.route !== route) this.update(id, { workflow: { ...w, route } })
+      },
       autoApprove: () => permissionCaps(this.get(id).permissions).autoApprove,
       // "Switch to Auto" on an approval card: the chat switches to Auto (and stops asking).
       onAlways: () => {
@@ -1429,7 +1433,7 @@ export class ChatService {
     // Plan mode is read-only, and the documents need writing: back to the chat's access (Manual if it has none).
     const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: cur.access ?? 'manual' } : {}) })
     const text = idea?.trim()
-    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote('grill', null) }, { type: 'text', text: text || STAGE_TEXT.grill }], timestamp: Date.now() }, text ? text.slice(0, 60) : '')
+    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote('grill', null) }, { type: 'text', text: text || stageText('grill') }], timestamp: Date.now() }, text ? text.slice(0, 60) : '')
     return session
   }
 
@@ -1438,9 +1442,9 @@ export class ChatService {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
     const w = this.get(id).workflow
     if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → ship')
-    const stage = nextStage(w.stage)
+    const stage = nextStage(w.stage, w.route)
     const session = this.update(id, { workflow: { ...w, stage } })
-    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug) }, { type: 'text', text: STAGE_TEXT[stage] }], timestamp: Date.now() }, '')
+    await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
     return session
   }
 

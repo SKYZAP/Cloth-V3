@@ -619,12 +619,21 @@ export type Permissions = 'auto' | 'manual' | 'plan'
 export type WorkflowStage = 'grill' | 'spec' | 'tickets' | 'build' | 'review' | 'done'
 export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec', 'tickets', 'build', 'review']
 
+/**
+ * How much process a change gets, agreed while grilling. Quick (a bug fix or a small, clear change): the grilling writes
+ * a short spec and there are no tickets, so it goes Grill → Build → Review. Standard: every stage. Preserve (an upgrade,
+ * migration or refactor): every stage, and today's behaviour is pinned by tests before anything changes.
+ */
+export type WorkflowRoute = 'quick' | 'standard' | 'preserve'
+
 /** A chat running Spec → ship: grill, write the spec, cut tickets, build them, review against the spec. */
 export interface SpecWorkflow {
   kind: 'spec-ship'
   stage: WorkflowStage
   /** The feature's folder name under docs/specs/, set once the spec is written. */
   slug: string | null
+  /** Set when the grilling finishes; none means standard. */
+  route?: WorkflowRoute
 }
 
 /** One grilling round: the decisions that can be settled now, each with a recommended answer. */
@@ -639,6 +648,8 @@ export interface QuestionRound {
 export interface StageGate {
   stage: Exclude<WorkflowStage, 'done'>
   summary: string[]
+  /** The route agreed while grilling (Grill only). */
+  route?: WorkflowRoute
   /** Files this stage wrote, relative to the workspace. */
   files?: string[]
 }
