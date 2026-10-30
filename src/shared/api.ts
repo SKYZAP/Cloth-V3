@@ -251,6 +251,8 @@ export interface ClothApi {
     startWorkflow(sessionId: string, idea?: string): Promise<ChatSession>
     /** Approve the current Spec → ship stage: the chat moves on and starts the next one. */
     advanceWorkflow(sessionId: string): Promise<ChatSession>
+    /** Whether a finished Build goes straight on to the Review without waiting for an OK. */
+    setWorkflowAutoContinue(sessionId: string, on: boolean): Promise<ChatSession>
     /** Leave Spec → ship; the chat carries on as a normal chat. */
     stopWorkflow(sessionId: string): Promise<ChatSession>
   }

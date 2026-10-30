@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
 import { CheckCircle, ListChecks, ListBullets } from '@phosphor-icons/react'
-import type { QuestionRound, SpecWorkflow, StageGate, UiMessage, WorkflowStage } from '@shared/types'
-import { WORKFLOW_STAGES } from '@shared/types'
+import type { QuestionRound, SpecWorkflow, StageGate, UiMessage, WorkflowRoute, WorkflowStage } from '@shared/types'
+import { routeStages } from '@shared/types'
 import { Markdown } from '@/components/Markdown'
 import { api } from '@/lib/api'
 import { parseTicket, ticketStatus, type Ticket, type TicketStatus } from '@/lib/tickets'
+import { fixMessage, isNothing, splitSummary } from '@/lib/stageGate'
 import { Modal } from '@/components/ui'
 
 export const STAGE_LABEL: Record<WorkflowStage, string> = { grill: 'Grill', spec: 'Spec', tickets: 'Tickets', build: 'Build', review: 'Review', done: 'Done' }
+export const ROUTE_LABEL: Record<WorkflowRoute, string> = { quick: 'Quick', standard: 'Standard', preserve: 'Preserve' }
 /** What the person does at the end of each stage (none for Build: it runs on its own). */
 export const STAGE_YOU: Record<WorkflowStage, string> = { grill: 'Answer the questions', spec: 'Approve the spec', tickets: 'Approve the tickets', build: '', review: 'Accept the review', done: '' }
 const APPROVE: Record<Exclude<WorkflowStage, 'done'>, string> = {
@@ -24,10 +26,11 @@ const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Gri
 const BTN = 'h-8 rounded-[9px] px-3 text-[12.5px] transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
 const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi')
 const SECONDARY = clsx(BTN, 'border border-line-strong text-fg hover:bg-elev-2')
+const GHOST = clsx(BTN, 'text-muted hover:bg-elev-2 hover:text-fg')
 const CARD = 'mb-2 rounded-[14px] border border-crimson-line bg-[linear-gradient(var(--color-crimson-soft),transparent_60%)] px-4 py-3.5'
 
-/** Where a stage sits: 1-based position for "stage n of 5". */
-export const stageIndex = (s: WorkflowStage) => Math.max(0, WORKFLOW_STAGES.indexOf(s as (typeof WORKFLOW_STAGES)[number]))
+/** Where a stage sits on its route: 0-based, for "stage n of N". */
+export const stageIndex = (s: WorkflowStage, route?: WorkflowRoute | null) => Math.max(0, routeStages(route).indexOf(s as Exclude<WorkflowStage, 'done'>))
 
 /** A grilling round: each question with the recommended answer; answered ones go back as one message. */
 export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRound; actionable: boolean; onAnswer(text: string): Promise<void> }) {
@@ -109,41 +112,118 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
   )
 }
 
-/** A finished stage waiting for the person's OK, with what it produced: the spec itself, or the tickets as a board. */
+/** A route's badge: Quick, Standard or Preserve. */
+export function RouteBadge({ route }: { route: WorkflowRoute }) {
+  return <span className="inline-flex h-[18px] items-center rounded-[5px] border border-mode-line bg-mode-soft px-1.5 text-[11px] font-semibold text-mode">{ROUTE_LABEL[route]}</span>
+}
+
+/** A finished stage waiting for the person's OK, with what it produced: the spec itself, the tickets as a board, or the review's findings to pick from. */
 export function StageGateCard({
   gate,
   actionable,
   onApprove,
   onRevise,
+  onFix,
+  flow,
+  onAutoContinue,
   docs
 }: {
   gate: StageGate
   actionable: boolean
   onApprove(): Promise<void>
   onRevise(): void
+  /** Send the chosen review findings back to be fixed. */
+  onFix?(text: string): Promise<void>
+  /** The chat's workflow now, for the route and whether Build goes straight on to Review. */
+  flow?: SpecWorkflow | null
+  onAutoContinue?(on: boolean): void
   /** The chat's folder and feature, to show the documents this stage wrote. */
   docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> }
 }) {
   const [busy, setBusy] = useState(false)
+  const route = gate.route ?? flow?.route
+  const quick = route === 'quick'
   const wants = gate.stage !== 'review'
   const loaded = useSpecDocs(wants ? (docs?.sessionId ?? null) : null, docs?.slug ?? null, docs?.version ?? 0)
   // The proposed UI comes with the grilling; it's still there to compare while approving the spec.
   const showMockup = (gate.stage === 'grill' || gate.stage === 'spec') && !!loaded.mockup && !!docs
-  const showSpec = gate.stage === 'spec' && !!loaded.spec
+  // The Quick route writes its spec while grilling, so that stop shows it.
+  const showSpec = (gate.stage === 'spec' || (gate.stage === 'grill' && quick)) && !!loaded.spec
   const showBoard = (gate.stage === 'tickets' || gate.stage === 'build') && loaded.tickets.length > 0
+  const { bullets, assumed, unverified } = splitSummary(gate.summary)
+  const findings = gate.stage === 'review' ? (gate.findings ?? []) : []
+  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set(findings.flatMap((f, i) => (f.fix ? [i] : []))))
+  // The last stop before Build is where you decide whether Build waits for you once it's done.
+  const beforeBuild = gate.stage === (quick ? 'grill' : 'spec')
+  const autoContinue = flow?.autoContinue !== false
+  const go = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <div className={CARD}>
       <h4 className="mb-2 flex items-center gap-2 text-[13.5px] font-semibold">
         <ListChecks size={15} weight="fill" className="shrink-0 text-crimson-hi" aria-hidden="true" />
-        {GATE_TITLE[gate.stage]}
+        {gate.stage === 'grill' && quick ? 'Grilling and spec done' : GATE_TITLE[gate.stage]}
+        {gate.stage === 'grill' && route && <RouteBadge route={route} />}
       </h4>
-      <ul className="mb-3 list-disc space-y-0.5 pl-[18px] text-[13px] leading-relaxed text-muted marker:text-dim">
-        {gate.summary.map((s, i) => (
-          <li key={i} className="selectable">
-            {s}
-          </li>
-        ))}
-      </ul>
+      {bullets.length > 0 && (
+        <ul className="mb-3 list-disc space-y-0.5 pl-[18px] text-[13px] leading-relaxed text-muted marker:text-dim">
+          {bullets.map((s, i) => (
+            <li key={i} className="selectable">
+              {s}
+            </li>
+          ))}
+        </ul>
+      )}
+      {findings.length > 0 && (
+        <div className="mb-3 grid grid-cols-2 gap-2.5 mobile:grid-cols-1">
+          {(['standards', 'spec'] as const).map((axis) => (
+            <div key={axis} className="min-w-0 rounded-[10px] border border-line bg-panel">
+              <h5 className="border-b border-line px-2.5 py-1.5 text-[12px] font-semibold text-muted">{axis === 'standards' ? 'Standards' : 'Spec'}</h5>
+              {findings.every((f) => f.axis !== axis) && <p className="px-2.5 py-2 text-[12.5px] text-dim">No findings</p>}
+              {findings.map((f, i) =>
+                f.axis !== axis ? null : (
+                  <label key={i} className={clsx('flex gap-2 px-2.5 py-2 text-[12.5px] [&+&]:border-t [&+&]:border-line', actionable && 'cursor-pointer')}>
+                    <input
+                      type="checkbox"
+                      disabled={!actionable}
+                      checked={picked.has(i)}
+                      onChange={() => setPicked((p) => (p.has(i) ? new Set([...p].filter((x) => x !== i)) : new Set([...p, i])))}
+                      className="mt-0.5 size-[14px] shrink-0 accent-crimson"
+                    />
+                    <span className="selectable min-w-0">
+                      <span className={clsx('mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold', f.fix ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line-strong text-dim')}>{f.fix ? 'Fix before ship' : 'Optional'}</span>
+                      {f.title}
+                      {f.where && <span className="mt-0.5 block font-mono text-[11px] text-dim">{f.where}</span>}
+                    </span>
+                  </label>
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {(assumed !== null || unverified !== null) && (
+        <dl className="mb-3 rounded-[10px] border border-line bg-panel text-[12.5px]">
+          {assumed !== null && (
+            <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2.5 px-2.5 py-1.5">
+              <dt className="text-dim">Assumed</dt>
+              <dd className={clsx('selectable', isNothing(assumed) ? 'text-dim' : 'text-fg')}>{assumed}</dd>
+            </div>
+          )}
+          {unverified !== null && (
+            <div className={clsx('grid grid-cols-[88px_minmax(0,1fr)] gap-2.5 px-2.5 py-1.5', assumed !== null && 'border-t border-line')}>
+              <dt className={isNothing(unverified) ? 'text-dim' : 'text-warn'}>Unverified</dt>
+              <dd className={clsx('selectable', isNothing(unverified) ? 'text-dim' : 'text-fg')}>{unverified}</dd>
+            </div>
+          )}
+        </dl>
+      )}
       {showMockup && loaded.mockup && docs && <MockupPreview sessionId={docs.sessionId} doc={loaded.mockup} compact={gate.stage === 'spec'} />}
       {showSpec && loaded.spec && <SpecPreview doc={loaded.spec} />}
       {showBoard && (
@@ -156,24 +236,31 @@ export function StageGateCard({
           {gate.files.join(' · ')}
         </p>
       ) : null}
+      {actionable && beforeBuild && onAutoContinue && (
+        <label className="mb-3 flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
+          <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
+          <span>
+            Continue from Build to Review without stopping
+            <span className="block text-dim">You’ll still see the build results, and the review waits for you.</span>
+          </span>
+        </label>
+      )}
       {actionable && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await onApprove()
-              } finally {
-                setBusy(false)
-              }
-            }}
-            className={PRIMARY}
-          >
-            {APPROVE[gate.stage]}
+        <div className="flex flex-wrap items-center gap-2">
+          {findings.length > 0 && onFix && (
+            <>
+              <span className="mr-auto text-[12px] text-dim">
+                {picked.size} of {findings.length} ticked
+              </span>
+              <button type="button" disabled={busy || picked.size === 0} onClick={() => void go(() => onFix(fixMessage(findings.filter((_, i) => picked.has(i)))))} className={PRIMARY}>
+                Fix {picked.size} finding{picked.size === 1 ? '' : 's'}
+              </button>
+            </>
+          )}
+          <button type="button" disabled={busy} onClick={() => void go(onApprove)} className={findings.length > 0 && onFix ? SECONDARY : PRIMARY}>
+            {gate.stage === 'grill' && quick ? 'Approve and build' : APPROVE[gate.stage]}
           </button>
-          <button type="button" disabled={busy} onClick={onRevise} className={SECONDARY}>
+          <button type="button" disabled={busy} onClick={onRevise} className={findings.length > 0 && onFix ? GHOST : SECONDARY}>
             Change something…
           </button>
         </div>
@@ -306,7 +393,7 @@ export function TicketBoard({ tickets, active, compact }: { tickets: Ticket[]; a
 }
 
 /** The line where a stage starts: a divider, then what the person said (their idea, or the approval). */
-export function StageDivider({ message, fresh }: { message: UiMessage; fresh: boolean }) {
+export function StageDivider({ message, fresh, route }: { message: UiMessage; fresh: boolean; route?: WorkflowRoute | null }) {
   const stage = message.workflowStage!
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('').trim()
   const isIdea = stage === 'grill' && text && text !== 'Started Spec → ship'
@@ -319,7 +406,7 @@ export function StageDivider({ message, fresh }: { message: UiMessage; fresh: bo
           {stage !== 'grill' && <CheckCircle size={13} weight="fill" className="text-ok" aria-hidden="true" />}
           {stage !== 'grill' && <span>{text} ·</span>}
           <b className="font-semibold text-mode">{STAGE_LABEL[stage]}</b>
-          {stage !== 'done' && <span className="tabular-nums">· stage {stageIndex(stage) + 1} of 5</span>}
+          {stage !== 'done' && <span className="tabular-nums">· stage {stageIndex(stage, route) + 1} of {routeStages(route).length}</span>}
         </span>
         <span className="h-px flex-1 bg-gradient-to-l from-transparent to-line-strong" />
       </div>

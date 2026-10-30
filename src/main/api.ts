@@ -206,6 +206,7 @@ export function createApi(s: Services): ClothApi {
       approvePlan: (id, mode) => s.chat.approvePlan(id, mode),
       startWorkflow: (id, idea) => s.chat.startWorkflow(id, idea),
       advanceWorkflow: (id) => s.chat.advanceWorkflow(id),
+      setWorkflowAutoContinue: async (id, on) => s.chat.setWorkflowAutoContinue(id, on),
       stopWorkflow: async (id) => s.chat.stopWorkflow(id)
     },
     agents: {

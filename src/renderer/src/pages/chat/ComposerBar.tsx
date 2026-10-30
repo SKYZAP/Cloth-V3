@@ -2,7 +2,7 @@ import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { Books, CaretDown, ChatCircle, Check, FolderSimple, Hand, Lightning, ListBullets, ListChecks, Paperclip, Plus, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
-import type { ChatSession, ContextUsage, WorkflowStage } from '@shared/types'
+import type { ChatSession, ContextUsage, WorkflowRoute, WorkflowStage } from '@shared/types'
 import { useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { formatCost } from '@/lib/format'
@@ -12,6 +12,7 @@ import { ContextMeter } from '@/components/Planning'
 import { openSetupSection } from './setupNav'
 import { ComposerPopover, effortLabel, FolderMenu, ModelEffortMenu } from './StatusLine'
 import { STAGE_LABEL, stageIndex } from './Workflow'
+import { routeStages } from '@shared/types'
 
 type Update = (p: Partial<ChatSession>) => Promise<void>
 
@@ -168,7 +169,7 @@ export function ComposerBar({
               value={mode}
               hasFolder={!!session.workspace}
               canSpec={!!onWorkflow}
-              flow={flow ? { stage: flow.stage, docs: () => (close(), void onWorkflow?.('docs')) } : null}
+              flow={flow ? { stage: flow.stage, route: flow.route, docs: () => (close(), void onWorkflow?.('docs')) } : null}
               waiting={specArmed}
               onPick={(m) => (close(), void pickMode(m))}
             />
@@ -341,7 +342,7 @@ function MenuRow({
   )
 }
 
-function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value: ChatMode; hasFolder: boolean; canSpec: boolean; flow: { stage: WorkflowStage; docs(): void } | null; waiting: boolean; onPick(m: ChatMode): void }) {
+function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value: ChatMode; hasFolder: boolean; canSpec: boolean; flow: { stage: WorkflowStage; route?: WorkflowRoute; docs(): void } | null; waiting: boolean; onPick(m: ChatMode): void }) {
   return (
     <MenuList>
       {!isMobile && (
@@ -377,7 +378,7 @@ function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value:
       {flow && (
         <div className="mx-1.5 mt-1 border-t border-line pt-1">
           <p className="px-1 pb-1 pt-1.5 text-[11.5px] text-dim">
-            Stage {stageIndex(flow.stage) + 1} of 5: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>. Picking Chat or Plan leaves Spec → ship; the documents stay.
+            Stage {stageIndex(flow.stage, flow.route) + 1} of {routeStages(flow.route).length}: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>. Picking Chat or Plan leaves Spec → ship; the documents stay.
           </p>
           <button role="menuitem" onClick={flow.docs} className="w-full rounded-[9px] px-1.5 py-1.5 text-left text-[13px] outline-none hover:bg-elev-2 focus-visible:bg-elev-2">
             Show the documents

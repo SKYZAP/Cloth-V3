@@ -1393,6 +1393,7 @@ export class ChatService {
         const w = this.get(id).workflow
         if (w && w.slug !== slug) this.update(id, { workflow: { ...w, slug } })
       },
+      stageFinished: (stage) => void this.finished.set(id, stage),
       setWorkflowRoute: (route) => {
         const w = this.get(id).workflow
         if (w && w.route !== route) this.update(id, { workflow: { ...w, route } })
@@ -1446,6 +1447,13 @@ export class ChatService {
     const session = this.update(id, { workflow: { ...w, stage } })
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
     return session
+  }
+
+  /** Whether a finished Build goes straight on to the Review (on unless switched off). */
+  setWorkflowAutoContinue(id: string, on: boolean): ChatSession {
+    const w = this.get(id).workflow
+    if (!w) throw new Error('This chat is not running Spec → ship')
+    return this.update(id, { workflow: { ...w, autoContinue: on } })
   }
 
   /** Leave Spec → ship: the chat carries on as a normal chat (the documents stay). */
@@ -1609,11 +1617,22 @@ export class ChatService {
         }
         emit({ sessionId: id, type: 'end', error })
       }
+      const finished = this.finished.get(id)
+      this.finished.delete(id)
+      // Spec → ship: a finished build goes straight on to the review unless the person turned that off.
+      const flow = this.get(id).workflow
+      if (!error && finished === 'build' && flow?.stage === 'build' && flow.autoContinue !== false) {
+        await this.advanceWorkflow(id)
+          .then(() => this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
+          .catch((err) => this.ctx.log('chat', 'auto-continue failed', errorMessage(err)))
+      }
       if (!error) await this.retitle(id).catch((err) => this.ctx.log('chat', 'title failed', errorMessage(err)))
     })
   }
 
   private titling = new Set<string>()
+  /** The workflow stage each running chat finished this turn, if any. */
+  private finished = new Map<string, WorkflowStage>()
 
   /**
    * Give the chat an AI-written title: after the first reply, and once more when the conversation

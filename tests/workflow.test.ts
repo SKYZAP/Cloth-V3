@@ -80,7 +80,7 @@ describe('Spec → ship helpers', () => {
     expect(at('spec')).toMatch(/numbered AC-1/)
     expect(at('tickets')).toContain('never restate their text')
     expect(at('build')).toContain('every new test appears in its output')
-    expect(at('review')).toContain('fix before ship')
+    expect(at('review')).toContain('whether you recommend fixing it before this ships')
     expect(at('review')).toContain('"Assumed: …"')
     expect(stageNote('done', 'x')).toContain('docs/specs/README.md')
   })
@@ -158,6 +158,56 @@ describe('Spec → ship in a chat', () => {
     expect(advanced.workflow?.stage).toBe('build')
     const r2 = await settle(env)
     expect(r2.msgs.filter((m) => m.role === 'user').at(-1)).toMatchObject({ workflowStage: 'build', blocks: [{ type: 'text', text: 'Approved the spec' }] })
+  }, 30_000)
+
+  it('goes from Build to Review on its own unless switched off, and the review reports its findings', async () => {
+    const env = setup('manual')
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built AC-1–AC-4', 'Unverified: nothing'] }, { id: 'b' })], { stopReason: 'toolUse' }),
+      // The review starts by itself.
+      (ctx) => (
+        seen.push(ctx),
+        fauxAssistantMessage(
+          [
+            fauxToolCall(
+              'finish_stage',
+              {
+                summary: ['2 findings'],
+                findings: [
+                  { axis: 'spec', fix: true, title: 'AC-2 untested', where: 'AC-2' },
+                  { axis: 'standards', fix: false, title: ' ' }
+                ]
+              },
+              { id: 'r' }
+            )
+          ],
+          { stopReason: 'toolUse' }
+        )
+      )
+    ])
+    await env.services.chat.send(env.session.id, 'build it')
+    // Wait for the review's own result: the build's turn ends a moment before the review's starts.
+    const reviewed = () => env.services.chat.messages(env.session.id).some((m) => m.blocks.some((b) => b.type === 'tool' && b.trace.id === 'r' && b.trace.stageGate))
+    for (let i = 0; i < 1500 && !(reviewed() && !env.services.chat.isRunning(env.session.id)); i++) await wait(10)
+    const r = await settle(env)
+    expect(env.services.chat.get(env.session.id).workflow?.stage).toBe('review')
+    expect(getCurrentSystemPrompt(seen[0].messages)).toContain('### Stage: Review')
+    expect(r.msgs.filter((m) => m.role === 'user').at(-1)).toMatchObject({ workflowStage: 'review', blocks: [{ type: 'text', text: 'Approved the build' }] })
+    // Blank findings are dropped.
+    expect(r.traces.find((t) => t.id === 'r')?.stageGate?.findings).toEqual([{ axis: 'spec', fix: true, title: 'AC-2 untested', where: 'AC-2' }])
+
+    // Switched off, a finished build waits for the person.
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' } })
+    expect(env.services.chat.setWorkflowAutoContinue(env.session.id, false).workflow?.autoContinue).toBe(false)
+    faux.setResponses([() => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built'] }, { id: 'b2' })], { stopReason: 'toolUse' })])
+    await env.services.chat.send(env.session.id, 'build again')
+    await settle(env)
+    await wait(300)
+    expect(env.services.chat.isRunning(env.session.id)).toBe(false)
+    expect(env.services.chat.get(env.session.id).workflow?.stage).toBe('build')
   }, 30_000)
 
   it('needs a folder, and refuses to advance a chat that is not running it', async () => {

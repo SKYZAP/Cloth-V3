@@ -1,5 +1,7 @@
 import type { SpecWorkflow, WorkflowRoute, WorkflowStage } from '@shared/types'
-import { WORKFLOW_STAGES } from '@shared/types'
+import { routeStages } from '@shared/types'
+
+export { routeStages }
 
 /*
  * Spec → ship: a chat mode that walks a feature through grilling, a spec, tickets, building and a
@@ -26,11 +28,6 @@ export function docsOnly(w: SpecWorkflow | null | undefined): boolean {
 
 export const DOCS_ONLY_REFUSAL =
   'This chat is in the Spec → ship workflow and still writing documents: until the Build stage it may only write GLOSSARY.md and files under docs/, and run no commands. Record the decision in the spec or a ticket instead.'
-
-/** The stages a route walks through, in order. Quick writes its spec while grilling and has no tickets. */
-export function routeStages(route?: WorkflowRoute | null): Exclude<WorkflowStage, 'done'>[] {
-  return route === 'quick' ? ['grill', 'build', 'review'] : WORKFLOW_STAGES
-}
 
 /** The stage after `stage` on this route (review → done). */
 export function nextStage(stage: WorkflowStage, route?: WorkflowRoute | null): WorkflowStage {
@@ -94,7 +91,7 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
     '- Standards: does the change follow the repo\'s documented standards (CLAUDE.md, CONTRIBUTING.md, linters\' configs), and are the project\'s checks no worse than before? Also flag, as judgement calls, common smells: unclear names, duplicated logic, functions reaching into other objects\' data, primitives standing in for domain types, speculative generality. The repo\'s own standards override these.',
     '- Spec: compared with docs/specs/<slug>/spec.md (and the tickets), which criteria are missing, partial or untested (every AC needs a test naming it), what was built that nobody asked for, and where code and spec now disagree. Quote the criterion for each finding.',
     'Before handing over, try to break the change through its real entry point with inputs and states the criteria don\'t cover. On the Preserve route, also check the target versions\' documented breaking changes that touch this code.',
-    'Report the two axes separately, side by side; never merge them into one ranking. Mark each finding "fix before ship" or "optional". Then call `finish_stage` with the findings (severity, what, where) so the person can decide what to fix. If they ask for fixes, make them, run the tests, and review again.'
+    'Report the two axes separately, side by side; never merge them into one ranking. Then call `finish_stage` with every finding in `findings` (its axis, whether you recommend fixing it before this ships, what is wrong, where) and a short summary, so the person can pick what to fix. If they ask for fixes, make them, run the tests, and review again.'
   ].join('\n')
 }
 

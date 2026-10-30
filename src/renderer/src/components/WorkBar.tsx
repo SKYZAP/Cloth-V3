@@ -3,9 +3,9 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import { CaretDown, CheckCircle, Circle, WarningCircle } from '@phosphor-icons/react'
 import type { SpecWorkflow } from '@shared/types'
-import { WORKFLOW_STAGES } from '@shared/types'
+import { routeStages } from '@shared/types'
 import { formatCost } from '@/lib/format'
-import { STAGE_LABEL, STAGE_YOU } from '@/pages/chat/Workflow'
+import { RouteBadge, STAGE_LABEL, STAGE_YOU } from '@/pages/chat/Workflow'
 import { barSegments, runCardId, shortfall, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
 
 /** Scroll the chat to a run's card and flash it briefly. */
@@ -108,10 +108,13 @@ function Meter({ bar }: { bar: Bar }) {
 }
 
 /** The current turn's plan and agent runs, pinned above the message box. */
-export function WorkBar({ bar, flow }: { bar: Bar | null; flow?: SpecWorkflow | null }) {
+export function WorkBar({ bar, flow, onAutoContinue }: { bar: Bar | null; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void }) {
   const [open, setOpen] = useState(false)
   const stage = flow && flow.stage !== 'done' ? flow.stage : null
-  const at = stage ? WORKFLOW_STAGES.indexOf(stage) : -1
+  // Only the stages this change's route walks through: Quick has no Spec or Tickets stage.
+  const stages = routeStages(flow?.route)
+  const at = stage ? stages.indexOf(stage) : -1
+  const autoContinue = flow?.autoContinue !== false
   const title = bar ? (bar.mode === 'todos' ? (bar.current ?? 'All steps done') : 'Agents at work') : ''
   return (
     <motion.div
@@ -126,15 +129,22 @@ export function WorkBar({ bar, flow }: { bar: Bar | null; flow?: SpecWorkflow | 
           <>
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">
               <b className="mr-1.5 font-semibold text-mode">Spec → ship</b>
+              {flow?.route && (
+                <span className="mr-1.5 align-[1px]">
+                  <RouteBadge route={flow.route} />
+                </span>
+              )}
               {STAGE_LABEL[stage]}
               {STAGE_YOU[stage] ? <span className="text-warn"> · {STAGE_YOU[stage]}</span> : bar?.current ? <span className="text-muted"> · {bar.current}</span> : null}
             </span>
-            <span role="img" aria-label={`Stage ${at + 1} of 5: ${STAGE_LABEL[stage]}`} className="flex shrink-0 items-center gap-[2px] mobile:hidden">
-              {WORKFLOW_STAGES.map((s, i) => (
+            <span role="img" aria-label={`Stage ${at + 1} of ${stages.length}: ${STAGE_LABEL[stage]}`} className="flex shrink-0 items-center gap-[2px] mobile:hidden">
+              {stages.map((s, i) => (
                 <span key={s} className={clsx('box-border h-[6px] w-[14px] rounded-[2px]', i < at ? 'bg-ok' : i === at ? 'animate-pulse bg-mode motion-reduce:animate-none' : 'border border-line-strong')} />
               ))}
             </span>
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{at + 1} of 5</span>
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">
+              {at + 1} of {stages.length}
+            </span>
           </>
         ) : (
           bar && (
@@ -155,15 +165,21 @@ export function WorkBar({ bar, flow }: { bar: Bar | null; flow?: SpecWorkflow | 
           <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} className="overflow-hidden">
             <div className="max-h-64 overflow-y-auto px-1.5 py-1.5">
               {stage &&
-                WORKFLOW_STAGES.map((s, i) => (
+                stages.map((s, i) => (
                   <div key={s} aria-current={i === at ? 'step' : undefined} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-lg px-1.5 py-1 text-[12.5px]">
                     <StatusIcon status={i < at ? 'completed' : i === at ? 'in_progress' : 'pending'} />
                     <span className={clsx('min-w-0 truncate', i === at ? 'text-fg' : i < at ? 'text-muted' : 'text-dim')}>
                       {i + 1} · {STAGE_LABEL[s]}
                     </span>
-                    <span className="text-[11px] text-warn">{i === at && STAGE_YOU[s] ? 'needs you' : ''}</span>
+                    {i === at && STAGE_YOU[s] ? <span className="text-[11px] text-warn">needs you</span> : <span className="text-[11px] text-dim">{s === 'build' && i > at && autoContinue ? 'continues on its own' : ''}</span>}
                   </div>
                 ))}
+              {stage && onAutoContinue && at <= stages.indexOf('build') && (
+                <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-[12px] text-muted">
+                  <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="size-[13px] shrink-0 accent-crimson" />
+                  Continue from Build to Review without stopping
+                </label>
+              )}
               {stage && bar && <div className="mx-1.5 my-1 border-t border-line" />}
               {bar?.rows.map((row) => (
                 <Row key={row.key} row={row} />

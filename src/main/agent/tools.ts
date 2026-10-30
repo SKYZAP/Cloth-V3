@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute, WorkflowStage, ReviewFinding } from '@shared/types'
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
@@ -102,6 +102,8 @@ export interface ToolScope {
   setWorkflowSlug?: (slug: string) => void
   /** Record the route agreed while grilling. */
   setWorkflowRoute?: (route: WorkflowRoute) => void
+  /** A stage of the workflow was just finished with `finish_stage` (the chat may move on by itself). */
+  stageFinished?: (stage: WorkflowStage) => void
 }
 
 /** The chat is running Spec → ship and isn't finished. */
@@ -255,7 +257,18 @@ export const BUILTINS: BuiltinSpec[] = [
       summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
       slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup or (Quick route) the spec there' })),
-      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only, required there: the route the person agreed to' }))
+      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only, required there: the route the person agreed to' })),
+      findings: Type.Optional(
+        Type.Array(
+          Type.Object({
+            axis: Type.Union([Type.Literal('standards'), Type.Literal('spec')]),
+            fix: Type.Boolean({ description: 'true: fix before this ships; false: optional' }),
+            title: Type.String({ description: 'What is wrong, in one or two sentences' }),
+            where: Type.Optional(Type.String({ description: 'File and line, or the criterion' }))
+          }),
+          { description: 'Review only: every finding, on its axis' }
+        )
+      )
     }),
     description: () => "Finish the workflow's current stage: show the person what it produced and stop. The next stage starts only when they approve it; if they ask for changes, make them and call this again.",
     when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inWorkflow(ctx.scope),
@@ -271,7 +284,14 @@ export const BUILTINS: BuiltinSpec[] = [
       if (route === 'quick' && !(slug || w.slug)) throw new Error('The Quick route writes the spec while grilling: give its slug')
       if (route) ctx.scope.setWorkflowRoute?.(route)
       const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]
-      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}), ...(route ? { route } : {}) }
+      const findings: ReviewFinding[] =
+        w.stage === 'review'
+          ? (p.findings ?? [])
+              .map((f) => ({ axis: f.axis === 'standards' ? ('standards' as const) : ('spec' as const), fix: !!f.fix, title: String(f.title ?? '').trim(), ...(f.where?.trim() ? { where: f.where.trim() } : {}) }))
+              .filter((f) => f.title)
+          : []
+      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}), ...(route ? { route } : {}), ...(findings.length ? { findings } : {}) }
+      ctx.scope.stageFinished?.(w.stage)
       return {
         text: 'Shown to the person. Stop here: they approve it (the next stage starts) or ask for changes.',
         details: { stageGate: gate as unknown as ToolDetails[string] },

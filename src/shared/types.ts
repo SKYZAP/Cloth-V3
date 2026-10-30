@@ -626,6 +626,11 @@ export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec
  */
 export type WorkflowRoute = 'quick' | 'standard' | 'preserve'
 
+/** The stages a route walks through, in order. Quick writes its spec while grilling and has no tickets. */
+export function routeStages(route?: WorkflowRoute | null): Exclude<WorkflowStage, 'done'>[] {
+  return route === 'quick' ? ['grill', 'build', 'review'] : WORKFLOW_STAGES
+}
+
 /** A chat running Spec → ship: grill, write the spec, cut tickets, build them, review against the spec. */
 export interface SpecWorkflow {
   kind: 'spec-ship'
@@ -634,6 +639,19 @@ export interface SpecWorkflow {
   slug: string | null
   /** Set when the grilling finishes; none means standard. */
   route?: WorkflowRoute
+  /** Go from Build to Review without waiting for the person's OK (on unless switched off). */
+  autoContinue?: boolean
+}
+
+/** One review finding, on one of the review's two axes. */
+export interface ReviewFinding {
+  axis: 'standards' | 'spec'
+  /** The reviewer recommends fixing it before this ships (otherwise it's optional). */
+  fix: boolean
+  /** What is wrong, in one or two sentences (quoting the criterion on the spec axis). */
+  title: string
+  /** Where: a file and line, or a criterion. */
+  where?: string
 }
 
 /** One grilling round: the decisions that can be settled now, each with a recommended answer. */
@@ -650,6 +668,8 @@ export interface StageGate {
   summary: string[]
   /** The route agreed while grilling (Grill only). */
   route?: WorkflowRoute
+  /** The review's findings (Review only). */
+  findings?: ReviewFinding[]
   /** Files this stage wrote, relative to the workspace. */
   files?: string[]
 }

@@ -25,7 +25,7 @@ import {
   Trash,
   X
 } from '@phosphor-icons/react'
-import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, UiBlock, UiMessage, UiUsage } from '@shared/types'
+import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, SpecWorkflow, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
@@ -639,6 +639,14 @@ function ChatView({
     const s = await attempt(() => api.chat.advanceWorkflow(session.id))
     if (s) onChange(s)
   }
+  const fixFindings = async (text: string) => {
+    stick.current = true
+    await attempt(() => api.chat.send(session.id, text))
+  }
+  const setAutoContinue = async (on: boolean) => {
+    const s = await attempt(() => api.chat.setWorkflowAutoContinue(session.id, on))
+    if (s) onChange(s)
+  }
   const reviseStage = () => {
     setHint('Say what to change')
     textarea.current?.focus()
@@ -918,10 +926,10 @@ function ChatView({
             return m.role === 'user' ? (
               <div key={m.id}>
                 {m.summary !== undefined && <SummaryDivider summary={m.summary} />}
-                {m.workflowStage ? <StageDivider message={m} fresh={fresh} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
+                {m.workflowStage ? <StageDivider message={m} fresh={fresh} route={session.workflow?.route} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage, docs: specDocs }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage, onFix: fixFindings, flow: session.workflow, onAutoContinue: (on) => void setAutoContinue(on), docs: specDocs }} />
             )
           })}
           <AnimatePresence>
@@ -981,7 +989,7 @@ function ChatView({
         <AnimatePresence>
           {showBar && (
             <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(calc(var(--chat-col)-16px),calc(100%-80px))] mobile:w-[calc(100%-36px)]">
-              <WorkBar bar={workBar} flow={session.workflow} />
+              <WorkBar bar={workBar} flow={session.workflow} onAutoContinue={(on) => void setAutoContinue(on)} />
             </div>
           )}
         </AnimatePresence>
@@ -1373,7 +1381,7 @@ function AssistantTurn({
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
   /** Spec → ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
-  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> } }
+  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> } }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -1432,7 +1440,7 @@ function AssistantTurn({
           if (block.type === 'tool' && block.trace.questions)
             return <RoundCard key={block.trace.id} round={block.trace.questions} actionable={!!workflow?.actionable && i === lastFlowIdx} onAnswer={(t) => workflow?.onAnswer(t) ?? Promise.resolve()} />
           if (block.type === 'tool' && block.trace.stageGate)
-            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} docs={workflow?.docs} />
+            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} onFix={workflow?.onFix} flow={workflow?.flow} onAutoContinue={workflow?.onAutoContinue} docs={workflow?.docs} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
