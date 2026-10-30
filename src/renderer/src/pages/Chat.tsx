@@ -896,7 +896,7 @@ function ChatView({
         }}
       >
         {/* A chat log: screen readers announce new turns, and wait while a reply is still streaming. */}
-        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(740px,calc(100%-64px))] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pt-[64px]', showBar ? 'pb-[300px] mobile:pb-[240px]' : 'pb-[250px] mobile:pb-[190px]')}>
+        <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className={clsx('mx-auto w-[min(var(--chat-col),calc(100%-64px))] pt-[84px] mobile:w-[calc(100%-28px)] mobile:pt-[64px]', showBar ? 'pb-[300px] mobile:pb-[240px]' : 'pb-[250px] mobile:pb-[190px]')}>
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
@@ -980,14 +980,14 @@ function ChatView({
         {/* The current turn's plan and agents, just above the message box. Opening it grows upward. */}
         <AnimatePresence>
           {showBar && (
-            <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(724px,calc(100%-80px))] mobile:w-[calc(100%-36px)]">
+            <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(calc(var(--chat-col)-16px),calc(100%-80px))] mobile:w-[calc(100%-36px)]">
               <WorkBar bar={workBar} flow={session.workflow} />
             </div>
           )}
         </AnimatePresence>
         <div
           className={clsx(
-            'group/composer pointer-events-auto relative mx-auto w-[min(740px,calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
+            'group/composer pointer-events-auto relative mx-auto w-[min(var(--chat-col),calc(100%-64px))] rounded-[20px] mobile:w-[calc(100%-20px)] border border-line-strong bg-panel shadow-[0_12px_40px_-12px_rgb(0_0_0/0.7)] transition-[border-color,box-shadow,transform] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
             'focus-within:-translate-y-px focus-within:border-crimson-line focus-within:shadow-[0_16px_44px_-14px_rgb(0_0_0/0.8),0_0_0_4px_rgb(220_38_69/0.10)]'
           )}
         >

@@ -50,6 +50,18 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /* The chat column (messages and message box): wider as the window grows, still capped by the space beside the panels. */
+    --chat-col: 740px;
+  }
+  @media (min-width: 1440px) {
+    :root {
+      --chat-col: 880px;
+    }
+  }
+  @media (min-width: 1800px) {
+    :root {
+      --chat-col: 1000px;
+    }
   }
 
   html,
