@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, Palette, PencilSimple, Plus } from '@phosphor-icons/react'
@@ -197,7 +197,8 @@ export function ProjectHeader({
   count: number
   collapsed: boolean
   running: boolean
-  onToggle(): void
+  /** Left out when the project has no chats: there is nothing to fold away. */
+  onToggle?(): void
   onNewChat(): void
   onEdit(): void
 }) {
@@ -240,14 +241,24 @@ function GroupHeader({
   collapsed: boolean
   running: boolean
   newChatLabel: string
-  onToggle(): void
+  onToggle?(): void
   onNewChat(): void
   onEdit?(): void
   onDesign?(): void
 }) {
   return (
-    <div onClick={onToggle} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onToggle())} tabIndex={0} className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 outline-none hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-11" role="button" aria-expanded={!collapsed}>
-      <span className={clsx('flex text-dim transition-transform duration-200', !collapsed && 'rotate-90')}>
+    <div
+      {...(onToggle && {
+        onClick: onToggle,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onToggle()),
+        tabIndex: 0,
+        role: 'button',
+        'aria-expanded': !collapsed
+      })}
+      className="group mx-0.5 mt-2 flex h-9 cursor-default items-center gap-1.5 rounded-[10px] pl-1.5 pr-1 outline-none hover:bg-elev focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-11"
+    >
+      {/* Without a toggle the caret's space stays, so names line up with the folders that have one. */}
+      <span className={clsx('flex text-dim transition-transform duration-200', !collapsed && 'rotate-90', !onToggle && 'invisible')} aria-hidden="true">
         <CaretRight size={11} weight="bold" />
       </span>
       {icon}

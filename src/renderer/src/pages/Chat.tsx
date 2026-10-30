@@ -270,7 +270,8 @@ export function ChatPage() {
           const chats = shown.filter((s) => s.projectId === p.id)
           // While searching, only projects with matches show, opened up.
           if (filter && !chats.length) return null
-          const isCollapsed = !filter && collapsed.has(p.id)
+          // An empty project can't fold: its "No chats yet" row always shows.
+          const isCollapsed = !filter && chats.length > 0 && collapsed.has(p.id)
           return (
             <div key={p.id}>
               <ProjectHeader
@@ -278,7 +279,7 @@ export function ChatPage() {
                 count={chats.length}
                 collapsed={isCollapsed}
                 running={chats.some((s) => running.has(s.id))}
-                onToggle={() => setCollapsed((c) => toggled(c, p.id))}
+                onToggle={chats.length ? () => setCollapsed((c) => toggled(c, p.id)) : undefined}
                 onNewChat={() => void create(p.id)}
                 onEdit={() => setEditing({ open: true, project: p })}
               />
