@@ -270,7 +270,7 @@ export function ChatPage() {
           const chats = shown.filter((s) => s.projectId === p.id)
           // While searching, only projects with matches show, opened up.
           if (filter && !chats.length) return null
-          // An empty project can't fold: its "No chats yet" row always shows.
+          // An empty project is just its header (its + starts a chat), with nothing to fold.
           const isCollapsed = !filter && chats.length > 0 && collapsed.has(p.id)
           return (
             <div key={p.id}>
@@ -287,11 +287,6 @@ export function ChatPage() {
                 {!isCollapsed && (
                   <motion.div key="chats" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
                     {chats.map((s) => row(s, true))}
-                    {!chats.length && (
-                      <button onClick={() => void create(p.id)} className="mx-0.5 my-1 w-[calc(100%-4px)] rounded-[10px] py-2 pl-6 text-left text-[12px] text-dim hover:bg-elev hover:text-muted">
-                        No chats yet — start one
-                      </button>
-                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
