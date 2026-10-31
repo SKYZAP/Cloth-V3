@@ -172,7 +172,7 @@ export function RunPage() {
 const DOT: Record<RunnerStatus['state'], string> = {
   running: 'bg-ok',
   starting: 'bg-warn animate-pulse motion-reduce:animate-none',
-  error: 'bg-crimson',
+  error: 'bg-danger',
   stopped: 'bg-line-strong'
 }
 

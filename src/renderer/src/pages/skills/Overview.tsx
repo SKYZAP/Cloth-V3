@@ -249,7 +249,7 @@ function SkillMdCard({ skill, onEdit }: { skill: Skill; onEdit(): void }) {
 const AUDIT: Record<SkillAuditStatus, { label: string; cls: string }> = {
   pass: { label: 'Pass', cls: 'bg-ok/15 text-ok' },
   warn: { label: 'Warn', cls: 'bg-warn/15 text-warn' },
-  fail: { label: 'Fail', cls: 'bg-crimson-soft text-crimson-hi' },
+  fail: { label: 'Fail', cls: 'bg-danger-soft text-danger-hi' },
   pending: { label: 'Pending', cls: 'bg-elev-2 text-dim' },
   unknown: { label: 'Unknown', cls: 'bg-elev-2 text-dim' }
 }

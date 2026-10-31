@@ -249,7 +249,7 @@ export function ImageGeneration({
         {showStatus || prompt ? (
           <div className="mt-3 text-left">
             {showStatus ? (
-              <div aria-live="polite" className={clsx('flex min-h-5 items-center gap-2 text-[13px] font-medium text-fg', status === 'error' && 'text-crimson-hi', statusClassName)}>
+              <div aria-live="polite" className={clsx('flex min-h-5 items-center gap-2 text-[13px] font-medium text-fg', status === 'error' && 'text-danger-hi', statusClassName)}>
                 <DitherMark status={status} reduce={reduce} />
                 <AnimatePresence mode="popLayout" initial={false}>
                   <motion.span

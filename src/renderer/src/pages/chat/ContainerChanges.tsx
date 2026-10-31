@@ -9,10 +9,10 @@ import { Badge, Button, confirmAction } from '@/components/ui'
 import { BottomSheet } from '@/components/BottomSheet'
 import { DiffView } from '@/components/DiffView'
 
-const KIND: Record<ContainerChange['kind'], { label: string; tone: 'ok' | 'info' | 'crimson' }> = {
+const KIND: Record<ContainerChange['kind'], { label: string; tone: 'ok' | 'info' | 'danger' }> = {
   create: { label: 'new', tone: 'ok' },
   modify: { label: 'changed', tone: 'info' },
-  delete: { label: 'deleted', tone: 'crimson' }
+  delete: { label: 'deleted', tone: 'danger' }
 }
 
 /** Header pill for a container chat: shows it runs in a container and how many changes wait for review. */
@@ -80,7 +80,7 @@ function RunningServers({ ports }: { ports: ContainerPort[] }) {
             <div key={p.port} className="flex items-center gap-2 border-b border-line px-3 py-2 last:border-b-0">
               <Warning size={14} className="shrink-0 text-warn" />
               <span className="shrink-0 font-mono text-[12px]">port {p.port}</span>
-              <span className="min-w-0 text-[11.5px] text-crimson-hi">{p.error}</span>
+              <span className="min-w-0 text-[11.5px] text-danger-hi">{p.error}</span>
             </div>
           )
         )}
@@ -198,7 +198,7 @@ function ChangesBody({ session, data, onData, ports: all }: { session: ChatSessi
                     )}
                     {!c.binary && (
                       <span className="shrink-0 font-mono text-[11px]">
-                        <span className="text-ok">+{c.added}</span> <span className="text-crimson-hi">−{c.removed}</span>
+                        <span className="text-ok">+{c.added}</span> <span className="text-danger-hi">−{c.removed}</span>
                       </span>
                     )}
                   </button>

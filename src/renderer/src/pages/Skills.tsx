@@ -403,7 +403,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
           {searching && <Spinner size={13} className="absolute right-2.5 top-2.5" />}
         </div>
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-          {error && <div className="rounded-lg border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{error}</div>}
+          {error && <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{error}</div>}
           {!results && !error && (
             <div className="p-2">
               <div className="mb-2 text-[11.5px] text-dim">Browse the open agent-skills registry. Popular topics:</div>
@@ -459,7 +459,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
             Search the registry, pick a skill to preview its SKILL.md, then install it into your hub.
           </Empty>
         ) : previewError ? (
-          <div className="p-4 text-[12.5px] text-crimson-hi">{previewError}</div>
+          <div className="p-4 text-[12.5px] text-danger-hi">{previewError}</div>
         ) : !preview ? (
           <div className="flex h-full items-center justify-center">
             <Spinner />
@@ -766,7 +766,7 @@ function SkillView({ skill, onChanged, onClose }: { skill: Skill; onChanged(name
             <div key={f.path}>
               <div className="mb-1 flex items-center gap-2 text-[12px]">
                 <span className="font-mono text-muted">{f.path}</span>
-                <span className={f.kind === 'removed' ? 'text-crimson-hi' : f.kind === 'added' ? 'text-ok' : 'text-dim'}>{f.kind}</span>
+                <span className={f.kind === 'removed' ? 'text-danger-hi' : f.kind === 'added' ? 'text-ok' : 'text-dim'}>{f.kind}</span>
               </div>
               <DiffView diff={f.diff} maxHeight={280} />
             </div>

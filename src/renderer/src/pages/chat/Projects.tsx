@@ -104,7 +104,7 @@ export function ProjectDialog({
       footer={
         <>
           {project && !project.builtin && (
-            <Button variant="ghost" className="mr-auto !text-crimson-hi" onClick={() => void remove()}>
+            <Button variant="ghost" className="mr-auto !text-danger-hi" onClick={() => void remove()}>
               Delete project
             </Button>
           )}

@@ -48,7 +48,7 @@ const SOURCE: Record<UsageSource, { label: string; color: string }> = {
 }
 
 const VIA: Record<string, { label: string; color: string }> = {
-  slash: { label: '/ command', color: '#dc2645' },
+  slash: { label: '/ command', color: '#c084fc' },
   tool: { label: 'agent', color: '#e0a43a' },
   mcp: { label: 'MCP', color: '#3fb97a' },
   workflow: { label: 'flow', color: '#fb923c' }
@@ -254,17 +254,18 @@ function pct(part: number, whole: number): string {
   return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`
 }
 
-function Delta({ now, before, invert }: { now: number; before: number | undefined; invert?: boolean }) {
+/** Change vs the previous period. Only cost and latency are judged (lower is better, green or red); for volumes like tokens and calls more is neither good nor bad, so they stay neutral. */
+function Delta({ now, before, lowerIsBetter }: { now: number; before: number | undefined; lowerIsBetter?: boolean }) {
   if (before === undefined) return null
   if (!before && !now) return null
   if (!before) return <span className="rounded bg-elev-2 px-1.5 py-px text-[10.5px] text-dim">new</span>
   const change = (now - before) / before
   if (Math.abs(change) < 0.005) return <span className="rounded bg-elev-2 px-1.5 py-px text-[10.5px] text-dim">±0%</span>
   const up = change > 0
-  const good = invert ? !up : up
+  const tone = lowerIsBetter === undefined ? 'bg-elev-2 text-muted' : lowerIsBetter !== up ? 'bg-ok/10 text-ok' : 'bg-danger-soft text-danger-hi'
   const I = up ? ArrowUpRight : ArrowDownRight
   return (
-    <span className={clsx('inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[10.5px] font-medium', good ? 'bg-ok/10 text-ok' : 'bg-crimson-soft text-crimson-hi')} title="vs the previous period">
+    <span className={clsx('inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[10.5px] font-medium', tone)} title="vs the previous period">
       <I size={10} weight="bold" />
       {Math.abs(change) >= 10 ? `${Math.round(change)}×` : `${Math.round(Math.abs(change) * 100)}%`}
     </span>
@@ -292,7 +293,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
       icon: Coins,
       label: 'Estimated cost',
       value: <Count value={t.cost} format={money} />,
-      delta: <Delta now={t.cost} before={prev?.cost} invert />,
+      delta: <Delta now={t.cost} before={prev?.cost} lowerIsBetter />,
       sub: t.unpricedTokens ? (
         <button onClick={onPricing} className="text-left hover:text-muted" title="Set prices for models on the Models page">
           {pct(t.unpricedTokens, t.inputTokens + t.outputTokens + t.cacheTokens)} of tokens on unpriced models →
@@ -308,13 +309,13 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
       label: 'Model calls',
       value: <Count value={t.calls} />,
       delta: <Delta now={t.calls} before={prev?.calls} />,
-      sub: t.errors ? <span className="text-crimson-hi">{pct(t.errors, t.calls)} failed ({t.errors})</span> : 'no failed calls'
+      sub: t.errors ? <span className="text-danger-hi">{pct(t.errors, t.calls)} failed ({t.errors})</span> : 'no failed calls'
     },
     {
       icon: Timer,
       label: 'Avg response time',
       value: t.avgLatencyMs === null ? '—' : <Count value={t.avgLatencyMs} format={secs} />,
-      delta: t.avgLatencyMs !== null && prev?.avgLatencyMs ? <Delta now={t.avgLatencyMs} before={prev.avgLatencyMs} invert /> : null,
+      delta: t.avgLatencyMs !== null && prev?.avgLatencyMs ? <Delta now={t.avgLatencyMs} before={prev.avgLatencyMs} lowerIsBetter /> : null,
       sub: 'per model call, incl. thinking'
     },
     {
@@ -325,7 +326,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
       sub: (
         <>
           {t.skillUses} skill use{t.skillUses === 1 ? '' : 's'}
-          {t.toolErrors ? <span className="text-crimson-hi"> · {pct(t.toolErrors, t.toolCalls)} tool errors</span> : ''}
+          {t.toolErrors ? <span className="text-danger-hi"> · {pct(t.toolErrors, t.toolCalls)} tool errors</span> : ''}
         </>
       )
     }
@@ -407,7 +408,7 @@ function Timeline({ stats }: { stats: DashboardStats }) {
         <span className="text-[11.5px] text-dim">
           {h ? `${label(h.t)}${stats.bucket === 'day' ? '' : ''}` : `total, per ${stats.bucket}`}
           {h && metric === 'tokens' && ` · ${compact(h.input)} in · ${compact(h.output)} out`}
-          {h && metric === 'calls' && h.errors > 0 && <span className="text-crimson-hi"> · {h.errors} failed</span>}
+          {h && metric === 'calls' && h.errors > 0 && <span className="text-danger-hi"> · {h.errors} failed</span>}
         </span>
         <div className="flex-1" />
         {metric === 'tokens' && (
@@ -609,7 +610,7 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
                       )}
                     </td>
                     <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted">{m.avgLatencyMs === null ? '—' : duration(m.avgLatencyMs)}</td>
-                    <td className="px-2 py-2.5 text-right font-mono tabular-nums">{m.errors ? <span className="text-crimson-hi">{m.errors}</span> : <span className="text-dim">0</span>}</td>
+                    <td className="px-2 py-2.5 text-right font-mono tabular-nums">{m.errors ? <span className="text-danger-hi">{m.errors}</span> : <span className="text-dim">0</span>}</td>
                     <td className="px-4 py-2.5 text-right text-[11.5px] text-dim">{timeAgo(m.lastUsed)}</td>
                   </tr>
                 )
@@ -659,13 +660,13 @@ function Tools({ stats }: { stats: DashboardStats }) {
           ))}
           right={
             <span className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
-              {t.errors > 0 && <span className="text-crimson-hi">{t.errors} failed</span>}
+              {t.errors > 0 && <span className="text-danger-hi">{t.errors} failed</span>}
               {t.avgMs !== null && <span className="text-dim">{duration(t.avgMs)}</span>}
               <span className="w-10 text-right text-muted">{t.calls}</span>
             </span>
           }
         >
-          <Bar value={t.calls} max={max} delay={0.2 + i * 0.05} color={i === 0 ? OUTPUT : '#7a2233'} />
+          <Bar value={t.calls} max={max} delay={0.2 + i * 0.05} color={i === 0 ? OUTPUT : '#55555f'} />
         </Ranked>
       ))}
     </div>
@@ -756,7 +757,7 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
         </Ring>
         <div className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1.5 text-[11.5px]">
           <Stat label="runs" value={w.runs} />
-          <Stat label="failed" value={w.errors} tone={w.errors ? 'crimson' : undefined} />
+          <Stat label="failed" value={w.errors} tone={w.errors ? 'danger' : undefined} />
           <Stat label="avg duration" value={w.avgMs === null ? '—' : duration(w.avgMs)} />
           <Stat label="scheduled" value={w.scheduled} />
         </div>
@@ -765,7 +766,7 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
         {w.top.map((f) => (
           <div key={f.id} className="flex items-center gap-2 text-[12px]">
             <span className="min-w-0 flex-1 truncate text-muted">{f.name}</span>
-            {f.errors > 0 && <span className="font-mono text-[10.5px] text-crimson-hi">{f.errors}✕</span>}
+            {f.errors > 0 && <span className="font-mono text-[10.5px] text-danger-hi">{f.errors}✕</span>}
             <span className="font-mono text-[11px] text-dim tabular-nums">{f.runs} runs</span>
             <span className="w-12 text-right font-mono text-[11px] text-dim">{f.avgMs === null ? '' : duration(f.avgMs)}</span>
           </div>
@@ -818,7 +819,7 @@ function Recent({ stats }: { stats: DashboardStats }) {
           const I = icon[r.kind] ?? Lightning
           return (
             <div key={`${r.at}-${i}`} className="flex items-center gap-2.5 border-t border-line/60 px-4 py-2 text-[12px]">
-              <span className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md border', r.ok ? 'border-line bg-elev text-muted' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
+              <span className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md border', r.ok ? 'border-line bg-elev text-muted' : 'border-danger-line bg-danger-soft text-danger-hi')}>
                 <I size={12} />
               </span>
               <span className="min-w-0 truncate font-mono text-[11.5px] text-fg">{r.label}</span>
@@ -836,10 +837,10 @@ function Recent({ stats }: { stats: DashboardStats }) {
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 'crimson' }) {
+function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 'danger' }) {
   return (
     <div>
-      <div className={clsx('font-mono text-[14px] font-semibold tabular-nums', tone === 'crimson' ? 'text-crimson-hi' : 'text-fg')}>{value}</div>
+      <div className={clsx('font-mono text-[14px] font-semibold tabular-nums', tone === 'danger' ? 'text-danger-hi' : 'text-fg')}>{value}</div>
       <div className="text-[10.5px] text-dim">{label}</div>
     </div>
   )

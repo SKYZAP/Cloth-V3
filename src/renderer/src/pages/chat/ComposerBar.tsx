@@ -27,7 +27,7 @@ export const ACCESS_ICON: Record<Access, Icon> = { auto: Lightning, manual: Hand
 const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-crimson-hi', manual: 'text-warn' }
 /** The access chip: outlined and tinted in its own colour (crimson for Auto, amber for Manual). */
 const ACCESS_TONE: Record<Access, string> = {
-  auto: 'border-crimson-line bg-crimson-soft text-crimson-hi hover:bg-crimson/20',
+  auto: 'border-crimson-line bg-crimson-soft text-crimson-text hover:bg-crimson/20',
   manual: 'border-warn/35 bg-warn/[0.08] text-warn hover:bg-warn/15'
 }
 

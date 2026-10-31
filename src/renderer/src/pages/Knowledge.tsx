@@ -477,7 +477,7 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
             <button key={d.id} data-focus-key={d.id} onClick={() => onOpen(d.id)} aria-haspopup="dialog" title={d.source} className={clsx(cols, 'w-full border-t border-line py-2 text-left text-[12.5px] first-of-type:border-t-0 hover:bg-elev-2')}>
               <span className="min-w-0 truncate" translate="no">
                 {name(d)}
-                {state && <span className={clsx('ml-2 text-[11.5px]', state === 'failed' ? 'text-crimson-hi' : 'text-info')}>{state}</span>}
+                {state && <span className={clsx('ml-2 text-[11.5px]', state === 'failed' ? 'text-danger-hi' : 'text-info')}>{state}</span>}
               </span>
               <span className="min-w-0 truncate text-dim mobile:hidden" translate="no">
                 {s ? shortLabel(s) : ''}
@@ -982,7 +982,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
         <div className="border-b border-line px-3 py-2 text-[12px] font-semibold">Ingestion log</div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px]">
           {log.map((l, i) => (
-            <div key={i} className={clsx('truncate px-1 py-0.5', l.error ? 'text-crimson-hi' : l.done ? 'text-ok' : 'text-dim')} title={l.error ?? l.message}>
+            <div key={i} className={clsx('truncate px-1 py-0.5', l.error ? 'text-danger-hi' : l.done ? 'text-ok' : 'text-dim')} title={l.error ?? l.message}>
               {l.error ? `Failed: ${l.message}: ${l.error}` : l.message}
             </div>
           ))}

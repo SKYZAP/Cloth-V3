@@ -161,7 +161,7 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
                 }
               }}
             />
-            {argsError && <span className="text-[11.5px] text-crimson-hi">{argsError}</span>}
+            {argsError && <span className="text-[11.5px] text-danger-hi">{argsError}</span>}
           </label>
         </div>
       )}

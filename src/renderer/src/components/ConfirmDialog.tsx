@@ -98,7 +98,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
         className="w-[440px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[14px] border border-line-strong bg-panel shadow-[0_24px_60px_-12px_rgb(0_0_0/0.8)]"
       >
         <div className="flex gap-3.5 px-5 pt-5">
-          <div className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', req.danger ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev-2 text-muted')}>
+          <div className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', req.danger ? 'bg-danger-soft text-danger-hi' : 'bg-elev-2 text-muted')}>
             <Icon size={18} weight="fill" />
           </div>
           <div className="min-w-0 pt-0.5">
@@ -127,7 +127,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
             onClick={() => finish(true)}
             className={clsx(
               'h-8 rounded-lg px-3.5 text-[12.5px] font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
-              req.danger ? 'bg-crimson hover:bg-crimson-hi focus-visible:ring-crimson' : 'bg-crimson hover:bg-crimson-hi focus-visible:ring-crimson-line'
+              req.danger ? 'bg-danger hover:bg-danger-hi focus-visible:ring-danger' : 'bg-crimson hover:bg-crimson-hi focus-visible:ring-crimson-line'
             )}
           >
             {req.confirmLabel ?? 'Confirm'}

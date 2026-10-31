@@ -98,7 +98,7 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
       ))}
       {actionable && (
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <span className="mr-auto text-[12px] text-dim">{error ? <span className="text-crimson-hi" role="alert">{error}</span> : round.recorded}</span>
+          <span className="mr-auto text-[12px] text-dim">{error ? <span className="text-danger-hi" role="alert">{error}</span> : round.recorded}</span>
           <button type="button" disabled={busy} onClick={() => void send(true)} className={SECONDARY}>
             Accept all
           </button>
@@ -197,7 +197,7 @@ export function StageGateCard({
                       className="mt-0.5 size-[14px] shrink-0 accent-crimson"
                     />
                     <span className="selectable min-w-0">
-                      <span className={clsx('mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold', f.fix ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line-strong text-dim')}>{f.fix ? 'Fix before ship' : 'Optional'}</span>
+                      <span className={clsx('mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold', f.fix ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-line-strong text-dim')}>{f.fix ? 'Fix before ship' : 'Optional'}</span>
                       {f.title}
                       {f.where && <span className="mt-0.5 block font-mono text-[11px] text-dim">{f.where}</span>}
                     </span>

@@ -52,7 +52,7 @@ export function Connect() {
       </motion.div>
 
       {unpaired && (
-        <div className="mt-8 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
+        <div className="mt-8 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-[13px] text-danger-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
       )}
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...ENTER, delay: 0.08 }} className="mt-10 space-y-3 rounded-[20px] border border-line bg-panel p-5">
@@ -71,7 +71,7 @@ export function Connect() {
 
       <AnimatePresence>
         {error && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3 text-[13px] text-crimson-hi">
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-[13px] text-danger-hi">
             {error}
           </motion.div>
         )}

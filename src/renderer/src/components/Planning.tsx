@@ -78,7 +78,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
   const window_ = usage.window
   const used = Math.min(usage.tokens, window_)
   const near = usage.threshold ? usage.tokens / usage.threshold : used / window_
-  const tone = near >= 0.9 ? 'text-crimson-hi' : near >= 0.7 ? 'text-warn' : 'text-dim'
+  const tone = near >= 0.9 ? 'text-danger-hi' : near >= 0.7 ? 'text-warn' : 'text-dim'
   // Biggest share first, in the list and the bar alike.
   const slices = [...usage.breakdown].sort((a, b) => b.tokens - a.tokens)
 

@@ -26,7 +26,7 @@ export const runLabel = (r: RunInfo) => (r.tierName ? `${r.name} · ${r.tierName
 function StatusIcon({ status }: { status: StepStatus }) {
   if (status === 'completed') return <CheckCircle size={14} weight="fill" className="text-ok" />
   if (status === 'in_progress') return <span className="mx-[3px] h-2 w-2 animate-pulse rounded-full bg-warn" />
-  if (status === 'failed') return <WarningCircle size={14} weight="fill" className="text-crimson-hi" />
+  if (status === 'failed') return <WarningCircle size={14} weight="fill" className="text-danger-hi" />
   return <Circle size={14} className="text-dim" />
 }
 
@@ -37,7 +37,7 @@ function Row({ row }: { row: BarRow }) {
     <>
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">
         {short && row.status === 'completed' ? (
-          <span className={clsx('mx-[3px] h-2 w-2 rounded-full', run?.outcome === 'partial' ? 'bg-warn' : 'bg-crimson')} aria-label={short} />
+          <span className={clsx('mx-[3px] h-2 w-2 rounded-full', run?.outcome === 'partial' ? 'bg-warn' : 'bg-danger')} aria-label={short} />
         ) : (
           <StatusIcon status={row.status} />
         )}
@@ -55,7 +55,7 @@ function Row({ row }: { row: BarRow }) {
         <span className="flex shrink-0 items-center gap-2 text-[11px]">
           {row.runs > 1 && <span className="text-dim">{row.runs} runs</span>}
           <span className="rounded-full bg-agent-soft px-1.5 py-px text-agent">{runLabel(run)}</span>
-          {short && <span className={clsx('text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-crimson-hi')}>{short}</span>}
+          {short && <span className={clsx('text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}
           {run.cost > 0 && <span className="font-mono text-dim">{formatCost(run.cost)}</span>}
         </span>
       ) : (
@@ -99,7 +99,7 @@ function Meter({ bar }: { bar: Bar }) {
           key={i}
           className={clsx(
             'box-border h-[6px] w-[14px] rounded-[2px]',
-            s === 'completed' ? 'bg-ok' : s === 'failed' ? 'bg-crimson' : s === 'in_progress' ? 'animate-pulse bg-warn motion-reduce:animate-none' : 'border border-line-strong bg-transparent'
+            s === 'completed' ? 'bg-ok' : s === 'failed' ? 'bg-danger' : s === 'in_progress' ? 'animate-pulse bg-warn motion-reduce:animate-none' : 'border border-line-strong bg-transparent'
           )}
         />
       ))}

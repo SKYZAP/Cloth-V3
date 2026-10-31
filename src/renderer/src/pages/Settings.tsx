@@ -531,7 +531,7 @@ function UpdatesGroup() {
           hint={
             <>
               <span aria-live="polite">{summary}</span>
-              {st.error && <span className="mt-1 block text-crimson-hi">{st.error}</span>}
+              {st.error && <span className="mt-1 block text-danger-hi">{st.error}</span>}
               {st.state === 'downloading' && (
                 <span className="mt-2 block h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-line-strong" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Download progress">
                   <span className="block h-full rounded-full bg-crimson transition-[width]" style={{ width: `${pct}%` }} />
@@ -611,7 +611,7 @@ function UpdatesGroup() {
                     </Button>
                   )}
                 </div>
-                {tokenError && <div className="text-[11.5px] text-crimson-hi">{tokenError}</div>}
+                {tokenError && <div className="text-[11.5px] text-danger-hi">{tokenError}</div>}
               </form>
             )}
           </Row>

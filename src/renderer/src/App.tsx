@@ -99,7 +99,7 @@ function DesktopApp() {
           className="no-drag flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] text-dim hover:bg-elev hover:text-muted"
           title={mcp?.url}
         >
-          <span className={clsx('h-1.5 w-1.5 rounded-full', mcp?.running ? 'bg-ok' : 'bg-crimson')} />
+          <span className={clsx('h-1.5 w-1.5 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
           MCP {mcp?.running ? `:${mcp.port}` : 'offline'}
         </button>
       </div>
@@ -155,10 +155,10 @@ export function Toasts() {
           key={t.id}
           className={clsx(
             'pointer-events-auto flex items-start gap-2 rounded-lg border bg-elev px-3 py-2.5 text-[12.5px] shadow-xl shadow-black/50',
-            t.kind === 'error' ? 'border-crimson-line' : t.kind === 'ok' ? 'border-ok/30' : 'border-line-strong'
+            t.kind === 'error' ? 'border-danger-line' : t.kind === 'ok' ? 'border-ok/30' : 'border-line-strong'
           )}
         >
-          <span className={clsx('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', t.kind === 'error' ? 'bg-crimson' : t.kind === 'ok' ? 'bg-ok' : 'bg-info')} />
+          <span className={clsx('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', t.kind === 'error' ? 'bg-danger' : t.kind === 'ok' ? 'bg-ok' : 'bg-info')} />
           <span className="selectable flex-1 break-words">
             {t.text}
             {t.action && (

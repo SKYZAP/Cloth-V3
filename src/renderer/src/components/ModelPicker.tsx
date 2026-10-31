@@ -424,7 +424,8 @@ function PickerList({
             aria-selected={i === selectedIndex}
             onMouseMove={() => i !== active && setActive(i)}
             onClick={() => choose(r)}
-            className="relative flex min-h-[38px] cursor-default items-center gap-2.5 rounded-[10px] px-2 py-1.5 mobile:min-h-[48px]"
+            // Dim text is under 4.5:1 on the hover highlight, so the highlighted row lifts it to muted.
+            className={clsx('relative flex min-h-[38px] cursor-default items-center gap-2.5 rounded-[10px] px-2 py-1.5 mobile:min-h-[48px]', i === active && '[&_.text-dim]:text-muted')}
           >
             <span className="w-3.5 shrink-0 text-crimson-hi">{i === selectedIndex && <Check size={13} weight="bold" />}</span>
             {r.kind === 'none' ? (

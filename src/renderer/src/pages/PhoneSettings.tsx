@@ -56,7 +56,7 @@ export function PhoneSettings() {
       {status && settings.remoteEnabled && (
         <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
           <span className={clsx('h-1.5 w-1.5 rounded-full', status.running ? 'bg-ok' : 'bg-crimson')} />
-          <span className={status.running ? 'text-muted' : 'text-crimson-hi'}>{status.running ? `Listening on port ${status.port}` : (status.error ?? 'Not running')}</span>
+          <span className={status.running ? 'text-muted' : 'text-danger-hi'}>{status.running ? `Listening on port ${status.port}` : (status.error ?? 'Not running')}</span>
           {reachable(status.hosts).map((h) => (
             <Badge key={h.address} tone={h.kind === 'tailscale' ? 'info' : 'neutral'} title={h.label}>
               <span className="font-mono">{h.address}</span>

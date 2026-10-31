@@ -25,6 +25,15 @@
   --color-crimson-lo: #9f1830;
   --color-crimson-soft: rgb(220 38 69 / 0.12);
   --color-crimson-line: rgb(220 38 69 / 0.35);
+  /* Small crimson text on a crimson-soft tint (badges, chips): crimson-hi is under 4.5:1 there. */
+  --color-crimson-text: #ff7a90;
+
+  /* Errors, failures, deletions and destructive actions: a warmer red, so they never read as the brand or a primary action. */
+  --color-danger: #e8553a;
+  --color-danger-hi: #f5704f;
+  --color-danger-lo: #a8381f;
+  --color-danger-soft: rgb(232 85 58 / 0.12);
+  --color-danger-line: rgb(232 85 58 / 0.4);
 
   --color-ok: #3fb97a;
   --color-warn: #e0a43a;

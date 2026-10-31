@@ -6,7 +6,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, confirmAction } from '@/components/ui'
 
-const LETTER_COLOR: Record<string, string> = { M: 'text-warn', A: 'text-ok', '?': 'text-ok', D: 'text-crimson-hi', R: 'text-info', C: 'text-info', U: 'text-crimson-hi', T: 'text-warn' }
+const LETTER_COLOR: Record<string, string> = { M: 'text-warn', A: 'text-ok', '?': 'text-ok', D: 'text-danger-hi', R: 'text-info', C: 'text-info', U: 'text-danger-hi', T: 'text-warn' }
 
 function letter(f: GitFile, staged: boolean): string {
   if (f.conflicted) return 'U'
@@ -314,10 +314,10 @@ function DiffView({ text }: { text: string }) {
                   </td>
                 </tr>
               ) : (
-                <tr key={i} className={l.kind === 'add' ? 'bg-ok/[0.10]' : l.kind === 'del' ? 'bg-crimson/[0.12]' : undefined}>
+                <tr key={i} className={l.kind === 'add' ? 'bg-ok/[0.10]' : l.kind === 'del' ? 'bg-danger/[0.12]' : undefined}>
                   <td className="w-px select-none whitespace-nowrap px-1.5 text-right align-top text-dim/60">{l.a}</td>
                   <td className="w-px select-none whitespace-nowrap px-1.5 text-right align-top text-dim/60">{l.b}</td>
-                  <td className={clsx('selectable whitespace-pre pr-4', l.kind === 'add' ? 'text-ok' : l.kind === 'del' ? 'text-crimson-hi' : 'text-fg/80')}>
+                  <td className={clsx('selectable whitespace-pre pr-4', l.kind === 'add' ? 'text-ok' : l.kind === 'del' ? 'text-danger-hi' : 'text-fg/80')}>
                     <span className="mr-1 select-none opacity-60">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
                     {l.text || ' '}
                   </td>

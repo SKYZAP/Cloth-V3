@@ -8,11 +8,12 @@ import { SplitBack } from './SplitView'
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-crimson text-white hover:bg-crimson-hi shadow-[0_0_0_1px_rgb(255_255_255/0.06)_inset] disabled:hover:bg-crimson',
+  // Disabled turns grey rather than faded crimson, so it can't be mistaken for a ready primary button.
+  primary: 'bg-crimson text-white hover:bg-crimson-hi shadow-[0_0_0_1px_rgb(255_255_255/0.06)_inset] disabled:bg-elev-2 disabled:text-dim disabled:shadow-none disabled:opacity-100',
   secondary: 'bg-elev-2 text-fg border border-line hover:bg-hover hover:border-line-strong',
   outline: 'border border-line text-muted hover:text-fg hover:border-line-strong hover:bg-elev',
   ghost: 'text-muted hover:text-fg hover:bg-elev-2',
-  danger: 'text-crimson-hi border border-crimson-line hover:bg-crimson-soft'
+  danger: 'text-danger-hi border border-danger-line hover:bg-danger-soft'
 }
 
 export function Button({
@@ -48,7 +49,7 @@ export function IconButton({ className, active, ...rest }: ButtonHTMLAttributes<
       {...rest}
       className={clsx(
         'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:opacity-40',
-        active ? 'bg-crimson-soft text-crimson-hi' : 'text-dim hover:text-fg hover:bg-elev-2',
+        active ? 'bg-crimson-soft text-crimson-text' : 'text-dim hover:text-fg hover:bg-elev-2',
         className
       )}
     />
@@ -107,10 +108,11 @@ export function Switch({ checked, onChange, label, ariaLabel, disabled }: { chec
   )
 }
 
-type Tone = 'neutral' | 'crimson' | 'ok' | 'warn' | 'info' | 'dim'
+type Tone = 'neutral' | 'crimson' | 'danger' | 'ok' | 'warn' | 'info' | 'dim'
 const tones: Record<Tone, string> = {
   neutral: 'bg-elev-2 text-muted border-line',
-  crimson: 'bg-crimson-soft text-crimson-hi border-crimson-line',
+  crimson: 'bg-crimson-soft text-crimson-text border-crimson-line',
+  danger: 'bg-danger-soft text-danger-hi border-danger-line',
   ok: 'bg-ok/10 text-ok border-ok/30',
   warn: 'bg-warn/10 text-warn border-warn/30',
   info: 'bg-info/10 text-info border-info/30',
@@ -126,7 +128,7 @@ export function Badge({ tone = 'neutral', children, className, title }: { tone?:
 }
 
 export function Dot({ tone = 'neutral', pulse }: { tone?: Tone; pulse?: boolean }) {
-  const color = { neutral: 'bg-dim', crimson: 'bg-crimson', ok: 'bg-ok', warn: 'bg-warn', info: 'bg-info', dim: 'bg-line-strong' }[tone]
+  const color = { neutral: 'bg-dim', crimson: 'bg-crimson', danger: 'bg-danger', ok: 'bg-ok', warn: 'bg-warn', info: 'bg-info', dim: 'bg-line-strong' }[tone]
   return <span className={clsx('inline-block h-2 w-2 shrink-0 rounded-full', color, pulse && 'pulse-crimson')} />
 }
 
@@ -177,7 +179,7 @@ export function Segmented<T extends string>({ value, onChange, items }: { value:
           title={it.title}
           aria-pressed={value === it.value}
           onClick={() => onChange(it.value)}
-          className={clsx('h-6 rounded px-2.5 text-[11.5px] font-medium transition-colors', value === it.value ? 'bg-elev-2 text-fg shadow-sm' : 'text-dim hover:text-muted')}
+          className={clsx('h-7 rounded px-2.5 text-[11.5px] font-medium transition-colors', value === it.value ? 'bg-elev-2 text-fg shadow-sm' : 'text-dim hover:text-muted')}
         >
           {it.label}
         </button>

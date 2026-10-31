@@ -93,7 +93,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
           {results && !searching ? `${shown.length} models` : ''}
         </p>
         {error ? (
-          <p className="px-1 py-6 text-[12.5px] text-crimson-hi">
+          <p className="px-1 py-6 text-[12.5px] text-danger-hi">
             {error}. Check the connection and type again to retry.
           </p>
         ) : results && !shown.length ? (
@@ -117,7 +117,8 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
                     <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" translate="no">
                       {m.name}
                     </span>
-                    {fit && <FitPill fit={fit} />}
+                    {/* The filter already says it: only show the fit where it adds something. */}
+                    {fit && fit !== filter && <FitPill fit={fit} />}
                   </span>
                   <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-dim">
                     <span className="truncate" translate="no">
@@ -262,7 +263,7 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
         {error ? (
           <div className="grid gap-2 py-4 text-[12.5px]">
-            <p className="text-crimson-hi">{error}</p>
+            <p className="text-danger-hi">{error}</p>
             <Button size="sm" className="w-fit" onClick={load}>
               Try again
             </Button>
@@ -281,7 +282,7 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
                 key={g.quant}
                 className={clsx(
                   'grid cursor-default grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 rounded-[10px] border px-3 py-2 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-crimson-line',
-                  quant === g.quant ? 'border-crimson-line bg-crimson-soft' : 'border-transparent hover:bg-elev-2'
+                  quant === g.quant ? 'border-crimson-line bg-elev-2' : 'border-transparent hover:bg-elev-2'
                 )}
               >
                 <input type="radio" name="quant" value={g.quant} checked={quant === g.quant} onChange={() => setQuant(g.quant)} className="accent-[var(--color-crimson)]" />
@@ -290,7 +291,7 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
                     <span className="font-mono text-[12.5px] font-medium" translate="no">
                       {g.quant}
                     </span>
-                    {g.recommended && <span className="rounded border border-crimson-line px-1.5 py-px text-[10.5px] font-medium text-crimson-hi">Recommended</span>}
+                    {g.recommended && <span className="rounded border border-crimson-line px-1.5 py-px text-[10.5px] font-medium text-crimson-text">Recommended</span>}
                   </span>
                   <span className="block text-[11.5px] tabular-nums text-dim">
                     {fileSize(g.size)} download{g.files.length > 1 ? ` in ${g.files.length} parts` : ''}, needs about {g.needGB} GB

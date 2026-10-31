@@ -19,12 +19,12 @@ function RunRow({ run, focused }: { run: RunInfo; focused?: boolean }) {
         <span
           className={clsx(
             'h-2 w-2 shrink-0 rounded-full',
-            run.status === 'running' ? 'animate-pulse bg-warn' : run.outcome === 'partial' ? 'bg-warn' : run.status === 'done' && run.outcome !== 'blocked' ? 'bg-ok' : 'bg-crimson'
+            run.status === 'running' ? 'animate-pulse bg-warn' : run.outcome === 'partial' ? 'bg-warn' : run.status === 'done' && run.outcome !== 'blocked' ? 'bg-ok' : 'bg-danger'
           )}
           aria-label={run.status === 'running' ? 'Running' : (short ?? (run.status === 'done' ? 'Done' : 'Failed'))}
         />
         <span className="min-w-0 truncate text-fg">{run.name}</span>
-        {short && <span className={clsx('shrink-0 text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-crimson-hi')}>{short}</span>}
+        {short && <span className={clsx('shrink-0 text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}
         {run.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10.5px] text-agent">{run.tierName}</span>}
         <span className={clsx('shrink-0 text-[11px]', run.role === 'worker' ? 'text-warn' : 'text-dim')}>{runAccess(run.role)}</span>
         <div className="flex-1" />

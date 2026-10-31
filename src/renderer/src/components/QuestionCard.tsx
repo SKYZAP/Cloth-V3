@@ -37,7 +37,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
           <ChatCircleDots size={15} weight="fill" />
         </span>
         <span className="flex-1 text-[12.5px] font-semibold">Question for you</span>
-        <span className="flex items-center gap-1 rounded-full bg-crimson-soft px-2 py-0.5 text-[10.5px] font-medium text-crimson-hi">
+        <span className="flex items-center gap-1 rounded-full bg-crimson-soft px-2 py-0.5 text-[10.5px] font-medium text-crimson-text">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-crimson-hi" />
           waiting for your answer
         </span>

@@ -121,7 +121,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!listing ? (
           <div className="p-2">
-            {error && <div className="m-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12.5px] text-crimson-hi">{error}</div>}
+            {error && <div className="m-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-[12.5px] text-danger-hi">{error}</div>}
             {roots.map((r) => (
               <Row key={r.path} icon={r.name === 'Home' ? <House size={20} className="text-crimson-hi" /> : <HardDrives size={20} className="text-muted" />} label={r.name} sub={r.path} onClick={() => go(r.path)} />
             ))}

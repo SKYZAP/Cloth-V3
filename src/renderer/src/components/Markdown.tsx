@@ -42,7 +42,7 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
 function Citation({ n, hit }: { n: number; hit?: RagHit }) {
   return (
     <span className="group/cite relative inline-block align-baseline">
-      <span className="mx-px inline-flex h-4 min-w-4 cursor-default items-center justify-center rounded bg-crimson-soft px-1 text-[10px] font-semibold text-crimson-hi no-underline">{n}</span>
+      <span className="mx-px inline-flex h-4 min-w-4 cursor-default items-center justify-center rounded bg-crimson-soft px-1 text-[10px] font-semibold text-crimson-text no-underline">{n}</span>
       {hit && (
         <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-80 -translate-x-1/2 rounded-lg border border-line-strong bg-elev p-2.5 text-left text-[11.5px] leading-snug shadow-xl shadow-black/50 group-hover/cite:block">
           <span className="block font-semibold text-fg">{hit.title}</span>

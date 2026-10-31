@@ -151,7 +151,7 @@ export function WebSearchSettings() {
             Test search
           </Button>
         </div>
-        {error && <div className="mt-2 rounded-md border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{error}</div>}
+        {error && <div className="mt-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{error}</div>}
         {result && (
           <div className="mt-2 space-y-1.5">
             <div className="text-[11.5px] text-dim">
@@ -191,9 +191,9 @@ function EngineCard({
   children: React.ReactNode
 }) {
   return (
-    <div className={clsx('space-y-2 rounded-lg border p-3', active ? 'border-crimson-line bg-crimson-soft' : 'border-line')}>
+    <div className={clsx('space-y-2 rounded-lg border p-3', active ? 'border-crimson-line bg-elev' : 'border-line')}>
       <div className="flex items-center gap-2">
-        <Dot tone={ok ? 'ok' : 'crimson'} pulse={busy} />
+        <Dot tone={ok ? 'ok' : 'dim'} pulse={busy} />
         <span className="text-[12.5px] font-semibold">{name}</span>
         {active && <Badge tone="crimson">active</Badge>}
         <div className="flex-1" />

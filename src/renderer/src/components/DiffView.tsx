@@ -29,10 +29,10 @@ export function DiffView({ diff, maxHeight = 320 }: { diff: string; maxHeight?: 
                 </td>
               </tr>
             ) : (
-              <tr key={i} className={clsx(r.kind === 'add' && 'bg-ok/[0.08]', r.kind === 'del' && 'bg-crimson/[0.09]')}>
+              <tr key={i} className={clsx(r.kind === 'add' && 'bg-ok/[0.08]', r.kind === 'del' && 'bg-danger/[0.09]')}>
                 <td className="w-9 select-none border-r border-line/60 px-1.5 text-right text-[10px] text-dim/70">{r.a ?? ''}</td>
                 <td className="w-9 select-none border-r border-line/60 px-1.5 text-right text-[10px] text-dim/70">{r.b ?? ''}</td>
-                <td className={clsx('whitespace-pre px-2', r.kind === 'add' ? 'text-ok' : r.kind === 'del' ? 'text-crimson-hi' : 'text-muted')}>
+                <td className={clsx('whitespace-pre px-2', r.kind === 'add' ? 'text-ok' : r.kind === 'del' ? 'text-danger-hi' : 'text-muted')}>
                   <span className="mr-1.5 select-none opacity-60">{r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ' '}</span>
                   {r.text}
                 </td>
@@ -48,7 +48,7 @@ export function DiffView({ diff, maxHeight = 320 }: { diff: string; maxHeight?: 
 export function DiffStat({ added, removed }: { added: number; removed: number }) {
   return (
     <span className="font-mono text-[10.5px]">
-      <span className="text-ok">+{added}</span> <span className="text-crimson-hi">−{removed}</span>
+      <span className="text-ok">+{added}</span> <span className="text-danger-hi">−{removed}</span>
     </span>
   )
 }

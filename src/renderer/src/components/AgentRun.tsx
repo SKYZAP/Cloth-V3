@@ -17,8 +17,8 @@ const RECENT = 5
 const RESULT: Record<Exclude<RunState, 'running'>, { word: string; cls: string }> = {
   done: { word: 'Done', cls: 'text-ok' },
   partial: { word: 'Partly done', cls: 'text-warn' },
-  blocked: { word: 'Blocked', cls: 'text-crimson-hi' },
-  failed: { word: 'Failed', cls: 'text-crimson-hi' }
+  blocked: { word: 'Blocked', cls: 'text-danger-hi' },
+  failed: { word: 'Failed', cls: 'text-danger-hi' }
 }
 
 function StateIcon({ state }: { state: RunState }) {

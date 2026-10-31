@@ -43,7 +43,7 @@ const SAVE_DELAY = 600
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { kind: 'error'; text: string }
 type Row = 'agent' | 'tools' | 'knowledge' | 'folder' | 'commands'
 
-const OUTCOME_TEXT: Record<RunOutcome, string> = { running: 'text-muted', ok: 'text-ok', partial: 'text-warn', failed: 'text-crimson-hi' }
+const OUTCOME_TEXT: Record<RunOutcome, string> = { running: 'text-muted', ok: 'text-ok', partial: 'text-warn', failed: 'text-danger-hi' }
 
 function OutcomeIcon({ outcome }: { outcome: RunOutcome }) {
   if (outcome === 'running') return <Loader2 size={14} aria-hidden="true" className="animate-spin text-warn motion-reduce:animate-none" />
@@ -297,7 +297,7 @@ export function AutomationDetail({
               </>
             )}
           </p>
-          <span aria-live="polite" className={clsx('max-w-[45%] shrink-0 text-right text-[12px]', saveState.kind === 'error' ? 'text-crimson-hi' : 'text-dim')}>
+          <span aria-live="polite" className={clsx('max-w-[45%] shrink-0 text-right text-[12px]', saveState.kind === 'error' ? 'text-danger-hi' : 'text-dim')}>
             {saveState.kind === 'saving' ? 'Saving…' : saveState.kind === 'saved' ? 'Saved' : saveState.kind === 'error' ? saveState.text : ''}
           </span>
         </div>
@@ -337,7 +337,7 @@ export function AutomationDetail({
               <WatchPicker key={watch.kind} value={watch} onChange={setWatch} folder={workspace} configs={configs} status={status} />
               {watch.kind !== 'files' && savedWatch && savedWatch.kind === watch.kind && (
                 <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                  <span className={checked?.error ? 'text-crimson-hi' : 'text-dim'}>{checked?.error ? `Last check failed: ${checked.error}` : checked?.checkedAt ? `Last checked ${timeAgo(checked.checkedAt)}.` : 'Not checked yet.'}</span>
+                  <span className={checked?.error ? 'text-danger-hi' : 'text-dim'}>{checked?.error ? `Last check failed: ${checked.error}` : checked?.checkedAt ? `Last checked ${timeAgo(checked.checkedAt)}.` : 'Not checked yet.'}</span>
                   <Button size="sm" variant="ghost" className={FOCUS} icon={<RefreshCw size={12} aria-hidden="true" />} onClick={async () => setChecked((await attempt(() => api.workflows.checkNow(workflow.id))) ?? checked)}>
                     Check now
                   </Button>
@@ -419,7 +419,7 @@ export function AutomationDetail({
                     <OutcomeIcon outcome={outcome} />
                     <span className="sr-only">{OUTCOME_WORD[outcome]}:</span>
                     <span className="truncate text-[12.5px] tabular-nums text-muted">{r.status === 'running' ? 'Now' : cap(runWhen(r.startedAt, now))}</span>
-                    <span className={clsx('truncate text-[12.5px] max-[700px]:hidden mobile:hidden', outcome === 'failed' ? 'text-crimson-hi' : 'text-dim')} title={summary}>
+                    <span className={clsx('truncate text-[12.5px] max-[700px]:hidden mobile:hidden', outcome === 'failed' ? 'text-danger-hi' : 'text-dim')} title={summary}>
                       {summary}
                     </span>
                     <span className="whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-dim">{formatDuration((r.finishedAt ?? now) - r.startedAt)}</span>
@@ -476,7 +476,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 function FooterButton({ danger, onClick, children }: { danger?: boolean; onClick(): void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={clsx('h-8 rounded px-1 text-[12.5px] text-dim', danger ? 'hover:text-crimson-hi' : 'hover:text-fg', FOCUS)}>
+    <button type="button" onClick={onClick} className={clsx('h-8 rounded px-1 text-[12.5px] text-dim', danger ? 'hover:text-danger-hi' : 'hover:text-fg', FOCUS)}>
       {children}
     </button>
   )
@@ -581,7 +581,7 @@ function ScheduleSentence({ schedule, onChange, ok }: { schedule: Schedule; onCh
             placeholder="0 9 * * 1-5"
             spellCheck={false}
             autoComplete="off"
-            className={clsx(pickClass, 'w-48 font-mono', !ok && 'border-crimson-line')}
+            className={clsx(pickClass, 'w-48 font-mono', !ok && 'border-danger-line')}
           />
         )}
       </div>
@@ -591,7 +591,7 @@ function ScheduleSentence({ schedule, onChange, ok }: { schedule: Schedule; onCh
         </p>
       )}
       {!ok && (
-        <p id="cron-error" className="mt-1.5 text-[12px] text-crimson-hi">
+        <p id="cron-error" className="mt-1.5 text-[12px] text-danger-hi">
           That isn’t a valid cron schedule. Five fields: minute, hour, day of month, month, day of week (like 0 9 * * 1-5).
         </p>
       )}

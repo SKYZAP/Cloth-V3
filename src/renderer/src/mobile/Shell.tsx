@@ -116,7 +116,7 @@ function Rail({ page, onGo, onPc }: { page: Page; onGo(p: Page): void; onPc(): v
       <div className="flex-1" />
       <button onClick={onPc} aria-label="Your PC" className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] text-muted active:bg-elev-2">
         <Desktop size={22} />
-        <span className={clsx('absolute right-2.5 top-2.5 h-2 w-2 rounded-full ring-2 ring-panel', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-crimson')} />
+        <span className={clsx('absolute right-2.5 top-2.5 h-2 w-2 rounded-full ring-2 ring-panel', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-danger')} />
       </button>
     </nav>
   )
@@ -165,7 +165,7 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
           <div className="min-w-0 flex-1">
             <div className="truncate text-[14px] font-semibold">{info?.desktop ?? 'Your PC'}</div>
             <div className="flex items-center gap-1.5 text-[12px] text-dim">
-              <span className={clsx('h-1.5 w-1.5 rounded-full', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-crimson')} />
+              <span className={clsx('h-1.5 w-1.5 rounded-full', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-danger')} />
               {state === 'online' ? `Connected · ${info?.host}` : state === 'connecting' ? 'Connecting…' : 'Offline'}
             </div>
           </div>
@@ -174,7 +174,7 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
           <button onClick={reconnectNow} disabled={state === 'online'} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-line-strong text-[13px] text-muted disabled:opacity-40">
             <ArrowClockwise size={15} /> Reconnect
           </button>
-          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-crimson-line text-[13px] text-crimson-hi">
+          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-danger-line text-[13px] text-danger-hi">
             <SignOut size={15} /> Forget PC
           </button>
         </div>
@@ -198,13 +198,13 @@ function ConnectionBanner() {
     <AnimatePresence initial={false}>
       {shown && (
         <motion.div key="banner" initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 36 }} className="shrink-0 overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-crimson-line bg-crimson-soft px-4 py-2.5 text-[12.5px]">
-            <WifiSlash size={16} className="shrink-0 text-crimson-hi" />
+          <div className="flex items-center gap-2.5 border-b border-danger-line bg-danger-soft px-4 py-2.5 text-[12.5px]">
+            <WifiSlash size={16} className="shrink-0 text-danger-hi" />
             <span className="min-w-0 flex-1 truncate text-fg">
               {state === 'connecting' ? `Reconnecting to ${info?.desktop ?? 'your PC'}…` : (info?.error ?? `Can't reach ${info?.desktop ?? 'your PC'}`)}
             </span>
             {state !== 'connecting' && (
-              <button onClick={reconnectNow} className="shrink-0 rounded-lg px-2 py-1 font-semibold text-crimson-hi active:bg-crimson-line">
+              <button onClick={reconnectNow} className="shrink-0 rounded-lg px-2 py-1 font-semibold text-danger-hi active:bg-danger-line">
                 Retry
               </button>
             )}

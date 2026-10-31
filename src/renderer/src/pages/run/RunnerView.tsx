@@ -132,7 +132,7 @@ function Header({ runner, status, meta, ready }: { runner: Runner; status: Runne
               Starting
             </span>
           )}
-          {status.state === 'error' && <span className="text-[12.5px] text-crimson-hi">Stopped with an error</span>}
+          {status.state === 'error' && <span className="text-[12.5px] text-danger-hi">Stopped with an error</span>}
           {status.state === 'stopped' && <span className="text-[12.5px] text-dim">Stopped</span>}
         </div>
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 text-[12px] text-dim">
@@ -159,7 +159,7 @@ function Header({ runner, status, meta, ready }: { runner: Runner; status: Runne
           Start
         </Button>
       )}
-      {status.state === 'error' && status.error && <p className="selectable basis-full whitespace-pre-wrap break-words text-[12px] text-crimson-hi">{status.error}</p>}
+      {status.state === 'error' && status.error && <p className="selectable basis-full whitespace-pre-wrap break-words text-[12px] text-danger-hi">{status.error}</p>}
     </div>
   )
 }
@@ -241,7 +241,7 @@ function Setup({
                   Download Bonsai
                 </Button>
               ) : runner.source ? (
-                <Button size="sm" variant="ghost" className="!text-crimson-hi hover:!bg-crimson-soft" icon={<Trash size={13} />} onClick={() => void remove()}>
+                <Button size="sm" variant="ghost" className="!text-danger-hi hover:!bg-danger-soft" icon={<Trash size={13} />} onClick={() => void remove()}>
                   Delete
                 </Button>
               ) : null}
@@ -449,7 +449,7 @@ function Advanced({ runner, locked, save, onRemoved }: { runner: Runner; locked:
       </div>
       {!builtin && (
         <div className="border-t border-line px-3.5 py-2.5">
-          <Button size="sm" variant="ghost" className="!text-crimson-hi hover:!bg-crimson-soft" icon={<Trash size={13} />} disabled={locked} onClick={() => void remove()}>
+          <Button size="sm" variant="ghost" className="!text-danger-hi hover:!bg-danger-soft" icon={<Trash size={13} />} disabled={locked} onClick={() => void remove()}>
             Delete model
           </Button>
         </div>

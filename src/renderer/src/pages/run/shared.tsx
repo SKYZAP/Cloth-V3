@@ -54,7 +54,7 @@ export function compact(n: number): string {
 export const FIT: Record<HubFit, { label: string; tone: string }> = {
   gpu: { label: 'Fits on the GPU', tone: 'border-ok/30 bg-ok/10 text-ok' },
   ram: { label: 'Needs system memory', tone: 'border-warn/30 bg-warn/10 text-warn' },
-  'too-big': { label: 'Too big for this PC', tone: 'border-crimson-line bg-crimson-soft text-crimson-hi' }
+  'too-big': { label: 'Too big for this PC', tone: 'border-danger-line bg-danger-soft text-danger-hi' }
 }
 
 export function FitPill({ fit, className }: { fit: HubFit; className?: string }) {
@@ -236,7 +236,7 @@ export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className={clsx('selectable max-h-[280px] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line', tall && '@[1040px]:h-[calc(100vh-330px)] @[1040px]:max-h-none')}
+        className={clsx('selectable max-h-[280px] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line', tall && lines.length > 0 && '@[1040px]:h-[calc(100vh-330px)] @[1040px]:max-h-none')}
         translate="no"
       >
         {lines.map((line, i) => (
@@ -244,7 +244,7 @@ export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
             {line || ' '}
           </div>
         ))}
-        {!lines.length && <p className="font-sans text-[12px] text-dim">Nothing yet.</p>}
+        {!lines.length && <p className="font-sans text-[12px] text-dim">Nothing yet. The runner’s output shows here once it starts.</p>}
       </div>
     </Section>
   )

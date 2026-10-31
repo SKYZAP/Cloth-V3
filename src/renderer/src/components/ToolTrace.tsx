@@ -126,7 +126,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
       initial={fresh ? { opacity: 0, y: 8, scale: 0.98 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 380, damping: 26 }}
-      className={clsx(compact ? 'mb-1.5 rounded-[10px]' : 'mb-4 rounded-[14px]', 'overflow-hidden border bg-panel transition-colors', trace.status === 'error' ? 'border-crimson-line' : 'border-line hover:border-line-strong')}
+      className={clsx(compact ? 'mb-1.5 rounded-[10px]' : 'mb-4 rounded-[14px]', 'overflow-hidden border bg-panel transition-colors', trace.status === 'error' ? 'border-danger-line' : 'border-line hover:border-line-strong')}
     >
       <button onClick={() => setOpen(!open)} aria-expanded={open} className={clsx('flex w-full items-center gap-2.5 px-3 text-left', compact ? 'py-1.5' : 'py-2.5')}>
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
@@ -149,7 +149,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
             </motion.span>
           ) : (
             <motion.span key="err" initial={{ scale: 0.6 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 600, damping: 14 }}>
-              <WarningCircle size={15} weight="fill" className="text-crimson-hi" />
+              <WarningCircle size={15} weight="fill" className="text-danger-hi" />
             </motion.span>
           )}
         </span>
@@ -274,7 +274,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
                 </Section>
               ) : (
                 <Section label={trace.status === 'error' ? 'Error' : 'Result'}>
-                  <pre className={clsx('selectable max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px]', trace.status === 'error' ? 'text-crimson-hi' : 'text-muted')}>
+                  <pre className={clsx('selectable max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px]', trace.status === 'error' ? 'text-danger-hi' : 'text-muted')}>
                     {trace.result || (trace.status === 'running' ? 'Running…' : '(empty)')}
                   </pre>
                 </Section>
@@ -366,7 +366,7 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
   return (
     <div className="rounded-[10px] border border-line bg-bg px-3 py-2.5">
       <div className="flex items-start gap-2">
-        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-crimson-soft px-1 text-[10px] font-semibold text-crimson-hi">{n}</span>}
+        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-crimson-soft px-1 text-[10px] font-semibold text-crimson-text">{n}</span>}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {isUrl ? <GlobeHemisphereWest size={12} className="shrink-0 text-dim" /> : <FileText size={12} className="shrink-0 text-dim" />}

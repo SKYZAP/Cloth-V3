@@ -100,7 +100,7 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
           </div>
         </div>
         {empty && (
-          <p id="draft-empty" role="alert" className="mt-1.5 text-[12.5px] text-crimson-hi">
+          <p id="draft-empty" role="alert" className="mt-1.5 text-[12.5px] text-danger-hi">
             Describe what the automation should do first.
           </p>
         )}
@@ -112,7 +112,7 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
           </p>
         ) : error ? (
           <div id="draft-error" role="alert" className="mt-3.5 grid gap-2 text-[12.5px]">
-            <p className="text-crimson-hi">Cloth couldn’t draft it: {error}</p>
+            <p className="text-danger-hi">Cloth couldn’t draft it: {error}</p>
             <p className="text-muted">{settings?.defaultModel ? 'Try again, or start from scratch and fill it in yourself.' : 'Set a default model in Settings to draft automations.'}</p>
             <div className="flex flex-wrap gap-2">
               {!settings?.defaultModel && (

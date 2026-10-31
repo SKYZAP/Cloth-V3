@@ -14,7 +14,7 @@ export const STATE: Record<McpClientStatus['state'], { label: string; dot: strin
   off: { label: 'Stopped', dot: 'bg-line-strong' },
   starting: { label: 'Starting…', dot: 'bg-warn animate-pulse motion-reduce:animate-none' },
   ready: { label: 'Running', dot: 'bg-ok' },
-  error: { label: 'Failed', dot: 'bg-crimson' }
+  error: { label: 'Failed', dot: 'bg-danger' }
 }
 
 const quote = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
@@ -125,7 +125,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
         </div>
         {st?.state === 'error' && st.error && (
           <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px]">
-            <div className="selectable font-mono text-[11.5px] text-crimson-hi">{st.error}</div>
+            <div className="selectable font-mono text-[11.5px] text-danger-hi">{st.error}</div>
             <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and token under Connection, then try again.' : 'Check the program and its arguments under Connection, then try again.'}</div>
           </div>
         )}
@@ -215,7 +215,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
       </details>
 
       <div className="border-t border-line pt-4">
-        <Button size="sm" variant="ghost" className="!text-crimson-hi hover:!bg-crimson-soft" icon={<Trash size={12} />} onClick={() => void servers.remove(c).then((gone) => gone && onRemoved())}>
+        <Button size="sm" variant="ghost" className="!text-danger-hi hover:!bg-danger-soft" icon={<Trash size={12} />} onClick={() => void servers.remove(c).then((gone) => gone && onRemoved())}>
           Remove {c.name}
         </Button>
       </div>
@@ -262,7 +262,7 @@ export function ServerForm({ initial, taken, onSave, onCancel }: { initial?: Mcp
       </div>
       <div aria-live="polite" className="min-h-4 text-[11.5px]">
         {error ? (
-          <span className="text-crimson-hi">{error}</span>
+          <span className="text-danger-hi">{error}</span>
         ) : valid && !initial ? (
           <span className="text-dim">Adds {kinds.join(', ')}.</span>
         ) : (

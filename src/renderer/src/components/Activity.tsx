@@ -63,7 +63,7 @@ export function ActivityGroup({
             ) : stats.ms > 0 ? (
               <>
                 Worked for {duration(stats.ms)}
-                <span className="opacity-50"> · </span>
+                <span aria-hidden="true"> · </span>
                 {lowerFirst(describeTools(traces))}
               </>
             ) : (
@@ -72,10 +72,10 @@ export function ActivityGroup({
           </span>
           {stats.changed && (
             <span className="shrink-0 font-mono text-[11.5px]">
-              <span className="text-ok">+{stats.added}</span> <span className="text-crimson-hi">-{stats.removed}</span>
+              <span className="text-ok">+{stats.added}</span> <span className="text-danger-hi">-{stats.removed}</span>
             </span>
           )}
-          {stats.failed > 0 && <span className="shrink-0 font-mono text-[11.5px] text-crimson-hi">{stats.failed} failed</span>}
+          {stats.failed > 0 && <span className="shrink-0 font-mono text-[11.5px] text-danger-hi">{stats.failed} failed</span>}
         </button>
       )}
       <AnimatePresence initial={false}>
@@ -181,7 +181,7 @@ export function ToolRow({ trace, open, awaiting, onToggle }: { trace: ToolTrace;
       aria-expanded={open}
       className={clsx('-ml-1.5 grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-baseline gap-2.5 rounded-[7px] px-1.5 py-1 text-left text-[13px] text-muted transition-colors hover:bg-panel', open && 'bg-panel')}
     >
-      <span className={clsx('flex self-center', failed ? 'text-crimson-hi' : 'text-dim')}>
+      <span className={clsx('flex self-center', failed ? 'text-danger-hi' : 'text-dim')}>
         <Icon size={13} />
       </span>
       <span className="min-w-0 truncate">
@@ -192,7 +192,7 @@ export function ToolRow({ trace, open, awaiting, onToggle }: { trace: ToolTrace;
       ) : trace.status === 'running' ? (
         <CircleNotch size={12} className="self-center animate-spin text-dim motion-reduce:animate-none" />
       ) : (
-        <span className={clsx('font-mono text-[11px]', failed ? 'text-crimson-hi' : 'text-dim')}>
+        <span className={clsx('font-mono text-[11px]', failed ? 'text-danger-hi' : 'text-dim')}>
           {failed ? `failed${trace.durationMs !== null ? ` · ${duration(trace.durationMs)}` : ''}` : duration(trace.durationMs)}
         </span>
       )}
@@ -222,7 +222,7 @@ export function ChangedFiles({ traces, onUndo }: { traces: ToolTrace[]; onUndo?(
           {files.length} {files.length === 1 ? 'file' : 'files'} changed
         </b>
         <span className="font-mono text-ok">+{added}</span>
-        <span className="font-mono text-crimson-hi">-{removed}</span>
+        <span className="font-mono text-danger-hi">-{removed}</span>
         {onUndo && undoable.length > 0 ? (
           <button
             disabled={busy}
@@ -243,7 +243,7 @@ export function ChangedFiles({ traces, onUndo }: { traces: ToolTrace[]; onUndo?(
             {f.path}
           </span>
           <span className="ml-auto shrink-0 font-mono text-[11.5px]">
-            <span className="text-ok">+{f.added}</span> <span className="text-crimson-hi">-{f.removed}</span>
+            <span className="text-ok">+{f.added}</span> <span className="text-danger-hi">-{f.removed}</span>
           </span>
         </div>
       ))}

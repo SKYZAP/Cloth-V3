@@ -165,7 +165,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
       ) : (
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
-            {phase === 'running' ? <Spinner /> : phase === 'done' ? <Check size={16} className="text-ok" /> : <XCircle size={16} className="text-crimson-hi" />}
+            {phase === 'running' ? <Spinner /> : phase === 'done' ? <Check size={16} className="text-ok" /> : <XCircle size={16} className="text-danger-hi" />}
             <div className="min-w-0 flex-1 text-[13px] font-medium">
               {phase === 'done' ? 'Installer ready' : phase === 'failed' ? (end?.type === 'failed' ? end.message : 'Export failed') : step?.type === 'step' ? step.title : 'Starting…'}
             </div>
@@ -177,7 +177,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-elev-2">
             <div
-              className={clsx('h-full rounded-full transition-[width] duration-500', phase === 'failed' ? 'bg-crimson-lo' : phase === 'done' ? 'bg-ok' : 'bg-crimson')}
+              className={clsx('h-full rounded-full transition-[width] duration-500', phase === 'failed' ? 'bg-danger-lo' : phase === 'done' ? 'bg-ok' : 'bg-crimson')}
               style={{ width: `${phase === 'done' ? 100 : step?.type === 'step' ? ((step.step - 0.5) / step.steps) * 100 : 3}%` }}
             />
           </div>
@@ -188,7 +188,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
                   <span className="text-crimson-hi">{e.step}/{e.steps}</span> {e.title}
                 </div>
               ) : e.type === 'log' ? (
-                <div key={i} className={clsx('whitespace-pre-wrap break-words pl-4', e.level === 'error' ? 'text-crimson-hi' : e.level === 'warn' ? 'text-warn' : 'text-dim')}>
+                <div key={i} className={clsx('whitespace-pre-wrap break-words pl-4', e.level === 'error' ? 'text-danger-hi' : e.level === 'warn' ? 'text-warn' : 'text-dim')}>
                   {e.message}
                 </div>
               ) : e.type === 'done' ? (
@@ -226,7 +226,7 @@ function Chip({ icon, label, title }: { icon: React.ReactNode; label: string; ti
 
 function Notice({ tone, text }: { tone: 'error' | 'warn'; text: string }) {
   return (
-    <div className={clsx('flex items-start gap-2 rounded-md border px-2.5 py-2 text-[12px]', tone === 'error' ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-warn/30 bg-warn/5 text-warn')}>
+    <div className={clsx('flex items-start gap-2 rounded-md border px-2.5 py-2 text-[12px]', tone === 'error' ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-warn/30 bg-warn/5 text-warn')}>
       {tone === 'error' ? <XCircle size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />}
       <span className="min-w-0">{text}</span>
     </div>

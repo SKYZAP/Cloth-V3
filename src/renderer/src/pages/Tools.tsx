@@ -633,10 +633,10 @@ function TryIt({ fields, run: runTool, folder: needsFolder, title = 'Try it' }: 
         <div className="grid gap-1.5" aria-live="polite">
           <div className="flex items-center gap-2 text-[12px]">
             <span className={clsx('h-2 w-2 rounded-full', result.ok ? 'bg-ok' : 'bg-crimson')} aria-hidden="true" />
-            <span className={result.ok ? 'text-ok' : 'text-crimson-hi'}>{result.ok ? 'Worked' : 'Failed'}</span>
+            <span className={result.ok ? 'text-ok' : 'text-danger-hi'}>{result.ok ? 'Worked' : 'Failed'}</span>
             <span className="text-dim">in {duration(result.durationMs)}</span>
           </div>
-          <pre className={clsx('selectable max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px]', result.ok ? 'text-fg' : 'text-crimson-hi')}>{result.ok ? result.output : result.error}</pre>
+          <pre className={clsx('selectable max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px]', result.ok ? 'text-fg' : 'text-danger-hi')}>{result.ok ? result.output : result.error}</pre>
         </div>
       )}
     </section>

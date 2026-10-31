@@ -910,7 +910,7 @@ function ChatView({
             <div className="mb-6">
               <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[11.5px] text-dim transition-colors hover:border-line-strong hover:text-muted">
                 <CaretRight size={11} className={clsx('transition-transform', showArchived && 'rotate-90')} />
-                {showArchived ? 'Hide' : 'Show'} {archived.length} earlier message{archived.length === 1 ? '' : 's'} (summarised)
+                {showArchived ? 'Hide' : 'Show'} {archived.length} earlier message{archived.length === 1 ? '' : 's'}
               </button>
               {showArchived && (
                 <div className="mt-6 opacity-55">
@@ -1446,7 +1446,7 @@ function AssistantTurn({
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}
         {!streaming && <ChangedFiles traces={traces} onUndo={onUndo} />}
-        {message.error && <div className="mt-2 rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px] text-crimson-hi">{message.error}</div>}
+        {message.error && <div className="mt-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{message.error}</div>}
         {!streaming && (
           <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
             {message.model && <span>{message.model}</span>}
