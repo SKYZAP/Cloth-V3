@@ -81,6 +81,7 @@ describe('Spec → ship helpers', () => {
     expect(at('tickets')).toContain('never restate their text')
     // Preserve pins behaviour on a real running instance: an in-process stand-in missed a Spring Security error-dispatch change.
     expect(at('tickets')).toContain('not an in-process stand-in')
+    expect(at('tickets')).toContain('normal test suite, not a side script')
     expect(at('build')).toContain('every new test appears in its output')
     expect(at('review')).toContain('whether you recommend fixing it before this ships')
     expect(at('review')).toContain('"Assumed: …"')
