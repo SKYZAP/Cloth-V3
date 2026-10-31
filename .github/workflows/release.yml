@@ -164,7 +164,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          files=(release/*.exe release/*.dmg)
+          # The update files (latest*.yml, blockmaps) let installed copies find and download this version.
+          files=(release/*.exe release/*.dmg release/*.zip release/*.blockmap release/latest*.yml)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No installers found in release/"
             ls -la release
@@ -172,16 +173,6 @@ jobs:
           fi
           printf 'Uploading %s\n' "${files[@]}"
           gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-
-      - name: Keep installers as a workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloth-${{ env.VERSION }}-${{ runner.os }}-${{ runner.arch }}
-          path: |
-            release/*.exe
-            release/*.dmg
-          if-no-files-found: error
-          retention-days: 14
 
   android:
     name: Build (Android)
@@ -245,11 +236,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" "release/Cloth-$VERSION-android.apk" --clobber --repo "$GITHUB_REPOSITORY"
-
-      - name: Keep the APK as a workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloth-${{ env.VERSION }}-android
-          path: release/*.apk
-          if-no-files-found: error
-          retention-days: 14
