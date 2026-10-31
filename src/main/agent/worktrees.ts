@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
+import { lstat, mkdir, realpath, rm, rmdir, symlink, unlink } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { git, repoRoot } from '../panel/git'
 
@@ -52,6 +52,13 @@ function serial<T>(root: string, job: () => Promise<T>): Promise<T> {
   return next
 }
 
+/** The folder's path inside the repository ('' at its top). Git reports the top with links resolved (macOS's /var is
+ * /private/var), so both sides are resolved before comparing. */
+const subfolder = async (root: string, workspace: string) => {
+  const real = (p: string) => realpath(p).catch(() => p)
+  return relative(await real(root), await real(workspace))
+}
+
 const slugPart = (s: string) =>
   s
     .toLowerCase()
@@ -64,7 +71,7 @@ const slugPart = (s: string) =>
  * have uncommitted changes, so worktrees start from them. Nothing else the person has uncommitted is touched.
  */
 export async function commitWorkflowDocs(root: string, workspace: string, slug: string | null): Promise<boolean> {
-  const sub = relative(root, workspace).split(sep).join('/')
+  const sub = (await subfolder(root, workspace)).split(sep).join('/')
   const at = (p: string) => (sub ? `${sub}/${p}` : p)
   const paths = [at('GLOSSARY.md'), at('GLOSSARY-MAP.md'), at('docs/adr'), ...(slug ? [at(`docs/specs/${slug}`)] : [])]
   const existing = paths.filter((p) => existsSync(join(root, p)))
@@ -97,7 +104,7 @@ export async function createWorkerTree(workspace: string, dir: string, opts: { s
     start = opts.from
   }
   await serial(root, () => run(root, ['worktree', 'add', '-b', branch, tree, start]))
-  const sub = relative(root, workspace)
+  const sub = await subfolder(root, workspace)
   const made: WorkerTree = { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base, ...(opts.from ? { from: opts.from } : {}) }
   // Older work catches up with everything merged since, so it can merge back: the merge is left open (and any
   // conflicts marked in the files) for the worker to finish; Cloth's commit at the end concludes it.

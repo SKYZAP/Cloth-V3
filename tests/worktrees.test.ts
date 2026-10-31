@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { git } from '../src/main/panel/git'
@@ -19,6 +19,22 @@ const log = async (root: string) => (await git(root, ['log', '--format=%s'])).st
 const branches = async (root: string) => (await git(root, ['branch', '--format=%(refname:short)'])).stdout.trim().split('\n')
 
 describe('worker worktrees', () => {
+  it("works out the subfolder when the chat's folder is reached through a link", async () => {
+    // macOS's temp folder (/var) is a link to /private/var, and git reports the resolved path.
+    const { root, g, trees } = await repo()
+    mkdirSync(join(root, 'web'))
+    writeFileSync(join(root, 'web', 'page.txt'), 'p\n')
+    await g('add', '-A')
+    await g('commit', '-q', '-m', 'web')
+    const link = join(mkdtempSync(join(tmpdir(), 'cloth-wt-link-')), 'repo')
+    symlinkSync(root, link, process.platform === 'win32' ? 'junction' : 'dir')
+    const t = (await createWorkerTree(join(link, 'web'), trees, { slug: null, label: 'linked', id: 'call_linked000001' }))!
+    expect(t.workspace).toBe(join(t.dir, 'web'))
+    writeFileSync(join(t.workspace, 'new.txt'), 'n\n')
+    expect(existsSync(join(root, 'web', 'new.txt'))).toBe(false)
+    expect(await finishWorkerTree(t, 'linked')).toEqual({ merged: true, files: ['web/new.txt'] })
+  }, 60_000)
+
   it('give each worker its own branch and merge its work back', async () => {
     const { root, trees } = await repo()
     const a = (await createWorkerTree(root, trees, { slug: 'feat', label: 'Ticket 01', id: 'call_aaaaaa111111' }))!

@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm'
 import { existsSync, mkdirSync, statSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { sep } from 'node:path'
+import { basename, sep } from 'node:path'
 import { join } from 'node:path'
 import { Cron } from 'croner'
 import type { Automation, AutomationCommands, AutomationDraft, AutomationInput, AutomationWatch, WorkflowOverview, WorkflowRunSummary, ModelRef, RagMode, Workflow, WorkflowEdge, WorkflowNode, WorkflowRun, WorkflowRunReport } from '@shared/types'
@@ -414,6 +414,8 @@ export class WorkflowService {
         watcher = fsWatch(root, { recursive: true }, (_event, file) => {
           if (!file) return
           const rel = String(file).split(sep).join('/')
+          // macOS also reports the watched folder itself (by its name), e.g. just after it was made.
+          if (rel === basename(root) && !existsSync(join(root, rel))) return
           if (IGNORED.test(rel) || busy()) return
           pending.add(rel)
           clearTimeout(timer)
