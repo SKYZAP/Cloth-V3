@@ -86,6 +86,11 @@ describe('Spec → ship helpers', () => {
     expect(at('review')).toContain('whether you recommend fixing it before this ships')
     expect(at('review')).toContain('"Assumed: …"')
     expect(stageNote('done', 'x')).toContain('docs/specs/README.md')
+    // Fix rounds are for behaviour; a test that covers a criterion without naming it is optional.
+    expect(at('review')).toContain('naming, traceability and style gaps')
+    // A Quick change rarely makes a decision worth recording, so Done only asks when one clearly does.
+    expect(stageNote('done', 'x', 'quick')).toContain('Skip decision records unless one decision made here clearly meets the bar')
+    expect(stageNote('done', 'x', 'standard')).toContain('one multiple-choice question listing them')
   })
 })
 

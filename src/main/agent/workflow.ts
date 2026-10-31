@@ -89,9 +89,9 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
     '### Stage: Review',
     'Review everything this workflow changed, on two separate axes, with two read-only agents in parallel (`task`, role scout). They cannot run commands: first run the tests, the checks and any probes yourself and give them the results.',
     '- Standards: does the change follow the repo\'s documented standards (CLAUDE.md, CONTRIBUTING.md, linters\' configs), and are the project\'s checks no worse than before? Also flag, as judgement calls, common smells: unclear names, duplicated logic, functions reaching into other objects\' data, primitives standing in for domain types, speculative generality. The repo\'s own standards override these.',
-    '- Spec: compared with docs/specs/<slug>/spec.md (and the tickets), which criteria are missing, partial or untested (every AC needs a test naming it), what was built that nobody asked for, and where code and spec now disagree. Quote the criterion for each finding.',
+    '- Spec: compared with docs/specs/<slug>/spec.md (and the tickets), which criteria are missing, partial or have no test exercising them, what was built that nobody asked for, and where code and spec now disagree. Quote the criterion for each finding.',
     'Before handing over, try to break the change through its real entry point with inputs and states the criteria don\'t cover. On the Preserve route, also check the target versions\' documented breaking changes that touch this code.',
-    'Report the two axes separately, side by side; never merge them into one ranking. Then call `finish_stage` with every finding in `findings` (its axis, whether you recommend fixing it before this ships, what is wrong, where) and a short summary, so the person can pick what to fix. If they ask for fixes, make them, run the tests, and review again.'
+    'Report the two axes separately, side by side; never merge them into one ranking. Then call `finish_stage` with every finding in `findings` (its axis, whether you recommend fixing it before this ships, what is wrong, where) and a short summary, so the person can pick what to fix. Recommend fixing only what changes behaviour or leaves a criterion untested; naming, traceability and style gaps (a test that covers a criterion without naming it, a clearer name) are optional. If they ask for fixes, make them, run the tests, and review again.'
   ].join('\n')
 }
 
@@ -117,7 +117,9 @@ export function stageNote(stage: WorkflowStage, slug: string | null, route?: Wor
     done: [
       'The review is accepted. Wrap up briefly:',
       '1. Keep the spec current: update docs/specs/README.md for this folder, and where this change altered behaviour an earlier spec states, update that spec\'s criteria (or mark them replaced, with a link here). Bring this spec in line with anything that changed during the build or review.',
-      '2. If decisions made while building or reviewing meet the decision-record bar and are not yet recorded, ask the person with `ask_user` (one multiple-choice question listing them) which to record, then write those and update docs/adr/README.md. Skip this when there are none.',
+      route === 'quick'
+        ? '2. Skip decision records unless one decision made here clearly meets the bar (hard to reverse, surprising, a real trade-off); then ask the person with `ask_user` whether to record it.'
+        : '2. If decisions made while building or reviewing meet the decision-record bar and are not yet recorded, ask the person with `ask_user` (one multiple-choice question listing them) which to record, then write those and update docs/adr/README.md. Skip this when there are none.',
       '3. Then say in one line that the workflow is done, pointing at the spec folder.'
     ].join('\n')
   }
