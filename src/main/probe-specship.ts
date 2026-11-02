@@ -188,7 +188,9 @@ export async function probeSpecShip(s: Services, outDir: string, note: (m: strin
     events.push(line)
     note(line)
   }
-  await s.chat.startWorkflow(id, PROBE_IDEA)
+  // CLOTH_PROBE_ROUTE pins the route, so runs of different versions are comparable.
+  const route = process.env.CLOTH_PROBE_ROUTE
+  await s.chat.startWorkflow(id, route ? `${PROBE_IDEA}\n\nUse the ${route[0].toUpperCase()}${route.slice(1)} route.` : PROBE_IDEA)
   log('started')
   const deadline = t0 + Number(process.env.CLOTH_PROBE_MINUTES ?? 90) * 60_000
   let nudges = 0
