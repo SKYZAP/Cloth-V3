@@ -752,7 +752,7 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
     <div className="pb-3">
       <Heading icon={FlowArrow} title="Flows" right={<LinkButton onClick={onOpen}>open</LinkButton>} />
       <div className="flex items-center gap-4 px-4">
-        <Ring value={rate} color={rate >= 0.9 ? '#3fb97a' : rate >= 0.6 ? '#e0a43a' : '#dc2645'}>
+        <Ring value={rate} color={rate >= 0.9 ? 'var(--color-ok)' : rate >= 0.6 ? 'var(--color-warn)' : 'var(--color-danger)'}>
           {w.runs ? `${Math.round(rate * 100)}%` : '—'}
         </Ring>
         <div className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1.5 text-[11.5px]">

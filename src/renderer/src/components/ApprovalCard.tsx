@@ -38,7 +38,7 @@ export function ApprovalCard({ approval, permissions, onDecide }: { approval: Pe
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: 0.18 } }}
       transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-      className="mb-4 ml-11 overflow-hidden rounded-[14px] border border-warn/40 bg-panel shadow-[0_0_0_4px_rgb(224_164_58/0.06)]"
+      className="mb-4 ml-11 overflow-hidden rounded-[14px] border border-warn/40 bg-panel shadow-[0_0_0_4px_rgb(245_225_71/0.06)]"
     >
       <div className="flex items-center gap-2.5 border-b border-line px-3 py-2.5">
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-warn/15 text-warn">

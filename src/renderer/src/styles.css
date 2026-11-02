@@ -28,15 +28,21 @@
   /* Small crimson text on a crimson-soft tint (badges, chips): crimson-hi is under 4.5:1 there. */
   --color-crimson-text: #ff7a90;
 
-  /* Errors, failures, deletions and destructive actions: a warmer red, so they never read as the brand or a primary action. */
-  --color-danger: #e8553a;
-  --color-danger-hi: #f5704f;
-  --color-danger-lo: #a8381f;
-  --color-danger-soft: rgb(232 85 58 / 0.12);
-  --color-danger-line: rgb(232 85 58 / 0.4);
+  /* Errors, failures, deletions and destructive actions: orange, far enough from crimson that they never read as the brand,
+     including for red-green colour blindness. Always pair with an icon. */
+  --color-danger: #f76b15;
+  --color-danger-hi: #ff9454;
+  --color-danger-lo: #ad4b0f;
+  --color-danger-soft: rgb(247 107 21 / 0.12);
+  --color-danger-line: rgb(247 107 21 / 0.4);
+
+  /* Cancelled or stopped by the user: neutral, not a failure. Pair with a slashed-circle icon. */
+  --color-cancel: #85858f;
+  --color-cancel-text: #a3a3ad;
 
   --color-ok: #3fb97a;
-  --color-warn: #e0a43a;
+  /* Yellow, kept clear of the orange danger colour. */
+  --color-warn: #f5e147;
   --color-info: #6b9cf0;
 
   /* Skills: the slash command in the message box, sent messages and the setup sidebar. */
