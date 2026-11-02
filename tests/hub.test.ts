@@ -115,12 +115,61 @@ describe('hub tools in chat', () => {
       fauxAssistantMessage('Done.')
     ])
     await env.services.chat.send(env.session.id, 'Make me some tools')
+    // The command tool asks first (the chat is in Manual mode); declined, it stays off.
+    const ask = await until(() => env.services.chat.pendingApprovals(env.session.id)[0])
+    expect(ask).toMatchObject({ kind: 'tool', command: 'df', risk: 'Runs code on this PC, in any chat that calls it' })
+    env.services.chat.resolveApproval(ask.id, 'deny')
     const traces = await finish(env)
     expect(env.services.custom.findByName('status_page')).toMatchObject({ enabled: true, createdBy: 'chat' })
     expect(env.services.custom.findByName('disk_usage')).toMatchObject({ enabled: false, createdBy: 'chat' })
     expect(traces.find((t) => t.id === 't2')?.result).toContain('disabled until the user reviews')
     expect(traces.find((t) => t.id === 't3')?.status).toBe('error')
     expect(env.events.filter((e) => e.channel === 'tools')).toHaveLength(2)
+  })
+
+  it('switches a code tool on when the person approves it (or at once in Auto), and other chats can then use it', async () => {
+    const env = setup()
+    const other = env.services.chat.create({ model: env.model, customTools: true })
+    const auto = env.services.chat.create({ model: env.model, customTools: true, permissions: 'auto' })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: TranscriptContext[] = []
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('tool_create', { name: 'reverse_text', description: 'Reverse text', kind: 'javascript', params: [{ name: 'text' }], config: { code: 'return args.text.split("").reverse().join("")' } }, { id: 'c' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Made it.'),
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('reverse_text', { text: 'hello' }, { id: 'r' })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('olleh'),
+      fauxAssistantMessage([fauxToolCall('tool_create', { name: 'disk_free', description: 'Disk free', kind: 'command', config: { command: 'df' } }, { id: 'a' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Made it.')
+    ])
+    await env.services.chat.send(env.session.id, 'Make a tool that reverses text')
+    const ask = await until(() => env.services.chat.pendingApprovals(env.session.id)[0])
+    env.services.chat.resolveApproval(ask.id, 'allow')
+    const made = (await finish(env)).find((t) => t.id === 'c')
+    expect(made?.result).toContain('in this chat and any other')
+    expect(env.services.custom.findByName('reverse_text')).toMatchObject({ enabled: true })
+
+    // Another chat is offered the tool and can call it.
+    await env.services.chat.send(other.id, 'Reverse hello')
+    for (let i = 0; i < 500 && env.services.chat.isRunning(other.id); i++) await wait(10)
+    expect(JSON.stringify(seen[0])).toContain('"name":"reverse_text"')
+    const call = env.services.chat.messages(other.id).flatMap((m) => m.blocks).find((b) => b.type === 'tool' && b.trace.id === 'r')
+    expect(call?.type === 'tool' && call.trace).toMatchObject({ status: 'ok', result: expect.stringContaining('olleh') })
+
+    // A chat in Auto switches it on without asking.
+    await env.services.chat.send(auto.id, 'Make a disk tool')
+    for (let i = 0; i < 500 && env.services.chat.isRunning(auto.id); i++) await wait(10)
+    expect(env.services.chat.pendingApprovals(auto.id)).toEqual([])
+    expect(env.services.custom.findByName('disk_free')).toMatchObject({ enabled: true })
+  })
+
+  it('says a clashing tool is switched off rather than only that it exists', async () => {
+    const env = setup()
+    env.services.custom.create({ name: 'reverse_text', description: 'x', kind: 'javascript', params: [], config: { code: 'return 1' }, enabled: false }, 'chat')
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([fauxAssistantMessage([fauxToolCall('tool_create', { name: 'reverse_text', description: 'Reverse', kind: 'prompt', config: { prompt: 'x' } }, { id: 'd' })], { stopReason: 'toolUse' }), fauxAssistantMessage('ok')])
+    await env.services.chat.send(env.session.id, 'Make it')
+    const t = (await finish(env)).find((x) => x.id === 'd')
+    expect(t?.result).toContain('It is switched off: the user can turn it on on the Tools page.')
   })
 })
 

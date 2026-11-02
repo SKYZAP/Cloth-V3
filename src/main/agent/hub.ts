@@ -116,7 +116,9 @@ export function createTool(custom: CustomToolService, p: CreateToolInput, origin
   const existing = custom.findByName(input.name)
   let tool: CustomTool
   if (existing) {
-    if (!p.replace) throw new Error(`A tool named "${input.name}" already exists. Pick another name${existing.createdBy !== 'user' ? ', or set replace to update it' : ''}.`)
+    // A tool switched off isn't offered to chats, so say why it can't be called rather than only that it exists.
+    const off = existing.enabled ? '' : ' It is switched off: the user can turn it on on the Tools page.'
+    if (!p.replace) throw new Error(`A tool named "${input.name}" already exists.${off} Pick another name${existing.createdBy !== 'user' ? ', or set replace to update it' : ''}.`)
     if (existing.createdBy === 'user') throw new Error(`"${input.name}" was made by the user and cannot be replaced; pick another name`)
     tool = custom.update(existing.id, input)
   } else tool = custom.create(input, origin)

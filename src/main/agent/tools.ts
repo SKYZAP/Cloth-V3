@@ -490,9 +490,23 @@ export const BUILTINS: BuiltinSpec[] = [
     }),
     description: () => TOOL_CREATE_DESCRIPTION,
     when: (ctx) => ctx.scope.customTools !== false && !!ctx.scope.sessionId && !ctx.scope.depth,
-    async run(p, ctx) {
-      const { tool, text } = createTool(ctx.deps.custom, p, 'chat')
-      return { text, details: { toolId: tool.id, enabled: tool.enabled } }
+    async run(p, ctx, signal, toolCallId) {
+      const made = createTool(ctx.deps.custom, p, 'chat')
+      if (made.tool.enabled) return { text: made.text, details: { toolId: made.tool.id, enabled: true } }
+      // A tool that runs code on this PC is switched on the way the chat runs commands: at once in Auto, after the
+      // person's OK otherwise. Once on, every chat can use it; declined, it waits on the Tools page.
+      const code = p.kind === 'javascript' ? String(p.config?.code ?? '') : [p.config?.command, p.config?.args].filter(Boolean).map(String).join(' ')
+      let on = ctx.scope.permissions?.() === 'auto'
+      if (!on && ctx.deps.approvals && ctx.scope.sessionId) {
+        const decision = await ctx.deps.approvals.request(
+          { sessionId: ctx.scope.sessionId, toolCallId, kind: 'tool', tool: { server: 'Cloth', name: `turn on the ${p.kind} tool ${made.tool.name}` }, command: code.length > 4000 ? `${code.slice(0, 4000)}…` : code, risk: 'Runs code on this PC, in any chat that calls it' },
+          signal
+        )
+        on = decision !== 'deny'
+      }
+      if (!on) return { text: made.text, details: { toolId: made.tool.id, enabled: false } }
+      ctx.deps.custom.setEnabled(made.tool.id, true)
+      return { text: `${made.text.split('. It runs code')[0]}. It is enabled and listed on the Tools page; it can be called from the next message on, in this chat and any other.`, details: { toolId: made.tool.id, enabled: true } }
     }
   }),
   spec({
