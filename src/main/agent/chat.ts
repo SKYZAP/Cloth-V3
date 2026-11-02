@@ -319,6 +319,13 @@ export function throttle<T>(fn: (v: T) => void, ms: number): ((v: T) => void) & 
 }
 
 /** The todo list as the latest successful todo_write left it. */
+/** Worker agents (`task`, role worker) handed work since the current Spec → Ship stage started (ones that failed count too). */
+export function stageWorkerRuns(messages: AgentMessage[]): number {
+  const isStart = (m: AgentMessage) => m.role === 'user' && typeof m.content !== 'string' && m.content.some((c) => c.type === 'text' && c.text.startsWith(STAGE_OPEN))
+  const start = Math.max(0, messages.findLastIndex(isStart))
+  return messages.slice(start).filter((m) => m.role === 'toolResult' && m.toolName === 'task' && (m.details as { subagent?: { role?: string } } | undefined)?.subagent?.role === 'worker').length
+}
+
 export function latestTodos(messages: AgentMessage[]): TodoItem[] {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
@@ -1385,7 +1392,9 @@ export class ChatService {
       fileAccess: caps.fileAccess,
       shell: caps.shell,
       sessionId: id,
-      subagents: session.subagents,
+      // Spec → Ship works through agents (scouts map the code, workers build), whatever the chat's own setting.
+      subagents: session.subagents || (!!session.workflow && session.workflow.stage !== 'done'),
+      stageWorkers: () => stageWorkerRuns(this.active.get(id)?.state.messages ?? this.rawMessages(id)),
       codeIntel: session.codeIntel,
       images: session.imagesEnabled,
       computerUse: session.computerUse,

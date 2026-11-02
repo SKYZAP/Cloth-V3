@@ -96,6 +96,8 @@ export interface ToolScope {
   autoTiers?: boolean
   /** The chat's current todo list (from its latest todo_write), for `task`'s step. */
   todos?: () => TodoItem[]
+  /** Worker agents handed work since the current Spec → Ship stage started. */
+  stageWorkers?: () => number
   /** The chat's Spec → Ship workflow, live (none outside such chats). */
   workflow?: () => SpecWorkflow | null
   /** Record the feature's docs folder name once the spec stage picks it. */
@@ -286,6 +288,11 @@ export const BUILTINS: BuiltinSpec[] = [
       if (w.stage === 'grill' && !route) throw new Error('Say which route this task takes: quick, standard or preserve')
       if (route === 'quick' && !(slug || w.slug)) throw new Error('The Quick route writes the spec while grilling: give its slug')
       if (route) ctx.scope.setWorkflowRoute?.(route)
+      // Build is done by workers: one that used none has to say what it built itself and why.
+      if (w.stage === 'build' && ctx.scope.subagents && ctx.scope.stageWorkers && ctx.scope.stageWorkers() === 0 && !summary.some((l) => /^built here:/i.test(l)))
+        throw new Error(
+          'Build hands its work to worker agents (`task`, role worker): one per ticket, or on the Quick route one for the whole change, while you brief, check, merge and tick. Start them now. If something really was too small to hand over, add a summary line "Built here: <what>, because <why>" and call finish_stage again.'
+        )
       // A built ticket is ticked off in its file, which is what the board shows; one left partly done is named.
       if (w.stage === 'build' && w.slug && ctx.scope.workspace) {
         const unfinished = new Set((p.unfinished ?? []).map((n) => String(n).replace(/\D/g, '').padStart(2, '0')))

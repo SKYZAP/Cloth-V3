@@ -208,7 +208,7 @@ describe('Spec → Ship in a chat', () => {
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     const seen: Context[] = []
     faux.setResponses([
-      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built AC-1–AC-4', 'Unverified: nothing'] }, { id: 'b' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built AC-1–AC-4', 'Built here: a one-line change, because it was too small to brief', 'Unverified: nothing'] }, { id: 'b' })], { stopReason: 'toolUse' }),
       // The review starts by itself.
       (ctx) => (
         seen.push(ctx),
@@ -244,7 +244,7 @@ describe('Spec → Ship in a chat', () => {
     // Switched off, a finished build waits for the person.
     env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' } })
     expect(env.services.chat.setWorkflowAutoContinue(env.session.id, false).workflow?.autoContinue).toBe(false)
-    faux.setResponses([() => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built'] }, { id: 'b2' })], { stopReason: 'toolUse' })])
+    faux.setResponses([() => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Built here: a one-line change, because it was too small to brief'] }, { id: 'b2' })], { stopReason: 'toolUse' })])
     await env.services.chat.send(env.session.id, 'build again')
     await settle(env)
     await wait(300)
@@ -310,6 +310,27 @@ describe('Spec → Ship in a chat', () => {
     expect(system(seen[1])).toContain('cloth-worktrees')
   }, 60_000)
 
+  it('works through agents: on whatever the chat says, and Build finishes only after handing work to a worker', async () => {
+    const env = setup('manual')
+    // The chat has subagents off; Spec → Ship turns them on.
+    env.services.chat.update(env.session.id, { subagents: false, workflow: { kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick', autoContinue: false } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      // Builds it itself and tries to finish: refused.
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built'] }, { id: 'f1' })], { stopReason: 'toolUse' })),
+      // Hands the change to a worker, which reports back.
+      () => fauxAssistantMessage([fauxToolCall('task', { description: 'Quick change: flag casing', prompt: 'Make flag names ignore case, test first.', role: 'worker' }, { id: 'w' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage('Result: done. Flag names ignore case; 2 tests added.'),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built by a worker'] }, { id: 'f2' })], { stopReason: 'toolUse' })
+    ])
+    await env.services.chat.send(env.session.id, 'build it')
+    const { traces } = await settle(env)
+    expect(system(seen[0])).toMatch(/"name":"task"/)
+    expect(traces.find((t) => t.id === 'f1')?.result).toMatch(/Build hands its work to worker agents/)
+    expect(traces.find((t) => t.id === 'f2')?.stageGate).toMatchObject({ stage: 'build' })
+  }, 30_000)
+
   it('finishes Build only once every ticket is ticked off or named as unfinished', async () => {
     const env = setup('manual')
     const dir = join(env.root, 'docs/specs/feat/tickets')
@@ -319,8 +340,8 @@ describe('Spec → Ship in a chat', () => {
     env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'feat', autoContinue: false } })
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     faux.setResponses([
-      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built'] }, { id: 'a' })], { stopReason: 'toolUse' }),
-      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Partly done: 02 (AC-3)'], unfinished: ['2'] }, { id: 'b' })], { stopReason: 'toolUse' })
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Built here: a one-line change, because it was too small to brief'] }, { id: 'a' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Built here: a one-line change, because it was too small to brief', 'Partly done: 02 (AC-3)'], unfinished: ['2'] }, { id: 'b' })], { stopReason: 'toolUse' })
     ])
     await env.services.chat.send(env.session.id, 'build it')
     const { traces } = await settle(env)
@@ -368,7 +389,7 @@ describe('Spec → Ship in a chat', () => {
     faux.setResponses([
       // Build writes a file and finishes; the review starts by itself.
       () => fauxAssistantMessage([fauxToolCall('write', { path: 'src/a.ts', content: 'export {}' })], { stopReason: 'toolUse' }),
-      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Tests: 3 passed'] }, { id: 'b' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Built here: a one-line change, because it was too small to brief', 'Tests: 3 passed'] }, { id: 'b' })], { stopReason: 'toolUse' }),
       // Only an optional finding: the workflow finishes without waiting.
       (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 finding'], findings: [{ axis: 'standards', fix: false, title: 'Name could be clearer' }] }, { id: 'r' })], { stopReason: 'toolUse' })),
       (ctx) => (seen.push(ctx), fauxAssistantMessage('Done: docs/specs/feat.'))
