@@ -48,7 +48,7 @@
   --color-agent: #9cdcff;
   --color-agent-dot: #38bdf8;
   --color-agent-soft: rgb(56 189 248 / 0.15);
-  /* Spec → ship: the workflow mode chip, its stage meter and stage dividers. */
+  /* Spec → Ship: the workflow mode chip, its stage meter and stage dividers. */
   --color-mode: #d8b4fe;
   --color-mode-soft: rgb(216 180 254 / 0.10);
   --color-mode-line: rgb(216 180 254 / 0.35);

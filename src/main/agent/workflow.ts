@@ -4,7 +4,7 @@ import { routeStages } from '@shared/types'
 export { routeStages }
 
 /*
- * Spec → ship: a chat mode that walks a feature through grilling, a spec, tickets, building and a
+ * Spec → Ship: a chat mode that walks a feature through grilling, a spec, tickets, building and a
  * two-axis review. The stage instructions adapt Matt Pocock's skills (grilling, domain-modeling,
  * to-spec, to-tickets, implement-spec, tdd, code-review, diagnosing-bugs; https://github.com/mattpocock/skills, MIT licence;
  * last compared with v1.3.2).
@@ -28,7 +28,7 @@ export function docsOnly(w: SpecWorkflow | null | undefined): boolean {
 }
 
 export const DOCS_ONLY_REFUSAL =
-  'This chat is in the Spec → ship workflow and still writing documents: until the Build stage it may only write GLOSSARY.md and files under docs/, and run no commands. Record the decision in the spec or a ticket instead.'
+  'This chat is in the Spec → Ship workflow and still writing documents: until the Build stage it may only write GLOSSARY.md and files under docs/, and run no commands. Record the decision in the spec or a ticket instead.'
 
 /** The stage after `stage` on this route (review → done). */
 export function nextStage(stage: WorkflowStage, route?: WorkflowRoute | null): WorkflowStage {
@@ -42,7 +42,7 @@ export const STAGE_NAME: Record<WorkflowStage, string> = { grill: 'Grill', spec:
 export const ROUTE_NAME: Record<WorkflowRoute, string> = { quick: 'Quick', standard: 'Standard', preserve: 'Preserve' }
 
 const COMMON = [
-  'This chat runs the Spec → ship workflow. Each stage ends with `finish_stage`, which shows the person what the stage produced and waits for their OK; the next stage starts when they approve it. Never start the next stage on your own.',
+  'This chat runs the Spec → Ship workflow. Each stage ends with `finish_stage`, which shows the person what the stage produced and waits for their OK; the next stage starts when they approve it. Never start the next stage on your own.',
   'Routes, chosen at the start of grilling: Quick (a bug fix, or a small, clear change in one area): Grill, which also writes a short spec, → Build → Review, no tickets; a bug fix is diagnosed before it is changed. Standard: Grill → Spec → Tickets → Build → Review. Preserve (an upgrade, migration or refactor, where behaviour must not change): the Standard stages, with today\'s behaviour pinned by tests before anything changes.',
   'Documents live in the workspace: the glossary in GLOSSARY.md; decision records in docs/adr/NNNN-slug.md, listed in docs/adr/README.md (number, title, status, one line each); a UI mockup (when the feature changes what people see) in docs/specs/<slug>/mockup.html; the spec in docs/specs/<slug>/spec.md; one file per ticket in docs/specs/<slug>/tickets/NN-slug.md; and docs/specs/README.md, one line per spec folder saying what behaviour it covers. <slug> is a short kebab-case name for the feature. Read indexes first and open only the documents this change touches; use the glossary\'s terms everywhere.',
   'Every `finish_stage` summary ends with two lines: "Assumed: …" (anything you settled without the person, or "nothing") and "Unverified: …" (anything you could not check, and why, or "nothing").',
@@ -107,9 +107,9 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
 /** What the agent is told about the workflow now (null: the chat isn't running one, or it's done). */
 export function workflowSection(w: SpecWorkflow | null | undefined): string | null {
   if (!w) return null
-  if (w.stage === 'done') return '## Workflow: Spec → ship (done)\nThe Spec → ship workflow for this feature is finished. Carry on as a normal chat; the spec, tickets, glossary and decision records stay in docs/ for reference.'
+  if (w.stage === 'done') return '## Workflow: Spec → Ship (done)\nThe Spec → Ship workflow for this feature is finished. Carry on as a normal chat; the spec, tickets, glossary and decision records stay in docs/ for reference.'
   const route = w.route ? ` · ${ROUTE_NAME[w.route]} route` : ''
-  return [`## Workflow: Spec → ship${w.slug ? ` (docs/specs/${w.slug})` : ''}${route}`, COMMON, STAGES[w.stage]].join('\n\n')
+  return [`## Workflow: Spec → Ship${w.slug ? ` (docs/specs/${w.slug})` : ''}${route}`, COMMON, STAGES[w.stage]].join('\n\n')
 }
 
 /** The hidden note that starts a stage once the person approves the previous one. */
@@ -138,7 +138,7 @@ export function stageNote(stage: WorkflowStage, slug: string | null, route?: Wor
 /** The visible text of a stage's opening message. */
 export function stageText(stage: WorkflowStage, route?: WorkflowRoute | null): string {
   const text: Record<WorkflowStage, string> = {
-    grill: 'Started Spec → ship',
+    grill: 'Started Spec → Ship',
     spec: 'Approved the grilling',
     tickets: 'Approved the spec',
     build: route === 'quick' ? 'Approved the spec' : 'Approved the tickets',

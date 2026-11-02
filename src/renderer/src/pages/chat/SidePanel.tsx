@@ -322,7 +322,7 @@ export function SidePanel({
         {visible('spec') && (
           <div className="relative min-h-0" style={place('spec')} {...sectionEvents('spec')}>
             <div className="absolute inset-0">
-              <SpecPanel sessionId={session.id} workflow={session.workflow} version={messages.length} active={activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && b.trace.status === 'running' ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : [])))} />
+              <SpecPanel sessionId={session.id} workflow={session.workflow} version={docsVersion(messages)} active={activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && b.trace.status === 'running' ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : [])))} />
             </div>
           </div>
         )}
@@ -348,4 +348,9 @@ export function SidePanel({
       )}
     </aside>
   )
+}
+
+/** Changes whenever a message arrives or a tool call finishes, so the Spec tab rereads documents written mid-reply. */
+function docsVersion(messages: UiMessage[]): number {
+  return messages.reduce((n, m) => n + 1 + m.blocks.filter((b) => b.type === 'tool' && b.trace.status !== 'running').length, 0)
 }

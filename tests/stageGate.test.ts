@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fixMessage, isNothing, splitSummary } from '../src/renderer/src/lib/stageGate'
 
-describe('Spec → ship stage stops', () => {
+describe('Spec → Ship stage stops', () => {
   it('pulls the Assumed and Unverified lines out of the bullets', () => {
     expect(splitSummary(['4 criteria', 'Assumed: flags are stored upper case', 'unverified:  nothing '])).toEqual({ bullets: ['4 criteria'], assumed: 'flags are stored upper case', unverified: 'nothing' })
     expect(splitSummary(['Built 3 tickets'])).toEqual({ bullets: ['Built 3 tickets'], assumed: null, unverified: null })

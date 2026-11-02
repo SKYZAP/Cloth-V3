@@ -38,7 +38,7 @@ export function takeAgentRun(seq: number): void {
   if (useSetupNav.getState().run?.seq === seq) useSetupNav.setState({ run: null })
 }
 
-/** Open the chat's side panel on the Spec tab (the Spec → ship documents). */
+/** Open the chat's side panel on the Spec tab (the Spec → Ship documents). */
 export function openSpecDocs(): void {
   useSetupNav.setState({ seq: useSetupNav.getState().seq + 1, tab: 'spec' })
 }

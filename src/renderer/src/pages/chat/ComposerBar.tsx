@@ -56,9 +56,9 @@ export function ComposerBar({
   attach: { count: number; onClick(): void }
   /** The send / stop button. */
   send: ReactNode
-  /** Spec → ship: pick it (it starts with the next message) or un-pick it, leave a running one, or show its documents. */
+  /** Spec → Ship: pick it (it starts with the next message) or un-pick it, leave a running one, or show its documents. */
   onWorkflow?(action: 'arm' | 'disarm' | 'stop' | 'docs'): Promise<void> | void
-  /** Spec → ship is picked and waits for the first message. */
+  /** Spec → Ship is picked and waits for the first message. */
   specArmed?: boolean
 }) {
   const flow = session.workflow && session.workflow.stage !== 'done' ? session.workflow : null
@@ -148,13 +148,13 @@ export function ComposerBar({
               aria-haspopup="menu"
               aria-expanded={open}
               aria-label={`Mode: ${chatModeInfo(mode).name}${flow ? `, stage: ${STAGE_LABEL[flow.stage]}` : ''}`}
-              title={flow ? `Spec → ship · ${STAGE_LABEL[flow.stage]}` : specArmed ? 'Spec → ship · starts with your next message' : `Mode: ${chatModeInfo(mode).name} (Shift+Tab switches Chat and Plan)`}
+              title={flow ? `Spec → Ship · ${STAGE_LABEL[flow.stage]}` : specArmed ? 'Spec → Ship · starts with your next message' : `Mode: ${chatModeInfo(mode).name} (Shift+Tab switches Chat and Plan)`}
               className={clsx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', MODE_TONE[mode])}
             >
               <ModeIcon size={15} weight={mode === 'chat' ? 'regular' : 'bold'} className="shrink-0" />
               {mode === 'spec' ? (
                 <>
-                  <span className="hidden @[640px]:inline">Spec → ship</span>
+                  <span className="hidden @[640px]:inline">Spec → Ship</span>
                   <span className="hidden @[380px]:inline @[640px]:hidden mobile:inline">Spec</span>
                 </>
               ) : (
@@ -210,7 +210,7 @@ export function ComposerBar({
             >
               <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
               <span className="min-w-[3ch] max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
-              {/* As the row narrows: the folder name gives way first, then the effort (sooner beside the wider Spec → ship chip), then the access label. */}
+              {/* As the row narrows: the folder name gives way first, then the effort (sooner beside the wider Spec → Ship chip), then the access label. */}
               {model?.reasoning && <span className={clsx('hidden shrink-0 text-dim mobile:hidden', mode === 'spec' ? '@[860px]:inline' : '@[680px]:inline')}>– {effortLabel(session.thinking)}</span>}
               <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
             </button>
@@ -378,7 +378,7 @@ function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value:
       {flow && (
         <div className="mx-1.5 mt-1 border-t border-line pt-1">
           <p className="px-1 pb-1 pt-1.5 text-[11.5px] text-dim">
-            Stage {stageIndex(flow.stage, flow.route) + 1} of {routeStages(flow.route).length}: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>. Picking Chat or Plan leaves Spec → ship; the documents stay.
+            Stage {stageIndex(flow.stage, flow.route) + 1} of {routeStages(flow.route).length}: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>. Picking Chat or Plan leaves Spec → Ship; the documents stay.
           </p>
           <button role="menuitem" onClick={flow.docs} className="w-full rounded-[9px] px-1.5 py-1.5 text-left text-[13px] outline-none hover:bg-elev-2 focus-visible:bg-elev-2">
             Show the documents

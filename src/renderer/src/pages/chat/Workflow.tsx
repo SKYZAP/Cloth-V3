@@ -396,11 +396,11 @@ export function TicketBoard({ tickets, active, compact }: { tickets: Ticket[]; a
 export function StageDivider({ message, fresh, route }: { message: UiMessage; fresh: boolean; route?: WorkflowRoute | null }) {
   const stage = message.workflowStage!
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('').trim()
-  const isIdea = stage === 'grill' && text && text !== 'Started Spec → ship'
+  const isIdea = stage === 'grill' && text && text !== 'Started Spec → Ship'
   return (
     <motion.div initial={fresh ? { opacity: 0, y: 8 } : false} animate={{ opacity: 1, y: 0 }} className="mb-7">
       {isIdea && <div className="selectable mb-6 ml-auto w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl border border-line bg-elev px-3.5 py-2.5">{text}</div>}
-      <div className="flex items-center gap-3 text-[12px] text-dim" role="separator" aria-label={`Spec → ship: ${STAGE_LABEL[stage]}`}>
+      <div className="flex items-center gap-3 text-[12px] text-dim" role="separator" aria-label={`Spec → Ship: ${STAGE_LABEL[stage]}`}>
         <span className="h-px flex-1 bg-gradient-to-r from-transparent to-line-strong" />
         <span className="flex items-center gap-1.5">
           {stage !== 'grill' && <CheckCircle size={13} weight="fill" className="text-ok" aria-hidden="true" />}
@@ -457,14 +457,15 @@ type DocTab = 'glossary' | 'decisions' | 'mockup' | 'spec' | 'tickets'
 export function SpecPanel({ sessionId, workflow, version, active }: { sessionId: string; workflow: SpecWorkflow | null | undefined; version: number; active?: ReadonlySet<string> }) {
   const docs = useSpecDocs(workflow ? sessionId : null, workflow?.slug ?? null, version)
   const [tab, setTab] = useState<DocTab>('glossary')
+  // Every tab stays clickable (an empty one says so); the count is only a hint, and a glossary in another format counts as written.
   const tabs: { id: DocTab; label: string; count: number }[] = [
-    { id: 'glossary', label: 'Glossary', count: docs.glossary?.text.match(/^\*\*[^*]+\*\*:/gm)?.length ?? 0 },
+    { id: 'glossary', label: 'Glossary', count: docs.glossary?.text.trim() ? Math.max(1, docs.glossary.text.match(/^\s*(?:[-*]\s+)?\*\*[^*]+\*\*/gm)?.length ?? 0) : 0 },
     { id: 'decisions', label: 'Decisions', count: docs.adrs.length },
     ...(docs.mockup ? [{ id: 'mockup' as const, label: 'Mockup', count: 1 }] : []),
     { id: 'spec', label: 'Spec', count: docs.spec ? 1 : 0 },
     { id: 'tickets', label: 'Tickets', count: docs.tickets.length }
   ]
-  if (!workflow) return <p className="px-4 py-6 text-[12.5px] text-dim">This chat isn’t running Spec → ship. Start it from the mode menu in the message box.</p>
+  if (!workflow) return <p className="px-4 py-6 text-[12.5px] text-dim">This chat isn’t running Spec → Ship. Start it from the mode menu in the message box.</p>
   const shown: DocFile[] = tab === 'glossary' ? (docs.glossary ? [docs.glossary] : []) : tab === 'decisions' ? docs.adrs : tab === 'spec' ? (docs.spec ? [docs.spec] : []) : []
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -474,9 +475,8 @@ export function SpecPanel({ sessionId, workflow, version, active }: { sessionId:
             key={d.id}
             role="tab"
             aria-selected={tab === d.id}
-            disabled={!d.count}
             onClick={() => setTab(d.id)}
-            className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] disabled:opacity-40', tab === d.id ? 'bg-elev-2 font-semibold text-fg' : 'text-muted hover:text-fg')}
+            className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px]', tab === d.id ? 'bg-elev-2 font-semibold text-fg' : d.count ? 'text-muted hover:text-fg' : 'text-dim hover:text-muted')}
           >
             {d.label}
             {d.count > 0 && d.id !== 'spec' && d.id !== 'mockup' && <span className="text-[11px] tabular-nums text-dim">{d.count}</span>}

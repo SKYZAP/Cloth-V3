@@ -278,7 +278,7 @@ export interface WorkspaceOptions {
   asksBeforeRisky?(): boolean
   /** Live: the chat is in Plan mode, so changes and commands are refused even if the tools are there. */
   readOnly?(): boolean
-  /** Live: a Spec → ship chat before Build may only write the glossary and docs/, and run no commands. */
+  /** Live: a Spec → Ship chat before Build may only write the glossary and docs/, and run no commands. */
   docsOnly?(): boolean
 }
 

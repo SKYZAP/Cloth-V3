@@ -29,12 +29,12 @@ export type ChatMode = 'chat' | 'plan' | 'spec'
 export const CHAT_MODES: { id: ChatMode; name: string; sub: string }[] = [
   { id: 'chat', name: 'Chat', sub: 'Works straight away' },
   { id: 'plan', name: 'Plan', sub: 'Plans first; changes after you approve' },
-  { id: 'spec', name: 'Spec → ship', sub: 'Questions, spec, tickets, build, review' }
+  { id: 'spec', name: 'Spec → Ship', sub: 'Questions, spec, tickets, build, review' }
 ]
 
 export const chatModeInfo = (id: ChatMode) => CHAT_MODES.find((m) => m.id === id) ?? CHAT_MODES[0]
 
-/** The chat's mode: Spec → ship while its workflow runs, Plan while planning, else Chat. */
+/** The chat's mode: Spec → Ship while its workflow runs, Plan while planning, else Chat. */
 export function chatMode(session: Pick<ChatSession, 'permissions' | 'workflow'>): ChatMode {
   if (session.workflow && session.workflow.stage !== 'done') return 'spec'
   return session.permissions === 'plan' ? 'plan' : 'chat'
@@ -46,7 +46,7 @@ export function accessOf(session: Pick<ChatSession, 'permissions' | 'access'>): 
   return session.access ?? 'manual'
 }
 
-/** Shift+Tab: Chat ⇄ Plan, as the permissions patch to apply. Spec → ship is only left from the menu (null). */
+/** Shift+Tab: Chat ⇄ Plan, as the permissions patch to apply. Spec → Ship is only left from the menu (null). */
 export function nextModePatch(session: Pick<ChatSession, 'permissions' | 'access' | 'workflow'>): { permissions: Permissions } | null {
   const mode = chatMode(session)
   if (mode === 'spec') return null

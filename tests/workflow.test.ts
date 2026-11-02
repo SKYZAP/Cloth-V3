@@ -36,7 +36,7 @@ async function settle(env: ReturnType<typeof setup>) {
   return { msgs, traces }
 }
 
-describe('Spec → ship helpers', () => {
+describe('Spec → Ship helpers', () => {
   it('allows only the glossary and docs/ before Build', () => {
     expect(isDocPath('GLOSSARY.md')).toBe(true)
     expect(isDocPath('docs/specs/x/spec.md')).toBe(true)
@@ -100,7 +100,7 @@ describe('Spec → ship helpers', () => {
   })
 })
 
-describe('Spec → ship in a chat', () => {
+describe('Spec → Ship in a chat', () => {
   it('grills, gates, refuses code before Build, and moves stage by stage', async () => {
     const env = setup('plan')
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })

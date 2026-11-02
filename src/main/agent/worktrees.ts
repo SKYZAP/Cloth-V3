@@ -4,7 +4,7 @@ import { join, relative, sep } from 'node:path'
 import { git, repoRoot } from '../panel/git'
 
 /*
- * Spec → ship builds tickets in parallel: each worker gets its own git worktree (a separate checkout of
+ * Spec → Ship builds tickets in parallel: each worker gets its own git worktree (a separate checkout of
  * the repository on its own branch), and its work is merged back into the chat's branch when it ends.
  */
 

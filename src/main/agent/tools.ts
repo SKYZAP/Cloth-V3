@@ -96,7 +96,7 @@ export interface ToolScope {
   autoTiers?: boolean
   /** The chat's current todo list (from its latest todo_write), for `task`'s step. */
   todos?: () => TodoItem[]
-  /** The chat's Spec → ship workflow, live (none outside such chats). */
+  /** The chat's Spec → Ship workflow, live (none outside such chats). */
   workflow?: () => SpecWorkflow | null
   /** Record the feature's docs folder name once the spec stage picks it. */
   setWorkflowSlug?: (slug: string) => void
@@ -106,7 +106,7 @@ export interface ToolScope {
   stageFinished?: (stage: WorkflowStage) => void
 }
 
-/** The chat is running Spec → ship and isn't finished. */
+/** The chat is running Spec → Ship and isn't finished. */
 export function inWorkflow(scope: ToolScope): boolean {
   const w = scope.workflow?.()
   return !!w && w.stage !== 'done'
@@ -219,7 +219,7 @@ export const BUILTINS: BuiltinSpec[] = [
     name: 'ask_questions',
     label: 'Ask questions',
     group: 'planning',
-    availability: 'Chats grilling in Spec → ship',
+    availability: 'Chats grilling in Spec → Ship',
     parameters: Type.Object({
       round: Type.Integer({ description: 'Which round this is, from 1' }),
       questions: Type.Array(
@@ -254,7 +254,7 @@ export const BUILTINS: BuiltinSpec[] = [
     name: 'finish_stage',
     label: 'Finish stage',
     group: 'planning',
-    availability: 'Chats running Spec → ship',
+    availability: 'Chats running Spec → Ship',
     parameters: Type.Object({
       summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),

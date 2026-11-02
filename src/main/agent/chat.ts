@@ -703,7 +703,7 @@ export class AgentRuntime {
           : {}),
         ...(steps ? { step: Type.Optional(Type.Integer({ description: 'Which step of your todo list this work is for.' })) } : {}),
         ...(parent.scope.workflow?.()?.stage === 'build'
-          ? { continueFrom: Type.Optional(Type.String({ description: 'Spec → ship Build only: a branch an earlier worker left unfinished work on (named in its error). The new worker starts from that work instead of from scratch.' })) }
+          ? { continueFrom: Type.Optional(Type.String({ description: 'Spec → Ship Build only: a branch an earlier worker left unfinished work on (named in its error). The new worker starts from that work instead of from scratch.' })) }
           : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
@@ -721,7 +721,7 @@ export class AgentRuntime {
             await this.ws.mcp.ensure(scope.mcpServers)
           }
         }
-        // Spec → ship reviewers read the change and the spec: no browser, web, knowledge, MCP or custom tools to wander into.
+        // Spec → Ship reviewers read the change and the spec: no browser, web, knowledge, MCP or custom tools to wander into.
         if (parent.scope.workflow?.()?.stage === 'review' && role === 'scout') {
           scope = { ...scope, mcpServers: [], webEnabled: false, knowledgeEnabled: false, customTools: false, computerUse: false, images: false }
         }
@@ -752,7 +752,7 @@ export class AgentRuntime {
         )
         const started = Date.now()
         let files: string[] = []
-        // Spec → ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends.
+        // Spec → Ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends.
         const flow = parent.scope.workflow?.()
         let tree: WorkerTree | null = null
         let treeNote = ''
@@ -1424,13 +1424,13 @@ export class ChatService {
   }
 
   /**
-   * Start Spec → ship in this chat: it grills first, then writes the spec and tickets (documents only), builds and
+   * Start Spec → Ship in this chat: it grills first, then writes the spec and tickets (documents only), builds and
    * reviews, waiting for the person's OK between stages. `idea` (optional) is what to build, sent as the first message.
    */
   async startWorkflow(id: string, idea?: string): Promise<ChatSession> {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
     const cur = this.get(id)
-    if (!cur.workspace) throw new Error('Spec → ship needs a folder: choose one for this chat first')
+    if (!cur.workspace) throw new Error('Spec → Ship needs a folder: choose one for this chat first')
     // Plan mode is read-only, and the documents need writing: back to the chat's access (Manual if it has none).
     const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: cur.access ?? 'manual' } : {}) })
     const text = idea?.trim()
@@ -1442,7 +1442,7 @@ export class ChatService {
   async advanceWorkflow(id: string): Promise<ChatSession> {
     if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
     const w = this.get(id).workflow
-    if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → ship')
+    if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → Ship')
     const stage = nextStage(w.stage, w.route)
     const session = this.update(id, { workflow: { ...w, stage } })
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
@@ -1452,11 +1452,11 @@ export class ChatService {
   /** Whether a finished Build goes straight on to the Review (on unless switched off). */
   setWorkflowAutoContinue(id: string, on: boolean): ChatSession {
     const w = this.get(id).workflow
-    if (!w) throw new Error('This chat is not running Spec → ship')
+    if (!w) throw new Error('This chat is not running Spec → Ship')
     return this.update(id, { workflow: { ...w, autoContinue: on } })
   }
 
-  /** Leave Spec → ship: the chat carries on as a normal chat (the documents stay). */
+  /** Leave Spec → Ship: the chat carries on as a normal chat (the documents stay). */
   stopWorkflow(id: string): ChatSession {
     return this.update(id, { workflow: null })
   }
@@ -1513,7 +1513,7 @@ export class ChatService {
       const update: SystemMessage = { role: 'system', content: '', sections: { [PERMISSIONS_SECTION]: mode }, timestamp: Date.now() }
       agent.state.messages = [...agent.state.messages, update]
     }
-    // And the Spec → ship stage, the same way: a section replaced whenever the stage moves on.
+    // And the Spec → Ship stage, the same way: a section replaced whenever the stage moves on.
     const stage = workflowSection(session.workflow)
     const toldStage = getCurrentSystemMessage(agent.state.messages)?.sections?.[WORKFLOW_SECTION] ?? null
     if (stage !== toldStage) {
@@ -1619,7 +1619,7 @@ export class ChatService {
       }
       const finished = this.finished.get(id)
       this.finished.delete(id)
-      // Spec → ship: a finished build goes straight on to the review unless the person turned that off.
+      // Spec → Ship: a finished build goes straight on to the review unless the person turned that off.
       const flow = this.get(id).workflow
       if (!error && finished === 'build' && flow?.stage === 'build' && flow.autoContinue !== false) {
         await this.advanceWorkflow(id)

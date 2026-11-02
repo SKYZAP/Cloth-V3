@@ -128,7 +128,7 @@ export function WorkBar({ bar, flow, onAutoContinue }: { bar: Bar | null; flow?:
         {stage ? (
           <>
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">
-              <b className="mr-1.5 font-semibold text-mode">Spec → ship</b>
+              <b className="mr-1.5 font-semibold text-mode">Spec → Ship</b>
               {flow?.route && (
                 <span className="mr-1.5 align-[1px]">
                   <RouteBadge route={flow.route} />

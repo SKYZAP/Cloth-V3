@@ -1,6 +1,6 @@
 import type { ReviewFinding } from '@shared/types'
 
-/* What a Spec → ship stage stop shows: its summary split up, and the message that sends review findings back. */
+/* What a Spec → Ship stage stop shows: its summary split up, and the message that sends review findings back. */
 
 /** Splits a stage summary into its bullets and the "Assumed:" / "Unverified:" lines every stage ends with. */
 export function splitSummary(summary: string[]): { bullets: string[]; assumed: string | null; unverified: string | null } {

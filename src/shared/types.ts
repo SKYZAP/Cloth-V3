@@ -340,7 +340,7 @@ export interface ChatSession {
    * and what a chat in Plan mode goes back to. Missing on older chats (manual).
    */
   access?: 'auto' | 'manual'
-  /** The Spec → ship workflow this chat is running, or null for a plain chat. */
+  /** The Spec → Ship workflow this chat is running, or null for a plain chat. */
   workflow?: SpecWorkflow | null
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
   fileAccess: FileAccess
@@ -615,7 +615,7 @@ export type AutoApprove = 'none' | 'edits' | 'all'
 export type Permissions = 'auto' | 'manual' | 'plan'
 
 /** A plan the agent proposed with `present_plan` (Plan mode). */
-/** The stages of Spec → ship, in order; `done` once the review is accepted. */
+/** The stages of Spec → Ship, in order; `done` once the review is accepted. */
 export type WorkflowStage = 'grill' | 'spec' | 'tickets' | 'build' | 'review' | 'done'
 export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec', 'tickets', 'build', 'review']
 
@@ -631,7 +631,7 @@ export function routeStages(route?: WorkflowRoute | null): Exclude<WorkflowStage
   return route === 'quick' ? ['grill', 'build', 'review'] : WORKFLOW_STAGES
 }
 
-/** A chat running Spec → ship: grill, write the spec, cut tickets, build them, review against the spec. */
+/** A chat running Spec → Ship: grill, write the spec, cut tickets, build them, review against the spec. */
 export interface SpecWorkflow {
   kind: 'spec-ship'
   stage: WorkflowStage
@@ -746,7 +746,7 @@ export interface ToolTrace {
   plan?: PlanProposal
   /** For `ask_questions` calls: a grilling round waiting for answers. */
   questions?: QuestionRound
-  /** For `finish_stage` calls: a Spec → ship stage waiting for the user's OK. */
+  /** For `finish_stage` calls: a Spec → Ship stage waiting for the user's OK. */
   stageGate?: StageGate
 }
 
@@ -843,7 +843,7 @@ export interface UiMessage {
   archived?: boolean
   /** Set on the user message that approved a plan: the mode the chat switched to. */
   planApproval?: 'auto' | 'manual'
-  /** Set on the user message that moved a Spec → ship chat to a new stage: that stage. */
+  /** Set on the user message that moved a Spec → Ship chat to a new stage: that stage. */
   workflowStage?: WorkflowStage
 }
 

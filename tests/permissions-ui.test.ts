@@ -18,7 +18,7 @@ describe('mode and access', () => {
     expect(accessOf(chat('plan'))).toBe('manual')
   })
 
-  it('switches Chat and Plan on Shift+Tab, keeping the access, and leaves Spec → ship alone', () => {
+  it('switches Chat and Plan on Shift+Tab, keeping the access, and leaves Spec → Ship alone', () => {
     expect(nextModePatch(chat('auto'))).toEqual({ permissions: 'plan' })
     expect(nextModePatch(chat('plan', 'auto'))).toEqual({ permissions: 'auto' })
     expect(nextModePatch(chat('plan'))).toEqual({ permissions: 'manual' })
@@ -28,7 +28,7 @@ describe('mode and access', () => {
   it('names each mode and access level', () => {
     expect(accessLevel('manual').name).toBe('Manual')
     expect(chatModeInfo('plan').sub).toMatch(/after you approve/)
-    expect(chatModeInfo('spec').name).toBe('Spec → ship')
+    expect(chatModeInfo('spec').name).toBe('Spec → Ship')
   })
 
   it('cycles on Shift+Tab only in the composer or with nothing focused', () => {

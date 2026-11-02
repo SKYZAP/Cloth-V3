@@ -1,4 +1,4 @@
-/** A Spec → ship ticket file (docs/specs/<slug>/tickets/NN-slug.md), as the board shows it. */
+/** A Spec → Ship ticket file (docs/specs/<slug>/tickets/NN-slug.md), as the board shows it. */
 export interface Ticket {
   path: string
   /** "01", "02"… from the heading, else from the file name. */

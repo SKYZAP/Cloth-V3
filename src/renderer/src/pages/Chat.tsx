@@ -357,7 +357,7 @@ export function ChatPage() {
   )
 }
 
-/** Chats switched to Spec → ship that wait for their first message (kept while you look at other chats). */
+/** Chats switched to Spec → Ship that wait for their first message (kept while you look at other chats). */
 const specWaiting = new Set<string>()
 
 function ChatView({
@@ -410,7 +410,7 @@ function ChatView({
     setDraft((d) => (d.trim() ? `${d}\n${m.text}` : m.text))
     textarea.current?.focus()
   }
-  // Spec → ship picked but not started: the next message is the idea it starts from.
+  // Spec → Ship picked but not started: the next message is the idea it starts from.
   const [specArmed, setSpecArmedState] = useState(() => specWaiting.has(session.id))
   const setSpecArmed = (on: boolean) => {
     if (on) specWaiting.add(session.id)
@@ -581,9 +581,9 @@ function ChatView({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
-  // Shift+Tab switches between Chat and Plan while the message box has focus or nothing does (Spec → ship is left from the mode menu).
+  // Shift+Tab switches between Chat and Plan while the message box has focus or nothing does (Spec → Ship is left from the mode menu).
   const cyclePermission = () => {
-    // Spec → ship still waiting for its first message: Shift+Tab goes back to Chat.
+    // Spec → Ship still waiting for its first message: Shift+Tab goes back to Chat.
     if (specArmed) return setSpecArmed(false)
     const patch = nextModePatch(session)
     if (patch) void update(patch)
@@ -616,10 +616,10 @@ function ChatView({
     const s = await attempt(() => api.chat.stopWorkflow(session.id))
     if (s) onChange(s)
   }
-  /** The first message in Spec → ship: start it with the message as the idea. */
+  /** The first message in Spec → Ship: start it with the message as the idea. */
   const startSpec = async (idea: string, hasFiles: boolean) => {
-    if (!idea) return void useApp.getState().toast('Describe what you want to build to start Spec → ship', 'error')
-    if (hasFiles) return void useApp.getState().toast('Spec → ship starts from text: remove the attachments, then send', 'error')
+    if (!idea) return void useApp.getState().toast('Describe what you want to build to start Spec → Ship', 'error')
+    if (hasFiles) return void useApp.getState().toast('Spec → Ship starts from text: remove the attachments, then send', 'error')
     stick.current = true
     setDraft('')
     setHint(null)
@@ -1083,7 +1083,7 @@ function ChatView({
               }
             }}
             rows={1}
-            placeholder={!session.model ? 'Pick a model below to start' : specArmed ? 'Describe what you want to build. Spec → ship starts when you send it.' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
+            placeholder={!session.model ? 'Pick a model below to start' : specArmed ? 'Describe what you want to build. Spec → Ship starts when you send it.' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
             className={clsx(
               'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
               (inline.length > 0 || tagged.length > 0) && 'text-transparent caret-fg'
@@ -1380,7 +1380,7 @@ function AssistantTurn({
   onUndo?(toolCallId: string): Promise<void>
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
-  /** Spec → ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
+  /** Spec → Ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
   workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> } }
 }) {
   const [showSources, setShowSources] = useState(false)
