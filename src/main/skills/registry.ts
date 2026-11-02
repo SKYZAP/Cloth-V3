@@ -103,15 +103,18 @@ export class SkillRegistry {
     const skillMd = files.find((f) => f.path === 'SKILL.md')
     if (!skillMd) throw new Error('Registry entry has no SKILL.md')
     const { frontmatter } = parseSkillMd(skillMd.contents)
-    const name = slugify(String(frontmatter.name ?? id.split('/').pop()))
+    let name = slugify(String(frontmatter.name ?? id.split('/').pop()))
     if (!name) throw new Error('Could not derive a skill name')
 
     const installed = await this.installedSources()
+    // Installed before: reinstall into the same folder, whatever it is called now.
     const existingName = installed.get(id.toLowerCase())
+    const taken = (n: string) => existsSync(join(this.ctx.skillsDir, n))
+    // Another set (or the person) already has a skill by this name: install this one beside it under a name that
+    // says which set it came from, e.g. "pdf" from acme/agent-skills becomes "agent-skills-pdf".
+    if (!existingName && !opts.overwrite && taken(name)) name = setQualifiedName(name, id, taken)
+    if (existingName) name = existingName
     const dir = join(this.ctx.skillsDir, name)
-    if (existsSync(dir) && existingName !== name && !opts.overwrite) {
-      throw new Error(`A different skill named "${name}" already exists in the hub — rename it first, or install with overwrite`)
-    }
     const source: SkillSource = { registry: 'skills.sh', id, hash: data.hash ?? null, installedAt: Date.now(), url: `${SKILLS_REGISTRY}/${id}`, linkedBy: 'install' }
     await this.writeSnapshot(dir, name, files, source)
     this.ctx.kv.set(`${UNLINKED_KEY}${name}`, false)
@@ -418,6 +421,20 @@ const AUDIT_PROVIDERS: { key: keyof AuditApiEntry; provider: string; slug: strin
   { key: 'socket', provider: 'Socket', slug: 'socket' },
   { key: 'snyk', provider: 'Snyk', slug: 'snyk' }
 ]
+
+/**
+ * A free hub name for a registry skill whose own name is taken by a skill from elsewhere: the set's repository
+ * first ("agent-skills-pdf"), then its owner too ("acme-agent-skills-pdf"), then a number.
+ */
+export function setQualifiedName(name: string, id: string, taken: (name: string) => boolean): string {
+  const [owner = '', repo = ''] = id.split('/')
+  const tries = [slugify(`${repo}-${name}`), slugify(`${owner}-${repo}-${name}`)]
+  for (const n of tries) if (n && n !== name && !taken(n)) return n
+  for (let i = 2; ; i++) {
+    const n = `${tries[1].slice(0, 60)}-${i}`
+    if (!taken(n)) return n
+  }
+}
 
 function snapshotFiles(data: DownloadResponse): { path: string; contents: string }[] {
   return (data.files ?? []).filter((f): f is { path: string; contents: string } => typeof f.contents === 'string')

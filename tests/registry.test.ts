@@ -36,6 +36,8 @@ beforeAll(async () => {
       hits.download++
       return res.end(JSON.stringify(snapshot()))
     }
+    // Another set with a skill of the same name.
+    if (url.pathname === '/api/download/other/agent-skills/nest-guards') return res.end(JSON.stringify({ hash: 'other-1', files: [{ path: 'SKILL.md', contents: '---\nname: nest-guards\ndescription: Other guards\n---\n\n# Other' }] }))
     if (url.pathname === '/api/download/evil/skills/escape') return res.end(JSON.stringify({ hash: 'x', files: [{ path: 'SKILL.md', contents: '---\nname: escape\ndescription: x\n---\nx' }, { path: '../../outside.txt', contents: 'pwned' }] }))
     if (url.pathname === '/acme/skills/nest-guards') {
       hits.page++
@@ -124,6 +126,34 @@ describe('skills.sh registry', () => {
     expect(updated.body).toContain('v2')
     expect(updated.source?.hash).toBe('hash-v2')
     expect(readFileSync(join(updated.dir, 'evals.json'), 'utf8')).toBe(evals)
+  })
+
+  it('installs same-named skills from different sets side by side, the later one under its set name', async () => {
+    const { services } = makeServices()
+    const registry = new SkillRegistry(services.ctx, services.skills, base, () => '', () => '')
+    expect(await registry.install('acme/skills/nest-guards')).toBe('nest-guards')
+    expect(await registry.install('other/agent-skills/nest-guards')).toBe('agent-skills-nest-guards')
+    // Both are kept, each linked to its own set, and the groups list each under its set.
+    expect((await services.skills.get('nest-guards')).description).toBe('Guards v1')
+    expect(await services.skills.get('agent-skills-nest-guards')).toMatchObject({ description: 'Other guards', source: { id: 'other/agent-skills/nest-guards' } })
+    expect((await registry.groups()).map((g) => [g.repo, g.skills])).toEqual(
+      expect.arrayContaining([
+        ['acme/skills', ['nest-guards']],
+        ['other/agent-skills', ['agent-skills-nest-guards']]
+      ])
+    )
+    // Installing either again updates it in its own folder rather than adding a third copy.
+    expect(await registry.install('other/agent-skills/nest-guards')).toBe('agent-skills-nest-guards')
+    expect(await registry.install('acme/skills/nest-guards')).toBe('nest-guards')
+    expect((await services.skills.list()).map((s) => s.name)).toEqual(['agent-skills-nest-guards', 'nest-guards'])
+  })
+
+  it('names a clashing set skill by owner and then a number when its set name is taken too', async () => {
+    const { setQualifiedName } = await import('../src/main/skills/registry')
+    const taken = new Set(['pdf', 'agent-skills-pdf'])
+    expect(setQualifiedName('pdf', 'acme/agent-skills/pdf', (n) => taken.has(n))).toBe('acme-agent-skills-pdf')
+    taken.add('acme-agent-skills-pdf')
+    expect(setQualifiedName('pdf', 'acme/agent-skills/pdf', (n) => taken.has(n))).toBe('acme-agent-skills-pdf-2')
   })
 
   it('refuses files that would escape the skill folder', async () => {
