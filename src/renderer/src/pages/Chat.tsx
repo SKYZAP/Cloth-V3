@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import {
@@ -476,7 +476,14 @@ function ChatView({
     if (e.type === 'compacting') setCompacting(true)
     if (e.type === 'compacted') {
       setCompacting(false)
-      void api.chat.messages(session.id).then(setMessages)
+      // Keep a message sent while summarising: it shows before it is saved, so the reload doesn't have it yet.
+      void api.chat.messages(session.id).then((ms) =>
+        setMessages((cur) => {
+          const ids = new Set(ms.map((m) => m.id))
+          const last = ms.at(-1)?.createdAt ?? 0
+          return [...ms, ...cur.filter((m) => !ids.has(m.id) && m.createdAt > last)]
+        })
+      )
       refreshUsage()
       if (e.error) useApp.getState().toast(`Couldn't summarise: ${e.error}`, 'error')
     }
@@ -790,6 +797,24 @@ function ChatView({
     void api.chat.messages(session.id).then(setMessages)
   }
 
+  // The turns' buttons go through these, which never change: a streamed update then re-renders only the turn it changed.
+  const latest = useRef({ regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue })
+  latest.current = { regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue }
+  const turnActions = useMemo(
+    () => ({
+      regenerate: (id: string) => void latest.current.regenerate(id),
+      undo: (toolCallId: string) => latest.current.undo(toolCallId),
+      approvePlan: (mode: 'auto' | 'manual') => latest.current.approvePlan(mode),
+      revisePlan: () => latest.current.revisePlan(),
+      answerRound: (text: string) => latest.current.answerRound(text),
+      approveStage: () => latest.current.approveStage(),
+      reviseStage: () => latest.current.reviseStage(),
+      fixFindings: (text: string) => latest.current.fixFindings(text),
+      setAutoContinue: (on: boolean) => void latest.current.setAutoContinue(on)
+    }),
+    []
+  )
+
   const provider = providers.find((p) => p.id === session.model?.providerId)
   const waiting = running && messages.at(-1)?.role === 'user'
   const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
@@ -932,7 +957,7 @@ function ChatView({
                 {m.workflowStage ? <StageDivider message={m} fresh={fresh} route={session.workflow?.route} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => void regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: approvePlan, onRevise: revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: answerRound, onApprove: approveStage, onRevise: reviseStage, onFix: fixFindings, flow: session.workflow, onAutoContinue: (on) => void setAutoContinue(on), docs: specDocs }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => turnActions.regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : turnActions.undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: turnActions.approvePlan, onRevise: turnActions.revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: turnActions.answerRound, onApprove: turnActions.approveStage, onRevise: turnActions.reviseStage, onFix: turnActions.fixFindings, flow: session.workflow, onAutoContinue: turnActions.setAutoContinue, docs: specDocs }} />
             )
           })}
           <AnimatePresence>
@@ -1359,7 +1384,27 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
   )
 }
 
-function AssistantTurn({
+/**
+ * A turn re-renders only when what it shows changes: its handlers come from the chat's stable turn actions (onRegenerate
+ * is a fresh arrow each time, but always for the same message), so they are left out of the comparison.
+ */
+const AssistantTurn = memo(
+  AssistantTurnView,
+  (a, b) =>
+    a.message === b.message &&
+    a.fresh === b.fresh &&
+    a.streaming === b.streaming &&
+    a.invoked === b.invoked &&
+    a.tagged === b.tagged &&
+    a.awaiting === b.awaiting &&
+    !!a.onUndo === !!b.onUndo &&
+    a.plan?.actionable === b.plan?.actionable &&
+    a.workflow?.actionable === b.workflow?.actionable &&
+    a.workflow?.flow === b.workflow?.flow &&
+    a.workflow?.docs === b.workflow?.docs
+)
+
+function AssistantTurnView({
   message,
   invoked,
   tagged,

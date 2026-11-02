@@ -1083,7 +1083,7 @@ export class ChatService {
   /** Restore the files one tool call changed, and mark its changes as undone in the history. */
   async undoChange(id: string, toolCallId: string, force = false): Promise<UiMessage[]> {
     if (!this.checkpoints) throw new Error('Checkpoints are not available')
-    if (this.active.has(id)) throw new Error('Wait for the agent to finish before undoing')
+    if (this.isRunning(id)) throw new Error('Wait for the agent to finish before undoing')
     await this.checkpoints.undo(id, toolCallId, force)
     const raw = this.rawMessages(id)
     for (const m of raw) {
@@ -1105,12 +1105,18 @@ export class ChatService {
     const session = this.get(id)
     // Keep the model's limit current (throttled; offline providers keep what they had).
     if (session.model) await this.runtime.providers.refreshModel(session.model).catch(() => undefined)
+    const scope = this.scope(id)
+    return this.estimateUsage(id, scope, await this.runtime.systemPrompt(scope, await this.instructions(session)))
+  }
+
+  /** The context estimate for a system prompt already built (no provider round trip: the model's known window). */
+  private estimateUsage(id: string, scope: ToolScope, systemPrompt: string): ContextUsage {
+    const session = this.get(id)
     const window = session.model ? this.contextWindow(session.model, session.contextLimit) : null
     const raw = this.rawMessages(id)
-    const scope = this.scope(id)
     const est = (s: string) => Math.ceil(s.length / 4)
     const parts: Record<ContextSliceKey, number> = { system: 0, tools: 0, skills: 0, summary: 0, user: 0, assistant: 0, toolResults: 0 }
-    parts.system = est(await this.runtime.systemPrompt(scope, await this.instructions(session)))
+    parts.system = est(systemPrompt)
     parts.tools = est(this.runtime.toolDefinitions(scope))
     for (const m of raw) {
       if (m.role === 'user') {
@@ -1147,7 +1153,7 @@ export class ChatService {
    * `splitTurns` (automatic summarising) may also cut between the steps of a long turn.
    */
   async compact(id: string, opts: { instructions?: string; signal?: AbortSignal; splitTurns?: boolean } = {}): Promise<UiMessage[]> {
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('Wait for the agent to finish first')
+    if (this.busy(id)) throw new Error('Wait for the agent to finish first')
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first')
     this.compacting.add(id)
@@ -1220,11 +1226,17 @@ export class ChatService {
   }
 
   isRunning(id: string): boolean {
-    return this.active.has(id)
+    return this.active.has(id) || this.starting.has(id)
+  }
+
+  /** Running, getting ready to run, or summarising. */
+  private busy(id: string): boolean {
+    return this.active.has(id) || this.starting.has(id) || this.compacting.has(id)
   }
 
   abort(id: string): void {
     this.approvals?.cancel(id)
+    this.starting.get(id)?.abort()
     this.active.get(id)?.abort()
   }
 
@@ -1412,7 +1424,7 @@ export class ChatService {
    */
   async approvePlan(id: string, mode: 'auto' | 'manual'): Promise<ChatSession> {
     if (mode !== 'auto' && mode !== 'manual') throw new Error('A plan is approved in Auto or Manual mode')
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    if (this.busy(id)) throw new Error('This chat is already running')
     const session = this.update(id, { permissions: mode })
     const how =
       mode === 'auto'
@@ -1428,7 +1440,7 @@ export class ChatService {
    * reviews, waiting for the person's OK between stages. `idea` (optional) is what to build, sent as the first message.
    */
   async startWorkflow(id: string, idea?: string): Promise<ChatSession> {
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    if (this.busy(id)) throw new Error('This chat is already running')
     const cur = this.get(id)
     if (!cur.workspace) throw new Error('Spec → Ship needs a folder: choose one for this chat first')
     // Plan mode is read-only, and the documents need writing: back to the chat's access (Manual if it has none).
@@ -1440,7 +1452,7 @@ export class ChatService {
 
   /** The person approved the current stage: move to the next one and start it. */
   async advanceWorkflow(id: string): Promise<ChatSession> {
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    if (this.busy(id)) throw new Error('This chat is already running')
     const w = this.get(id).workflow
     if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → Ship')
     const stage = nextStage(w.stage, w.route)
@@ -1463,7 +1475,7 @@ export class ChatService {
   }
 
   async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = [], agentNames: string[] = []): Promise<void> {
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    if (this.busy(id)) throw new Error('This chat is already running')
     // Tagged agents that are gone (or can't take work from this chat) are dropped; the text stays as written.
     const delegates = this.runtime.delegates(this.get(id).agentId)
     const agents = [...new Set(agentNames.map((n) => n.toLowerCase()))].map((n) => delegates.find((a) => a.name.toLowerCase() === n)).filter((a): a is SavedAgent => !!a)
@@ -1476,7 +1488,7 @@ export class ChatService {
 
   /** Send a user message again: drop it and everything after it, then run the same content. */
   async resend(id: string, uiMessageId: string): Promise<void> {
-    if (this.active.has(id) || this.compacting.has(id)) throw new Error('This chat is already running')
+    if (this.busy(id)) throw new Error('This chat is already running')
     const original = this.rawMessages(id).find((m) => m.role === 'user' && `m${m.timestamp}` === uiMessageId) as UserMessage | undefined
     if (!original) throw new Error('That message is no longer in this chat')
     this.rewind(id, uiMessageId)
@@ -1487,25 +1499,57 @@ export class ChatService {
   private async run(id: string, prepared: UserMessage, title: string): Promise<void> {
     const session = this.get(id)
     if (!session.model) throw new Error('Pick a model for this chat first (Providers → add one, then choose it in the chat header)')
-    const scope = await this.runScope(id)
-    // A message tagging an agent hands it the work with `task`, even in a chat that doesn't use subagents otherwise.
-    if (typeof prepared.content !== 'string' && prepared.content.some((c) => c.type === 'text' && c.text.startsWith(AGENT_OPEN))) scope.subagents = true
-    // External MCP servers this chat uses: started on demand so their tools are there for the agent.
-    const mcp = this.runtime.mcpClients
-    if (mcp) {
-      scope.mcpServers = mcp.chatServers(session.mcpServers)
-      await mcp.ensure(scope.mcpServers)
+    const emit = (e: ChatEvent) => this.ctx.emit('chat', e)
+    // The message shows in the chat straight away; getting ready (tools, servers, the system prompt) happens after.
+    let message = prepared
+    const carried = this.carry.get(id)
+    if (carried && !this.rawMessages(id).some((m) => m.role === 'user')) message = withSummary(message, carried)
+    this.carry.delete(id)
+    if (session.title === 'New chat' && title) {
+      this.update(id, { title, titleSource: 'first-message' })
+      emit({ sessionId: id, type: 'title', title })
     }
-    // Summarise older turns first if the conversation is about to outgrow the model's context.
-    if (this.settings.get().autoCompact) {
-      const usage = await this.contextUsage(id)
-      const incoming = Math.ceil(contentChars(prepared) / 4) + 2000
-      if (usage.threshold && usage.tokens + incoming > usage.threshold) {
-        await this.compact(id, { splitTurns: true }).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
+    const ready = new AbortController()
+    this.starting.set(id, ready)
+    emit({ sessionId: id, type: 'start' })
+    const userMsg = toUiMessages([message])[0]
+    emit({ sessionId: id, type: 'message', message: userMsg })
+    let scope: ToolScope
+    let systemPrompt: string
+    try {
+      scope = await this.runScope(id)
+      // A message tagging an agent hands it the work with `task`, even in a chat that doesn't use subagents otherwise.
+      if (typeof prepared.content !== 'string' && prepared.content.some((c) => c.type === 'text' && c.text.startsWith(AGENT_OPEN))) scope.subagents = true
+      // External MCP servers this chat uses: started on demand so their tools are there for the agent (the instructions load meanwhile).
+      const mcp = this.runtime.mcpClients
+      if (mcp) scope.mcpServers = mcp.chatServers(session.mcpServers)
+      const [instructions] = await Promise.all([this.instructions(session), mcp ? mcp.ensure(scope.mcpServers!) : undefined])
+      systemPrompt = await this.runtime.systemPrompt(scope, instructions)
+      // Summarise older turns first if the conversation is about to outgrow the model's context.
+      if (this.settings.get().autoCompact && !ready.signal.aborted) {
+        const usage = this.estimateUsage(id, scope, systemPrompt)
+        const incoming = Math.ceil(contentChars(message) / 4) + 2000
+        if (usage.threshold && usage.tokens + incoming > usage.threshold) {
+          this.starting.delete(id)
+          await this.compact(id, { splitTurns: true }).catch((err) => this.ctx.log('chat', 'auto-compaction failed', errorMessage(err)))
+          this.starting.set(id, ready)
+          // The chat reloads its messages after summarising: show this one again.
+          emit({ sessionId: id, type: 'message', message: userMsg })
+        }
       }
+    } catch (err) {
+      this.starting.delete(id)
+      emit({ sessionId: id, type: 'end' })
+      throw err
+    }
+    // Stopped while getting ready: the model was never called, but the message stays, as it does when stopped later.
+    if (ready.signal.aborted) {
+      this.saveMessages(id, [...this.rawMessages(id), message])
+      this.starting.delete(id)
+      emit({ sessionId: id, type: 'end' })
+      return
     }
     const history = this.rawMessages(id)
-    const systemPrompt = await this.runtime.systemPrompt(scope, await this.instructions(session))
     const agent = this.runtime.createAgent({ model: session.model, scope, thinking: session.thinking, history, systemPrompt })
     // Tell the agent the chat's permission mode when it is new or changed since the last run.
     const mode = permissionSection(session.permissions, { workspace: session.workspace, container: session.container })
@@ -1522,8 +1566,8 @@ export class ChatService {
       agent.state.messages = [...agent.state.messages, update]
     }
     this.active.set(id, agent)
+    this.starting.delete(id)
 
-    const emit = (e: ChatEvent) => this.ctx.emit('chat', e)
     let startIndex = history.length
 
     // Tool results pile up between the model calls of one turn: summarise before a call that would
@@ -1585,17 +1629,6 @@ export class ChatService {
       }
     })
 
-    let message = prepared
-    const carried = this.carry.get(id)
-    if (carried && !history.some((m) => m.role === 'user')) message = withSummary(message, carried)
-    this.carry.delete(id)
-    if (session.title === 'New chat' && title) {
-      this.update(id, { title, titleSource: 'first-message' })
-      emit({ sessionId: id, type: 'title', title })
-    }
-    emit({ sessionId: id, type: 'start' })
-    const userMsg = toUiMessages([message])[0]
-    emit({ sessionId: id, type: 'message', message: userMsg })
 
     const attributed = <T>(fn: () => T): T => (this.usage ? this.usage.run({ source: 'chat', ref: id }, fn) : fn())
     void attributed(async () => {
@@ -1636,6 +1669,9 @@ export class ChatService {
       if (!error) await this.retitle(id).catch((err) => this.ctx.log('chat', 'title failed', errorMessage(err)))
     })
   }
+
+  /** Chats whose message is shown but whose run is still getting ready (stopping one cancels it). */
+  private starting = new Map<string, AbortController>()
 
   /** Chats whose Spec → Ship wrap-up is running: committed once it ends. */
   private wrapping = new Set<string>()
