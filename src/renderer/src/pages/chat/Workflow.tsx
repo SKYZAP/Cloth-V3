@@ -24,7 +24,7 @@ const APPROVE: Record<Exclude<WorkflowStage, 'done'>, string> = {
 const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Approve the spec', tickets: 'Approve the tickets', build: 'Build done', review: 'Accept the review' }
 
 const BTN = 'h-8 rounded-[9px] px-3 text-[12.5px] transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
-const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi')
+const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim disabled:opacity-100')
 const SECONDARY = clsx(BTN, 'border border-line-strong text-fg hover:bg-elev-2')
 const GHOST = clsx(BTN, 'text-muted hover:bg-elev-2 hover:text-fg')
 const CARD = 'mb-2 rounded-[14px] border border-crimson-line bg-[linear-gradient(var(--color-crimson-soft),transparent_60%)] px-4 py-3.5'

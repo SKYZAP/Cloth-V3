@@ -36,7 +36,7 @@ export function PlanCard({ plan, actionable, onApprove, onRevise }: { plan: Plan
       )}
       {actionable && (
         <div className="flex flex-wrap gap-2">
-          <button disabled={busy} onClick={() => void approve('auto')} className="h-8 rounded-[9px] bg-crimson px-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:opacity-50">
+          <button disabled={busy} onClick={() => void approve('auto')} className="h-8 rounded-[9px] bg-crimson px-3 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim">
             Approve and continue in Auto
           </button>
           <button disabled={busy} onClick={() => void approve('manual')} className="h-8 rounded-[9px] border border-line-strong px-3 text-[12.5px] text-fg transition-colors hover:bg-elev-2 disabled:opacity-50">

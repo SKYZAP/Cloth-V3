@@ -75,7 +75,7 @@ export function ApprovalCard({ approval, permissions, onDecide }: { approval: Pe
           <button
             disabled={busy}
             onClick={() => void decide('allow')}
-            className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:opacity-50"
+            className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
           >
             {risky ? 'Allow once' : approval.kind === 'command' ? 'Run' : approval.kind === 'tool' || approval.kind === 'computer' ? 'Allow' : 'Apply'}
           </button>

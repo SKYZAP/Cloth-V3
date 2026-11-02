@@ -176,7 +176,7 @@ export function EnginePanel({
               key={f}
               className={clsx(
                 'flex cursor-default items-start gap-3 rounded-[10px] border px-3 py-2.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-crimson-line',
-                flavour === f ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-elev-2'
+                flavour === f ? 'border-crimson-line bg-elev-2' : 'border-line bg-elev hover:bg-elev-2'
               )}
             >
               <input type="radio" name="flavour" value={f} checked={flavour === f} onChange={() => setFlavour(f)} className="mt-0.5 accent-[var(--color-crimson)]" />

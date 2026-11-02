@@ -93,7 +93,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
                 onClick={submitTyped}
                 title="Send answer"
                 aria-label="Send answer"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
               >
                 <PaperPlaneRight size={14} weight="fill" />
               </button>
@@ -105,7 +105,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
             <button
               disabled={busy || !multiAnswer}
               onClick={submitTyped}
-              className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:opacity-50"
+              className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
             >
               Send answer
             </button>

@@ -133,7 +133,7 @@ function BigButton({ primary, disabled, onClick, children }: { primary?: boolean
       onClick={onClick}
       className={
         primary
-          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-crimson text-[15px] font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:opacity-50'
+          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-crimson text-[15px] font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:bg-elev-2 disabled:text-dim'
           : 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-line-strong text-[14px] font-medium text-muted'
       }
     >
