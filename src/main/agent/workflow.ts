@@ -1,5 +1,7 @@
 import type { SpecWorkflow, WorkflowRoute, WorkflowStage } from '@shared/types'
 import { routeStages } from '@shared/types'
+import { readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 export { routeStages }
 
@@ -84,7 +86,7 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
     '### Stage: Build',
     'Build against the acceptance criteria: on the Quick route, the spec\'s checklist; otherwise the tickets. Put them on the todo list in order. Work the frontier: every item whose blockers are done can start; hand independent ones to agents with `task` in parallel (role worker), each brief pointing at its ticket or criteria, the spec and the glossary rather than repeating them. Use the cheapest tier for tickets whose criteria leave nothing to work out; a stronger one only where the approach is unclear. Ask for test-first work, one slice at a time: for each criterion, write down what must hold before and after (and what is undefined), then one failing test at the agreed seam named after the criterion, then only enough code to make it pass; no tests written ahead in bulk. Tests go through the public interface, never mock the module\'s own collaborators or check through a side door (the database instead of the interface), and take expected values from the spec or a worked example, never recomputed the way the code computes them. Leave refactoring to the review. Check each report against its criteria before marking it done; send it back with the specific defects if needed.',
     'When the folder is a git repository, each worker you start gets its own git copy of the project on a branch of its own, and its work is merged back into this branch when it finishes (the documents are committed first), so independent tickets really do build at the same time. A worker’s result says whether its work merged; on a conflict its branch is kept: merge and resolve it yourself, or send the ticket back. Leave files the running workers are changing alone, and run the tests here after each merge. Never switch this folder to another branch: workers merge into the branch it is on. When a worker stops before finishing, its error names the branch holding its work; start the next worker with continueFrom set to that branch so it carries on rather than starting over.',
-    'Before starting, note the project\'s checks (type check, linter) and their current result, so the change leaves them no worse. Run the tests as you go and the full suite at the end with the project\'s normal test command; check that every new test appears in its output. Then exercise the change once through the real entry point (the app, command or public API) as its user would, or say in "Unverified" why that was not possible. Tick each criterion when it is met.',
+    'Before starting, note the project\'s checks (type check, linter) and their current result, so the change leaves them no worse. Run the tests as you go and the full suite at the end with the project\'s normal test command; check that every new test appears in its output. Then exercise the change once through the real entry point (the app, command or public API) as its user would, or say in "Unverified" why that was not possible. Tick each criterion in its file (`- [x]` in the ticket, or on the Quick route in the spec\'s checklist) as soon as it is met and checked, yourself, in this folder: that is how the person\'s board shows a ticket as done. A criterion that is not met stays unticked.',
     'A bug fix is diagnosed before any code changes (show no secrets in commands or output; write <REDACTED>):',
     '1. Build a feedback loop first: one command, already run once, that goes red on this exact symptom. Prefer a failing test at a seam that reaches the bug; otherwise a script against the running app, a CLI run diffed against known-good output, or a replayed captured request. Make it fast and give the same result every run; for a bug that only sometimes happens, raise how often it fails (loop it, add load) until it fails often. Form no theory before this command exists. If you cannot build one, say what you tried and ask the person (`ask_user`) for access, a captured log or permission to add instrumentation.',
     '2. Shrink it: cut inputs, steps and setup one at a time, re-running after each cut, until every part left is needed to make it fail.',
@@ -92,7 +94,7 @@ const STAGES: Record<Exclude<WorkflowStage, 'done'>, string> = {
     '4. Test one prediction at a time. Tag every debug log with one prefix, such as [DEBUG-a4f2]. For slowness, measure a baseline before changing anything.',
     '5. Turn the shrunk case into a failing regression test at a seam where the real bug pattern happens; if you forced the failure by editing code or a fixture, diff against the original to prove the edit landed. Then fix, watch it pass, and re-run the original loop. If no seam can hold the real pattern, say so under "Unverified".',
     '6. Remove the tagged logs (search for the prefix) and any throwaway scripts, and name the cause that proved true in the `finish_stage` summary.',
-    'When every item is done and the full suite passes, call `finish_stage` with what was built, the test and check results, and anything left partly done.'
+    'When every item is done and the full suite passes, call `finish_stage` with what was built, the test and check results, and anything left partly done; list a ticket left with unticked criteria in `unfinished`.'
   ].join('\n'),
   review: [
     '### Stage: Review',
@@ -110,6 +112,17 @@ export function workflowSection(w: SpecWorkflow | null | undefined): string | nu
   if (w.stage === 'done') return '## Workflow: Spec → Ship (done)\nThe Spec → Ship workflow for this feature is finished. Carry on as a normal chat; the spec, tickets, glossary and decision records stay in docs/ for reference.'
   const route = w.route ? ` · ${ROUTE_NAME[w.route]} route` : ''
   return [`## Workflow: Spec → Ship${w.slug ? ` (docs/specs/${w.slug})` : ''}${route}`, COMMON, STAGES[w.stage]].join('\n\n')
+}
+
+/** Numbers of the tickets in this folder that still have an unticked criterion ("02"), in order. */
+export async function openTickets(dir: string): Promise<string[]> {
+  const names = await readdir(dir).catch(() => [] as string[])
+  const out: string[] = []
+  for (const name of names.filter((n) => n.endsWith('.md')).sort()) {
+    const text = await readFile(join(dir, name), 'utf8').catch(() => '')
+    if (/^\s*[-*]\s*\[ \]/m.test(text)) out.push((/^(\d+)/.exec(name)?.[1] ?? name.replace(/\.md$/, '')).padStart(2, '0'))
+  }
+  return out
 }
 
 /** The hidden note that starts a stage once the person approves the previous one. */

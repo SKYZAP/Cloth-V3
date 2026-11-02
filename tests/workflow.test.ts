@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, type Context } from '@earendil-works/pi-ai'
@@ -283,6 +283,48 @@ describe('Spec → Ship in a chat', () => {
     // The worker's workspace was its checkout, not the chat's folder.
     expect(system(seen[1])).toContain('cloth-worktrees')
   }, 60_000)
+
+  it('finishes Build only once every ticket is ticked off or named as unfinished', async () => {
+    const env = setup('manual')
+    const dir = join(env.root, 'docs/specs/feat/tickets')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '01-a.md'), '# 01: A\n- [x] AC-1\n')
+    writeFileSync(join(dir, '02-b.md'), '# 02: B\n- [x] AC-2\n- [ ] AC-3\n')
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'feat', autoContinue: false } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built'] }, { id: 'a' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Partly done: 02 (AC-3)'], unfinished: ['2'] }, { id: 'b' })], { stopReason: 'toolUse' })
+    ])
+    await env.services.chat.send(env.session.id, 'build it')
+    const { traces } = await settle(env)
+    expect(traces.find((t) => t.id === 'a')?.result).toMatch(/Ticket 02 still has unticked criteria/)
+    expect(traces.find((t) => t.id === 'b')?.stageGate).toMatchObject({ stage: 'build' })
+  }, 30_000)
+
+  it('commits what the wrap-up changed once the workflow is done', async () => {
+    const env = setup('manual')
+    const g = (...args: string[]) => git(env.root, ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+    await g('init', '-q', '-b', 'main')
+    await g('config', 'core.autocrlf', 'false')
+    writeFileSync(join(env.root, 'README.md'), '# app')
+    writeFileSync(join(env.root, 'mine.txt'), 'the person’s own work')
+    await g('add', 'README.md')
+    await g('commit', '-q', '-m', 'start')
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'review', slug: 'feat' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      () => fauxAssistantMessage([fauxToolCall('write', { path: 'docs/specs/feat/spec.md', content: 'spec' }), fauxToolCall('write', { path: 'src/fix.ts', content: 'export {}' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage('The workflow is done.')
+    ])
+    await env.services.chat.advanceWorkflow(env.session.id)
+    await settle(env)
+    for (let i = 0; i < 300 && (await g('log', '-1', '--format=%s')).stdout.trim() === 'start'; i++) await wait(10)
+    expect((await g('log', '-1', '--format=%s')).stdout.trim()).toBe('Spec → Ship: feat done (final changes)')
+    expect((await g('show', '--name-only', '--format=', 'HEAD')).stdout.trim().split('\n').sort()).toEqual(['docs/specs/feat/spec.md', 'src/fix.ts'])
+    // The person's own uncommitted file is left alone.
+    expect((await g('status', '--porcelain')).stdout.trim()).toBe('?? mine.txt')
+  }, 30_000)
 
   it('emits no approvals for documents before Build', async () => {
     const env = setup('manual')

@@ -91,6 +91,28 @@ export async function commitWorkflowDocs(root: string, workspace: string, slug: 
 }
 
 /**
+ * Once the workflow is done, commit what it left uncommitted on the chat's branch: its documents and the files the chat
+ * changed itself (workspace-relative; workers' work is already merged). Anything else the person has uncommitted is left
+ * alone. Returns the commit's short hash, or null when nothing was left to commit.
+ */
+export async function commitWorkflowFinish(workspace: string, slug: string | null, files: string[]): Promise<string | null> {
+  const root = await repoRoot(workspace)
+  if (!root) return null
+  const sub = subfolder(root, workspace).split(sep).join('/')
+  const at = (p: string) => (sub ? `${sub}/${p}` : p)
+  const paths = [...new Set(['GLOSSARY.md', 'GLOSSARY-MAP.md', 'docs/adr', 'docs/specs/README.md', ...(slug ? [`docs/specs/${slug}`] : []), ...files].map((p) => at(p.replace(/\\/g, '/').replace(/^\.\//, ''))))]
+  return serial(root, async () => {
+    // Paths are repository-relative in porcelain output; -z keeps odd names unquoted. Gone files count too.
+    const out = (await run(root, ['status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', ...paths])).split('\0').filter(Boolean)
+    const dirty = out.map((l) => l.slice(3))
+    if (!dirty.length) return null
+    await run(root, ['add', '-A', '--', ...dirty])
+    await run(root, ['-c', 'user.name=Cloth', '-c', 'user.email=cloth@localhost', 'commit', '-m', `Spec → Ship${slug ? `: ${slug}` : ''} done (final changes)`, '--', ...dirty])
+    return (await run(root, ['rev-parse', '--short', 'HEAD'])).trim()
+  })
+}
+
+/**
  * Start a worker's checkout: a new branch from the chat's branch, in its own folder under `dir`. null when the
  * chat's folder isn't in a git repository or isn't on a branch (the worker then shares the chat's folder).
  */

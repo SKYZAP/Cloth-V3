@@ -14,7 +14,7 @@ import type { SkillService } from '../skills/skills'
 import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from './hub'
-import { docsOnly } from './workflow'
+import { docsOnly, openTickets } from './workflow'
 
 export interface ToolDetails {
   durationMs?: number
@@ -260,6 +260,7 @@ export const BUILTINS: BuiltinSpec[] = [
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
       slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup or (Quick route) the spec there' })),
       route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only: the route this task takes (needed unless a round already set it)' })),
+      unfinished: Type.Optional(Type.Array(Type.String(), { description: 'Build only: numbers of the tickets left partly done, with criteria still unticked' })),
       findings: Type.Optional(
         Type.Array(
           Type.Object({
@@ -285,6 +286,15 @@ export const BUILTINS: BuiltinSpec[] = [
       if (w.stage === 'grill' && !route) throw new Error('Say which route this task takes: quick, standard or preserve')
       if (route === 'quick' && !(slug || w.slug)) throw new Error('The Quick route writes the spec while grilling: give its slug')
       if (route) ctx.scope.setWorkflowRoute?.(route)
+      // A built ticket is ticked off in its file, which is what the board shows; one left partly done is named.
+      if (w.stage === 'build' && w.slug && ctx.scope.workspace) {
+        const unfinished = new Set((p.unfinished ?? []).map((n) => String(n).replace(/\D/g, '').padStart(2, '0')))
+        const open = (await openTickets(join(ctx.scope.workspace, 'docs', 'specs', w.slug, 'tickets'))).filter((n) => !unfinished.has(n))
+        if (open.length)
+          throw new Error(
+            `${open.length === 1 ? 'Ticket' : 'Tickets'} ${open.join(', ')} still ${open.length === 1 ? 'has' : 'have'} unticked criteria. Tick each criterion that is met in its ticket file (- [x]); list a ticket left partly done in \`unfinished\` and say what is left in the summary.`
+          )
+      }
       const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]
       const findings: ReviewFinding[] =
         w.stage === 'review'

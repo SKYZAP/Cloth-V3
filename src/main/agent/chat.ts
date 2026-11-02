@@ -5,7 +5,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, StageGate, WorkflowStage } from '@shared/types'
 import { nextStage, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
-import { createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
+import { commitWorkflowFinish, createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
@@ -1445,6 +1445,7 @@ export class ChatService {
     if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → Ship')
     const stage = nextStage(w.stage, w.route)
     const session = this.update(id, { workflow: { ...w, stage } })
+    if (stage === 'done') this.wrapping.add(id)
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
     return session
   }
@@ -1626,8 +1627,33 @@ export class ChatService {
           .then(() => this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
           .catch((err) => this.ctx.log('chat', 'auto-continue failed', errorMessage(err)))
       }
+      // Spec → Ship reached Done: the wrap-up's edits and anything else the chat changed itself are committed too.
+      if (this.wrapping.delete(id) && flow?.stage === 'done' && this.get(id).workspace) {
+        await commitWorkflowFinish(this.get(id).workspace!, flow.slug, this.workflowFiles(id))
+          .then((hash) => hash && this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
+          .catch((err) => this.ctx.log('chat', 'final workflow commit failed', errorMessage(err)))
+      }
       if (!error) await this.retitle(id).catch((err) => this.ctx.log('chat', 'title failed', errorMessage(err)))
     })
+  }
+
+  /** Chats whose Spec → Ship wrap-up is running: committed once it ends. */
+  private wrapping = new Set<string>()
+
+  /** Files the chat and its agents changed since its Spec → Ship workflow started (workspace-relative, undone ones left out). */
+  private workflowFiles(id: string): string[] {
+    const ui = this.messages(id)
+    const start = Math.max(0, ui.findLastIndex((m) => m.workflowStage === 'grill'))
+    const out = new Set<string>()
+    const walk = (blocks: UiBlock[]) => {
+      for (const b of blocks) {
+        if (b.type !== 'tool') continue
+        for (const c of b.trace.changes ?? []) if (!c.undone) out.add(c.path)
+        if (b.trace.subagent) walk(b.trace.subagent.blocks)
+      }
+    }
+    for (const m of ui.slice(start)) walk(m.blocks)
+    return [...out]
   }
 
   private titling = new Set<string>()
