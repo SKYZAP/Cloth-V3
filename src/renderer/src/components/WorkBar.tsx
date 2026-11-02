@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
-import { CaretDown, CheckCircle, Circle, WarningCircle } from '@phosphor-icons/react'
-import type { SpecWorkflow } from '@shared/types'
+import { CaretDown, CaretRight, CheckCircle, Circle, WarningCircle } from '@phosphor-icons/react'
+import type { SpecWorkflow, WorkflowStage } from '@shared/types'
 import { routeStages } from '@shared/types'
 import { formatCost } from '@/lib/format'
+import type { StageItem, StageRecord } from '@/lib/stages'
 import { RouteBadge, STAGE_LABEL, STAGE_YOU } from '@/pages/chat/Workflow'
 import { barSegments, runCardId, shortfall, type BarRow, type RunInfo, type StepStatus, type WorkBar as Bar } from '@/lib/workbar'
 
@@ -73,6 +74,82 @@ function Row({ row }: { row: BarRow }) {
   )
 }
 
+const TONE = { ok: 'text-ok', warn: 'text-warn', danger: 'text-danger-hi' } as const
+
+/** One line under a finished stage: a round, an agent run, a step or a line of the stage's summary. */
+function ItemRow({ item }: { item: StageItem }) {
+  const body = (
+    <>
+      <span className="min-w-0 flex-1 truncate text-muted">{item.text}</span>
+      {item.note && <span className={clsx('max-w-[45%] shrink-0 truncate text-[11px]', item.tone ? TONE[item.tone] : 'text-dim')}>{item.note}</span>}
+      {!!item.cost && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(item.cost)}</span>}
+    </>
+  )
+  const cls = 'flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12px]'
+  return item.cardId ? (
+    <button onClick={() => scrollToRun(item.cardId!)} className={clsx(cls, 'transition-colors hover:bg-elev-2')} title="Show this run">
+      {body}
+    </button>
+  ) : (
+    <div className={cls}>{body}</div>
+  )
+}
+
+/** A stage in the Spec → Ship list: a row that opens to what the stage did (the current one opens to its live steps). */
+function StageRow({ n, stage, status, record, live, note }: { n: number; stage: Exclude<WorkflowStage, 'done'>; status: StepStatus; record?: StageRecord; live: Bar | null; note: string }) {
+  const current = status === 'in_progress'
+  const items = record?.items ?? []
+  const files = record?.files ?? []
+  const canOpen = current ? !!live?.rows.length || items.length > 0 : items.length > 0 || files.length > 0
+  const [open, setOpen] = useState(current)
+  // The stage being worked on opens; one that just finished folds away.
+  useEffect(() => setOpen(current), [current])
+  const shown = open && canOpen
+  const summary = [record?.summary, current && live?.mode === 'todos' ? `${live.done} of ${live.total} steps` : ''].filter(Boolean).join(' · ')
+  return (
+    <div aria-current={current ? 'step' : undefined}>
+      <button
+        onClick={() => canOpen && setOpen(!open)}
+        aria-expanded={canOpen ? shown : undefined}
+        disabled={!canOpen}
+        className={clsx('grid w-full grid-cols-[12px_18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1.5 py-1 text-left text-[12.5px]', canOpen && 'transition-colors hover:bg-elev-2')}
+      >
+        <span className="flex text-dim">{canOpen && <CaretRight size={11} className={clsx('transition-transform duration-150', shown && 'rotate-90')} />}</span>
+        <StatusIcon status={status} />
+        <span className={clsx('min-w-0 truncate', current ? 'text-fg' : status === 'completed' ? 'text-muted' : 'text-dim')}>
+          {n} · {STAGE_LABEL[stage]}
+          {record?.route && (
+            <span className="ml-1.5 align-[1px]">
+              <RouteBadge route={record.route} />
+            </span>
+          )}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-[11px]">
+          {current && STAGE_YOU[stage] ? <span className="text-warn">needs you</span> : note ? <span className="text-dim">{note}</span> : null}
+          {summary && <span className="text-dim mobile:hidden">{summary}</span>}
+          {!!record?.cost && <span className="font-mono tabular-nums text-dim">{formatCost(record.cost)}</span>}
+        </span>
+      </button>
+      {shown && (
+        <div className="mb-1 ml-[30px] border-l border-line pl-1.5">
+          {current && live?.rows.length
+            ? live.rows.map((row) => <Row key={row.key} row={row} />)
+            : items.map((item) => <ItemRow key={item.key} item={item} />)}
+          {!current && files.length > 0 && (
+            <div className="flex flex-wrap gap-1 px-1.5 py-1">
+              {files.map((f) => (
+                <span key={f} title={f} className="max-w-[220px] truncate rounded-md bg-elev-2 px-1.5 py-px font-mono text-[10.5px] text-dim">
+                  {f.split('/').pop()}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Above this many steps the meter is one continuous bar instead of segments. */
 const MAX_SEGMENTS = 12
 
@@ -108,7 +185,18 @@ function Meter({ bar }: { bar: Bar }) {
 }
 
 /** The current turn's plan and agent runs, pinned above the message box. */
-export function WorkBar({ bar, flow, onAutoContinue }: { bar: Bar | null; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void }) {
+export function WorkBar({
+  bar,
+  flow,
+  stages: records,
+  onAutoContinue
+}: {
+  bar: Bar | null
+  flow?: SpecWorkflow | null
+  /** What each stage reached so far did and cost (Spec → Ship only). */
+  stages?: Partial<Record<WorkflowStage, StageRecord>>
+  onAutoContinue?(on: boolean): void
+}) {
   const [open, setOpen] = useState(false)
   const stage = flow && flow.stage !== 'done' ? flow.stage : null
   // Only the stages this change's route walks through: Quick has no Spec or Tickets stage.
@@ -163,16 +251,18 @@ export function WorkBar({ bar, flow, onAutoContinue }: { bar: Bar | null; flow?:
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 32 }} className="overflow-hidden">
-            <div className="max-h-64 overflow-y-auto px-1.5 py-1.5">
+            <div className="max-h-80 overflow-y-auto px-1.5 py-1.5">
               {stage &&
                 stages.map((s, i) => (
-                  <div key={s} aria-current={i === at ? 'step' : undefined} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-lg px-1.5 py-1 text-[12.5px]">
-                    <StatusIcon status={i < at ? 'completed' : i === at ? 'in_progress' : 'pending'} />
-                    <span className={clsx('min-w-0 truncate', i === at ? 'text-fg' : i < at ? 'text-muted' : 'text-dim')}>
-                      {i + 1} · {STAGE_LABEL[s]}
-                    </span>
-                    {i === at && STAGE_YOU[s] ? <span className="text-[11px] text-warn">needs you</span> : <span className="text-[11px] text-dim">{s === 'build' && i > at && autoContinue ? 'continues on its own' : ''}</span>}
-                  </div>
+                  <StageRow
+                    key={s}
+                    n={i + 1}
+                    stage={s}
+                    status={i < at ? 'completed' : i === at ? 'in_progress' : 'pending'}
+                    record={i <= at ? records?.[s] : undefined}
+                    live={i === at ? bar : null}
+                    note={i > at && s === 'build' && autoContinue ? 'continues on its own' : ''}
+                  />
                 ))}
               {stage && onAutoContinue && at <= stages.indexOf('build') && (
                 <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-[12px] text-muted">
@@ -180,10 +270,10 @@ export function WorkBar({ bar, flow, onAutoContinue }: { bar: Bar | null; flow?:
                   Continue from Build to Review without stopping
                 </label>
               )}
-              {stage && bar && <div className="mx-1.5 my-1 border-t border-line" />}
-              {bar?.rows.map((row) => (
-                <Row key={row.key} row={row} />
-              ))}
+              {!stage &&
+                bar?.rows.map((row) => (
+                  <Row key={row.key} row={row} />
+                ))}
             </div>
           </motion.div>
         )}

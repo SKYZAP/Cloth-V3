@@ -40,6 +40,7 @@ import { ApprovalCard } from '@/components/ApprovalCard'
 import { QuestionCard } from '@/components/QuestionCard'
 import { WorkBar } from '@/components/WorkBar'
 import { buildWorkBar } from '@/lib/workbar'
+import { stageRecords } from '@/lib/stages'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { formatCost, formatTokens } from '@/lib/format'
@@ -772,6 +773,8 @@ function ChatView({
   // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.
   const workBar = useMemo(() => buildWorkBar(messages), [messages])
   const flowBar = !!session.workflow && session.workflow.stage !== 'done'
+  // What each Spec → Ship stage did and cost, for the work bar's stage rows.
+  const stages = useMemo(() => (flowBar ? stageRecords(messages) : undefined), [flowBar, messages])
   // Tickets agents are working on now, for the board's In progress column.
   const activeTix = useMemo(() => activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && (b.trace.status === 'running' || b.trace.subagent?.running) ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : []))), [messages])
   const specDocs = useMemo(() => (session.workflow ? { sessionId: session.id, slug: session.workflow.slug, version: messages.length, active: activeTix } : undefined), [session.id, session.workflow, messages.length, activeTix])
@@ -989,7 +992,7 @@ function ChatView({
         <AnimatePresence>
           {showBar && (
             <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(calc(var(--chat-col)-16px),calc(100%-80px))] mobile:w-[calc(100%-36px)]">
-              <WorkBar bar={workBar} flow={session.workflow} onAutoContinue={(on) => void setAutoContinue(on)} />
+              <WorkBar bar={workBar} flow={session.workflow} stages={stages} onAutoContinue={(on) => void setAutoContinue(on)} />
             </div>
           )}
         </AnimatePresence>
