@@ -398,6 +398,10 @@ describe('Spec → Ship in a chat', () => {
     for (let i = 0; i < 1500 && !(env.services.chat.get(env.session.id).workflow?.stage === 'done' && !env.services.chat.isRunning(env.session.id) && seen.length === 2); i++) await wait(10)
     await settle(env)
     expect(env.services.chat.get(env.session.id).workflow?.stage).toBe('done')
+    // The wrap-up started on its own still ends with the final commit, specs index included.
+    for (let i = 0; i < 300 && (await g('log', '-1', '--format=%s')).stdout.trim() !== 'Spec → Ship: feat done (final changes)'; i++) await wait(10)
+    expect((await g('log', '-1', '--format=%s')).stdout.trim()).toBe('Spec → Ship: feat done (final changes)')
+    expect((await g('status', '--porcelain')).stdout.trim()).toBe('')
     const reviewStart = JSON.stringify(seen[0].messages.find((m) => m.role === 'user'))
     expect(reviewStart).toContain('Tests: 3 passed')
     expect(reviewStart).toMatch(/The change: `git diff [0-9a-f]+`, 1 file: src\/a\.ts \(new, uncommitted\)/)

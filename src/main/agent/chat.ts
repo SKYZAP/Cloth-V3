@@ -1724,7 +1724,9 @@ export class ChatService {
           .catch((err) => this.ctx.log('chat', 'auto-continue failed', errorMessage(err)))
       }
       // Spec → Ship reached Done: the wrap-up's edits and anything else the chat changed itself are committed too.
-      if (this.wrapping.delete(id) && flow?.stage === 'done' && this.get(id).workspace) {
+      // Checked against the stage this run ran in first: a clean review that just started the wrap-up above must leave
+      // the mark for the wrap-up's own run.
+      if (flow?.stage === 'done' && this.wrapping.delete(id) && this.get(id).workspace) {
         await commitWorkflowFinish(this.get(id).workspace!, flow.slug, this.workflowFiles(id))
           .then((hash) => hash && this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
           .catch((err) => this.ctx.log('chat', 'final workflow commit failed', errorMessage(err)))
