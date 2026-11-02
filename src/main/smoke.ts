@@ -15,6 +15,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     console.log(`[smoke] ${m}`)
   }
   try {
+    if (process.env.CLOTH_PROBE === 'specship') return await (await import('./probe-specship')).probeSpecShip(s, outDir, note)
     if (process.env.CLOTH_PROBE === 'kb-search') return await probeKnowledgeSearch(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)

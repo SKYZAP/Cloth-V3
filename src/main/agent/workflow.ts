@@ -168,7 +168,7 @@ export interface Handover {
   slug: string | null
   /** Each finished stage's gate, oldest first (the latest per stage). */
   gates: StageGate[]
-  /** What the person wrote during the stage just approved (their change requests), oldest first. */
+  /** What the person wrote since the workflow started (their request, answers and change requests), oldest first. */
   said: string[]
   /** For the review: the commit Build started from and the files changed since. */
   base?: string
@@ -189,7 +189,18 @@ export function handoverText(h: Handover): string {
     if (g.files?.length) lines.push(`- Files: ${g.files.join(', ')}`)
     for (const f of g.findings ?? []) lines.push(`- Finding (${f.axis}, ${f.fix ? 'fix before shipping' : 'optional'}): ${f.title}${f.where ? ` (${f.where})` : ''}`)
   }
-  if (h.said.length) lines.push('', 'What the person said during the last stage:', ...h.said.map((t) => `- ${clip(t.replace(/\s+/g, ' ').trim(), 600)}`))
+  if (h.said.length) {
+    // The latest first when trimming: later words override earlier ones. At most about 4000 characters in all.
+    const kept: string[] = []
+    let room = 4000
+    for (const said of [...h.said].reverse()) {
+      const line = `- ${clip(said.replace(/\s+/g, ' ').trim(), 600)}`
+      if (line.length > room) break
+      kept.unshift(line)
+      room -= line.length
+    }
+    lines.push('', 'What the person said during the workflow:', ...kept)
+  }
   if (h.base) {
     const files = h.changed ?? []
     lines.push('', `The change: \`git diff ${h.base}\`, ${files.length} file${files.length === 1 ? '' : 's'}${files.length ? `: ${files.slice(0, 60).join(', ')}${files.length > 60 ? ', …' : ''}` : ''}.`)

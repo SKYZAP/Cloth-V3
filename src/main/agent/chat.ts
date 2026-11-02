@@ -1466,7 +1466,7 @@ export class ChatService {
     // New files nobody has committed yet don't show in `git diff`: they are listed too, marked as new.
     const changed = stage === 'review' && base ? [...(await names(['diff', '--name-only', base])), ...(await names(['ls-files', '--others', '--exclude-standard'])).map((f) => `${f} (new, uncommitted)`)] : undefined
     // The next stage starts from a handover instead of the whole conversation so far (still shown in the chat).
-    if (stage !== 'grill') this.handOver(id, handoverText({ route: w.route, slug: w.slug, gates: this.workflowGates(id), said: this.saidThisStage(id), ...(stage === 'review' && base ? { base, changed } : {}) }))
+    if (stage !== 'grill') this.handOver(id, handoverText({ route: w.route, slug: w.slug, gates: this.workflowGates(id), said: this.workflowSaid(id), ...(stage === 'review' && base ? { base, changed } : {}) }))
     if (stage === 'done' && workspace && w.slug) await this.indexSpec(workspace, w.slug).catch((err) => this.ctx.log('chat', 'spec index failed', errorMessage(err)))
     const session = this.update(id, { workflow: { ...w, stage, ...(base ? { base } : {}) } })
     if (stage === 'done') this.wrapping.add(id)
@@ -1492,14 +1492,15 @@ export class ChatService {
     return [...latest.values()]
   }
 
-  /** What the person wrote since the current stage started (not the stage's own opening message). */
-  private saidThisStage(id: string): string[] {
+  /** What the person wrote since the workflow started: their request, answers and change requests (not the stage approvals). */
+  private workflowSaid(id: string): string[] {
     const ui = this.messages(id)
-    const start = ui.findLastIndex((m) => !!m.workflowStage)
+    const start = Math.max(0, ui.findLastIndex((m) => m.workflowStage === 'grill'))
+    const text = (m: UiMessage) => m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n').trim()
     return ui
-      .slice(start + 1)
-      .filter((m) => m.role === 'user' && !m.workflowStage && !m.planApproval)
-      .map((m) => m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n').trim())
+      .slice(start)
+      .filter((m) => m.role === 'user' && !m.planApproval && (!m.workflowStage || (m.workflowStage === 'grill' && text(m) !== stageText('grill'))))
+      .map(text)
       .filter(Boolean)
   }
 

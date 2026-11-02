@@ -162,6 +162,8 @@ describe('Spec → Ship in a chat', () => {
     expect(firstUser).toContain('Spec → Ship handover')
     expect(firstUser).toContain('1 decision')
     expect(firstUser).toContain('Q1: yes')
+    // Everything the person said since the start, including their request.
+    expect(firstUser).toContain('Add saved searches')
     expect(JSON.stringify(seen[3].messages)).not.toContain('Where do they appear?')
     // The person still sees the grilling.
     expect(env.services.chat.messages(env.session.id).some((m) => m.archived && m.blocks.some((b) => b.type === 'tool' && b.trace.id === 'q'))).toBe(true)
