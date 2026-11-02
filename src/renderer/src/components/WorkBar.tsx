@@ -201,7 +201,8 @@ export function WorkBar({
   const stage = flow && flow.stage !== 'done' ? flow.stage : null
   // Only the stages this change's route walks through: Quick has no Spec or Tickets stage.
   const stages = routeStages(flow?.route)
-  const at = stage ? stages.indexOf(stage) : -1
+  // An older chat may still be at the Tickets stage, which is part of Spec now.
+  const at = stage ? stages.indexOf(stage === 'tickets' ? 'spec' : stage) : -1
   const autoContinue = flow?.autoContinue !== false
   const title = bar ? (bar.mode === 'todos' ? (bar.current ?? 'All steps done') : 'Agents at work') : ''
   return (
@@ -264,10 +265,10 @@ export function WorkBar({
                     note={i > at && s === 'build' && autoContinue ? 'continues on its own' : ''}
                   />
                 ))}
-              {stage && onAutoContinue && at <= stages.indexOf('build') && (
+              {stage && onAutoContinue && (
                 <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-[12px] text-muted">
                   <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="size-[13px] shrink-0 accent-crimson" />
-                  Continue from Build to Review without stopping
+                  Go on without stopping when nothing needs me
                 </label>
               )}
               {!stage &&

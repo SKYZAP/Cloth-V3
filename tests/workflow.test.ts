@@ -50,7 +50,10 @@ describe('Spec → Ship helpers', () => {
   })
 
   it('walks the stages in order and ends at done', () => {
-    expect(['grill', 'spec', 'tickets', 'build', 'review'].map((s) => nextStage(s as never))).toEqual(['spec', 'tickets', 'build', 'review', 'done'])
+    // Spec writes the spec and its tickets; an older chat still at Tickets goes on to Build.
+    expect(['grill', 'spec', 'build', 'review'].map((s) => nextStage(s as never))).toEqual(['spec', 'build', 'review', 'done'])
+    expect(nextStage('tickets')).toBe('build')
+    expect(workflowSection({ kind: 'spec-ship', stage: 'tickets', slug: 'x' })).toContain('### Stage: Spec')
     expect(nextStage('done')).toBe('done')
     expect(workflowSection(null)).toBeNull()
     expect(workflowSection({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches' })).toContain('docs/specs/saved-searches')
@@ -68,7 +71,8 @@ describe('Spec → Ship helpers', () => {
     expect(['grill', 'build', 'review'].map((s) => nextStage(s as never, 'quick'))).toEqual(['build', 'review', 'done'])
     expect(nextStage('grill', 'preserve')).toBe('spec')
     expect(stageText('build', 'quick')).toBe('Approved the spec')
-    expect(stageText('build')).toBe('Approved the tickets')
+    expect(stageText('build')).toBe('Approved the spec and tickets')
+    expect(routeStages('standard')).toEqual(['grill', 'spec', 'build', 'review'])
     expect(stageNote('build', 'x', 'quick')).toContain('The grilling and spec are approved')
     expect(workflowSection({ kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' })).toContain('Quick route')
   })
@@ -97,6 +101,15 @@ describe('Spec → Ship helpers', () => {
     // A Quick change rarely makes a decision worth recording, so Done only asks when one clearly does.
     expect(stageNote('done', 'x', 'quick')).toContain('Skip decision records unless one decision made here clearly meets the bar')
     expect(stageNote('done', 'x', 'standard')).toContain('one multiple-choice question listing them')
+    // Token savings: Build checks workers without redoing their reading, Review reuses Build's results and gets the
+    // change itself, the wrap-up doesn't explore, and a clear Quick change skips the questions.
+    expect(at('build')).toContain("never to redo a worker's reading")
+    expect(at('build')).toContain('the full suite runs once, at the end')
+    expect(at('review')).toContain('rerun them only if something changed since')
+    expect(at('review')).toContain('Give each reviewer the change itself')
+    expect(stageNote('done', 'x', 'standard')).toContain("don't explore the code")
+    expect(at('grill')).toContain('ask no round at all')
+    expect(at('spec')).toContain('approves the spec and its tickets together')
   })
 })
 
@@ -143,7 +156,15 @@ describe('Spec → Ship in a chat', () => {
     const specPrompt = getCurrentSystemPrompt(seen[3].messages)
     expect(specPrompt).toContain('### Stage: Spec')
     expect(specPrompt).not.toContain('### Stage: Grill')
-    expect(system(seen[3])).toMatch(/"toolsRemoved":\[[^\]]*"name":"ask_questions"/)
+    // The stage starts from a handover, not the grilling: no ask_questions, and the earlier turns aren't sent.
+    expect(system(seen[3])).not.toMatch(/"name":"ask_questions"/)
+    const firstUser = JSON.stringify(seen[3].messages.find((m) => m.role === 'user'))
+    expect(firstUser).toContain('Spec → Ship handover')
+    expect(firstUser).toContain('1 decision')
+    expect(firstUser).toContain('Q1: yes')
+    expect(JSON.stringify(seen[3].messages)).not.toContain('Where do they appear?')
+    // The person still sees the grilling.
+    expect(env.services.chat.messages(env.session.id).some((m) => m.archived && m.blocks.some((b) => b.type === 'tool' && b.trace.id === 'q'))).toBe(true)
     expect(readFileSync(join(env.root, 'docs/specs/saved-searches/spec.md'), 'utf8')).toBe('# Spec\n')
     // finish_stage records the slug, cleaned up.
     expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches', route: 'standard' })
@@ -321,9 +342,41 @@ describe('Spec → Ship in a chat', () => {
     await settle(env)
     for (let i = 0; i < 300 && (await g('log', '-1', '--format=%s')).stdout.trim() === 'start'; i++) await wait(10)
     expect((await g('log', '-1', '--format=%s')).stdout.trim()).toBe('Spec → Ship: feat done (final changes)')
-    expect((await g('show', '--name-only', '--format=', 'HEAD')).stdout.trim().split('\n').sort()).toEqual(['docs/specs/feat/spec.md', 'src/fix.ts'])
+    // Cloth listed the spec in docs/specs/README.md itself.
+    expect((await g('show', '--name-only', '--format=', 'HEAD')).stdout.trim().split('\n').sort()).toEqual(['docs/specs/README.md', 'docs/specs/feat/spec.md', 'src/fix.ts'])
+    expect(readFileSync(join(env.root, 'docs/specs/README.md'), 'utf8')).toBe('# Specs\n\n- [feat](feat/spec.md): feat\n')
     // The person's own uncommitted file is left alone.
     expect((await g('status', '--porcelain')).stdout.trim()).toBe('?? mine.txt')
+  }, 30_000)
+
+  it('finishes on its own after a review with nothing to fix, and hands the review the exact change', async () => {
+    const env = setup('manual')
+    const g = (...args: string[]) => git(env.root, ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+    await g('init', '-q', '-b', 'main')
+    await g('config', 'core.autocrlf', 'false')
+    writeFileSync(join(env.root, 'README.md'), '# app')
+    await g('add', '-A')
+    await g('commit', '-q', '-m', 'start')
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'spec', slug: 'feat', route: 'standard' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      // Build writes a file and finishes; the review starts by itself.
+      () => fauxAssistantMessage([fauxToolCall('write', { path: 'src/a.ts', content: 'export {}' })], { stopReason: 'toolUse' }),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Built', 'Tests: 3 passed'] }, { id: 'b' })], { stopReason: 'toolUse' }),
+      // Only an optional finding: the workflow finishes without waiting.
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 finding'], findings: [{ axis: 'standards', fix: false, title: 'Name could be clearer' }] }, { id: 'r' })], { stopReason: 'toolUse' })),
+      (ctx) => (seen.push(ctx), fauxAssistantMessage('Done: docs/specs/feat.'))
+    ])
+    await env.services.chat.advanceWorkflow(env.session.id)
+    for (let i = 0; i < 1500 && !(env.services.chat.get(env.session.id).workflow?.stage === 'done' && !env.services.chat.isRunning(env.session.id) && seen.length === 2); i++) await wait(10)
+    await settle(env)
+    expect(env.services.chat.get(env.session.id).workflow?.stage).toBe('done')
+    const reviewStart = JSON.stringify(seen[0].messages.find((m) => m.role === 'user'))
+    expect(reviewStart).toContain('Tests: 3 passed')
+    expect(reviewStart).toMatch(/The change: `git diff [0-9a-f]+`, 1 file: src\/a\.ts \(new, uncommitted\)/)
+    // The wrap-up gets the review's findings in its handover.
+    expect(JSON.stringify(seen[1].messages.find((m) => m.role === 'user'))).toContain('Finding (standards, optional): Name could be clearer')
   }, 30_000)
 
   it('emits no approvals for documents before Build', async () => {

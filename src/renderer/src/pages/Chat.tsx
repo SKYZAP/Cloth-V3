@@ -775,8 +775,10 @@ function ChatView({
     const ms = await attempt(() => api.chat.compact(session.id), 'Earlier messages summarised')
     if (ms) setMessages(ms)
   }
-  const archived = useMemo(() => messages.filter((m) => m.archived), [messages])
-  const live = useMemo(() => messages.filter((m) => !m.archived), [messages])
+  // Spec → Ship hands each stage over with a fresh context, archiving the stages before it: those stay in place in the chat.
+  const flowStart = useMemo(() => (session.workflow ? messages.findLastIndex((m) => m.workflowStage === 'grill') : -1), [messages, session.workflow])
+  const archived = useMemo(() => messages.filter((m, i) => m.archived && (flowStart < 0 || i < flowStart)), [messages, flowStart])
+  const live = useMemo(() => messages.filter((m, i) => !m.archived || (flowStart >= 0 && i >= flowStart)), [messages, flowStart])
   // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.
   const workBar = useMemo(() => buildWorkBar(messages), [messages])
   const flowBar = !!session.workflow && session.workflow.stage !== 'done'
@@ -953,11 +955,11 @@ function ChatView({
             const fresh = !!initialIds.current && !initialIds.current.has(m.id)
             return m.role === 'user' ? (
               <div key={m.id}>
-                {m.summary !== undefined && <SummaryDivider summary={m.summary} />}
+                {m.summary !== undefined && !m.workflowStage && <SummaryDivider summary={m.summary} />}
                 {m.workflowStage ? <StageDivider message={m} fresh={fresh} route={session.workflow?.route} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => turnActions.regenerate(m.id)} awaiting={awaiting} onUndo={running ? undefined : turnActions.undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: turnActions.approvePlan, onRevise: turnActions.revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: turnActions.answerRound, onApprove: turnActions.approveStage, onRevise: turnActions.reviseStage, onFix: turnActions.fixFindings, flow: session.workflow, onAutoContinue: turnActions.setAutoContinue, docs: specDocs }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => turnActions.regenerate(m.id)} awaiting={awaiting} onUndo={running || m.archived ? undefined : turnActions.undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: turnActions.approvePlan, onRevise: turnActions.revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: turnActions.answerRound, onApprove: turnActions.approveStage, onRevise: turnActions.reviseStage, onFix: turnActions.fixFindings, flow: session.workflow, onAutoContinue: turnActions.setAutoContinue, docs: specDocs }} />
             )
           })}
           <AnimatePresence>

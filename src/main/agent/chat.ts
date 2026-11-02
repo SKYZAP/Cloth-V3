@@ -1,10 +1,12 @@
 import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { git, repoRoot } from '../panel/git'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, StageGate, WorkflowStage } from '@shared/types'
-import { nextStage, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
+import { handoverText, nextStage, specIndexLine, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { commitWorkflowFinish, createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
@@ -1405,7 +1407,7 @@ export class ChatService {
         const w = this.get(id).workflow
         if (w && w.slug !== slug) this.update(id, { workflow: { ...w, slug } })
       },
-      stageFinished: (stage) => void this.finished.set(id, stage),
+      stageFinished: (gate) => void this.finished.set(id, gate),
       setWorkflowRoute: (route) => {
         const w = this.get(id).workflow
         if (w && w.route !== route) this.update(id, { workflow: { ...w, route } })
@@ -1456,10 +1458,59 @@ export class ChatService {
     const w = this.get(id).workflow
     if (!w || w.stage === 'done') throw new Error('This chat is not running Spec → Ship')
     const stage = nextStage(w.stage, w.route)
-    const session = this.update(id, { workflow: { ...w, stage } })
+    const workspace = this.get(id).workspace
+    // Build remembers where it started, so the review can diff exactly this change.
+    const root = workspace && (stage === 'build' || stage === 'review') ? await repoRoot(workspace).catch(() => null) : null
+    const base = stage === 'build' && root ? (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || undefined : w.base
+    const names = async (args: string[]) => (root ? (await git(root, args)).stdout.split('\n').map((f) => f.trim()).filter(Boolean) : [])
+    // New files nobody has committed yet don't show in `git diff`: they are listed too, marked as new.
+    const changed = stage === 'review' && base ? [...(await names(['diff', '--name-only', base])), ...(await names(['ls-files', '--others', '--exclude-standard'])).map((f) => `${f} (new, uncommitted)`)] : undefined
+    // The next stage starts from a handover instead of the whole conversation so far (still shown in the chat).
+    if (stage !== 'grill') this.handOver(id, handoverText({ route: w.route, slug: w.slug, gates: this.workflowGates(id), said: this.saidThisStage(id), ...(stage === 'review' && base ? { base, changed } : {}) }))
+    if (stage === 'done' && workspace && w.slug) await this.indexSpec(workspace, w.slug).catch((err) => this.ctx.log('chat', 'spec index failed', errorMessage(err)))
+    const session = this.update(id, { workflow: { ...w, stage, ...(base ? { base } : {}) } })
     if (stage === 'done') this.wrapping.add(id)
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
     return session
+  }
+
+  /** Move the whole conversation to the archive (the chat still shows it) and start the next run from `handover`. */
+  private handOver(id: string, handover: string): void {
+    const raw = this.rawMessages(id)
+    if (!raw.some((m) => m.role === 'user' || m.role === 'assistant')) return
+    this.ctx.db.prepare('UPDATE sessions SET messages = ?, archive = ?, updated_at = ? WHERE id = ?').run('[]', JSON.stringify([...this.archive(id), ...raw]), Date.now(), id)
+    this.ctx.kv.set('compactedAt:' + id, Date.now())
+    this.carry.set(id, handover)
+  }
+
+  /** Each Spec → Ship stage's latest gate since the workflow started, in stage order. */
+  private workflowGates(id: string): StageGate[] {
+    const ui = this.messages(id)
+    const start = Math.max(0, ui.findLastIndex((m) => m.workflowStage === 'grill'))
+    const latest = new Map<string, StageGate>()
+    for (const m of ui.slice(start)) for (const b of m.blocks) if (b.type === 'tool' && b.trace.stageGate && b.trace.status !== 'error') latest.set(b.trace.stageGate.stage, b.trace.stageGate)
+    return [...latest.values()]
+  }
+
+  /** What the person wrote since the current stage started (not the stage's own opening message). */
+  private saidThisStage(id: string): string[] {
+    const ui = this.messages(id)
+    const start = ui.findLastIndex((m) => !!m.workflowStage)
+    return ui
+      .slice(start + 1)
+      .filter((m) => m.role === 'user' && !m.workflowStage && !m.planApproval)
+      .map((m) => m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n').trim())
+      .filter(Boolean)
+  }
+
+  /** List the feature in docs/specs/README.md once its workflow is done (the wrap-up no longer has to). */
+  private async indexSpec(workspace: string, slug: string): Promise<void> {
+    const dir = join(workspace, 'docs', 'specs')
+    const readme = await readFile(join(dir, 'README.md'), 'utf8').catch(() => null)
+    const line = specIndexLine(readme ?? '', slug, await readFile(join(dir, slug, 'spec.md'), 'utf8').catch(() => ''))
+    if (!line) return
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'README.md'), readme === null ? `# Specs\n\n${line}\n` : `${readme.replace(/\s*$/, '')}\n${line}\n`)
   }
 
   /** Whether a finished Build goes straight on to the Review (on unless switched off). */
@@ -1653,9 +1704,11 @@ export class ChatService {
       }
       const finished = this.finished.get(id)
       this.finished.delete(id)
-      // Spec → Ship: a finished build goes straight on to the review unless the person turned that off.
+      // Spec → Ship goes on by itself when nothing needs the person (unless they turned that off): a finished build
+      // starts the review, and a review that recommends no fixes finishes the workflow.
       const flow = this.get(id).workflow
-      if (!error && finished === 'build' && flow?.stage === 'build' && flow.autoContinue !== false) {
+      const onward = finished?.stage === 'build' || (finished?.stage === 'review' && !finished.findings?.some((f) => f.fix))
+      if (!error && finished && onward && flow?.stage === finished.stage && flow.autoContinue !== false) {
         await this.advanceWorkflow(id)
           .then(() => this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
           .catch((err) => this.ctx.log('chat', 'auto-continue failed', errorMessage(err)))
@@ -1694,7 +1747,7 @@ export class ChatService {
 
   private titling = new Set<string>()
   /** The workflow stage each running chat finished this turn, if any. */
-  private finished = new Map<string, WorkflowStage>()
+  private finished = new Map<string, StageGate>()
 
   /**
    * Give the chat an AI-written title: after the first reply, and once more when the conversation

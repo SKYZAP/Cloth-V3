@@ -624,6 +624,32 @@ export async function runAsCall<T>(toolCallId: string, toolName: string, signal:
   return { result, changes: state.changes, notes: state.notes }
 }
 
+/** Above this many characters a command's output keeps only its start and end: test runs and builds can print tens of
+ * thousands, and every later request in the turn carries them. */
+export const MAX_COMMAND_OUTPUT = 8000
+
+/** A command's output with the middle cut when it is long (the start shows the command's setup, the end its result). */
+export function capOutput(text: string, max = MAX_COMMAND_OUTPUT): string {
+  if (text.length <= max) return text
+  const lines = text.split('\n')
+  const head: string[] = []
+  let used = 0
+  for (const l of lines.slice(0, 20)) {
+    if (used + l.length > max * 0.2) break
+    head.push(l)
+    used += l.length + 1
+  }
+  const tail: string[] = []
+  for (let i = lines.length - 1; i >= head.length; i--) {
+    const l = lines[i].length > max / 2 ? `${lines[i].slice(0, max / 2)}…` : lines[i]
+    if (used + l.length > max) break
+    tail.unshift(l)
+    used += l.length + 1
+  }
+  const cut = lines.length - head.length - tail.length
+  return [...head, `[… ${cut} line${cut === 1 ? '' : 's'} cut to save context. Re-run with a filter (only failures, Select-String, grep, tail) to see more …]`, ...tail].join('\n')
+}
+
 /** Run each call with its id in async context, and attach the files it changed to the result. */
 function withCallState<T extends AgentTool<any>>(tool: T): T {
   return {
@@ -631,7 +657,8 @@ function withCallState<T extends AgentTool<any>>(tool: T): T {
     async execute(id, params, signal, onUpdate) {
       const started = performance.now()
       const { result: raw, changes, notes } = await runAsCall(id, tool.name, signal, () => tool.execute(id, params, signal, onUpdate))
-      const res = notes.length ? { ...raw, content: [...raw.content, { type: 'text' as const, text: `\n${notes.join('\n')}` }] } : raw
+      const shown = tool.name === 'bash' || tool.name === 'powershell' ? { ...raw, content: raw.content.map((c) => (c.type === 'text' ? { ...c, text: capOutput(c.text) } : c)) } : raw
+      const res = notes.length ? { ...shown, content: [...shown.content, { type: 'text' as const, text: `\n${notes.join('\n')}` }] } : shown
       const state = { changes }
       const details = (res.details && typeof res.details === 'object' ? res.details : {}) as Record<string, unknown>
       return {

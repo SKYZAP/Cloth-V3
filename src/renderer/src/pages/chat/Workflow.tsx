@@ -13,15 +13,15 @@ import { Modal } from '@/components/ui'
 export const STAGE_LABEL: Record<WorkflowStage, string> = { grill: 'Grill', spec: 'Spec', tickets: 'Tickets', build: 'Build', review: 'Review', done: 'Done' }
 export const ROUTE_LABEL: Record<WorkflowRoute, string> = { quick: 'Quick', standard: 'Standard', preserve: 'Preserve' }
 /** What the person does at the end of each stage (none for Build: it runs on its own). */
-export const STAGE_YOU: Record<WorkflowStage, string> = { grill: 'Answer the questions', spec: 'Approve the spec', tickets: 'Approve the tickets', build: '', review: 'Accept the review', done: '' }
+export const STAGE_YOU: Record<WorkflowStage, string> = { grill: 'Answer the questions', spec: 'Approve the spec and tickets', tickets: 'Approve the tickets', build: '', review: 'Accept the review', done: '' }
 const APPROVE: Record<Exclude<WorkflowStage, 'done'>, string> = {
   grill: 'Approve and write the spec',
-  spec: 'Approve and make tickets',
+  spec: 'Approve and build',
   tickets: 'Approve and build',
   build: 'Approve and review',
   review: 'Accept and finish'
 }
-const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Approve the spec', tickets: 'Approve the tickets', build: 'Build done', review: 'Accept the review' }
+const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Approve the spec and tickets', tickets: 'Approve the tickets', build: 'Build done', review: 'Accept the review' }
 
 const BTN = 'h-8 rounded-[9px] px-3 text-[12.5px] transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
 const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim disabled:opacity-100')
@@ -149,7 +149,7 @@ export function StageGateCard({
   const showMockup = (gate.stage === 'grill' || gate.stage === 'spec') && !!loaded.mockup && !!docs
   // The Quick route writes its spec while grilling, so that stop shows it.
   const showSpec = (gate.stage === 'spec' || (gate.stage === 'grill' && quick)) && !!loaded.spec
-  const showBoard = (gate.stage === 'tickets' || gate.stage === 'build') && loaded.tickets.length > 0
+  const showBoard = (gate.stage === 'spec' || gate.stage === 'tickets' || gate.stage === 'build') && loaded.tickets.length > 0
   const { bullets, assumed, unverified } = splitSummary(gate.summary)
   const findings = gate.stage === 'review' ? (gate.findings ?? []) : []
   const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set(findings.flatMap((f, i) => (f.fix ? [i] : []))))
@@ -240,8 +240,8 @@ export function StageGateCard({
         <label className="mb-3 flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
           <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
           <span>
-            Continue from Build to Review without stopping
-            <span className="block text-dim">You’ll still see the build results, and the review waits for you.</span>
+            Go on without stopping when nothing needs me
+            <span className="block text-dim">Build goes straight to Review, and a review with nothing to fix finishes the workflow. You’ll still see every result.</span>
           </span>
         </label>
       )}

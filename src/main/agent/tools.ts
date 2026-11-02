@@ -1,4 +1,4 @@
-import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute, WorkflowStage, ReviewFinding } from '@shared/types'
+import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute, ReviewFinding } from '@shared/types'
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
@@ -103,7 +103,7 @@ export interface ToolScope {
   /** Record the route chosen while grilling. */
   setWorkflowRoute?: (route: WorkflowRoute) => void
   /** A stage of the workflow was just finished with `finish_stage` (the chat may move on by itself). */
-  stageFinished?: (stage: WorkflowStage) => void
+  stageFinished?: (gate: StageGate) => void
 }
 
 /** The chat is running Spec → Ship and isn't finished. */
@@ -303,7 +303,7 @@ export const BUILTINS: BuiltinSpec[] = [
               .filter((f) => f.title)
           : []
       const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}), ...(route ? { route } : {}), ...(findings.length ? { findings } : {}) }
-      ctx.scope.stageFinished?.(w.stage)
+      ctx.scope.stageFinished?.(gate)
       return {
         text: 'Shown to the person. Stop here: they approve it (the next stage starts) or ask for changes.',
         details: { stageGate: gate as unknown as ToolDetails[string] },

@@ -615,13 +615,14 @@ export type AutoApprove = 'none' | 'edits' | 'all'
 export type Permissions = 'auto' | 'manual' | 'plan'
 
 /** A plan the agent proposed with `present_plan` (Plan mode). */
-/** The stages of Spec → Ship, in order; `done` once the review is accepted. */
+/** The stages of Spec → Ship, in order; `done` once the review is accepted. `tickets` is only where older chats may still be:
+ * the Spec stage now writes the spec and its tickets together. */
 export type WorkflowStage = 'grill' | 'spec' | 'tickets' | 'build' | 'review' | 'done'
-export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec', 'tickets', 'build', 'review']
+export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done' | 'tickets'>[] = ['grill', 'spec', 'build', 'review']
 
 /**
  * How much process a change gets, chosen by the agent when grilling starts (the person can overrule it). Quick (a bug fix or a small, clear change): the grilling writes
- * a short spec and there are no tickets, so it goes Grill → Build → Review. Standard: every stage. Preserve (an upgrade,
+ * a short spec and there are no tickets, so it goes Grill → Build → Review. Standard: Grill → Spec (spec and tickets) → Build → Review. Preserve (an upgrade,
  * migration or refactor): every stage, and today's behaviour is pinned by tests before anything changes.
  */
 export type WorkflowRoute = 'quick' | 'standard' | 'preserve'
@@ -639,8 +640,10 @@ export interface SpecWorkflow {
   slug: string | null
   /** Set when the grilling finishes; none means standard. */
   route?: WorkflowRoute
-  /** Go from Build to Review without waiting for the person's OK (on unless switched off). */
+  /** Go on without waiting for the person when nothing needs them: Build to Review, and a review with nothing to fix to Done (on unless switched off). */
   autoContinue?: boolean
+  /** The commit the Build stage started from (git folders only): the review diffs against it. */
+  base?: string
 }
 
 /** One review finding, on one of the review's two axes. */
