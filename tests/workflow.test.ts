@@ -76,7 +76,13 @@ describe('Spec → ship helpers', () => {
   it('asks for criteria, assumptions and a current spec', () => {
     const at = (stage: 'grill' | 'spec' | 'tickets' | 'build' | 'review') => workflowSection({ kind: 'spec-ship', stage, slug: 'x' }) ?? ''
     expect(at('grill')).toContain('A default you would pick yourself is still a decision')
-    expect(at('grill')).toContain('Round 1 always includes the route')
+    // The route is chosen, not asked: it comes with round 1, and only a real toss-up becomes a question.
+    expect(at('grill')).toContain('Choose the route yourself before round 1')
+    expect(at('grill')).toContain('do not ask about it')
+    // A Quick bug fix settles the symptom while grilling and is diagnosed before it is changed.
+    expect(at('grill')).toContain('settle the symptom, not the cause')
+    expect(at('build')).toContain('Build a feedback loop first')
+    expect(at('review')).toContain('undo the fix and check the regression test fails')
     expect(at('spec')).toMatch(/numbered AC-1/)
     expect(at('tickets')).toContain('never restate their text')
     // Preserve pins behaviour on a real running instance: an in-process stand-in missed a Spring Security error-dispatch change.
@@ -102,10 +108,10 @@ describe('Spec → ship in a chat', () => {
     const push = (ctx: Context) => void seen.push(ctx)
     faux.setResponses([
       // Grill: a round of questions, then stop.
-      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('ask_questions', { round: 1, questions: [{ title: 'Where do they appear?', recommendation: 'Beside the search box.' }], recorded: 'Glossary +1 term' }, { id: 'q' })], { stopReason: 'toolUse' })),
+      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('ask_questions', { round: 1, questions: [{ title: 'Where do they appear?', recommendation: 'Beside the search box.' }], recorded: 'Glossary +1 term', route: 'standard' }, { id: 'q' })], { stopReason: 'toolUse' })),
       // Answered: writes the glossary (allowed) and tries code (refused), then finishes the stage.
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('write', { path: 'GLOSSARY.md', content: '# Search\n' }, { id: 'g' }), fauxToolCall('write', { path: 'src/x.ts', content: 'x' }, { id: 'c' })], { stopReason: 'toolUse' })),
-      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 decision'], files: ['GLOSSARY.md'], route: 'standard' }, { id: 'f1' })], { stopReason: 'toolUse' })),
+      (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['1 decision'], files: ['GLOSSARY.md'] }, { id: 'f1' })], { stopReason: 'toolUse' })),
       // Spec: writes it and names the slug.
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('write', { path: 'docs/specs/saved-searches/spec.md', content: '# Spec\n' }, { id: 's' })], { stopReason: 'toolUse' })),
       (ctx) => (push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['3 stories'], slug: 'Saved Searches' }, { id: 'f2' })], { stopReason: 'toolUse' }))
@@ -118,6 +124,8 @@ describe('Spec → ship in a chat', () => {
     expect(getCurrentSystemPrompt(seen[0].messages)).toContain('### Stage: Grill')
     expect(system(seen[0])).toMatch(/"name":"ask_questions"/)
     expect(r1.traces.find((t) => t.id === 'q')?.questions).toEqual({ round: 1, questions: [{ title: 'Where do they appear?', recommendation: 'Beside the search box.' }], recorded: 'Glossary +1 term' })
+    // The route chosen with round 1 shows straight away; finishing the stage keeps it.
+    expect(env.services.chat.get(env.session.id).workflow?.route).toBe('standard')
     // The first user line shows the idea, marked as the grill stage.
     expect(r1.msgs[0]).toMatchObject({ role: 'user', workflowStage: 'grill', blocks: [{ type: 'text', text: 'Add saved searches' }] })
 

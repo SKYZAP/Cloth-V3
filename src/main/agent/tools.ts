@@ -100,7 +100,7 @@ export interface ToolScope {
   workflow?: () => SpecWorkflow | null
   /** Record the feature's docs folder name once the spec stage picks it. */
   setWorkflowSlug?: (slug: string) => void
-  /** Record the route agreed while grilling. */
+  /** Record the route chosen while grilling. */
   setWorkflowRoute?: (route: WorkflowRoute) => void
   /** A stage of the workflow was just finished with `finish_stage` (the chat may move on by itself). */
   stageFinished?: (stage: WorkflowStage) => void
@@ -230,16 +230,18 @@ export const BUILTINS: BuiltinSpec[] = [
         }),
         { description: 'Every decision that can be settled now (its prerequisites are answered)' }
       ),
-      recorded: Type.Optional(Type.String({ description: 'What you wrote down this round, e.g. "Glossary +2 terms · 1 decision record"' }))
+      recorded: Type.Optional(Type.String({ description: 'What you wrote down this round, e.g. "Glossary +2 terms · 1 decision record"' })),
+      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'The route you chose for this task (always in round 1; again only to change it). Shown to the person straight away.' }))
     }),
     description: () =>
       'Ask the person this round of grilling questions and stop. Each question gets your recommended answer. They answer each one (or accept all your recommendations) and the next round starts from their answers.',
     when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && ctx.scope.workflow?.()?.stage === 'grill',
-    async run(p) {
+    async run(p, ctx) {
       const questions = (p.questions ?? [])
         .map((q) => ({ title: String(q.title ?? '').trim(), ...(q.context?.trim() ? { context: q.context.trim() } : {}), recommendation: String(q.recommendation ?? '').trim() }))
         .filter((q) => q.title && q.recommendation)
       if (!questions.length) throw new Error('A round needs at least one question with a recommendation')
+      if (p.route) ctx.scope.setWorkflowRoute?.(p.route)
       const round: QuestionRound = { round: Math.max(1, Math.round(Number(p.round) || 1)), questions, ...(p.recorded?.trim() ? { recorded: p.recorded.trim() } : {}) }
       return {
         text: `Round ${round.round} sent (${questions.length} question${questions.length === 1 ? '' : 's'}). Stop here and wait for the answers.`,
@@ -257,7 +259,7 @@ export const BUILTINS: BuiltinSpec[] = [
       summary: Type.Array(Type.String(), { description: 'What this stage produced, one short line each' }),
       files: Type.Optional(Type.Array(Type.String(), { description: 'Files this stage wrote, relative to the workspace' })),
       slug: Type.Optional(Type.String({ description: 'The feature folder name under docs/specs/: in the Spec stage, or in Grill when you wrote a mockup or (Quick route) the spec there' })),
-      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only, required there: the route the person agreed to' })),
+      route: Type.Optional(Type.Union([Type.Literal('quick'), Type.Literal('standard'), Type.Literal('preserve')], { description: 'Grill only: the route this task takes (needed unless a round already set it)' })),
       findings: Type.Optional(
         Type.Array(
           Type.Object({
@@ -279,8 +281,8 @@ export const BUILTINS: BuiltinSpec[] = [
       if (!summary.length) throw new Error('Say what the stage produced')
       const slug = p.slug?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
       if (slug) ctx.scope.setWorkflowSlug?.(slug)
-      const route = w.stage === 'grill' ? p.route : undefined
-      if (w.stage === 'grill' && !route) throw new Error('Say which route the person agreed to: quick, standard or preserve')
+      const route = w.stage === 'grill' ? (p.route ?? w.route) : undefined
+      if (w.stage === 'grill' && !route) throw new Error('Say which route this task takes: quick, standard or preserve')
       if (route === 'quick' && !(slug || w.slug)) throw new Error('The Quick route writes the spec while grilling: give its slug')
       if (route) ctx.scope.setWorkflowRoute?.(route)
       const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]

@@ -620,7 +620,7 @@ export type WorkflowStage = 'grill' | 'spec' | 'tickets' | 'build' | 'review' | 
 export const WORKFLOW_STAGES: Exclude<WorkflowStage, 'done'>[] = ['grill', 'spec', 'tickets', 'build', 'review']
 
 /**
- * How much process a change gets, agreed while grilling. Quick (a bug fix or a small, clear change): the grilling writes
+ * How much process a change gets, chosen by the agent when grilling starts (the person can overrule it). Quick (a bug fix or a small, clear change): the grilling writes
  * a short spec and there are no tickets, so it goes Grill → Build → Review. Standard: every stage. Preserve (an upgrade,
  * migration or refactor): every stage, and today's behaviour is pinned by tests before anything changes.
  */
@@ -666,7 +666,7 @@ export interface QuestionRound {
 export interface StageGate {
   stage: Exclude<WorkflowStage, 'done'>
   summary: string[]
-  /** The route agreed while grilling (Grill only). */
+  /** The route the grilling settled on (Grill only). */
   route?: WorkflowRoute
   /** The review's findings (Review only). */
   findings?: ReviewFinding[]
