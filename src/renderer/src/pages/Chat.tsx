@@ -54,7 +54,7 @@ import { ComposerBar } from './chat/ComposerBar'
 import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
 import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
-import { activeTickets } from '@/lib/tickets'
+import { docsVersion, ticketProgress } from '@/lib/tickets'
 import { cyclesPermission, nextModePatch, planStatus } from '@/lib/permissions'
 import { drain, enqueue, promote, unqueue, useQueue, type QueuedMessage } from '@/lib/queue'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
@@ -785,8 +785,10 @@ function ChatView({
   // What each Spec → Ship stage did and cost, for the work bar's stage rows.
   const stages = useMemo(() => (flowBar ? stageRecords(messages) : undefined), [flowBar, messages])
   // Tickets agents are working on now, for the board's In progress column.
-  const activeTix = useMemo(() => activeTickets(messages.flatMap((m) => m.blocks).flatMap((b) => (b.type === 'tool' && b.trace.name === 'task' && (b.trace.status === 'running' || b.trace.subagent?.running) ? [String((b.trace.args as { description?: unknown })?.description ?? '')] : []))), [messages])
-  const specDocs = useMemo(() => (session.workflow ? { sessionId: session.id, slug: session.workflow.slug, version: messages.length, active: activeTix } : undefined), [session.id, session.workflow, messages.length, activeTix])
+  // Tickets being built and finished (agents at work, Build's todo list), and a version that moves mid-reply so ticked boxes show.
+  const tix = useMemo(() => ticketProgress(messages), [messages])
+  const docsAt = useMemo(() => docsVersion(messages), [messages])
+  const specDocs = useMemo(() => (session.workflow ? { sessionId: session.id, slug: session.workflow.slug, version: docsAt, active: tix.active, finished: tix.finished } : undefined), [session.id, session.workflow, docsAt, tix])
   const showBar = !!workBar || flowBar
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
@@ -1431,7 +1433,7 @@ function AssistantTurnView({
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
   /** Spec → Ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
-  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> } }
+  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string>; finished: ReadonlySet<string> } }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)

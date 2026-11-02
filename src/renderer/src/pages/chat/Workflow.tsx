@@ -138,7 +138,7 @@ export function StageGateCard({
   flow?: SpecWorkflow | null
   onAutoContinue?(on: boolean): void
   /** The chat's folder and feature, to show the documents this stage wrote. */
-  docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string> }
+  docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string>; finished: ReadonlySet<string> }
 }) {
   const [busy, setBusy] = useState(false)
   const route = gate.route ?? flow?.route
@@ -228,7 +228,7 @@ export function StageGateCard({
       {showSpec && loaded.spec && <SpecPreview doc={loaded.spec} />}
       {showBoard && (
         <div className="mb-3">
-          <TicketBoard tickets={loaded.tickets} active={docs?.active ?? NONE} compact />
+          <TicketBoard tickets={loaded.tickets} active={docs?.active ?? NONE} finished={docs?.finished ?? NONE} compact />
         </div>
       )}
       {!showSpec && !showBoard && !showMockup && gate.files?.length ? (
@@ -323,9 +323,9 @@ const COLUMNS: { id: TicketStatus; label: string }[] = [
 ]
 
 /** Tickets as a board: numbered cards in To do / In progress / Done; a card opens its ticket. */
-export function TicketBoard({ tickets, active, compact }: { tickets: Ticket[]; active: ReadonlySet<string>; compact?: boolean }) {
+export function TicketBoard({ tickets, active, finished = NONE, compact }: { tickets: Ticket[]; active: ReadonlySet<string>; finished?: ReadonlySet<string>; compact?: boolean }) {
   const [open, setOpen] = useState<Ticket | null>(null)
-  const byCol = (c: TicketStatus) => tickets.filter((t) => ticketStatus(t, active) === c).sort((a, b) => a.n.localeCompare(b.n))
+  const byCol = (c: TicketStatus) => tickets.filter((t) => ticketStatus(t, active, finished) === c).sort((a, b) => a.n.localeCompare(b.n))
   return (
     <>
       <div className={clsx('grid gap-2', compact ? 'grid-cols-3 mobile:grid-cols-1' : 'grid-cols-1')}>
@@ -454,7 +454,7 @@ export function useSpecDocs(sessionId: string | null, slug: string | null, versi
 type DocTab = 'glossary' | 'decisions' | 'mockup' | 'spec' | 'tickets'
 
 /** The side panel's Spec tab: the workflow's documents, read from the chat's folder; tickets as a board. */
-export function SpecPanel({ sessionId, workflow, version, active }: { sessionId: string; workflow: SpecWorkflow | null | undefined; version: number; active?: ReadonlySet<string> }) {
+export function SpecPanel({ sessionId, workflow, version, active, finished }: { sessionId: string; workflow: SpecWorkflow | null | undefined; version: number; active?: ReadonlySet<string>; finished?: ReadonlySet<string> }) {
   const docs = useSpecDocs(workflow ? sessionId : null, workflow?.slug ?? null, version)
   const [tab, setTab] = useState<DocTab>('glossary')
   // Every tab stays clickable (an empty one says so); the count is only a hint, and a glossary in another format counts as written.
@@ -490,7 +490,7 @@ export function SpecPanel({ sessionId, workflow, version, active }: { sessionId:
           </div>
         ) : tab === 'tickets' ? (
           docs.tickets.length ? (
-            <TicketBoard tickets={docs.tickets} active={active ?? NONE} />
+            <TicketBoard tickets={docs.tickets} active={active ?? NONE} finished={finished ?? NONE} />
           ) : (
             <p className="px-1 py-4 text-[12.5px] text-dim">Not written yet.</p>
           )

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { activeTickets, parseTicket, ticketStatus } from '../src/renderer/src/lib/tickets'
+import { activeTickets, parseTicket, ticketProgress, ticketRefs, ticketStatus } from '../src/renderer/src/lib/tickets'
+import type { TodoItem, UiMessage, WorkflowStage } from '../src/shared/types'
 
 const T = `# 03: Run a saved search in one click
 
@@ -33,5 +34,34 @@ describe('tickets', () => {
   })
   it('finds ticket numbers in running jobs', () => {
     expect([...activeTickets(['Ticket 03', '04 · Rename and delete', 'Build ticket #5 now', 'Review spec'])].sort()).toEqual(['03', '04', '05'])
+  })
+  it('finds tickets named in a line of text', () => {
+    expect(ticketRefs('Implement ticket 01 with criterion-led tests')).toEqual(['01'])
+    expect(ticketRefs('Tickets 01 and 3, then ticket #12')).toEqual(['01', '03', '12'])
+    expect(ticketRefs('Build tickets 02–04')).toEqual(['02', '03', '04'])
+    expect(ticketRefs('Run the full suite at 1 pm')).toEqual([])
+  })
+  it("follows Build's todo list when the chat builds tickets itself, before any box is ticked", () => {
+    const todo = (id: string, todos: [string, TodoItem['status']][]): UiMessage => ({
+      id,
+      role: 'assistant',
+      createdAt: 0,
+      blocks: [{ type: 'tool', trace: { id, name: 'todo_write', args: { todos: todos.map(([content, status]) => ({ content, status })) }, status: 'ok', result: '', durationMs: 1, references: [] } }]
+    })
+    const marker = (stage: WorkflowStage): UiMessage => ({ id: stage, role: 'user', createdAt: 0, blocks: [], workflowStage: stage })
+    const messages = [
+      // A Spec-stage todo naming tickets doesn't count: nothing is being built yet.
+      marker('spec'),
+      todo('s', [['Write ticket 01', 'completed'], ['Write ticket 02', 'in_progress']]),
+      marker('build'),
+      todo('b', [['Read the spec', 'completed'], ['Ticket 01: store due dates', 'completed'], ['Ticket 02: show them', 'in_progress'], ['Ticket 03: filter', 'pending']])
+    ]
+    const p = ticketProgress(messages)
+    expect([...p.finished]).toEqual(['01'])
+    expect([...p.active]).toEqual(['02'])
+    expect(ticketStatus({ n: '01', done: 0, total: 3 }, p.active, p.finished)).toBe('done')
+    expect(ticketStatus({ n: '02', done: 0, total: 3 }, p.active, p.finished)).toBe('doing')
+    expect(ticketStatus({ n: '03', done: 0, total: 3 }, p.active, p.finished)).toBe('todo')
+    expect(ticketProgress(messages.slice(0, 2))).toEqual({ active: new Set(), finished: new Set() })
   })
 })

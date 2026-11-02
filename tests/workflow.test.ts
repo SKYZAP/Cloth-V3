@@ -105,6 +105,9 @@ describe('Spec → Ship helpers', () => {
     // change itself, the wrap-up doesn't explore, and a clear Quick change skips the questions.
     expect(at('build')).toContain("never to redo a worker's reading")
     expect(at('build')).toContain('the full suite runs once, at the end')
+    // The board follows Build's progress: a todo item per ticket, boxes ticked as each one finishes.
+    expect(at('build')).toContain('one item per ticket starting with its number ("Ticket 01: …")')
+    expect(at('build')).toContain("tick a ticket's boxes when you finish that ticket, before starting the next")
     expect(at('review')).toContain('rerun them only if something changed since')
     expect(at('review')).toContain('Give each reviewer the change itself')
     expect(stageNote('done', 'x', 'standard')).toContain("don't explore the code")
