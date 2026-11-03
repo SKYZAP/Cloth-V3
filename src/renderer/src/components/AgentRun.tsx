@@ -5,7 +5,7 @@ import { CaretRight, CheckCircle, MinusCircle, SidebarSimple, WarningCircle, XCi
 import type { ToolTrace } from '@shared/types'
 import { duration, formatCost } from '@/lib/format'
 import { elapsed, recentSteps, runNow, runState, runStepCount, runToolIds, type RunState } from '@/lib/activity'
-import { runAccess, runCardId, runName } from '@/lib/workbar'
+import { runAbout, runCardId, runName } from '@/lib/workbar'
 import { openAgentRun } from '@/pages/chat/setupNav'
 import { ThinkingRow, ToolRow } from './Activity'
 import { ToolTraceCard, toolVerb } from './ToolTrace'
@@ -73,9 +73,9 @@ export function AgentRunLine({ trace, fresh, awaiting, onUndo }: { trace: ToolTr
           <CaretRight size={11} />
         </motion.span>
         <StateIcon state={state} />
-        <span className={clsx('shrink-0 text-[13px] font-semibold', run.agent ? 'text-agent' : 'text-fg')}>{runName(run)}</span>
-        {run.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-[7px] py-px text-[10.5px] font-semibold text-agent">{run.tierName}</span>}
-        <span className={clsx('shrink-0 text-[11px]', run.role === 'worker' ? 'text-warn' : 'text-dim')}>{runAccess(run.role)}</span>
+        <span title={runAbout(run)} className={clsx('shrink-0 text-[13px] font-semibold', run.agent ? 'text-agent' : 'text-fg')}>
+          {runName(run)}
+        </span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{run.description}</span>
         {!running && <span className={clsx('shrink-0 text-[11px] font-semibold', RESULT[state as Exclude<RunState, 'running'>].cls)}>{RESULT[state as Exclude<RunState, 'running'>].word}</span>}
         {waiting && <span className="shrink-0 rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">awaiting approval</span>}

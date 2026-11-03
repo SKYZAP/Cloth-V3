@@ -11,7 +11,7 @@ export interface RunInfo {
   id: string
   /** The id of the top-level trace whose card shows this run (itself, or the run it is nested in). */
   cardId: string
-  /** The saved agent's name, else "Scout" or "Worker" for a plain job (see runName). */
+  /** The saved agent's name, else "Explorer" or "Builder" for a plain job (see runName). */
   name: string
   /** Whether a saved agent ran (vs a plain job). */
   named: boolean
@@ -34,11 +34,17 @@ export interface RunInfo {
 
 export const runCardId = (traceId: string) => `run-${traceId}`
 
-/** What a run is called: the saved agent that ran, else "Scout" or "Worker" for a plain job. */
-export const runName = (run: Pick<SubagentRun, 'agent' | 'role'>): string => run.agent ?? (run.role === 'worker' ? 'Worker' : 'Scout')
+/** What a run is called: the saved agent that ran, else "Explorer" (reads only) or "Builder" (makes changes) for a plain job. */
+export const runName = (run: Pick<SubagentRun, 'agent' | 'role'>): string => run.agent ?? (run.role === 'worker' ? 'Builder' : 'Explorer')
 
-/** What a run may do with files: "Reader" (scout, read-only) or "Editor" (worker, can edit). */
-export const runAccess = (role: SubagentRun['role']): string => (role === 'worker' ? 'Editor' : 'Reader')
+/** What a run is for, in plain words, with the effort it was given: the tooltip on its name (the line shows only the name and the job). */
+export const runAbout = (run: Pick<SubagentRun, 'agent' | 'role' | 'tierName'>): string =>
+  [
+    run.role === 'worker' ? 'Makes changes to files (in its own copy of the project when it is a git repository, merged back when it finishes).' : 'Reads the project and the web to find things out; it can’t change files.',
+    run.tierName ? `Effort: ${run.tierName}.` : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
 
 /** How a finished run that fell short is labelled: "Partly done" or "Blocked" (null otherwise). */
 export const shortfall = (r: RunInfo): string | null => (r.outcome === 'partial' ? 'Partly done' : r.outcome === 'blocked' ? 'Blocked' : null)

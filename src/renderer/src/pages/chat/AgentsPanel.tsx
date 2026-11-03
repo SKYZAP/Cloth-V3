@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { UiMessage } from '@shared/types'
 import { formatCost, formatTokens } from '@/lib/format'
-import { chatAgents, runAccess, shortfall, type RunInfo } from '@/lib/workbar'
+import { chatAgents, shortfall, type RunInfo } from '@/lib/workbar'
 import { scrollToRun } from '@/components/WorkBar'
 import { takeAgentRun, useSetupNav } from './setupNav'
 
@@ -23,15 +23,16 @@ function RunRow({ run, focused }: { run: RunInfo; focused?: boolean }) {
           )}
           aria-label={run.status === 'running' ? 'Running' : (short ?? (run.status === 'done' ? 'Done' : 'Failed'))}
         />
-        <span className="min-w-0 truncate text-fg">{run.name}</span>
+        <span className="min-w-0 truncate text-fg" title={run.role === 'worker' ? 'Makes changes to files' : 'Reads only; it can’t change files'}>
+          {run.name}
+        </span>
         {short && <span className={clsx('shrink-0 text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}
-        {run.tierName && <span className="shrink-0 rounded-full bg-agent-soft px-1.5 py-px text-[10.5px] text-agent">{run.tierName}</span>}
-        <span className={clsx('shrink-0 text-[11px]', run.role === 'worker' ? 'text-warn' : 'text-dim')}>{runAccess(run.role)}</span>
         <div className="flex-1" />
         {run.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(run.cost)}</span>}
       </div>
       <div className="mt-0.5 truncate pl-4 font-mono text-[11px] text-dim">
         {run.model ? `${run.model} · ` : ''}
+        {run.tierName ? `${run.tierName} effort · ` : ''}
         {formatTokens(run.tokensIn)} in / {formatTokens(run.tokensOut)} out
       </div>
       {run.status === 'running'

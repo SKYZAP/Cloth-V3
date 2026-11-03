@@ -388,7 +388,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                 m={m}
                 access={
                   agent.builtin ? (
-                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Reader: it never changes files.' : 'Editor: it can change files when the chat it works for can.'}</span>
+                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Makes changes: it can change files when the chat it works for can.'}</span>
                   ) : (
                     <div className="grid gap-1.5">
                       <Segmented

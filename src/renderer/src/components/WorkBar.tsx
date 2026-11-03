@@ -21,8 +21,8 @@ export function scrollToRun(cardId: string) {
   )
 }
 
-/** "{agent, or Scout / Worker for a plain job} · {tier}". */
-export const runLabel = (r: RunInfo) => (r.tierName ? `${r.name} · ${r.tierName}` : r.name)
+/** The run's name: the saved agent, else Explorer or Builder (the effort is in the Agents tab). */
+export const runLabel = (r: RunInfo) => r.name
 
 function StatusIcon({ status }: { status: StepStatus }) {
   if (status === 'completed') return <CheckCircle size={14} weight="fill" className="text-ok" />
