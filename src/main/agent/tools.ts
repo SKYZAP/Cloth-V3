@@ -283,6 +283,12 @@ export const BUILTINS: BuiltinSpec[] = [
       const summary = (p.summary ?? []).map((x) => String(x).trim()).filter(Boolean)
       if (!summary.length) throw new Error('Say what the stage produced')
       const slug = p.slug?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
+      // A finished spec is listed in docs/specs/README.md: a new feature never takes its folder, or it would overwrite it.
+      if (slug && slug !== w.slug && ctx.scope.workspace) {
+        const index = await readFile(join(ctx.scope.workspace, 'docs', 'specs', 'README.md'), 'utf8').catch(() => '')
+        if (index.includes(`(${slug}/`) || index.includes(`${slug}/spec.md`))
+          throw new Error(`docs/specs/${slug} is an earlier, finished spec. Give this feature its own new slug; if it changes that feature, name the earlier spec and its criteria under "Changes to earlier specs".`)
+      }
       if (slug) ctx.scope.setWorkflowSlug?.(slug)
       const route = w.stage === 'grill' ? (p.route ?? w.route) : undefined
       if (w.stage === 'grill' && !route) throw new Error('Say which route this task takes: quick, standard or preserve')

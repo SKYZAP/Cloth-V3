@@ -91,8 +91,10 @@ function record(stage: Stage, messages: UiMessage[]): StageRecord {
   return { stage, cost, summary: parts.filter(Boolean).join(' · '), route: gate?.route, items, files }
 }
 
-/** Each stage the chat has reached, keyed by stage: the messages from its start marker up to the next one. */
-export function stageRecords(messages: UiMessage[]): Partial<Record<Stage, StageRecord>> {
+/** Each stage the chat's current workflow has reached, keyed by stage: the messages from its start marker up to the next one. */
+export function stageRecords(all: UiMessage[]): Partial<Record<Stage, StageRecord>> {
+  // Only the workflow running now: a chat that ran Spec → Ship before starts again at a new Grill.
+  const messages = all.slice(Math.max(0, all.findLastIndex((m) => m.workflowStage === 'grill')))
   const out: Partial<Record<Stage, StageRecord>> = {}
   let stage: Stage | null = null
   let start = 0

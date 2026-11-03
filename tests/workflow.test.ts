@@ -310,6 +310,36 @@ describe('Spec → Ship in a chat', () => {
     expect(system(seen[1])).toContain('cloth-worktrees')
   }, 60_000)
 
+  it('runs a second feature in the same chat: fresh context, its own folder, the earlier one untouched', async () => {
+    const env = setup('manual')
+    mkdirSync(join(env.root, 'docs/specs/feat-a'), { recursive: true })
+    writeFileSync(join(env.root, 'docs/specs/feat-a/spec.md'), '# Feature A\n')
+    writeFileSync(join(env.root, 'docs/specs/README.md'), '# Specs\n\n- [feat-a](feat-a/spec.md): Feature A\n')
+    env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'done', slug: 'feat-a', route: 'quick', autoContinue: false } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    faux.setResponses([
+      () => fauxAssistantMessage('The secret first-feature detail.'),
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Settled'], route: 'quick', slug: 'feat-a' }, { id: 'same' })], { stopReason: 'toolUse' })),
+      () => fauxAssistantMessage([fauxToolCall('finish_stage', { summary: ['Settled'], route: 'quick', slug: 'feat-b' }, { id: 'own' })], { stopReason: 'toolUse' })
+    ])
+    await env.services.chat.send(env.session.id, 'Thanks, looks good')
+    await settle(env)
+    await env.services.chat.startWorkflow(env.session.id, 'Now add feature B')
+    const { traces } = await settle(env)
+    // Starts from a note on the earlier feature and what was said since, not that conversation.
+    const first = JSON.stringify(seen[0].messages.find((m) => m.role === 'user'))
+    expect(first).toContain('docs/specs/feat-a/')
+    expect(first).toContain('Thanks, looks good')
+    expect(JSON.stringify(seen[0].messages)).not.toContain('The secret first-feature detail.')
+    // It can't take the finished spec's folder; its own is fine. The person's auto-continue choice carries over.
+    expect(traces.find((t) => t.id === 'same')?.result).toMatch(/docs\/specs\/feat-a is an earlier, finished spec/)
+    expect(env.services.chat.get(env.session.id).workflow).toMatchObject({ stage: 'grill', slug: 'feat-b', autoContinue: false })
+    expect(readFileSync(join(env.root, 'docs/specs/feat-a/spec.md'), 'utf8')).toBe('# Feature A\n')
+    // The earlier conversation is still in the chat, archived.
+    expect(env.services.chat.messages(env.session.id).some((m) => m.archived && m.blocks.some((b) => b.type === 'text' && b.text === 'The secret first-feature detail.'))).toBe(true)
+  }, 30_000)
+
   it('works through agents: on whatever the chat says, and Build finishes only after handing work to a worker', async () => {
     const env = setup('manual')
     // The chat has subagents off; Spec → Ship turns them on.

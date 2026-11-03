@@ -50,6 +50,13 @@ describe('stageRecords', () => {
     ])
   })
 
+  it('counts only the workflow running now when the chat ran one before', () => {
+    const r = stageRecords([user('grill'), reply(1), user('build'), reply(2), user('review'), reply(3), user('done'), reply(4), user('grill'), reply(0.5)])
+    expect(r.grill?.cost).toBeCloseTo(0.5)
+    expect(r.build).toBeUndefined()
+    expect(r.review).toBeUndefined()
+  })
+
   it('adds a stage sent back and started again to its first pass', () => {
     const r = stageRecords([user('review'), reply(0.25), user('build'), reply(0.5), user('review'), reply(0.25)])
     expect(r.review?.cost).toBeCloseTo(0.5)

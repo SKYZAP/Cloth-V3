@@ -5,8 +5,8 @@ import { git, repoRoot } from '../panel/git'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
-import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, StageGate, WorkflowStage } from '@shared/types'
-import { handoverText, nextStage, specIndexLine, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, SpecWorkflow, StageGate, WorkflowStage } from '@shared/types'
+import { handoverText, nextFeatureNote, nextStage, specIndexLine, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { commitWorkflowFinish, createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
 import { contextIsGuess } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
@@ -1454,8 +1454,13 @@ export class ChatService {
     if (this.busy(id)) throw new Error('This chat is already running')
     const cur = this.get(id)
     if (!cur.workspace) throw new Error('Spec → Ship needs a folder: choose one for this chat first')
+    // A chat that already finished a feature starts the next one fresh: a note on the earlier one (its documents carry
+    // the rest) and what the person said since, instead of that whole conversation.
+    const prev = cur.workflow
+    if (prev?.stage === 'done') this.handOver(id, nextFeatureNote(prev.slug, this.saidSinceDone(id)))
     // Plan mode is read-only, and the documents need writing: back to the chat's access (Manual if it has none).
-    const session = this.update(id, { workflow: { kind: 'spec-ship', stage: 'grill', slug: null }, ...(cur.permissions === 'plan' ? { permissions: cur.access ?? 'manual' } : {}) })
+    const workflow: SpecWorkflow = { kind: 'spec-ship', stage: 'grill', slug: null, ...(prev?.autoContinue === false ? { autoContinue: false } : {}) }
+    const session = this.update(id, { workflow, ...(cur.permissions === 'plan' ? { permissions: cur.access ?? 'manual' } : {}) })
     const text = idea?.trim()
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote('grill', null) }, { type: 'text', text: text || stageText('grill') }], timestamp: Date.now() }, text ? text.slice(0, 60) : '')
     return session
@@ -1510,6 +1515,17 @@ export class ChatService {
       .slice(start)
       .filter((m) => m.role === 'user' && !m.planApproval && (!m.workflowStage || (m.workflowStage === 'grill' && text(m) !== stageText('grill'))))
       .map(text)
+      .filter(Boolean)
+  }
+
+  /** What the person wrote after the chat's last workflow reached Done. */
+  private saidSinceDone(id: string): string[] {
+    const ui = this.messages(id)
+    const done = ui.findLastIndex((m) => m.workflowStage === 'done')
+    return ui
+      .slice(done + 1)
+      .filter((m) => m.role === 'user' && !m.workflowStage && !m.planApproval)
+      .map((m) => m.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n').trim())
       .filter(Boolean)
   }
 

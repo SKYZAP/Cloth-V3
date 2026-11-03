@@ -775,8 +775,9 @@ function ChatView({
     const ms = await attempt(() => api.chat.compact(session.id), 'Earlier messages summarised')
     if (ms) setMessages(ms)
   }
-  // Spec → Ship hands each stage over with a fresh context, archiving the stages before it: those stay in place in the chat.
-  const flowStart = useMemo(() => (session.workflow ? messages.findLastIndex((m) => m.workflowStage === 'grill') : -1), [messages, session.workflow])
+  // Spec → Ship hands each stage over with a fresh context, archiving the stages before it: those stay in place in the chat,
+  // from the chat's first workflow on (a chat may run several, one after another).
+  const flowStart = useMemo(() => (session.workflow ? messages.findIndex((m) => m.workflowStage === 'grill') : -1), [messages, session.workflow])
   const archived = useMemo(() => messages.filter((m, i) => m.archived && (flowStart < 0 || i < flowStart)), [messages, flowStart])
   const live = useMemo(() => messages.filter((m, i) => !m.archived || (flowStart >= 0 && i >= flowStart)), [messages, flowStart])
   // The current turn's plan and agent runs; stays as a summary after the turn until the next message is sent.

@@ -49,7 +49,7 @@ const COMMON = [
   'Each stage starts with a fresh conversation: what earlier stages settled is in the documents and in the handover at the top of the stage\'s first message. Trust the handover; open a document only for the part you need, and don\'t re-read code an earlier stage already summarised unless you are about to change it.',
   'Keep command output small: run tests with a quiet or failures-only reporter and filter long output (Select-String, grep, tail); Cloth cuts the middle of long output.',
   'Routes, chosen at the start of grilling: Quick (a bug fix, or a small, clear change in one area): Grill, which also writes a short spec, → Build → Review, no tickets; a bug fix is diagnosed before it is changed. Standard: Grill → Spec (the spec and its tickets, approved together) → Build → Review. Preserve (an upgrade, migration or refactor, where behaviour must not change): the Standard stages, with today\'s behaviour pinned by tests before anything changes.',
-  'Documents live in the workspace: the glossary in GLOSSARY.md; decision records in docs/adr/NNNN-slug.md, listed in docs/adr/README.md (number, title, status, one line each); a UI mockup (when the feature changes what people see) in docs/specs/<slug>/mockup.html; the spec in docs/specs/<slug>/spec.md; one file per ticket in docs/specs/<slug>/tickets/NN-slug.md; and docs/specs/README.md, one line per spec folder saying what behaviour it covers. <slug> is a short kebab-case name for the feature. Read indexes first and open only the documents this change touches; use the glossary\'s terms everywhere.',
+  'Documents live in the workspace: the glossary in GLOSSARY.md; decision records in docs/adr/NNNN-slug.md, listed in docs/adr/README.md (number, title, status, one line each); a UI mockup (when the feature changes what people see) in docs/specs/<slug>/mockup.html; the spec in docs/specs/<slug>/spec.md; one file per ticket in docs/specs/<slug>/tickets/NN-slug.md; and docs/specs/README.md, one line per spec folder saying what behaviour it covers. <slug> is a short kebab-case name for the feature, never one an earlier spec in docs/specs/ already uses: a later change to a feature gets its own new folder and names the earlier spec under "Changes to earlier specs", so each spec stays the record of what it built. Read indexes first and open only the documents this change touches; use the glossary\'s terms everywhere.',
   'Every `finish_stage` summary ends with two lines: "Assumed: …" (anything you settled without the person, or "nothing") and "Unverified: …" (anything you could not check, and why, or "nothing").',
   'At any stage, when you hit a gap only the person can close (two reasonable readings that lead to different results), ask one specific question with `ask_user`, with your recommendation, rather than guessing. Don\'t ask what you can find out yourself.'
 ].join('\n')
@@ -214,4 +214,14 @@ export function specIndexLine(readme: string, slug: string, spec: string): strin
   if (readme.includes(`(${slug}/`) || readme.includes(`${slug}/spec.md`)) return null
   const title = /^#\s+(.+?)\s*$/m.exec(spec)?.[1]?.replace(/^spec:\s*/i, '') ?? slug
   return `- [${slug}](${slug}/spec.md): ${title}`
+}
+
+/** The note a chat's next Spec → Ship starts from when an earlier one finished in the same chat. */
+export function nextFeatureNote(slug: string | null, said: string[]): string {
+  const lines = [
+    `Spec → Ship handover. This chat already took a feature through Spec → Ship${slug ? ` (docs/specs/${slug}/)` : ''}; that conversation was moved out of this one to save context (the person still sees it).`,
+    `This is a new feature with its own spec folder. Read the earlier spec only where this request builds on or changes it${slug ? ', and then name it under "Changes to earlier specs"' : ''}.`
+  ]
+  if (said.length) lines.push('', 'What the person said since then:', ...said.slice(-10).map((t) => `- ${clip(t.replace(/\s+/g, ' ').trim(), 600)}`))
+  return lines.join('\n')
 }

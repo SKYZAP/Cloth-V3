@@ -451,11 +451,36 @@ export function useSpecDocs(sessionId: string | null, slug: string | null, versi
   return docs
 }
 
+/** The spec folders under docs/specs/ (one per feature), newest name last. */
+function useSpecFolders(sessionId: string | null, version: number): string[] {
+  const [folders, setFolders] = useState<string[]>([])
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    void api.panel
+      .list(sessionId, 'docs/specs')
+      .catch(() => [])
+      .then((entries) => {
+        if (!cancelled) setFolders(entries.filter((e) => e.dir).map((e) => e.name))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, version])
+  return folders
+}
+
 type DocTab = 'glossary' | 'decisions' | 'mockup' | 'spec' | 'tickets'
 
 /** The side panel's Spec tab: the workflow's documents, read from the chat's folder; tickets as a board. */
 export function SpecPanel({ sessionId, workflow, version, active, finished }: { sessionId: string; workflow: SpecWorkflow | null | undefined; version: number; active?: ReadonlySet<string>; finished?: ReadonlySet<string> }) {
-  const docs = useSpecDocs(workflow ? sessionId : null, workflow?.slug ?? null, version)
+  // A chat can run Spec → Ship more than once (or work beside other specs): any spec folder can be looked at, the current one by default.
+  const folders = useSpecFolders(workflow ? sessionId : null, version)
+  const [picked, setPicked] = useState<string | null>(null)
+  const current = workflow?.slug ?? null
+  const slug = picked && folders.includes(picked) ? picked : current
+  const live = slug === current
+  const docs = useSpecDocs(workflow ? sessionId : null, slug, version)
   const [tab, setTab] = useState<DocTab>('glossary')
   // Every tab stays clickable (an empty one says so); the count is only a hint, and a glossary in another format counts as written.
   const tabs: { id: DocTab; label: string; count: number }[] = [
@@ -469,6 +494,20 @@ export function SpecPanel({ sessionId, workflow, version, active, finished }: { 
   const shown: DocFile[] = tab === 'glossary' ? (docs.glossary ? [docs.glossary] : []) : tab === 'decisions' ? docs.adrs : tab === 'spec' ? (docs.spec ? [docs.spec] : []) : []
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {folders.length > (current && folders.includes(current) ? 1 : 0) && (
+        <label className="flex items-center gap-2 px-4 pt-2.5 text-[12px] text-dim">
+          Spec
+          <select value={slug ?? ''} onChange={(e) => setPicked(e.target.value || null)} className="h-7 min-w-0 flex-1 rounded-lg border border-line bg-elev px-2 font-mono text-[12px] text-fg">
+            {!current && <option value="">This workflow (not named yet)</option>}
+            {[...new Set([...(current ? [current] : []), ...folders])].map((f) => (
+              <option key={f} value={f}>
+                {f}
+                {f === current ? ' (this workflow)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div role="tablist" aria-label="Spec documents" className="flex flex-wrap gap-0.5 px-3 pb-1.5 pt-2.5">
         {tabs.map((d) => (
           <button
@@ -490,7 +529,7 @@ export function SpecPanel({ sessionId, workflow, version, active, finished }: { 
           </div>
         ) : tab === 'tickets' ? (
           docs.tickets.length ? (
-            <TicketBoard tickets={docs.tickets} active={active ?? NONE} finished={finished ?? NONE} />
+            <TicketBoard tickets={docs.tickets} active={live ? (active ?? NONE) : NONE} finished={live ? (finished ?? NONE) : NONE} />
           ) : (
             <p className="px-1 py-4 text-[12.5px] text-dim">Not written yet.</p>
           )
