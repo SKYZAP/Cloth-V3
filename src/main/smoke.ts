@@ -474,7 +474,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     const nestDocs = s.rag.listDocuments(nest.id)
     note(`nestjs crawl: ${nestDocs.filter((d) => d.status === 'ready').length}/${nestDocs.length} ready, ${nestDocs.reduce((a, d) => a + d.chunkCount, 0)} chunks in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
 
-    for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Automations', 'Models', 'MCP', 'Settings']) {
+    for (const page of ['Chat', 'Knowledge', 'Skills', 'Tools', 'Automations', 'Models', 'MCP servers', 'Settings']) {
       await clickNav(win, page)
       await wait(page === 'Automations' ? 1500 : 900)
       if (page === 'Skills') await clickText(win, 'Tests (1)')
@@ -581,7 +581,7 @@ async function probeSkills(win: BrowserWindow, s: Services, outDir: string, note
   await js(`document.querySelector('button[title="Browse skills.sh"]').click()`)
   await wait(500)
   await setInput('input[placeholder^="Search skills.sh"]', 'nestjs')
-  for (let i = 0; i < 40 && !(await js(`!!document.querySelector('[role] .font-mono, .font-mono.text-\[14px\]')`).catch(() => false)); i++) await wait(250)
+  for (let i = 0; i < 40 && !(await js(`!!document.querySelector('[role] .font-mono, .font-mono.text-body')`).catch(() => false)); i++) await wait(250)
   await wait(2500)
   writeFileSync(join(outDir, 'registry-search.png'), await screenshot(win))
   await clickText(win, 'Install')

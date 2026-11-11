@@ -25,7 +25,7 @@ const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Gri
 /** A stop that's behind it (approved, or gone on by itself). */
 const PAST_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Spec and tickets', tickets: 'Tickets', build: 'Build done', review: 'Review done' }
 
-const BTN = 'h-8 rounded-[9px] px-3 text-[12.5px] transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
+const BTN = 'h-8 rounded-[9px] px-3 text-ui transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
 const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim disabled:opacity-100')
 const SECONDARY = clsx(BTN, 'border border-line-strong text-fg hover:bg-elev-2')
 const GHOST = clsx(BTN, 'text-muted hover:bg-elev-2 hover:text-fg')
@@ -60,18 +60,18 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
   }
   return (
     <div className={CARD}>
-      <h4 className="mb-0.5 flex items-center gap-2 text-[13.5px] font-semibold">
+      <h4 className="mb-0.5 flex items-center gap-2 text-body font-semibold">
         <ListBullets size={15} weight="bold" className="shrink-0 text-crimson-hi" aria-hidden="true" />
         Questions · round {round.round}
       </h4>
-      <p className="mb-1 text-[12.5px] text-dim">Each has my recommendation; “Yes” accepts it.</p>
+      <p className="mb-1 text-ui text-dim">Each has my recommendation; “Yes” accepts it.</p>
       {round.questions.map((q, i) => (
         <div key={i} className={clsx('grid grid-cols-[24px_minmax(0,1fr)] gap-2 py-3', i > 0 && 'border-t border-line')}>
-          <span className="pt-px text-[12px] font-semibold text-dim">Q{i + 1}</span>
+          <span className="pt-px text-caption font-semibold text-dim">Q{i + 1}</span>
           <div className="min-w-0">
-            <div className="text-[13.5px] font-semibold">{q.title}</div>
-            {q.context && <p className="mb-2 mt-0.5 text-[13px] text-muted">{q.context}</p>}
-            <div className="mt-1 flex gap-2 rounded-[9px] border border-line bg-panel px-2.5 py-1.5 text-[13px]">
+            <div className="text-body font-semibold">{q.title}</div>
+            {q.context && <p className="mb-2 mt-0.5 text-ui text-muted">{q.context}</p>}
+            <div className="mt-1 flex gap-2 rounded-[9px] border border-line bg-panel px-2.5 py-1.5 text-ui">
               <span className="shrink-0 text-dim">Recommended</span>
               <span className="selectable min-w-0">{q.recommendation}</span>
             </div>
@@ -90,7 +90,7 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
                     placeholder="Your answer…"
                     value={other[i] ?? ''}
                     onChange={(e) => setOther({ ...other, [i]: e.target.value })}
-                    className="h-8 min-w-[200px] flex-1 rounded-[9px] border border-line-strong bg-bg px-2.5 text-[12.5px] outline-none focus:border-crimson-line"
+                    className="h-8 min-w-[200px] flex-1 rounded-[9px] border border-line-strong bg-bg px-2.5 text-ui outline-none focus:border-crimson-line"
                   />
                 )}
               </div>
@@ -100,7 +100,7 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
       ))}
       {actionable && (
         <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <span className="mr-auto text-[12px] text-dim">{error ? <span className="text-danger-hi" role="alert">{error}</span> : round.recorded}</span>
+          <span className="mr-auto text-caption text-dim">{error ? <span className="text-danger-hi" role="alert">{error}</span> : round.recorded}</span>
           <button type="button" disabled={busy} onClick={() => void send(true)} className={SECONDARY}>
             Accept all
           </button>
@@ -109,14 +109,14 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
           </button>
         </div>
       )}
-      {!actionable && round.recorded && <p className="border-t border-line pt-2 text-[12px] text-dim">{round.recorded}</p>}
+      {!actionable && round.recorded && <p className="border-t border-line pt-2 text-caption text-dim">{round.recorded}</p>}
     </div>
   )
 }
 
 /** A route's badge: Quick, Standard or Preserve. */
 export function RouteBadge({ route }: { route: WorkflowRoute }) {
-  return <span className="inline-flex h-[18px] items-center rounded-[5px] border border-mode-line bg-mode-soft px-1.5 text-[11px] font-semibold text-mode">{ROUTE_LABEL[route]}</span>
+  return <span className="inline-flex h-[18px] items-center rounded-[5px] border border-mode-line bg-mode-soft px-1.5 text-caption font-semibold text-mode">{ROUTE_LABEL[route]}</span>
 }
 
 /** A finished stage waiting for the person's OK, with what it produced: the spec itself, the tickets as a board, or the review's findings to pick from. */
@@ -174,13 +174,13 @@ export function StageGateCard({
   }
   return (
     <div className={CARD}>
-      <h4 className="mb-2 flex items-center gap-2 text-[13.5px] font-semibold">
+      <h4 className="mb-2 flex items-center gap-2 text-body font-semibold">
         <ListChecks size={15} weight="fill" className="shrink-0 text-crimson-hi" aria-hidden="true" />
         {gate.stage === 'grill' && quick ? 'Grilling and spec done' : (actionable ? GATE_TITLE : PAST_TITLE)[gate.stage]}
         {gate.stage === 'grill' && route && <RouteBadge route={route} />}
       </h4>
       {bullets.length > 0 && (
-        <ul className="mb-3 list-disc space-y-0.5 pl-[18px] text-[13px] leading-relaxed text-muted marker:text-dim">
+        <ul className="mb-3 list-disc space-y-0.5 pl-[18px] text-ui leading-relaxed text-muted marker:text-dim">
           {bullets.map((s, i) => (
             <li key={i} className="selectable">
               {s}
@@ -189,7 +189,7 @@ export function StageGateCard({
         </ul>
       )}
       {gate.stage === 'review' && (gate.rounds || fixed > 0) ? (
-        <p className="mb-2 text-[12.5px] text-muted">
+        <p className="mb-2 text-ui text-muted">
           Fixed {fixed} of {findings.filter((f) => f.fix).length} must-fix finding{findings.filter((f) => f.fix).length === 1 ? '' : 's'} itself
           {gate.rounds ? ` in ${gate.rounds} round${gate.rounds === 1 ? '' : 's'}` : ''}.
         </p>
@@ -198,10 +198,10 @@ export function StageGateCard({
         <div className={clsx('mb-3 grid gap-2.5 mobile:grid-cols-1', axes.length > 1 && 'grid-cols-2')}>
           {axes.map((axis) => (
             <div key={axis} className="min-w-0 rounded-[10px] border border-line bg-panel">
-              <h5 className="border-b border-line px-2.5 py-1.5 text-[12px] font-semibold text-muted">{AXIS_NAME[axis]}</h5>
+              <h5 className="border-b border-line px-2.5 py-1.5 text-caption font-semibold text-muted">{AXIS_NAME[axis]}</h5>
               {findings.map((f, i) =>
                 f.axis !== axis ? null : (
-                  <label key={i} className={clsx('flex gap-2 px-2.5 py-2 text-[12.5px] [&+&]:border-t [&+&]:border-line', actionable && f.status !== 'fixed' && 'cursor-pointer')}>
+                  <label key={i} className={clsx('flex gap-2 px-2.5 py-2 text-ui [&+&]:border-t [&+&]:border-line', actionable && f.status !== 'fixed' && 'cursor-pointer')}>
                     <input
                       type="checkbox"
                       disabled={!actionable || f.status === 'fixed'}
@@ -213,16 +213,16 @@ export function StageGateCard({
                     <span className="selectable min-w-0">
                       <span
                         className={clsx(
-                          'mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold',
+                          'mr-1.5 inline-block rounded-[4px] border px-1 text-micro font-semibold',
                           f.status === 'fixed' ? 'border-ok/40 text-ok' : f.fix ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-line-strong text-dim'
                         )}
                       >
                         {f.status === 'fixed' ? 'Fixed' : f.fix ? 'Fix before ship' : 'Optional'}
                       </span>
                       <span className={clsx(f.status === 'fixed' && 'text-muted')}>{f.title}</span>
-                      {f.where && <span className="mt-0.5 block font-mono text-[11px] text-dim">{f.where}</span>}
+                      {f.where && <span className="mt-0.5 block font-mono text-caption text-dim">{f.where}</span>}
                       {f.proof && (
-                        <span className="mt-1 block rounded-[6px] border border-line bg-bg px-2 py-1 font-mono text-[11px] leading-relaxed">
+                        <span className="mt-1 block rounded-[6px] border border-line bg-bg px-2 py-1 font-mono text-caption leading-relaxed">
                           <span className="block break-all text-fg">$ {f.proof.command}</span>
                           <span className="block break-words text-dim">{f.proof.observed}</span>
                           {f.proof.expected && <span className="block break-words text-muted">Expected: {f.proof.expected}</span>}
@@ -237,7 +237,7 @@ export function StageGateCard({
         </div>
       )}
       {gate.attention?.length ? (
-        <div className="mb-3 rounded-[10px] border border-line bg-panel px-2.5 py-2 text-[12.5px]">
+        <div className="mb-3 rounded-[10px] border border-line bg-panel px-2.5 py-2 text-ui">
           <h5 className="mb-1 font-semibold text-muted">Second opinion</h5>
           <ul className="list-disc space-y-0.5 pl-[18px] text-fg marker:text-dim">
             {gate.attention.map((a, i) => (
@@ -249,7 +249,7 @@ export function StageGateCard({
         </div>
       ) : null}
       {(assumed !== null || unverified !== null) && (
-        <dl className="mb-3 rounded-[10px] border border-line bg-panel text-[12.5px]">
+        <dl className="mb-3 rounded-[10px] border border-line bg-panel text-ui">
           {assumed !== null && (
             <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2.5 px-2.5 py-1.5">
               <dt className="text-dim">Assumed</dt>
@@ -272,13 +272,13 @@ export function StageGateCard({
         </div>
       )}
       {!showSpec && !showBoard && !showMockup && gate.files?.length ? (
-        <p className="mb-3 truncate font-mono text-[11.5px] text-dim" title={gate.files.join('\n')}>
+        <p className="mb-3 truncate font-mono text-caption text-dim" title={gate.files.join('\n')}>
           {gate.files.join(' · ')}
         </p>
       ) : null}
       {actionable && showAuto && onAutoContinue && (
         <div className="mb-3 space-y-2">
-          <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
+          <label className="flex cursor-pointer items-start gap-2 text-ui text-muted">
             <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
             <span>
               Build, check and fix it on its own, then report back
@@ -286,7 +286,7 @@ export function StageGateCard({
             </span>
           </label>
           {autoContinue && !quick && onApproveSpec && (
-            <label className="ml-[22px] flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
+            <label className="ml-[22px] flex cursor-pointer items-start gap-2 text-ui text-muted">
               <input type="checkbox" checked={!!flow?.approveSpec} onChange={(e) => onApproveSpec(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
               <span>Let me approve the spec and tickets before it builds</span>
             </label>
@@ -297,7 +297,7 @@ export function StageGateCard({
         <div className="flex flex-wrap items-center gap-2">
           {findings.length > 0 && onFix && (
             <>
-              <span className="mr-auto text-[12px] text-dim">
+              <span className="mr-auto text-caption text-dim">
                 {picked.size} of {findings.length} ticked
               </span>
               <button type="button" disabled={busy || picked.size === 0} onClick={() => void go(() => onFix(fixMessage(findings.filter((_, i) => picked.has(i)))))} className={PRIMARY}>
@@ -328,11 +328,11 @@ export function MockupPreview({ sessionId, doc, compact, fill }: { sessionId: st
   return (
     <div className={clsx('flex flex-col overflow-hidden rounded-[12px] border border-line bg-panel', fill ? 'h-full min-h-[320px]' : 'mb-3')}>
       <div className="flex items-center gap-2 border-b border-line py-1 pl-3 pr-1">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-dim">{doc.path}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-caption text-dim">{doc.path}</span>
         <button
           type="button"
           onClick={() => void api.panel.open(sessionId, doc.path).catch(() => undefined)}
-          className="h-7 shrink-0 rounded-[8px] px-2.5 text-[12px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+          className="h-7 shrink-0 rounded-[8px] px-2.5 text-caption text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
         >
           Open in browser
         </button>
@@ -347,8 +347,8 @@ function SpecPreview({ doc }: { doc: { path: string; text: string } }) {
   const [all, setAll] = useState(false)
   return (
     <div className="mb-3 overflow-hidden rounded-[12px] border border-line bg-panel">
-      <div className="truncate border-b border-line px-3 py-1.5 font-mono text-[11.5px] text-dim">{doc.path}</div>
-      <div className={clsx('relative px-4 pt-2 text-[13px]', !all && 'max-h-[360px] overflow-hidden')}>
+      <div className="truncate border-b border-line px-3 py-1.5 font-mono text-caption text-dim">{doc.path}</div>
+      <div className={clsx('relative px-4 pt-2 text-ui', !all && 'max-h-[360px] overflow-hidden')}>
         <Markdown text={doc.text} />
         {!all && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-b from-transparent to-panel" />}
       </div>
@@ -356,7 +356,7 @@ function SpecPreview({ doc }: { doc: { path: string; text: string } }) {
         type="button"
         onClick={() => setAll(!all)}
         aria-expanded={all}
-        className="w-full border-t border-line px-3 py-2 text-left text-[12.5px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+        className="w-full border-t border-line px-3 py-2 text-left text-ui text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
       >
         {all ? 'Show less' : 'Show the whole spec'}
       </button>
@@ -381,7 +381,7 @@ export function TicketBoard({ tickets, active, finished = NONE, compact }: { tic
           const list = byCol(c.id)
           return (
             <section key={c.id} aria-label={c.label} className="min-w-0 rounded-[12px] border border-line bg-bg/60 p-1.5">
-              <h5 className="flex items-center gap-1.5 px-1.5 pb-1.5 pt-0.5 text-[12px] font-semibold text-muted">
+              <h5 className="flex items-center gap-1.5 px-1.5 pb-1.5 pt-0.5 text-caption font-semibold text-muted">
                 <span aria-hidden="true" className={clsx('h-2 w-2 rounded-full', c.id === 'done' ? 'bg-ok' : c.id === 'doing' ? 'bg-warn' : 'border border-line-strong')} />
                 {c.label}
                 <span className="font-normal tabular-nums text-dim">{list.length}</span>
@@ -395,10 +395,10 @@ export function TicketBoard({ tickets, active, finished = NONE, compact }: { tic
                     className="grid gap-1 rounded-[10px] border border-line bg-panel px-2.5 py-2 text-left transition-colors hover:border-line-strong hover:bg-elev focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
                   >
                     <span className="flex items-baseline gap-2">
-                      <span className="shrink-0 font-mono text-[11px] text-dim">#{t.n}</span>
-                      <span className="min-w-0 text-[12.5px] font-medium leading-snug">{t.title}</span>
+                      <span className="shrink-0 font-mono text-caption text-dim">#{t.n}</span>
+                      <span className="min-w-0 text-ui font-medium leading-snug">{t.title}</span>
                     </span>
-                    <span className="flex items-center gap-2 text-[11px] text-dim">
+                    <span className="flex items-center gap-2 text-caption text-dim">
                       <span>{t.blockedBy.length ? `after ${t.blockedBy.map((b) => `#${b}`).join(', ')}` : 'can start now'}</span>
                       {t.total > 0 && (
                         <span className="ml-auto tabular-nums" title={`${t.done} of ${t.total} acceptance criteria met`}>
@@ -408,7 +408,7 @@ export function TicketBoard({ tickets, active, finished = NONE, compact }: { tic
                     </span>
                   </button>
                 ))}
-                {!list.length && <p className="px-1.5 pb-1 text-[11.5px] text-dim">None</p>}
+                {!list.length && <p className="px-1.5 pb-1 text-caption text-dim">None</p>}
               </div>
             </section>
           )
@@ -421,7 +421,7 @@ export function TicketBoard({ tickets, active, finished = NONE, compact }: { tic
         title={
           open ? (
             <span>
-              <span className="mr-2 font-mono text-[12px] text-dim">#{open.n}</span>
+              <span className="mr-2 font-mono text-caption text-dim">#{open.n}</span>
               {open.title}
             </span>
           ) : (
@@ -430,8 +430,8 @@ export function TicketBoard({ tickets, active, finished = NONE, compact }: { tic
         }
       >
         {open && (
-          <div className="text-[13px]">
-            <p className="mb-2 font-mono text-[11.5px] text-dim">{open.path}</p>
+          <div className="text-ui">
+            <p className="mb-2 font-mono text-caption text-dim">{open.path}</p>
             <Markdown text={open.text} />
           </div>
         )}
@@ -448,7 +448,7 @@ export function StageDivider({ message, fresh, route }: { message: UiMessage; fr
   return (
     <motion.div initial={fresh ? { opacity: 0, y: 8 } : false} animate={{ opacity: 1, y: 0 }} className="mb-7">
       {isIdea && <div className="selectable mb-6 ml-auto w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl border border-line bg-elev px-3.5 py-2.5">{text}</div>}
-      <div className="flex items-center gap-3 text-[12px] text-dim" role="separator" aria-label={`Spec → Ship: ${STAGE_LABEL[stage]}`}>
+      <div className="flex items-center gap-3 text-caption text-dim" role="separator" aria-label={`Spec → Ship: ${STAGE_LABEL[stage]}`}>
         <span className="h-px flex-1 bg-gradient-to-r from-transparent to-line-strong" />
         <span className="flex items-center gap-1.5">
           {stage !== 'grill' && <CheckCircle size={13} weight="fill" className="text-ok" aria-hidden="true" />}
@@ -538,14 +538,14 @@ export function SpecPanel({ sessionId, workflow, version, active, finished }: { 
     { id: 'spec', label: 'Spec', count: docs.spec ? 1 : 0 },
     { id: 'tickets', label: 'Tickets', count: docs.tickets.length }
   ]
-  if (!workflow) return <p className="px-4 py-6 text-[12.5px] text-dim">This chat isn’t running Spec → Ship. Start it from the mode menu in the message box.</p>
+  if (!workflow) return <p className="px-4 py-6 text-ui text-dim">This chat isn’t running Spec → Ship. Start it from the mode menu in the message box.</p>
   const shown: DocFile[] = tab === 'glossary' ? (docs.glossary ? [docs.glossary] : []) : tab === 'decisions' ? docs.adrs : tab === 'spec' ? (docs.spec ? [docs.spec] : []) : []
   return (
     <div className="flex h-full min-h-0 flex-col">
       {folders.length > (current && folders.includes(current) ? 1 : 0) && (
-        <label className="flex items-center gap-2 px-4 pt-2.5 text-[12px] text-dim">
+        <label className="flex items-center gap-2 px-4 pt-2.5 text-caption text-dim">
           Spec
-          <select value={slug ?? ''} onChange={(e) => setPicked(e.target.value || null)} className="h-7 min-w-0 flex-1 rounded-lg border border-line bg-elev px-2 font-mono text-[12px] text-fg">
+          <select value={slug ?? ''} onChange={(e) => setPicked(e.target.value || null)} className="h-7 min-w-0 flex-1 rounded-lg border border-line bg-elev px-2 font-mono text-caption text-fg">
             {!current && <option value="">This workflow (not named yet)</option>}
             {[...new Set([...(current ? [current] : []), ...folders])].map((f) => (
               <option key={f} value={f}>
@@ -563,14 +563,14 @@ export function SpecPanel({ sessionId, workflow, version, active, finished }: { 
             role="tab"
             aria-selected={tab === d.id}
             onClick={() => setTab(d.id)}
-            className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px]', tab === d.id ? 'bg-elev-2 font-semibold text-fg' : d.count ? 'text-muted hover:text-fg' : 'text-dim hover:text-muted')}
+            className={clsx('flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-ui', tab === d.id ? 'bg-elev-2 font-semibold text-fg' : d.count ? 'text-muted hover:text-fg' : 'text-dim hover:text-muted')}
           >
             {d.label}
-            {d.count > 0 && d.id !== 'spec' && d.id !== 'mockup' && <span className="text-[11px] tabular-nums text-dim">{d.count}</span>}
+            {d.count > 0 && d.id !== 'spec' && d.id !== 'mockup' && <span className="text-caption tabular-nums text-dim">{d.count}</span>}
           </button>
         ))}
       </div>
-      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 text-[13px]">
+      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 text-ui">
         {tab === 'mockup' && docs.mockup ? (
           <div className="h-full pt-1">
             <MockupPreview sessionId={sessionId} doc={docs.mockup} fill />
@@ -579,14 +579,14 @@ export function SpecPanel({ sessionId, workflow, version, active, finished }: { 
           docs.tickets.length ? (
             <TicketBoard tickets={docs.tickets} active={live ? (active ?? NONE) : NONE} finished={live ? (finished ?? NONE) : NONE} />
           ) : (
-            <p className="px-1 py-4 text-[12.5px] text-dim">Not written yet.</p>
+            <p className="px-1 py-4 text-ui text-dim">Not written yet.</p>
           )
         ) : !shown.length ? (
-          <p className="px-1 py-4 text-[12.5px] text-dim">Not written yet.</p>
+          <p className="px-1 py-4 text-ui text-dim">Not written yet.</p>
         ) : (
           shown.map((f) => (
             <section key={f.path} className="mb-4 px-1">
-              <div className="mb-1.5 mt-2 font-mono text-[11.5px] text-dim">{f.path}</div>
+              <div className="mb-1.5 mt-2 font-mono text-caption text-dim">{f.path}</div>
               <Markdown text={f.text} />
             </section>
           ))

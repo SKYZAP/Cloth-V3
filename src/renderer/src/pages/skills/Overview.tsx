@@ -75,8 +75,8 @@ function Card({ title, meta, children, className }: { title: string; meta?: Reac
   return (
     <section className={clsx('grid content-start gap-2.5 rounded-[14px] border border-line bg-panel p-3.5', className)}>
       <div className="flex items-baseline gap-2">
-        <h3 className="flex-1 text-[13px] font-semibold">{title}</h3>
-        {meta && <span className="text-[11.5px] text-dim">{meta}</span>}
+        <h3 className="flex-1 text-ui font-semibold">{title}</h3>
+        {meta && <span className="text-caption text-dim">{meta}</span>}
       </div>
       {children}
     </section>
@@ -122,18 +122,18 @@ function TriggerCheck({ skill, info, model, onModel, onChanged }: { skill: Skill
                 onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, prompt: e.target.value } : x)))}
                 onBlur={() => void save(rows)}
                 aria-label="Request"
-                className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none focus-visible:outline-none mobile:basis-full"
+                className="min-w-0 flex-1 bg-transparent text-ui outline-none focus-visible:outline-none mobile:basis-full"
               />
               <button
                 onClick={() => void save(rows.map((x, j) => (j === i ? { ...x, should: !x.should } : x)))}
                 title="Whether this request should load the skill"
-                className={clsx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px]', r.should ? 'text-muted hover:bg-elev-2' : 'text-dim hover:bg-elev-2')}
+                className={clsx('shrink-0 rounded-md px-1.5 py-0.5 text-caption', r.should ? 'text-muted hover:bg-elev-2' : 'text-dim hover:bg-elev-2')}
               >
                 {r.should ? 'should load' : 'should not'}
               </button>
               {res && res.prompt === r.prompt && res.should === r.should && (
                 <span
-                  className={clsx('shrink-0 rounded-full px-2 py-px font-mono text-[10.5px]', res.ok ? 'bg-ok/10 text-ok' : 'bg-warn/10 text-warn')}
+                  className={clsx('shrink-0 rounded-full px-2 py-px font-mono text-micro', res.ok ? 'bg-ok/10 text-ok' : 'bg-warn/10 text-warn')}
                   title={res.error ?? (res.picked ? `The model picked ${res.picked}` : 'The model picked no skill')}
                 >
                   {res.error ? 'error' : res.picked === skill.name ? 'loads' : res.picked ? res.picked : 'skipped'}
@@ -145,7 +145,7 @@ function TriggerCheck({ skill, info, model, onModel, onChanged }: { skill: Skill
             </div>
           )
         })}
-        {!rows.length && <div className="rounded-[10px] border border-dashed border-line px-3 py-3 text-[12px] text-dim">No requests yet. Suggest some from the description, or add your own.</div>}
+        {!rows.length && <div className="rounded-[10px] border border-dashed border-line px-3 py-3 text-caption text-dim">No requests yet. Suggest some from the description, or add your own.</div>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={() => setRows([...rows, { prompt: '', should: true }])}>
@@ -180,11 +180,11 @@ function UsageCard({ info }: { info: SkillInsight }) {
         ))}
       </div>
       {u.total ? (
-        <div className="text-[12px] text-muted">
+        <div className="text-caption text-muted">
           {u.total} load{u.total === 1 ? '' : 's'} ({via.join(', ')}){u.chats ? ` in ${u.chats} chat${u.chats === 1 ? '' : 's'}` : ''}. Last used {timeAgo(u.lastUsedAt)}.
         </div>
       ) : (
-        <div className="text-[12px] text-muted">Never used yet.</div>
+        <div className="text-caption text-muted">Never used yet.</div>
       )}
     </Card>
   )
@@ -205,11 +205,11 @@ function SummaryCard({ info, onOpenTab }: { info: SkillInsight; onOpenTab(tab: '
         {info.checks.map((c) => {
           const L = LEVEL[c.level]
           return (
-            <li key={c.id} className="flex gap-2 text-[12px]">
+            <li key={c.id} className="flex gap-2 text-caption">
               <L.icon size={14} weight="fill" className={clsx('mt-px shrink-0', L.cls)} />
               <span className="min-w-0">
                 <span className="text-fg">{c.title}</span>
-                {c.detail && <span className="block text-[11.5px] text-dim">{c.detail}</span>}
+                {c.detail && <span className="block text-caption text-dim">{c.detail}</span>}
               </span>
             </li>
           )
@@ -283,7 +283,7 @@ function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: 
   if (!linked)
     return (
       <Card title="Security audits" meta={<ReviewMeta info={info} />}>
-        <div className="text-[12px] text-dim">Not linked to skills.sh, so there are no audits. Cloth's own scan:</div>
+        <div className="text-caption text-dim">Not linked to skills.sh, so there are no audits. Cloth's own scan:</div>
         <LocalScan skill={skill} info={info} onChanged={onChanged} />
       </Card>
     )
@@ -296,7 +296,7 @@ function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: 
           ))}
         </div>
       ) : audits === null ? (
-        <div className="flex items-center justify-between gap-2 text-[12px] text-dim">
+        <div className="flex items-center justify-between gap-2 text-caption text-dim">
           <span>Couldn't load audits from skills.sh.</span>
           <Button size="sm" variant="ghost" onClick={() => void fetchAudits()}>
             Retry
@@ -308,17 +308,17 @@ function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: 
             {audits.audits.map((a) => {
               const st = AUDIT[a.status] ?? AUDIT.unknown
               return (
-                <div key={a.provider} className="flex items-center justify-between gap-2 py-1.5 text-[12.5px]">
+                <div key={a.provider} className="flex items-center justify-between gap-2 py-1.5 text-ui">
                   <button onClick={() => void api.app.openExternal(a.reportUrl)} className="min-w-0 truncate text-left text-fg hover:text-crimson-hi" title="Open the report on skills.sh">
                     {a.provider}
                   </button>
-                  <span className={clsx('shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium', st.cls)}>{st.label}</span>
+                  <span className={clsx('shrink-0 rounded px-1.5 py-0.5 text-caption font-medium', st.cls)}>{st.label}</span>
                 </div>
               )
             })}
-            {!audits.audits.length && <div className="py-1.5 text-[12px] text-dim">skills.sh lists no audits for this skill yet.</div>}
+            {!audits.audits.length && <div className="py-1.5 text-caption text-dim">skills.sh lists no audits for this skill yet.</div>}
           </div>
-          <div className="flex items-center justify-between gap-2 text-[11.5px] text-dim">
+          <div className="flex items-center justify-between gap-2 text-caption text-dim">
             <span>From skills.sh, checked {timeAgo(audits.fetchedAt)}</span>
             <IconButton title="Check again" aria-label="Refresh audits" disabled={refreshing} onClick={() => void fetchAudits(true)}>
               <ArrowClockwise size={13} className={clsx(refreshing && 'animate-spin')} />
@@ -327,9 +327,9 @@ function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: 
         </>
       )}
       <details className="rounded-[10px] border border-line bg-bg">
-        <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12px]">
+        <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-caption">
           <span className="flex-1">Cloth's local scan</span>
-          <span className="text-[11px] text-dim">
+          <span className="text-caption text-dim">
             <ReviewMeta info={info} />
           </span>
         </summary>
@@ -406,22 +406,22 @@ function SourceCard({
   if (linked)
     return (
       <Card title="Source">
-        <div className="grid gap-0.5 text-[12.5px]">
+        <div className="grid gap-0.5 text-ui">
           <span className="text-fg">skills.sh</span>
-          <button onClick={() => void api.app.openExternal(linked.url)} className="min-w-0 truncate text-left font-mono text-[11.5px] text-dim hover:text-crimson-hi" title={linked.url}>
+          <button onClick={() => void api.app.openExternal(linked.url)} className="min-w-0 truncate text-left font-mono text-caption text-dim hover:text-crimson-hi" title={linked.url}>
             {linked.id}
           </button>
-          <span className="text-[12px] text-muted">{LINKED_BY[linked.linkedBy ?? 'install']}</span>
+          <span className="text-caption text-muted">{LINKED_BY[linked.linkedBy ?? 'install']}</span>
         </div>
         {status?.updateAvailable ? (
-          <div className="flex items-center justify-between gap-2 text-[12px]">
+          <div className="flex items-center justify-between gap-2 text-caption">
             <span className="text-warn">Update available</span>
             <Button size="sm" loading={updating} onClick={onUpdate}>
               Update
             </Button>
           </div>
         ) : status ? (
-          <div className="flex items-center gap-1.5 text-[12px] text-ok">
+          <div className="flex items-center gap-1.5 text-caption text-ok">
             <span className="h-1.5 w-1.5 rounded-full bg-ok" /> Up to date
           </div>
         ) : null}
@@ -434,7 +434,7 @@ function SourceCard({
     )
   return (
     <Card title="Source">
-      <div className="text-[12.5px] text-fg">Local skill</div>
+      <div className="text-ui text-fg">Local skill</div>
       {!cands ? (
         <div>
           <Button size="sm" loading={finding} onClick={() => void find()}>
@@ -442,18 +442,18 @@ function SourceCard({
           </Button>
         </div>
       ) : !cands.length ? (
-        <div className="text-[12px] text-dim">No match on skills.sh.</div>
+        <div className="text-caption text-dim">No match on skills.sh.</div>
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-1">
           {cands.map((c) => (
             <div key={c.id} className="flex items-center gap-2 rounded-[10px] border border-line bg-bg px-2 py-1.5">
               <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-[11.5px] text-fg" title={c.id}>
+                <div className="truncate font-mono text-caption text-fg" title={c.id}>
                   {c.id}
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-dim">
+                <div className="flex items-center gap-1.5 text-caption text-dim">
                   {c.installs.toLocaleString()} installs
-                  {c.identical && <span className="rounded bg-ok/15 px-1.5 py-px text-[10.5px] font-medium text-ok">Identical</span>}
+                  {c.identical && <span className="rounded bg-ok/15 px-1.5 py-px text-micro font-medium text-ok">Identical</span>}
                 </div>
               </div>
               <Button size="sm" loading={linking === c.id} disabled={!!linking && linking !== c.id} onClick={() => void link(c.id)}>
@@ -481,14 +481,14 @@ function LocalScan({ skill, info, onChanged }: { skill: Skill; info: SkillInsigh
         <div className="grid gap-2">
           {groups.map(({ k, items }) => (
             <details key={k} className="rounded-[10px] border border-line bg-bg">
-              <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12px]">
+              <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-caption">
                 <Warning size={13} className={k === 'injection' ? 'text-crimson-hi' : 'text-warn'} />
                 <span className="flex-1">{KIND[k]}</span>
-                <span className="font-mono text-[11px] text-dim">{items.length}</span>
+                <span className="font-mono text-caption text-dim">{items.length}</span>
               </summary>
               <ul className="grid gap-1 border-t border-line px-2.5 py-2">
                 {items.slice(0, 12).map((f, i) => (
-                  <li key={i} className="grid text-[11.5px]">
+                  <li key={i} className="grid text-caption">
                     <span className="font-mono text-dim">
                       {f.file}:{f.line}
                     </span>
@@ -500,7 +500,7 @@ function LocalScan({ skill, info, onChanged }: { skill: Skill; info: SkillInsigh
           ))}
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-[12px] text-muted">
+        <div className="flex items-center gap-2 text-caption text-muted">
           <CheckCircle size={14} weight="fill" className="text-ok" /> Nothing found: no network, commands, file writes or injection-like text.
         </div>
       )}

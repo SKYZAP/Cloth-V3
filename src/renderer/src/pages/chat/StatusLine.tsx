@@ -88,7 +88,7 @@ export function ModelEffortMenu({ session, update, reasoning, onPicked }: { sess
   )
   const effort = reasoning && (
     <div key="effort" className={clsx('shrink-0 px-3 py-2.5', isMobile ? 'border-b border-line' : 'border-t border-line')}>
-      <div className="mb-1.5 text-[11.5px] text-dim">Reasoning effort</div>
+      <div className="mb-1.5 text-caption text-dim">Reasoning effort</div>
       {reasoning && (
         <>
           <Segmented value={normalizeEffort(session.thinking)} onChange={(thinking) => void update({ thinking })} options={EFFORT_OPTIONS} label="Reasoning effort" />
@@ -112,10 +112,10 @@ export function FolderMenu({ session, update }: { session: ChatSession; update: 
   const folders = [...new Set(projects.map((p) => p.folder).filter((f): f is string => !!f && f !== session.workspace))].slice(0, 4)
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3 overflow-y-auto overflow-x-hidden p-3">
-      {!isMobile && <div className="-mb-1.5 text-[11.5px] text-dim">Folder</div>}
+      {!isMobile && <div className="-mb-1.5 text-caption text-dim">Folder</div>}
       <div className={clsx('flex items-center gap-2 rounded-[10px] border px-2.5 py-2', session.workspace ? 'border-line bg-bg' : 'border-dashed border-line-strong')}>
         {session.workspace ? <FolderSimple size={15} weight="fill" className="shrink-0 text-muted" /> : <FolderDashed size={15} className="shrink-0 text-dim" />}
-        <span className={clsx('min-w-0 flex-1 truncate font-mono text-[11.5px]', session.workspace ? 'text-fg' : 'text-dim')} title={session.workspace ?? undefined}>
+        <span className={clsx('min-w-0 flex-1 truncate font-mono text-caption', session.workspace ? 'text-fg' : 'text-dim')} title={session.workspace ?? undefined}>
           {session.workspace ?? "No folder: the agent can't read files"}
         </span>
         {session.workspace && (
@@ -126,13 +126,13 @@ export function FolderMenu({ session, update }: { session: ChatSession; update: 
       </div>
       <div className="grid gap-0.5">
         {folders.map((f) => (
-          <button key={f} onClick={() => void update({ workspace: f })} title={f} className="flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-lg px-2 text-left text-[12.5px] text-muted hover:bg-elev-2 hover:text-fg">
+          <button key={f} onClick={() => void update({ workspace: f })} title={f} className="flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-lg px-2 text-left text-ui text-muted hover:bg-elev-2 hover:text-fg">
             <FolderSimple size={14} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{f.split(/[\\/]/).pop()}</span>
-            <span className="max-w-[45%] truncate font-mono text-[10.5px] text-dim">{f.split(/[\\/]/).slice(0, -1).join('\\')}</span>
+            <span className="max-w-[45%] truncate font-mono text-micro text-dim">{f.split(/[\\/]/).slice(0, -1).join('\\')}</span>
           </button>
         ))}
-        <button onClick={() => void choose()} className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-[12.5px] text-muted hover:bg-elev-2 hover:text-fg">
+        <button onClick={() => void choose()} className="flex h-8 items-center gap-2 rounded-lg px-2 text-left text-ui text-muted hover:bg-elev-2 hover:text-fg">
           <FolderSimplePlus size={14} className="shrink-0" />
           Choose a folder…
         </button>
@@ -150,7 +150,7 @@ export function FolderMenu({ session, update }: { session: ChatSession; update: 
       </Field>
       {session.container && <ContainerOptions session={session} update={update} />}
       {(session.workspace || session.container) && (
-        <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted">
+        <label className="flex cursor-pointer items-center gap-2 text-caption text-muted">
           <input type="checkbox" checked={session.codeIntel} onChange={(e) => void update({ codeIntel: e.target.checked })} className="accent-crimson" />
           <Code size={13} />
           Code intelligence <span className="text-dim">(TypeScript, Python)</span>
@@ -163,9 +163,9 @@ export function FolderMenu({ session, update }: { session: ChatSession; update: 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="grid gap-1.5">
-      <div className="text-[11.5px] text-dim">{label}</div>
+      <div className="text-caption text-dim">{label}</div>
       {children}
-      {hint && <div className="text-[11px] text-dim">{hint}</div>}
+      {hint && <div className="text-caption text-dim">{hint}</div>}
     </div>
   )
 }
@@ -197,7 +197,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={clsx(
               'flex min-w-0 flex-1 items-center justify-center gap-1.5 transition-colors disabled:opacity-40',
-              size === 'sm' ? 'h-6 rounded-[6px] px-1.5 text-[11.5px]' : 'h-7 rounded-[7px] px-2 text-[12px]',
+              size === 'sm' ? 'h-6 rounded-[6px] px-1.5 text-caption' : 'h-7 rounded-[7px] px-2 text-caption',
               on ? 'bg-elev-2 text-fg shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_2px_6px_rgb(0_0_0/0.35)]' : 'text-dim hover:text-muted'
             )}
           >
@@ -227,7 +227,7 @@ function ContainerOptions({ session, update }: { session: ChatSession; update: U
   return (
     <>
       {docker && !docker.available && (
-        <div className="flex items-center gap-2 rounded-[10px] border border-warn/40 bg-warn/[0.07] px-2.5 py-2 text-[11.5px] text-warn">
+        <div className="flex items-center gap-2 rounded-[10px] border border-warn/40 bg-warn/[0.07] px-2.5 py-2 text-caption text-warn">
           <span className="min-w-0 flex-1">{docker.error}</span>
           <Button size="sm" variant="ghost" onClick={() => void api.containers.status(true).then(setDocker)}>
             Check again
@@ -243,10 +243,10 @@ function ContainerOptions({ session, update }: { session: ChatSession; update: U
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             spellCheck={false}
             aria-label="Docker image"
-            className="h-8 min-w-0 flex-1 rounded-[10px] border border-line bg-bg px-2.5 font-mono text-[12px] outline-none focus:border-crimson-line"
+            className="h-8 min-w-0 flex-1 rounded-[10px] border border-line bg-bg px-2.5 font-mono text-caption outline-none focus:border-crimson-line"
           />
           {['node:22', 'python:3.12'].filter((i) => i !== settings.image).map((i) => (
-            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-8 shrink-0 rounded-[10px] border border-line px-2 font-mono text-[11px] text-muted hover:border-line-strong hover:text-fg">
+            <button key={i} onClick={() => void update({ container: { ...settings, image: i } })} className="h-8 shrink-0 rounded-[10px] border border-line px-2 font-mono text-caption text-muted hover:border-line-strong hover:text-fg">
               {i}
             </button>
           ))}

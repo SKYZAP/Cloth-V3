@@ -41,19 +41,19 @@ export function SkillShelf({
           {isSet ? <Layers size={16} /> : <FileText size={16} />}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 id={id} className="flex items-baseline gap-2 text-[14px] font-semibold">
+          <h2 id={id} className="flex items-baseline gap-2 text-body font-semibold">
             <span className="truncate">{shelf.title}</span>
-            <span className="text-[12.5px] font-normal tabular-nums text-dim">{shelf.skills.length}</span>
+            <span className="text-ui font-normal tabular-nums text-dim">{shelf.skills.length}</span>
           </h2>
           {shelf.url && (
-            <button onClick={() => void api.app.openExternal(shelf.url!)} className="truncate font-mono text-[11.5px] text-dim hover:text-crimson-hi" title={shelf.url} translate="no">
+            <button onClick={() => void api.app.openExternal(shelf.url!)} className="truncate font-mono text-caption text-dim hover:text-crimson-hi" title={shelf.url} translate="no">
               {shelf.repo}
             </button>
           )}
         </div>
         {isSet ? (
           <>
-            <span className="flex items-center gap-2 text-[12px] text-muted">
+            <span className="flex items-center gap-2 text-caption text-muted">
               {on > 0 && on < shelf.skills.length && <span className="tabular-nums text-dim">{on} of {shelf.skills.length}</span>}
               <Switch checked={on === shelf.skills.length} onChange={(v) => onMode(shelf.skills.map((s) => s.name), v)} label="In chats" />
             </span>
@@ -72,11 +72,11 @@ export function SkillShelf({
             </IconButton>
           </>
         ) : (
-          shelf.uses > 0 && <span className="text-[12px] tabular-nums text-dim">{shelf.uses} uses</span>
+          shelf.uses > 0 && <span className="text-caption tabular-nums text-dim">{shelf.uses} uses</span>
         )}
       </header>
       {isSet && shelf.uses === 0 && (
-        <div className="mx-4 mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[9px] bg-elev px-3 py-2 text-[12px] text-muted">
+        <div className="mx-4 mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[9px] bg-elev px-3 py-2 text-caption text-muted">
           <span className="min-w-[220px] flex-1">None of these {shelf.skills.length} skills has been used in a chat yet.</span>
           {on > 0 ? (
             <Button size="sm" onClick={() => onMode(shelf.skills.map((s) => s.name), false)}>
@@ -112,12 +112,12 @@ function SkillTile({ skill, uses, most, on, always, onOpen, onMode }: { skill: S
       )}
     >
       <button onClick={onOpen} data-focus-key={`skill:${skill.name}`} className="flex flex-1 flex-col gap-1 rounded-[10px] px-3 pb-9 pt-2.5 text-left focus-visible:outline-none">
-        <span className={clsx('truncate font-mono text-[12px]', uses ? 'text-fg' : 'text-muted')} translate="no">
+        <span className={clsx('truncate font-mono text-caption', uses ? 'text-fg' : 'text-muted')} translate="no">
           {skill.name}
         </span>
-        <span className="line-clamp-2 text-[11.5px] leading-[1.4] text-muted">{skill.description || 'No description'}</span>
+        <span className="line-clamp-2 text-caption leading-[1.4] text-muted">{skill.description || 'No description'}</span>
       </button>
-      <div className="pointer-events-none absolute inset-x-3 bottom-2.5 flex items-center gap-2.5 text-[11px] text-dim">
+      <div className="pointer-events-none absolute inset-x-3 bottom-2.5 flex items-center gap-2.5 text-caption text-dim">
         {moved ? (
           <span className="rounded bg-warn/15 px-1.5 font-medium text-warn">moved</span>
         ) : uses ? (

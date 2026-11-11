@@ -63,7 +63,7 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
     <div className="h-full overflow-y-auto">
       <div className="mx-auto mt-[8vh] max-w-[640px] px-6 pb-12 mobile:mt-4 mobile:px-4">
         <SplitBack />
-        <h2 className="mb-1 text-[20px] font-semibold">New automation</h2>
+        <h2 className="mb-1 text-title font-semibold">New automation</h2>
         <div className="rounded-[16px] border border-line-strong bg-panel p-3 focus-within:border-crimson-line">
           <label htmlFor="automation-description" className="sr-only">
             Describe the automation
@@ -86,7 +86,7 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
             placeholder="Every weekday at 8:30, run the tests in my Cloth folder and tell me what broke…"
             aria-invalid={empty || undefined}
             aria-describedby={empty ? 'draft-empty' : error ? 'draft-error' : undefined}
-            className="min-h-[92px] w-full resize-none bg-transparent px-1 py-0.5 text-[14.5px] leading-relaxed text-fg outline-none placeholder:text-dim disabled:opacity-70"
+            className="min-h-[92px] w-full resize-none bg-transparent px-1 py-0.5 text-body leading-relaxed text-fg outline-none placeholder:text-dim disabled:opacity-70"
           />
           <div className="flex justify-end gap-2">
             {onCancel && (
@@ -100,18 +100,18 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
           </div>
         </div>
         {empty && (
-          <p id="draft-empty" role="alert" className="mt-1.5 text-[12.5px] text-danger-hi">
+          <p id="draft-empty" role="alert" className="mt-1.5 text-ui text-danger-hi">
             Describe what the automation should do first.
           </p>
         )}
 
         {drafting ? (
-          <p role="status" className="mt-3.5 flex items-center gap-2 text-[13px] text-muted">
+          <p role="status" className="mt-3.5 flex items-center gap-2 text-ui text-muted">
             <Loader2 size={14} aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
             Drafting the schedule, tools and access…
           </p>
         ) : error ? (
-          <div id="draft-error" role="alert" className="mt-3.5 grid gap-2 text-[12.5px]">
+          <div id="draft-error" role="alert" className="mt-3.5 grid gap-2 text-ui">
             <p className="text-danger-hi">Cloth couldn’t draft it: {error}</p>
             <p className="text-muted">{settings?.defaultModel ? 'Try again, or start from scratch and fill it in yourself.' : 'Set a default model in Settings to draft automations.'}</p>
             <div className="flex flex-wrap gap-2">
@@ -139,7 +139,7 @@ export function Compose({ onCancel, onCreated }: { onCancel?(): void; onCreated(
                   setEmpty(false)
                   ref.current?.focus()
                 }}
-                className={clsx('rounded-[11px] border border-line px-3 py-2.5 text-left text-[13px] text-muted hover:border-line-strong hover:bg-panel hover:text-fg', FOCUS)}
+                className={clsx('rounded-[11px] border border-line px-3 py-2.5 text-left text-ui text-muted hover:border-line-strong hover:bg-panel hover:text-fg', FOCUS)}
               >
                 <span className="font-medium text-fg">{i.title}</span> · {i.sub}
               </button>

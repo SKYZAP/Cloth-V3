@@ -101,8 +101,8 @@ export function PendingAttachments({ items, onRemove, noVision }: { items: Pendi
                         <FileText size={18} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-[12.5px] text-fg">{a.name}</span>
-                        <span className="block text-[11px] text-dim">{fileSize(a.size)}</span>
+                        <span className="block truncate text-ui text-fg">{a.name}</span>
+                        <span className="block text-caption text-dim">{fileSize(a.size)}</span>
                       </span>
                     </div>
                   )}
@@ -117,7 +117,7 @@ export function PendingAttachments({ items, onRemove, noVision }: { items: Pendi
               ))}
             </AnimatePresence>
           </div>
-          {noVision && items.some((a) => a.preview) && <div className="px-4 pt-2 text-[11.5px] text-warn">This model can't see images — pick a vision model, or they'll be left out.</div>}
+          {noVision && items.some((a) => a.preview) && <div className="px-4 pt-2 text-caption text-warn">This model can't see images — pick a vision model, or they'll be left out.</div>}
         </motion.div>
       )}
     </AnimatePresence>
@@ -146,7 +146,7 @@ export function SentAttachments({ items }: { items: UiAttachment[] }) {
       {files.length > 0 && (
         <div className="flex max-w-[78%] flex-wrap justify-end gap-1.5 mobile:max-w-[86%]">
           {files.map((f, i) => (
-            <span key={i} className="flex items-center gap-1.5 rounded-full border border-line bg-elev px-2.5 py-1 text-[11.5px] text-muted" title={f.truncated ? 'Too long to include in full — only the start was sent' : undefined}>
+            <span key={i} className="flex items-center gap-1.5 rounded-full border border-line bg-elev px-2.5 py-1 text-caption text-muted" title={f.truncated ? 'Too long to include in full — only the start was sent' : undefined}>
               <FileText size={13} />
               <span className="max-w-[200px] truncate text-fg">{f.name}</span>
               <span className="text-dim">

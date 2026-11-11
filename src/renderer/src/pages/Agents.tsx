@@ -90,8 +90,8 @@ export function AgentsPage() {
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
-              <h1 className="text-[18px] font-semibold tracking-tight">Agents</h1>
-              <p className="mt-0.5 text-[12.5px] text-dim">{loaded ? counts : '…'}</p>
+              <h1 className="text-title font-semibold tracking-tight">Agents</h1>
+              <p className="mt-0.5 text-ui text-dim">{loaded ? counts : '…'}</p>
             </div>
             <div className="relative w-[220px] mobile:w-full mobile:flex-1">
               <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
@@ -109,12 +109,12 @@ export function AgentsPage() {
             </div>
           )}
           <div className="hidden max-[760px]:flex items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3">
-            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-[13px] font-semibold text-white">
+            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-ui font-semibold text-white">
               C
             </span>
             <div className="min-w-0">
-              <div className="text-[13.5px] font-semibold">Cloth</div>
-              <div className="text-[12px] text-muted">The main agent in every chat. It hands work to the team below.</div>
+              <div className="text-body font-semibold">Cloth</div>
+              <div className="text-caption text-muted">The main agent in every chat. It hands work to the team below.</div>
             </div>
           </div>
 
@@ -145,8 +145,8 @@ export function AgentsPage() {
               )}
               {!q && view === 'cards' && (
                 <div className="grid content-start gap-2 rounded-[12px] border border-dashed border-line-strong p-3.5">
-                  <span className="text-[13px] font-semibold">Describe your own</span>
-                  <span className="text-[12.5px] text-muted">Say what it's for in a sentence, like "Writes vitest suites for changed files and runs them". Cloth drafts the name and instructions.</span>
+                  <span className="text-ui font-semibold">Describe your own</span>
+                  <span className="text-ui text-muted">Say what it's for in a sentence, like "Writes vitest suites for changed files and runs them". Cloth drafts the name and instructions.</span>
                   <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
                     Describe an agent
                   </Button>
@@ -187,7 +187,7 @@ function Lane({ title, action, children }: { title: string; action?: ReactNode; 
   return (
     <section className="grid gap-2.5" aria-label={title}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-[13.5px] font-semibold">{title}</h2>
+        <h2 className="text-body font-semibold">{title}</h2>
         {action}
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">{children}</div>
@@ -196,7 +196,7 @@ function Lane({ title, action, children }: { title: string; action?: ReactNode; 
 }
 
 function LaneEmpty({ children }: { children: ReactNode }) {
-  return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-[12.5px] text-dim">{children}</p>
+  return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-ui text-dim">{children}</p>
 }
 
 /** What the agent may touch, in words. */
@@ -242,21 +242,21 @@ function AgentCard({
       <span className="flex min-w-0 items-center gap-2.5">
         <Tile name={a.name} builtin={a.builtin} layoutId={`agent-tile-${a.id}`} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13.5px] font-semibold" title={a.name}>
+          <span className="block truncate text-body font-semibold" title={a.name}>
             {a.name}
           </span>
         </span>
         {working && <span className="pulse-crimson h-2 w-2 shrink-0 rounded-full bg-crimson-hi" aria-hidden="true" />}
-        {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">built in</span>}
+        {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-caption text-muted">built in</span>}
       </span>
-      <span className="line-clamp-2 text-[12.5px] text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
+      <span className="line-clamp-2 text-ui text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
       <span className="flex flex-wrap gap-1.5">
         <Cap>{access(a)}</Cap>
         {a.webEnabled && <Cap>Web</Cap>}
         {a.knowledgeEnabled && <Cap>Knowledge</Cap>}
         {!!a.mcpServers?.length && <Cap>{plural(a.mcpServers.length, 'server')}</Cap>}
         {always.slice(0, 3).map((s) => (
-          <span key={s} className="rounded-full border border-skill/30 px-2 py-px text-[11.5px] text-skill" title={`${s} is always on`} translate="no">
+          <span key={s} className="rounded-full border border-skill/30 px-2 py-px text-caption text-skill" title={`${s} is always on`} translate="no">
             {s}
           </span>
         ))}
@@ -264,7 +264,7 @@ function AgentCard({
       </span>
       <span className="grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-line pt-2">
         <WeekStrip days={activity?.days ?? [0, 0, 0, 0, 0, 0, 0]} max={busiest} />
-        <span className="flex items-center justify-between gap-2 text-[11.5px] text-dim">
+        <span className="flex items-center justify-between gap-2 text-caption text-dim">
           <span className={clsx('min-w-0 truncate', working && 'max-w-[40%] shrink-0')}>{a.model ? a.model.modelId : "Chat's model"}</span>
           {working ? (
             <span className="min-w-0 truncate text-crimson-text" title={live.text}>
@@ -284,7 +284,7 @@ function AgentCard({
 }
 
 function Cap({ children }: { children: ReactNode }) {
-  return <span className="rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">{children}</span>
+  return <span className="rounded-full border border-line-strong px-2 py-px text-caption text-muted">{children}</span>
 }
 
 const EFFORT: { value: Effort | 'chat'; label: string }[] = [{ value: 'chat', label: "Chat's" }, ...EFFORT_OPTIONS]
@@ -428,8 +428,8 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
 
           <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
             <div className="flex items-baseline justify-between">
-              <h3 className="text-[13px] font-semibold">What it can use</h3>
-              <span className="font-mono text-[11px] tabular-nums text-dim">{setup ? `about ${k(m.total)} tokens per request` : '…'}</span>
+              <h3 className="text-ui font-semibold">What it can use</h3>
+              <span className="font-mono text-caption tabular-nums text-dim">{setup ? `about ${k(m.total)} tokens per request` : '…'}</span>
             </div>
             <Collapsible title="Skills" meta={`${m.skillsOn.length} · +${k(m.parts.skills)}`} defaultOpen>
               <SkillsView target={agent} update={update} m={m} />
@@ -444,7 +444,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
                 m={m}
                 access={
                   agent.builtin ? (
-                    <span className="text-[11px] text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Makes changes: it can change files when the chat it works for can.'}</span>
+                    <span className="text-caption text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Makes changes: it can change files when the chat it works for can.'}</span>
                   ) : (
                     <div className="grid gap-1.5">
                       <Segmented
@@ -491,9 +491,9 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-      <div className="text-[12px] font-medium text-muted">{title}</div>
+      <div className="text-caption font-medium text-muted">{title}</div>
       {children}
-      {hint && <div className="text-[11px] text-dim">{hint}</div>}
+      {hint && <div className="text-caption text-dim">{hint}</div>}
     </div>
   )
 }
@@ -504,8 +504,8 @@ function Collapsible({ title, meta, defaultOpen, children }: { title: string; me
     <div className="min-w-0 rounded-[12px] border border-line bg-panel">
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
         <CaretRight size={11} className={clsx('shrink-0 text-dim transition-transform', open && 'rotate-90')} />
-        <span className="min-w-0 flex-1 text-[12.5px] font-medium">{title}</span>
-        <span className="font-mono text-[11px] tabular-nums text-dim">{meta}</span>
+        <span className="min-w-0 flex-1 text-ui font-medium">{title}</span>
+        <span className="font-mono text-caption tabular-nums text-dim">{meta}</span>
       </button>
       {open && <div className="border-t border-line p-2">{children}</div>}
     </div>
@@ -534,7 +534,7 @@ function InstructionsEditor({ agent, value, onChange, onSave }: { agent: Agent; 
   return (
     <div className="grid gap-1.5">
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-[12px] font-medium text-muted">Instructions</span>
+        <span className="flex-1 text-caption font-medium text-muted">Instructions</span>
         {previous !== null && (
           <Button size="sm" variant="ghost" icon={<ArrowCounterClockwise size={13} />} onClick={() => (onChange(previous), onSave(previous), setPrevious(null))}>
             Undo rewrite
@@ -607,7 +607,7 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
 
   return (
     <Modal open={open} onClose={onClose} title="New agent" width={860}>
-      <ol className="mb-4 flex items-center gap-2 text-[11.5px] text-dim" aria-label="Steps">
+      <ol className="mb-4 flex items-center gap-2 text-caption text-dim" aria-label="Steps">
         {['Describe', 'Check the draft', 'Edit'].map((s, i) => (
           <li key={s} className={clsx('flex items-center gap-2', i + 1 === step && 'text-fg')} aria-current={i + 1 === step ? 'step' : undefined}>
             {i > 0 && <CaretRight size={10} aria-hidden="true" />}
@@ -617,7 +617,7 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
       </ol>
       <div className="grid grid-cols-2 gap-5 mobile:grid-cols-1">
         <div className="grid content-start gap-3">
-          <label htmlFor="agent-description" className="text-[12px] font-medium text-muted">
+          <label htmlFor="agent-description" className="text-caption font-medium text-muted">
             What should this agent do?
           </label>
           <Textarea
@@ -629,7 +629,7 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
             placeholder="e.g. Check my web pages for design problems against the project's design system and fix them. It should look at the page in a real browser on phone and desktop, in both themes, before saying it's done."
           />
           <div className="grid gap-1">
-            <span className="text-[11.5px] text-dim">Write with</span>
+            <span className="text-caption text-dim">Write with</span>
             <ModelPicker value={model} onChange={(m) => setModel(m)} />
           </div>
           <div className="flex justify-end">
@@ -638,33 +638,33 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
             </Button>
           </div>
           <div className="grid gap-1.5 border-t border-line pt-3">
-            <span className="text-[11.5px] text-dim">Or start from</span>
+            <span className="text-caption text-dim">Or start from</span>
             <div className="flex flex-wrap gap-1.5">
               {AGENT_TEMPLATES.map((t) => (
-                <button key={t.id} onClick={() => void fromTemplate(t.id)} title={t.summary} className="rounded-lg border border-line px-2.5 py-1 text-[12px] text-muted hover:border-line-strong hover:text-fg">
+                <button key={t.id} onClick={() => void fromTemplate(t.id)} title={t.summary} className="rounded-lg border border-line px-2.5 py-1 text-caption text-muted hover:border-line-strong hover:text-fg">
                   {t.name}
                 </button>
               ))}
-              <button onClick={() => void fromTemplate(undefined)} className="rounded-lg px-2.5 py-1 text-[12px] text-dim hover:text-fg">
+              <button onClick={() => void fromTemplate(undefined)} className="rounded-lg px-2.5 py-1 text-caption text-dim hover:text-fg">
                 Blank agent
               </button>
             </div>
           </div>
         </div>
         <div className={clsx('grid content-start gap-3 rounded-[12px] border p-3.5', draft ? 'border-line-strong bg-elev' : 'border-dashed border-line')}>
-          <div className="text-[12px] font-medium text-muted">Draft</div>
+          <div className="text-caption font-medium text-muted">Draft</div>
           {busy === 'draft' ? (
-            <div className="flex items-center gap-2 py-6 text-[12px] text-dim">
+            <div className="flex items-center gap-2 py-6 text-caption text-dim">
               <Spinner /> Drafting a name and purpose…
             </div>
           ) : draft ? (
             <>
               <label className="grid gap-1">
-                <span className="text-[11.5px] text-dim">Name</span>
+                <span className="text-caption text-dim">Name</span>
                 <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </label>
               <label className="grid gap-1">
-                <span className="text-[11.5px] text-dim">Purpose</span>
+                <span className="text-caption text-dim">Purpose</span>
                 <Textarea rows={4} value={draft.purpose} onChange={(e) => setDraft({ ...draft, purpose: e.target.value })} />
               </label>
               <div className="flex justify-end">
@@ -674,7 +674,7 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
               </div>
             </>
           ) : (
-            <p className="py-6 text-[12px] text-dim">Describe the agent and draft it: you'll check its name and purpose here before it's written.</p>
+            <p className="py-6 text-caption text-dim">Describe the agent and draft it: you'll check its name and purpose here before it's written.</p>
           )}
         </div>
       </div>

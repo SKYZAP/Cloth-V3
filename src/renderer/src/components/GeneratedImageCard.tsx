@@ -69,9 +69,9 @@ export function GeneratedImageCard({ image, onRetry, className }: { image: Gener
       >
         {image.id && src ? <img src={src} alt={image.revisedPrompt ?? image.prompt} draggable={false} /> : null}
       </ImageGeneration>
-      {status === 'error' && image.error && <div className="mt-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{image.error.replace(/^Error:\s*/, '')}</div>}
+      {status === 'error' && image.error && <div className="mt-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-caption text-danger-hi">{image.error.replace(/^Error:\s*/, '')}</div>}
       {status === 'complete' && image.revisedPrompt && image.revisedPrompt !== image.prompt && (
-        <div className="mt-1.5 line-clamp-2 text-[11.5px] text-dim" title={image.revisedPrompt}>
+        <div className="mt-1.5 line-clamp-2 text-caption text-dim" title={image.revisedPrompt}>
           Revised prompt: {image.revisedPrompt}
         </div>
       )}

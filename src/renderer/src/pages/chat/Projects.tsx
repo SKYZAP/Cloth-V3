@@ -108,7 +108,7 @@ export function ProjectDialog({
               Delete project
             </Button>
           )}
-          {project?.builtin && <span className="mr-auto text-[12px] text-dim">Built in</span>}
+          {project?.builtin && <span className="mr-auto text-caption text-dim">Built in</span>}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -135,7 +135,7 @@ export function ProjectDialog({
         <Field label="Folder" hint="Optional.">
           <div className={clsx('flex items-center gap-2.5 rounded-[10px] border px-3 py-2', folder ? 'border-line bg-elev' : 'border-dashed border-line-strong')}>
             {folder ? <FolderSimple size={17} weight="fill" style={{ color }} /> : <FolderDashed size={17} className="text-dim" />}
-            <span className={clsx('min-w-0 flex-1 truncate font-mono text-[12px]', folder ? 'text-fg' : 'text-dim')}>{folder ?? 'No folder'}</span>
+            <span className={clsx('min-w-0 flex-1 truncate font-mono text-caption', folder ? 'text-fg' : 'text-dim')}>{folder ?? 'No folder'}</span>
             {folder && (
               <Button size="sm" variant="ghost" onClick={() => setFolder(null)}>
                 Clear
@@ -165,11 +165,11 @@ export function ProjectDialog({
         )}
 
         <div className="rounded-[14px] border border-line bg-elev p-3">
-          <div className="text-[11.5px] font-medium text-muted">New chats start with</div>
+          <div className="text-caption font-medium text-muted">New chats start with</div>
           <div className="mt-2">
             <ModelPicker value={defaults.model ?? null} allowNone noneLabel="Default model" onChange={(model) => setDefaults((d) => ({ ...d, model }))} />
           </div>
-          <div className="mt-2 text-[12px] text-dim">{summary.length ? summary.join(' · ') : 'Cloth’s usual chat settings'}</div>
+          <div className="mt-2 text-caption text-dim">{summary.length ? summary.join(' · ') : 'Cloth’s usual chat settings'}</div>
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {from && (
               <Button size="sm" onClick={() => setDefaults(defaultsFrom(from))} title={`Knowledge, tools, file access, approvals and model from “${from.title}”`}>
@@ -262,11 +262,11 @@ function GroupHeader({
         <CaretRight size={11} weight="bold" />
       </span>
       {icon}
-      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold mobile:text-[14px]" title={title}>
+      <span className="min-w-0 flex-1 truncate text-ui font-semibold mobile:text-body" title={title}>
         {name}
       </span>
       {running && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
-      <span className="font-mono text-[10.5px] text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
+      <span className="font-mono text-micro text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
       <div className="hidden items-center group-focus-within:flex group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
         {onEdit && (
           <button onClick={onEdit} title="Edit project" aria-label="Edit project" className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg mobile:h-9 mobile:w-9">

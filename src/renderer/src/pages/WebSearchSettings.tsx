@@ -45,7 +45,7 @@ export function WebSearchSettings() {
             { value: 'searxng', label: 'SearXNG', title: 'Metasearch across many engines — bundled Python sidecar' }
           ]}
         />
-        <span className="text-[11.5px] text-dim">Switching takes effect immediately.</span>
+        <span className="text-caption text-dim">Switching takes effect immediately.</span>
       </div>
 
       {status && (
@@ -59,7 +59,7 @@ export function WebSearchSettings() {
             <Field label="Custom binary (optional)">
               <div className="flex gap-1.5">
                 <Input
-                  className="font-mono text-[11.5px]"
+                  className="font-mono text-caption"
                   placeholder="bundled"
                   value={obscuraPath}
                   onChange={(e) => setObscuraPath(e.target.value)}
@@ -106,7 +106,7 @@ export function WebSearchSettings() {
           >
             <Field label="External instance (optional)">
               <Input
-                className="font-mono text-[11.5px]"
+                className="font-mono text-caption"
                 placeholder="use bundled sidecar"
                 value={external}
                 onChange={(e) => setExternal(e.target.value)}
@@ -120,7 +120,7 @@ export function WebSearchSettings() {
       <div className="space-y-2">
         <Field label="SSL CA certificate (optional)">
           <div className="flex gap-1.5">
-            <Input className="font-mono text-[11.5px]" placeholder="Use system trust store" value={caCertPath} onChange={(e) => setCaCertPath(e.target.value)} onBlur={() => caCertPath !== settings.webCaCertPath && void update({ webCaCertPath: caCertPath.trim() })} />
+            <Input className="font-mono text-caption" placeholder="Use system trust store" value={caCertPath} onChange={(e) => setCaCertPath(e.target.value)} onBlur={() => caCertPath !== settings.webCaCertPath && void update({ webCaCertPath: caCertPath.trim() })} />
             <Button size="sm" onClick={async () => {
               const [file] = await api.app.pickPaths({ title: 'Select PEM CA certificate' })
               if (file) {
@@ -129,7 +129,7 @@ export function WebSearchSettings() {
               }
             }}>…</Button>
           </div>
-          <div className="mt-1 text-[10.5px] text-dim">PEM certificate authority for web search and web_fetch.</div>
+          <div className="mt-1 text-micro text-dim">PEM certificate authority for web search and web_fetch.</div>
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -151,19 +151,19 @@ export function WebSearchSettings() {
             Test search
           </Button>
         </div>
-        {error && <div className="mt-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{error}</div>}
+        {error && <div className="mt-2 rounded-md border border-danger-line bg-danger-soft px-3 py-2 text-caption text-danger-hi">{error}</div>}
         {result && (
           <div className="mt-2 space-y-1.5">
-            <div className="text-[11.5px] text-dim">
+            <div className="text-caption text-dim">
               {result.results.length} results from <b className="text-muted">{result.engine}</b> in {result.tookMs}ms
             </div>
             {result.results.map((r) => (
               <div key={r.url} className="rounded-md border border-line bg-bg px-3 py-2">
-                <button className="text-left text-[12.5px] font-medium hover:text-crimson-hi" onClick={() => void api.app.openExternal(r.url)}>
+                <button className="text-left text-ui font-medium hover:text-crimson-hi" onClick={() => void api.app.openExternal(r.url)}>
                   {r.title}
                 </button>
-                <div className="truncate font-mono text-[10.5px] text-dim">{r.url}</div>
-                {r.snippet && <div className="mt-0.5 line-clamp-2 text-[11.5px] text-muted">{r.snippet}</div>}
+                <div className="truncate font-mono text-micro text-dim">{r.url}</div>
+                {r.snippet && <div className="mt-0.5 line-clamp-2 text-caption text-muted">{r.snippet}</div>}
               </div>
             ))}
           </div>
@@ -194,13 +194,13 @@ function EngineCard({
     <div className={clsx('space-y-2 rounded-lg border p-3', active ? 'border-crimson-line bg-elev' : 'border-line')}>
       <div className="flex items-center gap-2">
         <Dot tone={ok ? 'ok' : 'dim'} pulse={busy} />
-        <span className="text-[12.5px] font-semibold">{name}</span>
+        <span className="text-ui font-semibold">{name}</span>
         {active && <Badge tone="crimson">active</Badge>}
         <div className="flex-1" />
         {actions}
       </div>
       {lines.filter(Boolean).map((l, i) => (
-        <div key={i} className="text-[11.5px] text-dim">
+        <div key={i} className="text-caption text-dim">
           {l}
         </div>
       ))}

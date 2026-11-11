@@ -156,7 +156,7 @@ export function ToolsPage() {
         title: `From ${c.name}`,
         items: list,
         note: offline ? (
-          <button onClick={() => setPage('mcp')} className="w-full rounded-[11px] px-3 py-2.5 text-left text-[12.5px] text-dim hover:bg-elev hover:text-muted">
+          <button onClick={() => setPage('mcp')} className="w-full rounded-[11px] px-3 py-2.5 text-left text-ui text-dim hover:bg-elev hover:text-muted">
             {c.enabled ? (st?.state === 'error' ? `${c.name} couldn’t start. Check it on the MCP page.` : `Its tools are listed once ${c.name} is running.`) : `${c.name} is turned off. Turn it on on the MCP page to see its tools.`}
           </button>
         ) : undefined
@@ -251,7 +251,7 @@ export function ToolsPage() {
         <div className="grid gap-4 px-8 py-6 mobile:px-3 mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-[18px] font-semibold tracking-tight">Tools</h1>
+              <h1 className="text-title font-semibold tracking-tight">Tools</h1>
             </div>
             <div className="relative w-[260px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
@@ -270,10 +270,10 @@ export function ToolsPage() {
                   role="tab"
                   aria-selected={show === f.value}
                   onClick={() => setShow(f.value)}
-                  className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px]', show === f.value ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
+                  className={clsx('flex h-8 items-center gap-1.5 rounded-lg px-3 text-ui', show === f.value ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
                 >
                   {f.label}
-                  <span className="text-[11px] tabular-nums text-dim">{count(f.value)}</span>
+                  <span className="text-caption tabular-nums text-dim">{count(f.value)}</span>
                 </button>
               ))}
             </div>
@@ -282,9 +282,9 @@ export function ToolsPage() {
           <div className="grid min-w-0 gap-6">
             {sections.map((s) => (
               <section key={s.id} aria-label={s.title}>
-                <h2 className="mb-3 border-b border-line pb-2 text-[12px] font-semibold text-fg/90">
+                <h2 className="mb-3 border-b border-line pb-2 text-caption font-semibold text-fg/90">
                   {s.title}
-                  <span className="ml-2 text-[11.5px] font-normal tabular-nums text-dim">{s.items.length}</span>
+                  <span className="ml-2 text-caption font-normal tabular-nums text-dim">{s.items.length}</span>
                 </h2>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2.5">
                   {s.items.map((i) => (
@@ -296,8 +296,8 @@ export function ToolsPage() {
             ))}
             {!shown.length && builtins.length > 0 && (
               <div className="grid justify-items-center gap-2 rounded-[14px] border border-dashed border-line-strong px-4 py-7 text-center">
-                <div className="text-[13.5px] font-semibold">{q ? `No tool matches “${filter.trim()}”` : 'Nothing here yet'}</div>
-                <div className="text-[12.5px] text-dim">Make one: describe what it should do and Cloth drafts it.</div>
+                <div className="text-body font-semibold">{q ? `No tool matches “${filter.trim()}”` : 'Nothing here yet'}</div>
+                <div className="text-ui text-dim">Make one: describe what it should do and Cloth drafts it.</div>
                 <Button size="sm" icon={<Plus size={12} />} onClick={() => setMaking({ id: null })}>
                   New tool
                 </Button>
@@ -333,18 +333,18 @@ function ToolCard({ item: i, usage, selected, onOpen }: { item: Item; usage?: To
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 text-[13.5px] font-semibold">{i.label}</span>
-            <span className="truncate font-mono text-[11px] text-dim" translate="no">
+            <span className="shrink-0 text-body font-semibold">{i.label}</span>
+            <span className="truncate font-mono text-caption text-dim" translate="no">
               {i.source === 'mcp' ? i.name.replace(/^mcp__/, '').replace('__', ' / ') : i.name}
             </span>
           </span>
-          <span className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-muted">{i.description}</span>
+          <span className="mt-1 line-clamp-2 text-ui leading-snug text-muted">{i.description}</span>
         </span>
       </span>
-      <span className="mt-auto flex items-center gap-2 border-t border-line px-3.5 py-2 text-[11.5px] text-dim">
+      <span className="mt-auto flex items-center gap-2 border-t border-line px-3.5 py-2 text-caption text-dim">
         <span className="min-w-0 truncate">{i.source === 'builtin' ? 'Built in' : i.source === 'mcp' ? i.server : i.kindLabel}</span>
         {pending ? (
-          <span className="ml-auto shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-[11px] text-warn">Needs your OK</span>
+          <span className="ml-auto shrink-0 rounded-full bg-warn/15 px-2 py-0.5 text-caption text-warn">Needs your OK</span>
         ) : usage ? (
           <>
             <span className="ml-auto shrink-0 tabular-nums">
@@ -406,8 +406,8 @@ function ToolDetails({
           <i.icon size={20} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[16px] font-semibold">{i.label}</h2>
-          <div className="truncate font-mono text-[11.5px] text-dim" translate="no">
+          <h2 className="truncate text-section font-semibold">{i.label}</h2>
+          <div className="truncate font-mono text-caption text-dim" translate="no">
             {i.name}
           </div>
         </div>
@@ -423,11 +423,11 @@ function ToolDetails({
           </IconButton>
         </div>
       </div>
-      <p className="text-[13px] leading-relaxed text-fg/90">{i.description}</p>
+      <p className="text-ui leading-relaxed text-fg/90">{i.description}</p>
 
       {t && waiting(t) && (
         <div className="grid gap-2.5 rounded-[11px] border border-warn/35 bg-warn/5 p-3">
-          <div className="flex gap-2 text-[12.5px] leading-relaxed">
+          <div className="flex gap-2 text-ui leading-relaxed">
             <ShieldAlert size={15} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
             <span>
               {origin ? `Cloth made this tool ${origin}. ` : 'This tool is switched off. '}
@@ -456,7 +456,7 @@ function ToolDetails({
       {onEdit && <Button onClick={onEdit}>Edit tool</Button>}
 
       <section aria-labelledby="tool-usage" className="grid gap-2 border-t border-line pt-4">
-        <h3 id="tool-usage" className="text-[12.5px] font-semibold">
+        <h3 id="tool-usage" className="text-ui font-semibold">
           Usage
         </h3>
         {usage ? (
@@ -468,8 +468,8 @@ function ToolDetails({
                 [String(usage.errors), 'failed']
               ].map(([value, label], n) => (
                 <div key={label} className={clsx('min-w-0 px-3 py-2.5', n > 0 && 'border-l border-line')}>
-                  <div className="truncate text-[15px] font-semibold tabular-nums">{value}</div>
-                  <div className="text-[11.5px] text-dim">{label}</div>
+                  <div className="truncate text-section font-semibold tabular-nums">{value}</div>
+                  <div className="text-caption text-dim">{label}</div>
                 </div>
               ))}
             </div>
@@ -480,7 +480,7 @@ function ToolDetails({
                     <i key={d} style={{ height: `${(n / peak) * 100}%` }} className="min-h-[2px] flex-1 rounded-t-[2px] bg-crimson-line" />
                   ))}
                 </div>
-                <div className="mt-1 flex justify-between text-[11px] text-dim">
+                <div className="mt-1 flex justify-between text-caption text-dim">
                   <span>14 days ago</span>
                   <span>today</span>
                 </div>
@@ -488,19 +488,19 @@ function ToolDetails({
             )}
           </div>
         ) : (
-          <p className="text-[12px] text-dim">Not used in the last 30 days.</p>
+          <p className="text-caption text-dim">Not used in the last 30 days.</p>
         )}
       </section>
 
       <section aria-labelledby="tool-inputs" className="grid gap-2">
-        <h3 id="tool-inputs" className="text-[12.5px] font-semibold">
+        <h3 id="tool-inputs" className="text-ui font-semibold">
           Inputs
         </h3>
         {params.length ? (
           <div className="rounded-[10px] border border-line">
             {params.map((p, n) => (
               <div key={p.name} className={clsx('grid grid-cols-[minmax(0,1fr)_auto] gap-x-2.5 gap-y-0.5 px-3 py-2.5', n > 0 && 'border-t border-line')}>
-                <span className="min-w-0 break-words font-mono text-[12px]" translate="no">
+                <span className="min-w-0 break-words font-mono text-caption" translate="no">
                   {p.name}
                   {p.required && (
                     <span className="text-crimson-hi" title="Required">
@@ -508,41 +508,41 @@ function ToolDetails({
                     </span>
                   )}
                 </span>
-                <span className="text-right text-[11.5px] text-dim">{PARAM_TYPES.find((x) => x.value === p.type)?.label ?? p.type}</span>
-                {p.description && <p className="col-span-full text-[12px] text-muted">{p.description}</p>}
+                <span className="text-right text-caption text-dim">{PARAM_TYPES.find((x) => x.value === p.type)?.label ?? p.type}</span>
+                {p.description && <p className="col-span-full text-caption text-muted">{p.description}</p>}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-[12px] text-dim">Nothing; it runs as it is.</p>
+          <p className="text-caption text-dim">Nothing; it runs as it is.</p>
         )}
       </section>
 
       <section aria-labelledby="usedby" className="grid gap-2">
-        <h3 id="usedby" className="text-[12.5px] font-semibold">
+        <h3 id="usedby" className="text-ui font-semibold">
           Used by
         </h3>
         {users.length ? (
           <div className="flex flex-wrap gap-1.5">
             {users.map((u) => (
-              <span key={u} className="rounded-md border border-line px-2 py-0.5 text-[12px]">
+              <span key={u} className="rounded-md border border-line px-2 py-0.5 text-caption">
                 {u}
               </span>
             ))}
           </div>
         ) : (
-          <p className="text-[13px] leading-relaxed">No agent or automation has it yet.</p>
+          <p className="text-ui leading-relaxed">No agent or automation has it yet.</p>
         )}
       </section>
 
       {aiSchema && (
         <details>
-          <summary className="cursor-default text-[12px] text-dim hover:text-muted">What the AI sees</summary>
-          <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px] text-muted">{JSON.stringify(aiSchema, null, 2)}</pre>
+          <summary className="cursor-default text-caption text-dim hover:text-muted">What the AI sees</summary>
+          <pre className="selectable mt-2 overflow-x-auto rounded-lg border border-line bg-bg p-3 font-mono text-caption text-muted">{JSON.stringify(aiSchema, null, 2)}</pre>
         </details>
       )}
 
-      <div className="flex items-center border-t border-line pt-3 text-[11.5px] text-dim">
+      <div className="flex items-center border-t border-line pt-3 text-caption text-dim">
         <span className="min-w-0 truncate">Provided by {i.source === 'builtin' ? 'Cloth' : i.source === 'mine' ? 'you' : i.server}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span aria-hidden="true" className={clsx('h-1.5 w-1.5 rounded-full', t && waiting(t) ? 'bg-warn' : 'bg-ok')} />
@@ -593,9 +593,9 @@ function TryIt({ fields, run: runTool, folder: needsFolder, title = 'Try it' }: 
   }
   return (
     <section aria-label={title} className="grid gap-2.5 border-t border-line pt-4">
-      <h3 className="text-[12px] font-medium text-muted">{title}</h3>
+      <h3 className="text-caption font-medium text-muted">{title}</h3>
       {needsFolder && (
-        <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-caption text-muted">
           Look in
           <Button
             size="sm"
@@ -611,7 +611,7 @@ function TryIt({ fields, run: runTool, folder: needsFolder, title = 'Try it' }: 
       )}
       {fields.map((p) => (
         <label key={p.name} className="grid gap-1">
-          <span className="font-mono text-[11.5px] text-muted" translate="no">
+          <span className="font-mono text-caption text-muted" translate="no">
             {p.name}
             {!p.required && <span className="font-sans text-dim"> (optional)</span>}
           </span>
@@ -631,12 +631,12 @@ function TryIt({ fields, run: runTool, folder: needsFolder, title = 'Try it' }: 
       </Button>
       {result && (
         <div className="grid gap-1.5" aria-live="polite">
-          <div className="flex items-center gap-2 text-[12px]">
+          <div className="flex items-center gap-2 text-caption">
             <span className={clsx('h-2 w-2 rounded-full', result.ok ? 'bg-ok' : 'bg-crimson')} aria-hidden="true" />
             <span className={result.ok ? 'text-ok' : 'text-danger-hi'}>{result.ok ? 'Worked' : 'Failed'}</span>
             <span className="text-dim">in {duration(result.durationMs)}</span>
           </div>
-          <pre className={clsx('selectable max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-[11.5px]', result.ok ? 'text-fg' : 'text-danger-hi')}>{result.ok ? result.output : result.error}</pre>
+          <pre className={clsx('selectable max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-3 font-mono text-caption', result.ok ? 'text-fg' : 'text-danger-hi')}>{result.ok ? result.output : result.error}</pre>
         </div>
       )}
     </section>
@@ -695,7 +695,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
     <div className="h-full overflow-y-auto">
       <div className="mx-auto grid w-[min(1180px,calc(100%-40px))] gap-5 py-5 mobile:w-[calc(100%-24px)]">
         <div className="flex flex-wrap items-center gap-3">
-          <button onClick={() => void back()} className="flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-[13px] text-muted hover:text-fg">
+          <button onClick={() => void back()} className="flex h-9 items-center gap-1.5 rounded-lg px-1.5 text-ui text-muted hover:text-fg">
             <ArrowLeft size={15} aria-hidden="true" />
             Tools
           </button>
@@ -704,7 +704,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
           </span>
           <label className="min-w-[200px] flex-1">
             <span className="sr-only">Tool name, as the AI calls it</span>
-            <input value={draft.name} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_') })} spellCheck={false} autoComplete="off" className="w-full bg-transparent py-1 font-mono text-[18px] font-semibold outline-none" />
+            <input value={draft.name} onChange={(e) => set({ name: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_') })} spellCheck={false} autoComplete="off" className="w-full bg-transparent py-1 font-mono text-title font-semibold outline-none" />
           </label>
           {tool && (
             <IconButton
@@ -722,10 +722,10 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
             Save tool
           </Button>
         </div>
-        {!nameOk && <p className="-mt-3 text-[12px] text-warn">Name it in lowercase with underscores, like weather_for_city.</p>}
+        {!nameOk && <p className="-mt-3 text-caption text-warn">Name it in lowercase with underscores, like weather_for_city.</p>}
 
         {tool && waiting(tool) && (
-          <div className="flex items-start gap-2.5 rounded-[11px] border border-warn/35 bg-warn/5 p-3 text-[12.5px]">
+          <div className="flex items-start gap-2.5 rounded-[11px] border border-warn/35 bg-warn/5 p-3 text-ui">
             <ShieldAlert size={15} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
             <span>A model made this tool. Read its settings and try it on the right; saving it allows agents to use it.</span>
           </div>
@@ -734,12 +734,12 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
         <div className="grid items-start gap-6 min-[1000px]:grid-cols-[minmax(0,1fr)_380px]">
           <ol className="grid min-w-0">
             <Step n={1} title="What should it do?">
-              <Textarea rows={3} aria-label="What the tool does" value={draft.description} onChange={(e) => set({ description: e.target.value })} placeholder="Get today’s weather for a city: temperature, rain chance and wind. Use it when I ask about the weather…" className="text-[13.5px]" />
+              <Textarea rows={3} aria-label="What the tool does" value={draft.description} onChange={(e) => set({ description: e.target.value })} placeholder="Get today’s weather for a city: temperature, rain chance and wind. Use it when I ask about the weather…" className="text-body" />
               <div className="flex flex-wrap items-center gap-3">
                 <Button size="sm" icon={<Sparkles size={13} />} loading={drafting} disabled={!draft.description.trim()} onClick={() => void draftIt()}>
                   Draft the rest for me
                 </Button>
-                <span className="text-[12px] text-dim">The AI reads this to decide when to use it.</span>
+                <span className="text-caption text-dim">The AI reads this to decide when to use it.</span>
               </div>
             </Step>
 
@@ -760,15 +760,15 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
                         <K.icon size={16} />
                       </span>
                       <span className="grid content-start gap-0.5">
-                        <span className="text-[13px] font-semibold">{K.label}</span>
-                        <span className="text-[12px] text-dim">{K.blurb}</span>
+                        <span className="text-ui font-semibold">{K.label}</span>
+                        <span className="text-caption text-dim">{K.blurb}</span>
                       </span>
                     </button>
                   )
                 })}
               </div>
               {runsCode && (
-                <p className="flex items-center gap-2 text-[12px] text-warn">
+                <p className="flex items-center gap-2 text-caption text-warn">
                   <AlertTriangle size={14} aria-hidden="true" />
                   This runs on your computer. Only add code you trust.
                 </p>
@@ -789,8 +789,8 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
               <TryIt key={draft.params.map((p) => p.name).join()} fields={draft.params} run={(args) => api.tools.test({ kind: draft.kind, config: draft.config, params: draft.params }, args)} title="Test it" />
             </div>
             <details className="rounded-[16px] border border-line bg-panel px-4 py-3">
-              <summary className="cursor-default text-[12.5px] font-medium">What the AI sees</summary>
-              <pre className="selectable mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11.5px] text-muted">
+              <summary className="cursor-default text-ui font-medium">What the AI sees</summary>
+              <pre className="selectable mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-caption text-muted">
                 {[draft.name, draft.description || '(no description yet)', '', ...draft.params.map((p) => `${p.name}  ${PARAM_TYPES.find((x) => x.value === p.type)?.label.toLowerCase()}  ${p.required ? 'needed' : 'optional'}  ${p.description}`)].join('\n')}
               </pre>
             </details>
@@ -805,12 +805,12 @@ function Step({ n, title, hint, last, children }: { n: number; title: string; hi
   return (
     <li className={clsx('relative grid gap-3 pl-12', last ? 'pb-2' : 'pb-8')}>
       {!last && <span aria-hidden="true" className="absolute bottom-1 left-[13px] top-9 w-0.5 bg-elev-2" />}
-      <span aria-hidden="true" className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-line-strong bg-elev text-[12.5px] font-semibold">
+      <span aria-hidden="true" className="absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full border border-line-strong bg-elev text-ui font-semibold">
         {n}
       </span>
       <div className="flex min-h-7 flex-wrap items-baseline gap-x-3">
-        <h2 className="text-[15px] font-semibold leading-7">{title}</h2>
-        {hint && <span className="text-[12px] text-dim">{hint}</span>}
+        <h2 className="text-section font-semibold leading-7">{title}</h2>
+        {hint && <span className="text-caption text-dim">{hint}</span>}
       </div>
       {children}
     </li>
@@ -823,10 +823,10 @@ function ParamsEditor({ params, onChange }: { params: ToolParam[]; onChange(p: T
     <div className="grid gap-2">
       {params.length > 0 && (
         <div className="grid grid-cols-[minmax(110px,1fr)_minmax(110px,0.8fr)_minmax(160px,2fr)_auto_auto] items-center gap-2 mobile:grid-cols-1">
-          <span className="text-[11.5px] text-dim mobile:hidden">Name</span>
-          <span className="text-[11.5px] text-dim mobile:hidden">Kind</span>
-          <span className="text-[11.5px] text-dim mobile:hidden">Tell the AI what to put here</span>
-          <span className="text-[11.5px] text-dim mobile:hidden">Needed</span>
+          <span className="text-caption text-dim mobile:hidden">Name</span>
+          <span className="text-caption text-dim mobile:hidden">Kind</span>
+          <span className="text-caption text-dim mobile:hidden">Tell the AI what to put here</span>
+          <span className="text-caption text-dim mobile:hidden">Needed</span>
           <span className="mobile:hidden" />
           {params.map((p, i) => (
             <Fragment key={i}>
@@ -847,7 +847,7 @@ function ParamsEditor({ params, onChange }: { params: ToolParam[]; onChange(p: T
           ))}
         </div>
       )}
-      {!params.length && <p className="text-[12.5px] text-dim">Nothing yet. The tool runs with no inputs.</p>}
+      {!params.length && <p className="text-ui text-dim">Nothing yet. The tool runs with no inputs.</p>}
       <Button size="sm" className="justify-self-start" icon={<Plus size={12} />} onClick={() => onChange([...params, { name: `input${params.length + 1}`, type: 'string', description: '', required: true }])}>
         Add an input
       </Button>
@@ -861,9 +861,9 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
   const inserts = (field: string) =>
     params.length > 0 && (
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[11.5px] text-dim">Insert an input:</span>
+        <span className="text-caption text-dim">Insert an input:</span>
         {params.map((p) => (
-          <button key={p.name} onClick={() => setConfig({ [field]: `${str(field)}{{${p.name}}}` })} className="h-7 rounded-full border border-dashed border-line-strong px-2.5 font-mono text-[11.5px] text-muted hover:border-solid hover:text-fg">
+          <button key={p.name} onClick={() => setConfig({ [field]: `${str(field)}{{${p.name}}}` })} className="h-7 rounded-full border border-dashed border-line-strong px-2.5 font-mono text-caption text-muted hover:border-solid hover:text-fg">
             {p.name}
           </button>
         ))}
@@ -879,18 +879,18 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
                 <option key={m}>{m}</option>
               ))}
             </Select>
-            <Input aria-label="Web address" className="font-mono text-[12px]" spellCheck={false} autoComplete="off" value={str('url')} onChange={(e) => setConfig({ url: e.target.value })} placeholder="https://api.example.com/items/{{id}}…" />
+            <Input aria-label="Web address" className="font-mono text-caption" spellCheck={false} autoComplete="off" value={str('url')} onChange={(e) => setConfig({ url: e.target.value })} placeholder="https://api.example.com/items/{{id}}…" />
           </div>
           {inserts('url')}
           <details>
-            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Headers{config.method && config.method !== 'GET' ? ' and body' : ''}</summary>
+            <summary className="cursor-default text-ui text-muted hover:text-fg">Headers{config.method && config.method !== 'GET' ? ' and body' : ''}</summary>
             <div className="mt-2 grid gap-3">
               <Field label="Headers (JSON)">
-                <Textarea rows={3} className="font-mono text-[11.5px]" spellCheck={false} value={str('headers')} onChange={(e) => setConfig({ headers: e.target.value })} />
+                <Textarea rows={3} className="font-mono text-caption" spellCheck={false} value={str('headers')} onChange={(e) => setConfig({ headers: e.target.value })} />
               </Field>
               {config.method && config.method !== 'GET' && (
                 <Field label="Body" hint="Leave empty to send every input as JSON.">
-                  <Textarea rows={4} className="font-mono text-[11.5px]" spellCheck={false} value={str('body')} onChange={(e) => setConfig({ body: e.target.value })} />
+                  <Textarea rows={4} className="font-mono text-caption" spellCheck={false} value={str('body')} onChange={(e) => setConfig({ body: e.target.value })} />
                 </Field>
               )}
               <TimeoutField value={config.timeoutMs} onChange={(timeoutMs) => setConfig({ timeoutMs })} />
@@ -901,7 +901,7 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
     case 'javascript':
       return (
         <div className="grid gap-2">
-          <p className="text-[12px] text-dim">
+          <p className="text-caption text-dim">
             Inputs are in <span className="font-mono text-muted">args</span>. You can use fetch, and <span className="font-mono text-muted">workspace</span> to read and write files in the run’s folder; require("pptxgenjs") and require("docx") make PowerPoint and Word files. Return the result.
           </p>
           <div className="h-64 overflow-hidden rounded-lg border border-line bg-bg">
@@ -927,11 +927,11 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
             </div>
           </Field>
           <Field label="Arguments, one per line" hint="No shell: each line is one argument.">
-            <Textarea rows={5} className="font-mono text-[11.5px]" spellCheck={false} value={str('args')} onChange={(e) => setConfig({ args: e.target.value })} />
+            <Textarea rows={5} className="font-mono text-caption" spellCheck={false} value={str('args')} onChange={(e) => setConfig({ args: e.target.value })} />
           </Field>
           {inserts('args')}
           <details>
-            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Folder and time limit</summary>
+            <summary className="cursor-default text-ui text-muted hover:text-fg">Folder and time limit</summary>
             <div className="mt-2 grid gap-3">
               <Field label="Run it in this folder (optional)">
                 <Input className="font-mono" spellCheck={false} value={str('cwd')} onChange={(e) => setConfig({ cwd: e.target.value })} />
@@ -945,14 +945,14 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
       return (
         <div className="grid gap-3">
           <Field label="Prompt">
-            <Textarea rows={5} className="text-[13px]" value={str('prompt')} onChange={(e) => setConfig({ prompt: e.target.value })} placeholder="Give a one-line weather summary for {{city}}…" />
+            <Textarea rows={5} className="text-ui" value={str('prompt')} onChange={(e) => setConfig({ prompt: e.target.value })} placeholder="Give a one-line weather summary for {{city}}…" />
           </Field>
           {inserts('prompt')}
           <Field label="Model">
             <ModelPicker value={(config.model as ModelRef) ?? null} onChange={(model) => setConfig({ model })} allowNone noneLabel="Default model" />
           </Field>
           <details>
-            <summary className="cursor-default text-[12.5px] text-muted hover:text-fg">Instructions for the model (optional)</summary>
+            <summary className="cursor-default text-ui text-muted hover:text-fg">Instructions for the model (optional)</summary>
             <Textarea rows={2} className="mt-2" aria-label="Instructions for the model" value={str('system')} onChange={(e) => setConfig({ system: e.target.value })} />
           </details>
         </div>
@@ -962,7 +962,7 @@ function KindConfig({ kind, config, setConfig, params }: { kind: CustomToolKind;
 
 function TimeoutField({ value, onChange }: { value: unknown; onChange(v: number): void }) {
   return (
-    <label className="flex items-center gap-2 text-[12px] text-muted">
+    <label className="flex items-center gap-2 text-caption text-muted">
       Give up after
       <Input type="number" className="w-24" value={Math.round((Number(value) || 30000) / 1000)} onChange={(e) => onChange(Math.max(1, Number(e.target.value)) * 1000)} />
       seconds

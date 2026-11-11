@@ -112,7 +112,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="text-[12.5px] leading-relaxed text-muted">
+            <div className="text-ui leading-relaxed text-muted">
               Packages this automation as a Windows app anyone can install. It asks for their own OpenAI key and a folder to save files in, then runs it — no Cloth needed.
             </div>
             <div className="grid grid-cols-[1fr_120px] gap-3">
@@ -136,7 +136,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
                     const [d] = await api.app.pickPaths({ directory: true, title: 'Save the installer to' })
                     if (d) setOutputDir(d)
                   }}
-                  className="flex h-8 w-full items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-left text-[12px] text-muted hover:border-line-strong hover:text-fg"
+                  className="flex h-8 w-full items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-left text-caption text-muted hover:border-line-strong hover:text-fg"
                   title={outputDir}
                 >
                   <FolderOpen size={13} className="shrink-0 text-crimson-hi" />
@@ -146,7 +146,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
             </div>
 
             <div>
-              <div className="mb-1.5 text-[12px] font-medium text-dim">Included</div>
+              <div className="mb-1.5 text-caption font-medium text-dim">Included</div>
               <div className="flex flex-wrap gap-1.5">
                 <Chip icon={<Wrench size={12} />} label={`${plan!.tools.length} tool${plan!.tools.length === 1 ? '' : 's'}`} title={plan!.tools.join(', ')} />
                 <Chip icon={<Sparkles size={12} />} label={`${plan!.skills.length} skill${plan!.skills.length === 1 ? '' : 's'}`} title={plan!.skills.join(', ')} />
@@ -166,11 +166,11 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
             {phase === 'running' ? <Spinner /> : phase === 'done' ? <Check size={16} className="text-ok" /> : <XCircle size={16} className="text-danger-hi" />}
-            <div className="min-w-0 flex-1 text-[13px] font-medium">
+            <div className="min-w-0 flex-1 text-ui font-medium">
               {phase === 'done' ? 'Installer ready' : phase === 'failed' ? (end?.type === 'failed' ? end.message : 'Export failed') : step?.type === 'step' ? step.title : 'Starting…'}
             </div>
             {step?.type === 'step' && phase === 'running' && (
-              <span className="font-mono text-[11px] text-dim">
+              <span className="font-mono text-caption text-dim">
                 {step.step}/{step.steps}
               </span>
             )}
@@ -181,7 +181,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
               style={{ width: `${phase === 'done' ? 100 : step?.type === 'step' ? ((step.step - 0.5) / step.steps) * 100 : 3}%` }}
             />
           </div>
-          <div className="h-72 overflow-y-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px] leading-relaxed" role="log" aria-live="polite">
+          <div className="h-72 overflow-y-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-caption leading-relaxed" role="log" aria-live="polite">
             {mine.map((e, i) =>
               e.type === 'step' ? (
                 <div key={i} className="mt-1.5 text-fg first:mt-0">
@@ -204,8 +204,8 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
             <div ref={logEnd} />
           </div>
           {end?.type === 'done' && (
-            <div className="rounded-lg border border-line bg-panel p-3 text-[12px] text-muted">
-              <div className="selectable break-all font-mono text-[11.5px] text-fg">{end.file}</div>
+            <div className="rounded-lg border border-line bg-panel p-3 text-caption text-muted">
+              <div className="selectable break-all font-mono text-caption text-fg">{end.file}</div>
               <div className="mt-1">Windows may warn about an unrecognised publisher the first time the installer runs, because it isn't code-signed.</div>
             </div>
           )}
@@ -217,7 +217,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
 
 function Chip({ icon, label, title }: { icon: React.ReactNode; label: string; title?: string }) {
   return (
-    <span title={title || undefined} className="flex items-center gap-1.5 rounded-md border border-line bg-bg px-2 py-1 text-[12px] text-muted">
+    <span title={title || undefined} className="flex items-center gap-1.5 rounded-md border border-line bg-bg px-2 py-1 text-caption text-muted">
       <span className="text-crimson-hi">{icon}</span>
       {label}
     </span>
@@ -226,7 +226,7 @@ function Chip({ icon, label, title }: { icon: React.ReactNode; label: string; ti
 
 function Notice({ tone, text }: { tone: 'error' | 'warn'; text: string }) {
   return (
-    <div className={clsx('flex items-start gap-2 rounded-md border px-2.5 py-2 text-[12px]', tone === 'error' ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-warn/30 bg-warn/5 text-warn')}>
+    <div className={clsx('flex items-start gap-2 rounded-md border px-2.5 py-2 text-caption', tone === 'error' ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-warn/30 bg-warn/5 text-warn')}>
       {tone === 'error' ? <XCircle size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />}
       <span className="min-w-0">{text}</span>
     </div>

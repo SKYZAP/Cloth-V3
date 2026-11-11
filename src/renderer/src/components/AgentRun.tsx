@@ -73,25 +73,25 @@ export function AgentRunLine({ trace, fresh, awaiting, onUndo }: { trace: ToolTr
           <CaretRight size={11} />
         </motion.span>
         <StateIcon state={state} />
-        <span title={runAbout(run)} className={clsx('shrink-0 text-[13px] font-semibold', run.agent ? 'text-agent' : 'text-fg')}>
+        <span title={runAbout(run)} className={clsx('shrink-0 text-ui font-semibold', run.agent ? 'text-agent' : 'text-fg')}>
           {runName(run)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{run.description}</span>
-        {!running && <span className={clsx('shrink-0 text-[11px] font-semibold', RESULT[state as Exclude<RunState, 'running'>].cls)}>{RESULT[state as Exclude<RunState, 'running'>].word}</span>}
-        {waiting && <span className="shrink-0 rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">awaiting approval</span>}
-        <span className="shrink-0 whitespace-nowrap font-mono text-[11px] text-dim">{numbers}</span>
+        <span className="min-w-0 flex-1 truncate text-ui text-muted">{run.description}</span>
+        {!running && <span className={clsx('shrink-0 text-caption font-semibold', RESULT[state as Exclude<RunState, 'running'>].cls)}>{RESULT[state as Exclude<RunState, 'running'>].word}</span>}
+        {waiting && <span className="shrink-0 rounded-full bg-warn/10 px-2 py-px text-micro text-warn">awaiting approval</span>}
+        <span className="shrink-0 whitespace-nowrap font-mono text-caption text-dim">{numbers}</span>
       </button>
       {running && !shown && (
         <div aria-live="polite" className="ml-[26px] flex min-w-0 items-center gap-2">
           {step ? (
             <>
-              <span className="shrink-0 text-[12px] font-medium text-muted">{step.verb}</span>
-              <span className="min-w-0 truncate font-mono text-[11.5px] text-dim">{step.target}</span>
+              <span className="shrink-0 text-caption font-medium text-muted">{step.verb}</span>
+              <span className="min-w-0 truncate font-mono text-caption text-dim">{step.target}</span>
             </>
           ) : now.kind === 'thinking' ? (
-            <span className="shimmer-text text-[12px] font-medium">Thinking</span>
+            <span className="shimmer-text text-caption font-medium">Thinking</span>
           ) : (
-            <span className="text-[12px] font-medium text-muted">Queued</span>
+            <span className="text-caption font-medium text-muted">Queued</span>
           )}
         </div>
       )}
@@ -100,7 +100,7 @@ export function AgentRunLine({ trace, fresh, awaiting, onUndo }: { trace: ToolTr
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25, ease: EASE }} className="overflow-hidden">
             <div className="my-1.5 ml-1.5 border-l border-line pl-4">
               {offset > 0 && (
-                <button onClick={() => setAll(true)} className="py-0.5 text-[12px] text-dim transition-colors hover:text-muted">
+                <button onClick={() => setAll(true)} className="py-0.5 text-caption text-dim transition-colors hover:text-muted">
                   {earlier ? `… ${earlier} earlier step${earlier === 1 ? '' : 's'}` : '… earlier thinking'}
                 </button>
               )}
@@ -118,7 +118,7 @@ export function AgentRunLine({ trace, fresh, awaiting, onUndo }: { trace: ToolTr
                   </div>
                 ) : null
               )}
-              <button onClick={() => openAgentRun(trace.id)} className="mt-1 flex items-center gap-1.5 text-[12px] text-dim transition-colors hover:text-fg">
+              <button onClick={() => openAgentRun(trace.id)} className="mt-1 flex items-center gap-1.5 text-caption text-dim transition-colors hover:text-fg">
                 <SidebarSimple size={12} />
                 Open in the Agents tab
               </button>

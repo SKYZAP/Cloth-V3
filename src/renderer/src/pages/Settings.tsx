@@ -112,7 +112,7 @@ export function SettingsPage() {
         width={248}
         header={
           <div className="space-y-2">
-            <div className="text-[13px] font-semibold">Settings</div>
+            <div className="text-ui font-semibold">Settings</div>
             <div className="relative">
               <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" />
               <Input className="pl-7 pr-7" placeholder="Search settings" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -141,13 +141,13 @@ export function SettingsPage() {
                 <s.icon size={15} weight={on ? 'fill' : 'regular'} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[12.5px] font-medium mobile:text-[14px]">{s.title}</span>
+                <span className="block text-ui font-medium mobile:text-body">{s.title}</span>
               </span>
               {!side && <CaretRight size={14} className="text-dim" />}
             </button>
           )
         })}
-        {!shown.length && <div className="p-4 text-center text-[12px] text-dim">Nothing matches “{query}”.</div>}
+        {!shown.length && <div className="p-4 text-center text-caption text-dim">Nothing matches “{query}”.</div>}
       </ListPane>
 
       <SplitDetail>
@@ -156,7 +156,7 @@ export function SettingsPage() {
             <div className="mb-5 flex items-start gap-2">
               <SplitBack className="mt-0.5" />
               <div>
-                <h1 className="text-[18px] font-semibold tracking-tight">{current.title}</h1>
+                <h1 className="text-title font-semibold tracking-tight">{current.title}</h1>
               </div>
             </div>
             <SectionBody id={current.id} settings={settings} />
@@ -225,7 +225,7 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'design':
       return (
         <Group>
-          <div className="flex items-center gap-3 p-4 text-[12.5px] text-muted">
+          <div className="flex items-center gap-3 p-4 text-ui text-muted">
             <span className="flex-1">Design systems</span>
             <Button size="sm" onClick={() => useApp.getState().openDesign(null)}>
               Open design systems
@@ -273,7 +273,7 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
           <select
             value={value.thinking === 'inherit' ? 'inherit' : normalizeEffort(value.thinking)}
             onChange={(e) => set({ thinking: e.target.value as SubagentSettings['thinking'] })}
-            className="h-8 w-44 rounded-md border border-line bg-panel px-2 text-[12.5px] text-fg outline-none focus:border-crimson-line mobile:w-full"
+            className="h-8 w-44 rounded-md border border-line bg-panel px-2 text-ui text-fg outline-none focus:border-crimson-line mobile:w-full"
           >
             <option value="inherit">Same as the chat</option>
             {EFFORT_OPTIONS.map((e) => (
@@ -308,7 +308,7 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
             onBlur={() => instructions !== value.instructions && set({ instructions })}
           />
         </div>
-        <div className="flex items-center gap-3 border-t border-line p-4 text-[12.5px] text-muted">
+        <div className="flex items-center gap-3 border-t border-line p-4 text-ui text-muted">
           <span className="flex-1">Saved agents</span>
           <Button size="sm" onClick={() => useApp.getState().setPage('agents')}>
             Open Agents
@@ -345,7 +345,7 @@ function CodingRulesSection({ value }: { value: string }) {
       <Group title="Rule checks" note="Agents see what these rules find right after each change, and fix it in the same turn.">
         <Row label="Rule files" hint="ast-grep rules (.yml) in this folder are checked in every folder. A folder's own sgconfig.yml rules are checked too." stacked>
           <div className="flex items-center gap-2">
-            <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-[12px] text-muted">{rulesDir ?? '…'}</span>
+            <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-caption text-muted">{rulesDir ?? '…'}</span>
             {!isMobile && rulesDir && (
               <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => void api.app.openPath(rulesDir)}>
                 Open
@@ -416,7 +416,7 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
         </IconButton>
       </div>
       <Textarea rows={2} value={purpose} aria-label="Purpose" placeholder="Meant for…" onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== tier.purpose && onChange({ purpose })} />
-      <label htmlFor={`tier-instructions-${tier.id}`} className="px-0.5 text-[12px] font-medium text-dim">
+      <label htmlFor={`tier-instructions-${tier.id}`} className="px-0.5 text-caption font-medium text-dim">
         Instructions
       </label>
       <Textarea
@@ -430,7 +430,7 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
       />
       <div className="flex items-center justify-between gap-3">
         {preset !== undefined && tier.instructions !== preset && (
-          <button type="button" className="shrink-0 text-[11.5px] text-dim hover:text-fg" onClick={() => onChange({ instructions: preset })}>
+          <button type="button" className="shrink-0 text-caption text-dim hover:text-fg" onClick={() => onChange({ instructions: preset })}>
             Reset to default
           </button>
         )}
@@ -450,7 +450,7 @@ function AboutSection() {
       <Group title="Data">
         <Row label="Data folder" hint="API keys are encrypted with the OS keychain." stacked>
           <div className="flex items-center gap-2">
-            <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-[12px] text-muted">{info.dataDir}</span>
+            <span className="selectable min-w-0 flex-1 truncate rounded-md border border-line bg-bg px-2.5 py-1.5 font-mono text-caption text-muted">{info.dataDir}</span>
             {!isMobile && (
               <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => void api.app.openPath(info.dataDir)}>
                 Open
@@ -462,8 +462,8 @@ function AboutSection() {
       <Card className="flex items-center gap-3 p-4">
         <Logo size={32} />
         <div>
-          <div className="text-[13.5px] font-semibold">Cloth {info.version}</div>
-          <div className="text-[11.5px] text-dim">
+          <div className="text-body font-semibold">Cloth {info.version}</div>
+          <div className="text-caption text-dim">
             Electron {info.electron} · Node {info.node} · {info.platform} · agent runtime: pi-agent-core
           </div>
         </div>
@@ -614,7 +614,7 @@ function UpdatesGroup() {
                     </Button>
                   )}
                 </div>
-                {tokenError && <div className="text-[11.5px] text-danger-hi">{tokenError}</div>}
+                {tokenError && <div className="text-caption text-danger-hi">{tokenError}</div>}
               </form>
             )}
           </Row>
@@ -628,9 +628,9 @@ function UpdatesGroup() {
 function Group({ title, note, children }: { title?: string; note?: ReactNode; children: ReactNode }) {
   return (
     <section className="mb-6">
-      {title && <div className="mb-2 px-1 text-[12px] font-medium text-dim">{title}</div>}
+      {title && <div className="mb-2 px-1 text-caption font-medium text-dim">{title}</div>}
       <div className="divide-y divide-line overflow-hidden rounded-[10px] border border-line bg-panel">{children}</div>
-      {note && <div className="mt-1.5 px-1 text-[11.5px] text-dim">{note}</div>}
+      {note && <div className="mt-1.5 px-1 text-caption text-dim">{note}</div>}
     </section>
   )
 }
@@ -640,8 +640,8 @@ function Row({ label, hint, children, stacked }: { label: string; hint?: ReactNo
   return (
     <div className={clsx('gap-x-6 gap-y-2.5 px-4 py-3.5', stacked ? 'space-y-2.5' : 'flex items-center mobile:flex-col mobile:items-stretch')}>
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium">{label}</div>
-        {hint && <div className="mt-0.5 text-[11.5px] leading-snug text-dim">{hint}</div>}
+        <div className="text-ui font-medium">{label}</div>
+        {hint && <div className="mt-0.5 text-caption leading-snug text-dim">{hint}</div>}
       </div>
       <div className={clsx(!stacked && 'shrink-0')}>{children}</div>
     </div>
@@ -661,7 +661,7 @@ function NumberInput({ value, min, max, step = 1, suffix, onCommit }: { value: n
   return (
     <div className="flex items-center gap-2">
       <Input type="number" className="w-28" min={min} max={max} step={step} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
-      {suffix && <span className="text-[11.5px] text-dim">{suffix}</span>}
+      {suffix && <span className="text-caption text-dim">{suffix}</span>}
     </div>
   )
 }

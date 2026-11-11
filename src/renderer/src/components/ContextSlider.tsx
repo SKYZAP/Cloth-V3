@@ -64,10 +64,10 @@ export function ContextSlider({
   return (
     <div className="grid gap-2">
       <div className="flex items-center gap-3">
-        <label htmlFor={id} className="text-[12.5px] font-medium">
+        <label htmlFor={id} className="text-ui font-medium">
           {label}
         </label>
-        <span className="min-w-0 flex-1 text-[12px] text-dim">{hint}</span>
+        <span className="min-w-0 flex-1 text-caption text-dim">{hint}</span>
         <Input
           aria-label={`${typeof label === 'string' ? label : 'Context window'} in tokens`}
           type="text"
@@ -97,7 +97,7 @@ export function ContextSlider({
         onBlur={commitSlider}
         className="w-full accent-[var(--color-crimson)] disabled:opacity-50"
       />
-      <div className="flex justify-between text-[11px] tabular-nums text-dim" aria-hidden="true">
+      <div className="flex justify-between text-caption tabular-nums text-dim" aria-hidden="true">
         {stops.map((s) => (
           <span key={s} className={clsx(s === stops[index] && 'font-medium text-fg')}>
             {tokenLabel(s)}

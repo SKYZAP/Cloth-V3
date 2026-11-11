@@ -198,14 +198,14 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
   return (
     <div ref={root} className="h-full overflow-y-auto">
       <div className="mx-2.5 mt-3 grid gap-2 rounded-[14px] border border-line bg-panel px-3 pb-3 pt-2.5" role="group" aria-label="Added to each request">
-        <div className="flex items-baseline justify-between text-[12px] text-muted">
+        <div className="flex items-baseline justify-between text-caption text-muted">
           <span>Added to each request</span>
-          <b className="font-mono text-[12px] font-medium tabular-nums text-fg">{setup ? `${k(total)} tokens` : '…'}</b>
+          <b className="font-mono text-caption font-medium tabular-nums text-fg">{setup ? `${k(total)} tokens` : '…'}</b>
         </div>
         <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-elev-2" aria-hidden="true">
           {(Object.keys(PART) as (keyof typeof PART)[]).map((p) => (total ? <span key={p} style={{ width: `${(parts[p] / total) * 100}%`, background: PART[p] }} className="h-full transition-[width] duration-300" /> : null))}
         </div>
-        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-x-2 gap-y-1 text-[11.5px] text-muted">
+        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-x-2 gap-y-1 text-caption text-muted">
           {(
             [
               ['servers', 'Servers'],
@@ -237,7 +237,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
         <SummaryLine label="Context window" onOpen={() => setView('context')} value={session.contextLimit ? `${tokensLabel(session.contextLimit)} (set)` : modelWindow ? `${tokensLabel(modelWindow)}, the model’s` : 'the model’s'} />
         <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'set' : 'none'} />
       </div>
-      <p className="px-4 pb-4 text-[11px] leading-relaxed text-dim">
+      <p className="px-4 pb-4 text-caption leading-relaxed text-dim">
         {session.agentId ? 'Set up from an agent: changes stay in this chat.' : 'Shared by all chats, except Instructions.'}
       </p>
     </div>
@@ -251,7 +251,7 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
         <i className="h-[7px] w-[7px] shrink-0 rounded-[2px]" style={{ background: color }} />
         {label}
       </span>
-      <b className="text-right font-mono text-[10.5px] font-normal tabular-nums text-dim">{value}</b>
+      <b className="text-right font-mono text-micro font-normal tabular-nums text-dim">{value}</b>
     </>
   )
 }
@@ -263,10 +263,10 @@ function SummaryLine({ label, count, tokens, hint, value, onOpen }: { label: str
       aria-label={`${label}${count !== undefined ? `: ${count} on` : ''}${tokens ? `, adds about ${k(tokens)} tokens` : ''}${hint ? `: ${hint}` : ''}${value ? `: ${value}` : ''}`}
       className="flex h-10 items-center gap-2 rounded-[10px] px-2.5 text-left transition-colors hover:bg-elev"
     >
-      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{label}</span>
-      <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums text-dim">
-        {hint && <span className="font-sans text-[11.5px]">{hint}</span>}
-        {value && <span className="max-w-[180px] truncate font-sans text-[12px] text-fg">{value}</span>}
+      <span className="min-w-0 flex-1 truncate text-ui font-medium text-fg">{label}</span>
+      <span className="flex shrink-0 items-center gap-1.5 font-mono text-caption tabular-nums text-dim">
+        {hint && <span className="font-sans text-caption">{hint}</span>}
+        {value && <span className="max-w-[180px] truncate font-sans text-caption text-fg">{value}</span>}
         {count !== undefined && <span className="text-fg">{count}</span>}
         {count !== undefined && tokens !== undefined && <span>· +{k(tokens)}</span>}
       </span>
@@ -280,8 +280,8 @@ function ToggleLine({ label, sub, on, onChange }: { label: string; sub?: string;
   return (
     <div className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-medium text-fg">{label}</div>
-        {sub && <div className="text-[11px] leading-snug text-dim">{sub}</div>}
+        <div className="text-ui font-medium text-fg">{label}</div>
+        {sub && <div className="text-caption leading-snug text-dim">{sub}</div>}
       </div>
       <Toggle on={on} onChange={onChange} label={label} />
     </div>
@@ -328,11 +328,11 @@ function Drill({
     <div className="flex h-full flex-col">
       <div className="grid shrink-0 gap-2 border-b border-line px-2.5 pb-2.5 pt-2">
         <div className="flex items-center gap-1">
-          <button onClick={back} className="flex h-7 items-center gap-1 rounded-lg pl-1 pr-2 text-[12px] text-dim hover:bg-elev hover:text-fg">
+          <button onClick={back} className="flex h-7 items-center gap-1 rounded-lg pl-1 pr-2 text-caption text-dim hover:bg-elev hover:text-fg">
             <CaretLeft size={12} /> {backLabel}
           </button>
-          <span className={clsx('min-w-0 flex-1 truncate text-[13px] font-semibold', titleMono && 'font-mono text-[12.5px] font-medium')}>{title}</span>
-          {total !== undefined && <span className="font-mono text-[11px] tabular-nums text-dim">+{k(total)} tokens</span>}
+          <span className={clsx('min-w-0 flex-1 truncate text-ui font-semibold', titleMono && 'font-mono text-ui font-medium')}>{title}</span>
+          {total !== undefined && <span className="font-mono text-caption tabular-nums text-dim">+{k(total)} tokens</span>}
         </div>
         {head}
         {box}
@@ -347,7 +347,7 @@ function SearchBox({ placeholder, search, onSearch }: { placeholder: string; sea
   return (
     <div className="flex h-8 items-center gap-2 rounded-[10px] border border-line bg-bg px-2.5 focus-within:border-crimson-line">
       <MagnifyingGlass size={13} className="shrink-0 text-dim" />
-      <input data-setup-filter value={search} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder} aria-label={placeholder} spellCheck={false} className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-dim focus-visible:outline-none" />
+      <input data-setup-filter value={search} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder} aria-label={placeholder} spellCheck={false} className="h-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-dim focus-visible:outline-none" />
       {search && (
         <button onClick={() => onSearch('')} aria-label="Clear the filter" className="text-dim hover:text-fg">
           <X size={12} />
@@ -360,7 +360,7 @@ function SearchBox({ placeholder, search, onSearch }: { placeholder: string; sea
 /** A drill-in page's master switch, above its filter. */
 function Master({ on, onChange, label, children }: { on: boolean; onChange(): void; label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 px-1 text-[12px] text-muted">
+    <div className="flex items-center gap-2 px-1 text-caption text-muted">
       <Toggle on={on} onChange={onChange} label={label} />
       <span className="min-w-0 flex-1">{children}</span>
     </div>
@@ -390,8 +390,8 @@ function AgentPicker({ back, agents, tiers, current, changed, onPick, onManage }
         {shown.map((a) => option(a.id, a.name, a.purpose || 'No purpose yet', runsOn(a)))}
       </div>
       {!showDefault && !shown.length && <Nothing>{nothingMatches(q)}</Nothing>}
-      {changed && <p className="px-2.5 pt-2 text-[11px] text-dim">This chat's setup was changed after the agent was picked. Pick the agent again to go back to its setup.</p>}
-      <button onClick={onManage} className="mx-2.5 flex items-center gap-1.5 text-[12px] text-muted hover:text-fg">
+      {changed && <p className="px-2.5 pt-2 text-caption text-dim">This chat's setup was changed after the agent was picked. Pick the agent again to go back to its setup.</p>}
+      <button onClick={onManage} className="mx-2.5 flex items-center gap-1.5 text-caption text-muted hover:text-fg">
         Manage agents <ArrowSquareOut size={12} />
       </button>
     </Drill>
@@ -406,9 +406,9 @@ function Chips<T extends string>({ value, onChange, items }: { value: T; onChang
           key={i.value}
           aria-pressed={value === i.value}
           onClick={() => onChange(i.value)}
-          className={clsx('flex h-6 items-center gap-1 rounded-full border px-2 text-[11.5px] transition-colors', value === i.value ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-dim hover:text-muted')}
+          className={clsx('flex h-6 items-center gap-1 rounded-full border px-2 text-caption transition-colors', value === i.value ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-dim hover:text-muted')}
         >
-          {i.label} <span className="font-mono text-[10.5px] text-dim">{i.count}</span>
+          {i.label} <span className="font-mono text-micro text-dim">{i.count}</span>
         </button>
       ))}
     </div>
@@ -490,11 +490,11 @@ function Row({
       className={clsx('flex items-center gap-2.5 rounded-[10px] px-2 py-1.5', selected ? 'bg-elev-2' : 'hover:bg-elev', onClick && 'cursor-pointer', dim && 'opacity-60')}
     >
       <div className="min-w-0 flex-1">
-        <div className={clsx('truncate text-[12.5px] text-fg', mono && 'font-mono text-[12px]')}>{title}</div>
-        {sub && <div className="truncate text-[11px] text-dim">{sub}</div>}
+        <div className={clsx('truncate text-ui text-fg', mono && 'font-mono text-caption')}>{title}</div>
+        {sub && <div className="truncate text-caption text-dim">{sub}</div>}
       </div>
-      {meta && <span className="max-w-[40%] shrink-0 truncate text-[11.5px] text-dim">{meta}</span>}
-      {tokens !== undefined && <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-dim">+{k(tokens)}</span>}
+      {meta && <span className="max-w-[40%] shrink-0 truncate text-caption text-dim">{meta}</span>}
+      {tokens !== undefined && <span className="shrink-0 font-mono text-micro tabular-nums text-dim">+{k(tokens)}</span>}
       {children}
     </div>
   )
@@ -609,7 +609,7 @@ export function ServersView({ back, target: session, update, m, status }: { back
                 void api.mcp.startClient(r.c.id).catch(() => undefined)
               }}
               onKeyDown={(e) => e.stopPropagation()}
-              className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-dim hover:bg-elev-2 hover:text-fg"
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-caption text-dim hover:bg-elev-2 hover:text-fg"
             >
               Start
             </button>
@@ -661,7 +661,7 @@ function ServerPage({ row, m, initialQuery, back, setServer }: { row: ServerRow;
         <Nothing>
           {row.desc}
           {row.st?.state !== 'ready' && row.st?.state !== 'starting' && (
-            <button onClick={() => void api.mcp.startClient(c.id).catch(() => undefined)} className="ml-2 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted hover:bg-elev-2 hover:text-fg">
+            <button onClick={() => void api.mcp.startClient(c.id).catch(() => undefined)} className="ml-2 rounded-md px-1.5 py-0.5 text-caption text-muted hover:bg-elev-2 hover:text-fg">
               Start
             </button>
           )}
@@ -787,16 +787,16 @@ function ContextView({ back, session, update }: { back(): void; session: ChatSes
     <Drill title="Context window" back={back}>
       <div className="grid gap-4 p-1.5">
         <ContextSlider id={`chat-ctx-${session.id}`} label="Limit" hint={limit ? 'Set for all chats' : 'The model’s own'} value={draft} saved={shown} max={guessed ? null : own} onDraft={setDraft} onCommit={save}>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12px] text-dim">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-caption text-dim">
             <span className="min-w-0 flex-1">{own ? `${model?.name ?? 'This model'} takes ${tokensLabel(own)}${guessed ? ', a guess: its provider doesn’t say' : ''}.` : 'This model’s size isn’t known.'}</span>
             {!!limit && (
-              <button onClick={() => void update({ contextLimit: null })} className="rounded text-[12px] text-muted underline decoration-line-strong underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
+              <button onClick={() => void update({ contextLimit: null })} className="rounded text-caption text-muted underline decoration-line-strong underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
                 Use the model’s
               </button>
             )}
           </div>
         </ContextSlider>
-        {!!limit && own !== null && limit > own && !guessed && <p className="text-[11.5px] text-warn">More than the model takes ({tokensLabel(own)}): long chats may fail before Cloth summarises.</p>}
+        {!!limit && own !== null && limit > own && !guessed && <p className="text-caption text-warn">More than the model takes ({tokensLabel(own)}): long chats may fail before Cloth summarises.</p>}
       </div>
     </Drill>
   )
@@ -815,7 +815,7 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
     <Drill title="Instructions" back={back}>
       <div className="grid gap-4 p-1.5">
         <div className="grid gap-1.5">
-          <div className="text-[11.5px] text-dim">Project</div>
+          <div className="text-caption text-dim">Project</div>
           <div className="flex flex-wrap gap-1.5">
             {[null, ...projects].map((p) => {
               const on = (p?.id ?? null) === session.projectId
@@ -824,7 +824,7 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
                   key={p?.id ?? 'none'}
                   onClick={() => moveTo(p)}
                   aria-pressed={on}
-                  className={clsx('flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors', on ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-muted hover:border-line-strong')}
+                  className={clsx('flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-caption transition-colors', on ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-muted hover:border-line-strong')}
                 >
                   {p ? <FolderSimple size={13} weight="fill" style={{ color: p.color }} /> : <X size={11} />}
                   {p?.name ?? 'No project'}
@@ -832,10 +832,10 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
               )
             })}
           </div>
-          {project && <div className="text-[11px] text-dim">The project's instructions{project.folder ? " and its folder's AGENTS.md" : ''} come first.</div>}
+          {project && <div className="text-caption text-dim">The project's instructions{project.folder ? " and its folder's AGENTS.md" : ''} come first.</div>}
         </div>
         <div className="grid gap-1.5">
-          <label htmlFor="chat-instructions" className="text-[11.5px] text-dim">
+          <label htmlFor="chat-instructions" className="text-caption text-dim">
             This chat
           </label>
           <textarea
@@ -844,7 +844,7 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
             onChange={(e) => setText(e.target.value)}
             onBlur={() => text !== session.systemPrompt && void update({ systemPrompt: text })}
             placeholder="e.g. Prefer idiomatic TypeScript; cite the knowledge base."
-            className="min-h-[160px] w-full resize-y rounded-[10px] border border-line bg-bg px-3 py-2.5 text-[12.5px] leading-relaxed text-fg outline-none placeholder:text-dim focus:border-crimson-line focus-visible:outline-none"
+            className="min-h-[160px] w-full resize-y rounded-[10px] border border-line bg-bg px-3 py-2.5 text-ui leading-relaxed text-fg outline-none placeholder:text-dim focus:border-crimson-line focus-visible:outline-none"
           />
         </div>
       </div>
@@ -853,5 +853,5 @@ function InstructionsView({ back, session, update }: { back(): void; session: Ch
 }
 
 function Nothing({ children }: { children: ReactNode }) {
-  return <div className="px-3 py-6 text-center text-[12px] text-dim">{children}</div>
+  return <div className="px-3 py-6 text-center text-caption text-dim">{children}</div>
 }

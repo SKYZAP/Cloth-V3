@@ -44,7 +44,7 @@ function Row({ row }: { row: BarRow }) {
         )}
       </span>
       <span className={clsx('min-w-0 flex-1 truncate', row.status === 'completed' ? 'text-muted' : row.status === 'in_progress' ? 'text-fg' : 'text-dim')}>
-        {row.n !== undefined && <span className="mr-1.5 font-mono text-[11px] text-dim">{row.n}</span>}
+        {row.n !== undefined && <span className="mr-1.5 font-mono text-caption text-dim">{row.n}</span>}
         {row.text}
         {run?.current && (
           <span className="ml-2 text-dim">
@@ -53,18 +53,18 @@ function Row({ row }: { row: BarRow }) {
         )}
       </span>
       {run ? (
-        <span className="flex shrink-0 items-center gap-2 text-[11px]">
+        <span className="flex shrink-0 items-center gap-2 text-caption">
           {row.runs > 1 && <span className="text-dim">{row.runs} runs</span>}
           <span className="rounded-full bg-agent-soft px-1.5 py-px text-agent">{runLabel(run)}</span>
-          {short && <span className={clsx('text-[10.5px]', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}
+          {short && <span className={clsx('text-micro', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}
           {run.cost > 0 && <span className="font-mono text-dim">{formatCost(run.cost)}</span>}
         </span>
       ) : (
-        row.n !== undefined && row.status !== 'pending' && <span className="shrink-0 text-[11px] text-dim">Cloth</span>
+        row.n !== undefined && row.status !== 'pending' && <span className="shrink-0 text-caption text-dim">Cloth</span>
       )}
     </>
   )
-  const cls = 'flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px]'
+  const cls = 'flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-caption'
   return run ? (
     <button onClick={() => scrollToRun(run.cardId)} className={clsx(cls, 'transition-colors hover:bg-elev-2')} title="Show this run">
       {body}
@@ -81,11 +81,11 @@ function ItemRow({ item }: { item: StageItem }) {
   const body = (
     <>
       <span className="min-w-0 flex-1 truncate text-muted">{item.text}</span>
-      {item.note && <span className={clsx('max-w-[45%] shrink-0 truncate text-[11px]', item.tone ? TONE[item.tone] : 'text-dim')}>{item.note}</span>}
-      {!!item.cost && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(item.cost)}</span>}
+      {item.note && <span className={clsx('max-w-[45%] shrink-0 truncate text-caption', item.tone ? TONE[item.tone] : 'text-dim')}>{item.note}</span>}
+      {!!item.cost && <span className="shrink-0 font-mono text-caption tabular-nums text-dim">{formatCost(item.cost)}</span>}
     </>
   )
-  const cls = 'flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-[12px]'
+  const cls = 'flex w-full items-center gap-2 rounded-md px-1.5 py-[3px] text-left text-caption'
   return item.cardId ? (
     <button onClick={() => scrollToRun(item.cardId!)} className={clsx(cls, 'transition-colors hover:bg-elev-2')} title="Show this run">
       {body}
@@ -112,7 +112,7 @@ function StageRow({ n, stage, status, record, live, note }: { n: number; stage: 
         onClick={() => canOpen && setOpen(!open)}
         aria-expanded={canOpen ? shown : undefined}
         disabled={!canOpen}
-        className={clsx('grid w-full grid-cols-[12px_18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1.5 py-1 text-left text-[12.5px]', canOpen && 'transition-colors hover:bg-elev-2')}
+        className={clsx('grid w-full grid-cols-[12px_18px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-1.5 py-1 text-left text-ui', canOpen && 'transition-colors hover:bg-elev-2')}
       >
         <span className="flex text-dim">{canOpen && <CaretRight size={11} className={clsx('transition-transform duration-150', shown && 'rotate-90')} />}</span>
         <StatusIcon status={status} />
@@ -124,7 +124,7 @@ function StageRow({ n, stage, status, record, live, note }: { n: number; stage: 
             </span>
           )}
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-[11px]">
+        <span className="flex shrink-0 items-center gap-2 text-caption">
           {current && STAGE_YOU[stage] ? <span className="text-warn">needs you</span> : note ? <span className="text-dim">{note}</span> : null}
           {summary && <span className="text-dim mobile:hidden">{summary}</span>}
           {!!record?.cost && <span className="font-mono tabular-nums text-dim">{formatCost(record.cost)}</span>}
@@ -138,7 +138,7 @@ function StageRow({ n, stage, status, record, live, note }: { n: number; stage: 
           {!current && files.length > 0 && (
             <div className="flex flex-wrap gap-1 px-1.5 py-1">
               {files.map((f) => (
-                <span key={f} title={f} className="max-w-[220px] truncate rounded-md bg-elev-2 px-1.5 py-px font-mono text-[10.5px] text-dim">
+                <span key={f} title={f} className="max-w-[220px] truncate rounded-md bg-elev-2 px-1.5 py-px font-mono text-micro text-dim">
                   {f.split('/').pop()}
                 </span>
               ))}
@@ -216,7 +216,7 @@ export function WorkBar({
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-9 w-full items-center gap-3 px-3 text-left">
         {stage ? (
           <>
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">
+            <span className="min-w-0 flex-1 truncate text-ui text-fg">
               <b className="mr-1.5 font-semibold text-mode">Spec → Ship</b>
               {flow?.route && (
                 <span className="mr-1.5 align-[1px]">
@@ -231,20 +231,20 @@ export function WorkBar({
                 <span key={s} className={clsx('box-border h-[6px] w-[14px] rounded-[2px]', i < at ? 'bg-ok' : i === at ? 'animate-pulse bg-mode motion-reduce:animate-none' : 'border border-line-strong')} />
               ))}
             </span>
-            <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">
+            <span className="shrink-0 font-mono text-caption tabular-nums text-dim">
               {at + 1} of {stages.length}
             </span>
           </>
         ) : (
           bar && (
             <>
-              <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{title}</span>
+              <span className="min-w-0 flex-1 truncate text-ui text-fg">{title}</span>
               <Meter bar={bar} />
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{bar.mode === 'todos' ? `${bar.done} of ${bar.total}` : `${bar.runCount} agent${bar.runCount === 1 ? '' : 's'}`}</span>
+              <span className="shrink-0 font-mono text-caption tabular-nums text-dim">{bar.mode === 'todos' ? `${bar.done} of ${bar.total}` : `${bar.runCount} agent${bar.runCount === 1 ? '' : 's'}`}</span>
             </>
           )
         )}
-        {bar && bar.cost > 0 && <span className="shrink-0 font-mono text-[11px] tabular-nums text-dim">{formatCost(bar.cost)}</span>}
+        {bar && bar.cost > 0 && <span className="shrink-0 font-mono text-caption tabular-nums text-dim">{formatCost(bar.cost)}</span>}
         <motion.span animate={{ rotate: open ? 0 : 180 }} transition={{ duration: 0.25 }} className="flex shrink-0 text-dim">
           <CaretDown size={13} />
         </motion.span>
@@ -266,7 +266,7 @@ export function WorkBar({
                   />
                 ))}
               {stage && onAutoContinue && (
-                <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-[12px] text-muted">
+                <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-caption text-muted">
                   <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="size-[13px] shrink-0 accent-crimson" />
                   Build, check and fix on its own, then report back
                 </label>

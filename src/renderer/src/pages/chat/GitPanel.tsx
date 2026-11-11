@@ -119,8 +119,8 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
             <ArrowLeft size={14} />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12.5px] font-medium">{split(diff.file.path).name}</div>
-            <div className="truncate text-[10.5px] text-dim">
+            <div className="truncate text-ui font-medium">{split(diff.file.path).name}</div>
+            <div className="truncate text-micro text-dim">
               {diff.file.path} · {diff.staged ? 'staged' : diff.file.untracked ? 'new file' : 'not staged'}
             </div>
           </div>
@@ -145,13 +145,13 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2.5 py-1.5 text-[12px]">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2.5 py-1.5 text-caption">
         <GitBranch size={14} className="shrink-0 text-dim" />
         <span className="min-w-0 truncate font-medium" title={status.upstream ? `Tracking ${status.upstream}` : 'No upstream branch'}>
           {status.branch ?? 'detached HEAD'}
         </span>
         {(status.ahead > 0 || status.behind > 0) && (
-          <span className="shrink-0 font-mono text-[11px] text-dim">
+          <span className="shrink-0 font-mono text-caption text-dim">
             {status.ahead > 0 && `↑${status.ahead}`} {status.behind > 0 && `↓${status.behind}`}
           </span>
         )}
@@ -182,7 +182,7 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
               rows={message.includes('\n') ? 4 : 2}
               placeholder={status.files.length ? 'Commit message (Ctrl+Enter to commit)' : 'Nothing to commit'}
               aria-label="Commit message"
-              className="w-full resize-none rounded-[10px] border border-line bg-panel py-2 pl-2.5 pr-9 text-[12.5px] outline-none placeholder:text-dim focus:border-crimson-line"
+              className="w-full resize-none rounded-[10px] border border-line bg-panel py-2 pl-2.5 pr-9 text-ui outline-none placeholder:text-dim focus:border-crimson-line"
             />
             <button disabled={!!busy || !status.files.length} onClick={() => void suggest()} className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-crimson-hi disabled:opacity-40" title="Write the message with AI (the chat's model)" aria-label="Write commit message with AI">
               <Sparkle size={14} className={busy === 'message' ? 'animate-pulse text-crimson-hi' : undefined} />
@@ -218,15 +218,15 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 
         {log.length > 0 && (
           <div className="border-t border-line">
-            <button onClick={() => setShowLog(!showLog)} className="flex w-full items-center gap-1.5 px-2.5 py-2 text-[12px] font-medium text-dim hover:text-muted">
+            <button onClick={() => setShowLog(!showLog)} className="flex w-full items-center gap-1.5 px-2.5 py-2 text-caption font-medium text-dim hover:text-muted">
               {showLog ? <CaretDown size={10} /> : <CaretRight size={10} />} Recent commits
             </button>
             {showLog &&
               log.map((c) => (
-                <div key={c.hash} className="flex items-baseline gap-2 px-3 py-1 text-[12px]" title={`${c.author}, ${c.when}`}>
-                  <span className="shrink-0 font-mono text-[10.5px] text-dim">{c.hash}</span>
+                <div key={c.hash} className="flex items-baseline gap-2 px-3 py-1 text-caption" title={`${c.author}, ${c.when}`}>
+                  <span className="shrink-0 font-mono text-micro text-dim">{c.hash}</span>
                   <span className="min-w-0 flex-1 truncate text-muted">{c.subject}</span>
-                  <span className="shrink-0 text-[10.5px] text-dim">{c.when.replace(' ago', '')}</span>
+                  <span className="shrink-0 text-micro text-dim">{c.when.replace(' ago', '')}</span>
                 </div>
               ))}
           </div>
@@ -239,28 +239,28 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 function FileList({ title, files, staged, onOpen, onAll, allLabel, actions, empty }: { title: string; files: GitFile[]; staged: boolean; onOpen(f: GitFile): void; onAll?(): void; allLabel: string; actions(f: GitFile): React.ReactNode; empty?: string }) {
   return (
     <div className="py-1">
-      <div className="flex items-center justify-between px-2.5 py-1 text-[12px] font-medium text-dim">
+      <div className="flex items-center justify-between px-2.5 py-1 text-caption font-medium text-dim">
         <span>
           {title} {files.length > 0 && <span className="font-mono normal-case">{files.length}</span>}
         </span>
         {onAll && files.length > 0 && (
-          <button onClick={onAll} className="text-[11px] normal-case tracking-normal hover:text-fg">
+          <button onClick={onAll} className="text-caption normal-case tracking-normal hover:text-fg">
             {allLabel}
           </button>
         )}
       </div>
-      {!files.length && empty && <div className="px-3 py-1.5 text-[12px] text-dim">{empty}</div>}
+      {!files.length && empty && <div className="px-3 py-1.5 text-caption text-dim">{empty}</div>}
       {files.map((f) => {
         const { name, dir } = split(f.path)
         const l = letter(f, staged)
         return (
-          <div key={f.path} role="button" tabIndex={0} onClick={() => onOpen(f)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onOpen(f))} className="group/row flex h-7 cursor-pointer items-center gap-2 pl-3 pr-1.5 text-[12.5px] outline-none hover:bg-elev focus-visible:bg-elev focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-crimson-line" title={f.from ? `${f.from} → ${f.path}` : f.path}>
+          <div key={f.path} role="button" tabIndex={0} onClick={() => onOpen(f)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onOpen(f))} className="group/row flex h-7 cursor-pointer items-center gap-2 pl-3 pr-1.5 text-ui outline-none hover:bg-elev focus-visible:bg-elev focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-crimson-line" title={f.from ? `${f.from} → ${f.path}` : f.path}>
             <span className={clsx('min-w-0 truncate', l === 'D' ? 'text-dim line-through' : 'text-fg/90')}>{name}</span>
-            <span className="min-w-0 flex-1 truncate text-[11px] text-dim">{dir}</span>
+            <span className="min-w-0 flex-1 truncate text-caption text-dim">{dir}</span>
             <span className="hidden shrink-0 items-center group-focus-within/row:flex group-hover/row:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
               {actions(f)}
             </span>
-            <span className={clsx('w-3.5 shrink-0 text-center font-mono text-[11px] font-semibold', LETTER_COLOR[l] ?? 'text-muted')} title={f.untracked ? 'New file' : f.conflicted ? 'Conflict' : undefined}>
+            <span className={clsx('w-3.5 shrink-0 text-center font-mono text-caption font-semibold', LETTER_COLOR[l] ?? 'text-muted')} title={f.untracked ? 'New file' : f.conflicted ? 'Conflict' : undefined}>
               {f.conflicted ? '!' : l}
             </span>
           </div>
@@ -302,14 +302,14 @@ function DiffView({ text }: { text: string }) {
   if (!text.trim()) return <Empty>No textual changes.</Empty>
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-collapse font-mono text-[11.5px] leading-[1.55]">
+      <table className="w-full border-collapse font-mono text-caption leading-[1.55]">
         <tbody>
           {lines
             .filter((l) => l.kind !== 'meta')
             .map((l, i) =>
               l.kind === 'hunk' ? (
                 <tr key={i} className="bg-info/[0.07]">
-                  <td colSpan={3} className="px-2.5 py-0.5 text-[11px] text-info/80">
+                  <td colSpan={3} className="px-2.5 py-0.5 text-caption text-info/80">
                     {l.text}
                   </td>
                 </tr>
@@ -331,5 +331,5 @@ function DiffView({ text }: { text: string }) {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="grid h-full place-items-center p-6 text-center text-[12.5px] text-dim">{children}</div>
+  return <div className="grid h-full place-items-center p-6 text-center text-ui text-dim">{children}</div>
 }

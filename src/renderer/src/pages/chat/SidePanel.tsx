@@ -216,7 +216,7 @@ export function SidePanel({
                   setMenu({ tab: t.id, x: Math.min(keyboard ? r.left : e.clientX, window.innerWidth - 168), y: keyboard ? r.bottom + 4 : e.clientY, from: e.currentTarget })
                 }}
                 className={clsx(
-                  'flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[12.5px] transition-colors',
+                  'flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-ui transition-colors',
                   focused ? 'bg-elev-2 text-fg' : on ? 'bg-elev text-fg hover:bg-elev-2' : 'text-muted hover:bg-elev hover:text-fg'
                 )}
                 aria-pressed={on}
@@ -255,7 +255,7 @@ export function SidePanel({
                 key={`header-${tab}`}
                 style={{ gridRow: row(i) - 1, gridColumn: 1 }}
                 onPointerDown={() => focusAt(i)}
-                className="flex h-7 items-center gap-1.5 border-b border-line pl-2.5 pr-0.5 text-[12px] text-muted"
+                className="flex h-7 items-center gap-1.5 border-b border-line pl-2.5 pr-0.5 text-caption text-muted"
               >
                 <t.icon size={13} weight={i === focus ? 'fill' : 'regular'} />
                 <span className={clsx('min-w-0 flex-1 truncate', i === focus && 'text-fg')}>{t.label}</span>
@@ -339,7 +339,7 @@ export function SidePanel({
               setMenu(null)
               menu.from.focus()
             }}
-            className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:bg-elev-2 focus-visible:text-fg focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-45 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted"
+            className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-ui text-muted hover:bg-elev-2 hover:text-fg focus-visible:bg-elev-2 focus-visible:text-fg focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-45 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted"
           >
             <Rows size={14} />
             Stack below

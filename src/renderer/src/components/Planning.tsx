@@ -12,7 +12,7 @@ export function todosOf(args: unknown): TodoItem[] {
 
 export function TodoList({ todos, dense }: { todos: TodoItem[]; dense?: boolean }) {
   return (
-    <ul className={clsx('space-y-0.5', dense && 'text-[12.5px]')}>
+    <ul className={clsx('space-y-0.5', dense && 'text-ui')}>
       <AnimatePresence initial={false}>
         {todos.map((t, i) => (
           <motion.li
@@ -112,36 +112,36 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
             className="absolute bottom-full right-0 z-40 mb-2.5 w-[320px] rounded-[14px] mobile:-right-12 mobile:w-[min(320px,calc(100vw-20px))] border border-line-strong bg-panel p-3.5 shadow-[0_16px_44px_-12px_rgb(0_0_0/0.8)]"
           >
             <div className="flex items-baseline gap-2">
-              <span className="text-[12.5px] font-semibold">Context</span>
-              <span className="font-mono text-[11px] tabular-nums text-muted" title={usage.estimated ? "Estimated — the provider doesn't report this model's context size" : undefined}>
+              <span className="text-ui font-semibold">Context</span>
+              <span className="font-mono text-caption tabular-nums text-muted" title={usage.estimated ? "Estimated — the provider doesn't report this model's context size" : undefined}>
                 {compact(usage.tokens)} / {usage.estimated ? '≈' : ''}
                 {compact(window_)}
               </span>
-              {usage.estimated && <span className="text-[10.5px] text-dim">estimated</span>}
+              {usage.estimated && <span className="text-micro text-dim">estimated</span>}
               <div className="flex-1" />
-              <span className={clsx('font-mono text-[11px] tabular-nums', tone)}>{pctOf(usage.tokens, window_)} used</span>
+              <span className={clsx('font-mono text-caption tabular-nums', tone)}>{pctOf(usage.tokens, window_)} used</span>
             </div>
             <Bar className="mt-2.5 h-2.5" marker />
             <div className="mt-3 space-y-1">
               {slices.map((s) => (
-                <div key={s.key} className="flex items-center gap-2 text-[12px]">
+                <div key={s.key} className="flex items-center gap-2 text-caption">
                   <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: SLICE_COLOR[s.key] }} />
                   <span className="flex-1 text-muted">{s.label}</span>
-                  <span className="font-mono text-[11px] tabular-nums text-dim">{compact(s.tokens)}</span>
-                  <span className="w-12 text-right font-mono text-[11px] tabular-nums text-muted" title={`${pctOf(s.tokens, usage.tokens)} of what is used`}>
+                  <span className="font-mono text-caption tabular-nums text-dim">{compact(s.tokens)}</span>
+                  <span className="w-12 text-right font-mono text-caption tabular-nums text-muted" title={`${pctOf(s.tokens, usage.tokens)} of what is used`}>
                     {pctOf(s.tokens, window_)}
                   </span>
                 </div>
               ))}
-              <div className="flex items-center gap-2 text-[12px]">
+              <div className="flex items-center gap-2 text-caption">
                 <span className="h-2 w-2 shrink-0 rounded-[3px] border border-line-strong bg-elev-2" />
                 <span className="flex-1 text-dim">Free</span>
-                <span className="font-mono text-[11px] tabular-nums text-dim">{compact(Math.max(0, window_ - usage.tokens))}</span>
-                <span className="w-12 text-right font-mono text-[11px] tabular-nums text-dim">{pctOf(Math.max(0, window_ - usage.tokens), window_)}</span>
+                <span className="font-mono text-caption tabular-nums text-dim">{compact(Math.max(0, window_ - usage.tokens))}</span>
+                <span className="w-12 text-right font-mono text-caption tabular-nums text-dim">{pctOf(Math.max(0, window_ - usage.tokens), window_)}</span>
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
-              <span className="flex-1 text-[11px] leading-snug text-dim">
+              <span className="flex-1 text-caption leading-snug text-dim">
                 {usage.threshold ? `Older messages are summarised automatically at ${compact(usage.threshold)}.` : 'Summarise older messages to free up space.'} Shares are estimates.
               </span>
               <button
@@ -150,7 +150,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
                   setOpen(false)
                   onCompact()
                 }}
-                className="h-7 shrink-0 rounded-lg border border-line-strong px-2.5 text-[11.5px] font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
+                className="h-7 shrink-0 rounded-lg border border-line-strong px-2.5 text-caption font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
               >
                 Summarise now
               </button>
@@ -166,7 +166,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         className={clsx('flex h-7 items-center gap-2 rounded-lg px-2 transition-colors', open ? 'bg-elev-2' : 'hover:bg-elev')}
       >
         {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-2.5 w-12 @[560px]:w-20 mobile:hidden" />}
-        <span className={clsx('font-mono text-[11px] tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
+        <span className={clsx('font-mono text-caption tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>
   )

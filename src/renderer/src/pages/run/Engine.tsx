@@ -72,7 +72,7 @@ export function EngineStrip({ engines, progress, onManage, onEngines }: { engine
   return (
     <div className="flex min-h-[44px] flex-wrap items-center gap-x-3 gap-y-2 rounded-[12px] border border-line bg-elev px-3.5 py-2">
       <Cpu size={16} className="shrink-0 text-dim" aria-hidden="true" />
-      <div className="min-w-0 flex-1 text-[12.5px]">
+      <div className="min-w-0 flex-1 text-ui">
         {build && cur ? (
           <>
             <span className="font-semibold">llama.cpp</span>
@@ -87,7 +87,7 @@ export function EngineStrip({ engines, progress, onManage, onEngines }: { engine
         )}
       </div>
       {downloading ? (
-        <span className="flex items-center gap-1.5 text-[12px] tabular-nums text-dim">
+        <span className="flex items-center gap-1.5 text-caption tabular-nums text-dim">
           <Spinner size={12} />
           {downloading.state === 'extracting' ? 'Unpacking…' : `Updating, ${downloading.total ? Math.floor((downloading.received / downloading.total) * 100) : 0}%`}
         </span>
@@ -97,7 +97,7 @@ export function EngineStrip({ engines, progress, onManage, onEngines }: { engine
         </Button>
       ) : (
         build && (
-          <span className="flex items-center gap-1 text-[12px] text-dim">
+          <span className="flex items-center gap-1 text-caption text-dim">
             <CheckCircle size={13} className="text-ok" aria-hidden="true" />
             {engines.checkedAt ? 'Up to date' : 'Installed'}
           </span>
@@ -170,7 +170,7 @@ export function EnginePanel({
       <InspectorHead title="llama.cpp" onClose={onClose} />
       <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto px-5 py-4">
         <fieldset className="grid gap-2">
-          <legend className="mb-2 text-[12.5px] font-semibold">Which llama.cpp</legend>
+          <legend className="mb-2 text-ui font-semibold">Which llama.cpp</legend>
           {(['prism', 'official'] as const).map((f) => (
             <label
               key={f}
@@ -181,18 +181,18 @@ export function EnginePanel({
             >
               <input type="radio" name="flavour" value={f} checked={flavour === f} onChange={() => setFlavour(f)} className="mt-0.5 accent-[var(--color-crimson)]" />
               <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-[13px] font-semibold">
+                <span className="flex items-center gap-2 text-ui font-semibold">
                   {FLAVOUR[f].name}
-                  {engines.current?.flavour === f && <span className="text-[11px] font-medium text-ok">In use</span>}
+                  {engines.current?.flavour === f && <span className="text-caption font-medium text-ok">In use</span>}
                 </span>
-                <span className="mt-0.5 block text-[12px] text-dim">{FLAVOUR[f].about}</span>
+                <span className="mt-0.5 block text-caption text-dim">{FLAVOUR[f].about}</span>
               </span>
             </label>
           ))}
         </fieldset>
 
         <div className="grid gap-2">
-          <div className="text-[12.5px] font-semibold">Build for your hardware</div>
+          <div className="text-ui font-semibold">Build for your hardware</div>
           <div className="overflow-x-auto">
             <Segmented
               value={backend}
@@ -200,13 +200,13 @@ export function EnginePanel({
               items={offered.map((b) => ({ value: b, label: BACKEND[b], title: BACKEND_ABOUT[b] }))}
             />
           </div>
-          <p className="text-[12px] text-dim">
+          <p className="text-caption text-dim">
             {hardware && (backend === hardware.recommendedBackend ? (gpu ? `Recommended for your ${gpu.name}.` : 'Recommended, since no GPU was found.') : `${BACKEND[hardware.recommendedBackend]} suits ${gpu ? `your ${gpu.name}` : 'this computer'} best.`)}
           </p>
         </div>
 
         <div className="grid gap-3 rounded-[12px] border border-line bg-elev px-3.5 py-3">
-          <div className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]">
+          <div className="flex flex-wrap items-baseline gap-x-2 text-ui">
             <span className="font-semibold">
               {FLAVOUR[flavour].name}, {BACKEND[backend]}
             </span>
@@ -235,7 +235,7 @@ export function EnginePanel({
                   Use this build
                 </Button>
               ) : installed ? (
-                <span className="flex items-center gap-1.5 text-[12px] text-ok">
+                <span className="flex items-center gap-1.5 text-caption text-ok">
                   <CheckCircle size={14} aria-hidden="true" /> In use and up to date
                 </span>
               ) : (
@@ -245,7 +245,7 @@ export function EnginePanel({
                   </Button>
                 )
               )}
-              {newer && size !== undefined && <span className="text-[12px] tabular-nums text-dim">{fileSize(size)} download</span>}
+              {newer && size !== undefined && <span className="text-caption tabular-nums text-dim">{fileSize(size)} download</span>}
               {installed && !inUse && newer && (
                 <Button variant="ghost" onClick={() => void attempt(() => api.runs.useEngine(flavour, backend)).then((e) => e && onEngines(e))}>
                   Use installed
@@ -254,7 +254,7 @@ export function EnginePanel({
             </div>
           )}
           {latest && (
-            <button type="button" onClick={() => void api.app.openExternal(latest.url)} className="flex w-fit items-center gap-1 rounded text-[12px] text-muted underline decoration-line-strong underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
+            <button type="button" onClick={() => void api.app.openExternal(latest.url)} className="flex w-fit items-center gap-1 rounded text-caption text-muted underline decoration-line-strong underline-offset-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
               Release notes for <span translate="no">{latest.tag}</span>
               <ArrowSquareOut size={12} aria-hidden="true" />
             </button>
@@ -263,18 +263,18 @@ export function EnginePanel({
 
         {engines.installed.length > 0 && (
           <div className="grid gap-2">
-            <div className="text-[12.5px] font-semibold">Installed builds</div>
+            <div className="text-ui font-semibold">Installed builds</div>
             <ul className="grid divide-y divide-line rounded-[12px] border border-line bg-elev">
               {engines.installed.map((b) => {
                 const current = engines.current?.flavour === b.flavour && engines.current.backend === b.backend && installedOf(engines, b.flavour, b.backend)?.path === b.path
                 return (
-                  <li key={b.path} className="flex items-center gap-2 px-3.5 py-2 text-[12.5px]" title={b.path}>
+                  <li key={b.path} className="flex items-center gap-2 px-3.5 py-2 text-ui" title={b.path}>
                     <span className="min-w-0 flex-1 truncate">
                       {FLAVOUR[b.flavour].name} <span className="text-muted" translate="no">{tagLabel(b.tag)}</span>
                       <span className="text-dim">, {BACKEND[b.backend]}</span>
                     </span>
                     {current ? (
-                      <span className="text-[11.5px] font-medium text-ok">In use</span>
+                      <span className="text-caption font-medium text-ok">In use</span>
                     ) : (
                       <Button size="sm" variant="ghost" onClick={() => void attempt(() => api.runs.useEngine(b.flavour, b.backend)).then((e) => e && onEngines(e))}>
                         Use
@@ -293,7 +293,7 @@ export function EnginePanel({
             Check now
           </Button>
         </div>
-        {engines.checkedAt && <p className="-mt-3 text-[11.5px] text-dim">Last checked {new Date(engines.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>}
+        {engines.checkedAt && <p className="-mt-3 text-caption text-dim">Last checked {new Date(engines.checkedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>}
       </div>
     </>
   )

@@ -97,7 +97,7 @@ export function Diagram({ source, streaming }: { source: string; streaming?: boo
         </pre>
       )}
       {!drawn && error && !streaming && (
-        <figcaption className="border-t border-line px-3 py-1.5 text-[11.5px] text-dim">
+        <figcaption className="border-t border-line px-3 py-1.5 text-caption text-dim">
           Couldn’t draw this diagram: <span className="text-muted">{error.split('\n')[0]}</span>
         </figcaption>
       )}

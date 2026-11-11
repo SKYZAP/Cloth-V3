@@ -31,14 +31,14 @@ export function ProjectsSync({ designId, version }: { designId: string; version:
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto grid w-[min(860px,calc(100%-40px))] gap-3 py-5">
-        <p className="text-[12.5px] text-dim">
+        <p className="text-ui text-dim">
           A project that follows this system gets its DESIGN.md in every chat. Writing puts the files in the project's <span className="font-mono">design/</span> folder: tokens, the Tailwind theme, the component pages and the shadcn theme. Files you edited there are never overwritten without asking.
         </p>
         {withFolder.map((p) => (
           <ProjectRow key={p.projectId} designId={designId} project={p} onChanged={(next) => setList((l) => l!.map((x) => (x.projectId === next.projectId ? next : x)))} reload={load} />
         ))}
-        {!withFolder.length && <div className="rounded-[12px] border border-dashed border-line p-4 text-[12.5px] text-dim">No projects with a folder yet. Create one from the chat list to write the system into it.</div>}
-        {list.length > withFolder.length && <p className="text-[11.5px] text-dim">{list.length - withFolder.length} project{list.length - withFolder.length === 1 ? ' has' : 's have'} no folder, so nothing can be written there.</p>}
+        {!withFolder.length && <div className="rounded-[12px] border border-dashed border-line p-4 text-ui text-dim">No projects with a folder yet. Create one from the chat list to write the system into it.</div>}
+        {list.length > withFolder.length && <p className="text-caption text-dim">{list.length - withFolder.length} project{list.length - withFolder.length === 1 ? ' has' : 's have'} no folder, so nothing can be written there.</p>}
       </div>
     </div>
   )
@@ -79,13 +79,13 @@ function ProjectRow({ designId, project, onChanged, reload }: { designId: string
           <FolderSimple size={16} weight="fill" className="shrink-0" style={{ color: project.color }} />
           <span className="min-w-0">
             <span className="flex items-baseline gap-2">
-              <span className="truncate text-[13px] font-medium">{project.name}</span>
-              {project.linked && <span className="shrink-0 text-[11px] text-ok">follows this system</span>}
+              <span className="truncate text-ui font-medium">{project.name}</span>
+              {project.linked && <span className="shrink-0 text-caption text-ok">follows this system</span>}
             </span>
-            <span className="block truncate font-mono text-[11px] text-dim">{project.folder}</span>
+            <span className="block truncate font-mono text-caption text-dim">{project.folder}</span>
           </span>
         </button>
-        <span className={clsx('text-[12px]', edited ? 'text-warn' : outdated + missing ? 'text-muted' : 'text-dim')}>{status}</span>
+        <span className={clsx('text-caption', edited ? 'text-warn' : outdated + missing ? 'text-muted' : 'text-dim')}>{status}</span>
         {safe.length > 0 && (
           <Button size="sm" variant="primary" loading={busy} onClick={() => void write(safe)}>
             {written ? `Update ${safe.length} file${safe.length === 1 ? '' : 's'}` : 'Write files'}
@@ -107,15 +107,15 @@ function ProjectRow({ designId, project, onChanged, reload }: { designId: string
         <ul className="grid gap-0.5 border-t border-line p-1.5">
           {project.files.map((f) => (
             <li key={f.path} className="flex items-center gap-2 rounded-[8px] px-2 py-1 hover:bg-elev">
-              <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">design/{f.path}</span>
-              <span className={clsx('shrink-0 text-[11.5px]', STATE[f.state].cls)}>{STATE[f.state].label}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-caption text-muted">design/{f.path}</span>
+              <span className={clsx('shrink-0 text-caption', STATE[f.state].cls)}>{STATE[f.state].label}</span>
               {f.state !== 'current' && (
-                <button onClick={() => void showDiff(f.path)} className="shrink-0 rounded px-1.5 text-[11.5px] text-dim hover:bg-elev-2 hover:text-fg">
+                <button onClick={() => void showDiff(f.path)} className="shrink-0 rounded px-1.5 text-caption text-dim hover:bg-elev-2 hover:text-fg">
                   Diff
                 </button>
               )}
               {f.state === 'edited' && (
-                <button onClick={() => void write([f.path])} className="shrink-0 rounded px-1.5 text-[11.5px] text-warn hover:bg-elev-2">
+                <button onClick={() => void write([f.path])} className="shrink-0 rounded px-1.5 text-caption text-warn hover:bg-elev-2">
                   Overwrite
                 </button>
               )}
@@ -126,7 +126,7 @@ function ProjectRow({ designId, project, onChanged, reload }: { designId: string
       <Modal open={!!diff} onClose={() => setDiff(null)} title={diff ? `design/${diff.path}` : ''} width={820}>
         {diff && (
           <>
-            <p className="mb-2 text-[12px] text-dim">Red is what the project has now; green is what the design system would write.</p>
+            <p className="mb-2 text-caption text-dim">Red is what the project has now; green is what the design system would write.</p>
             <DiffView diff={diff.text} maxHeight={520} />
           </>
         )}

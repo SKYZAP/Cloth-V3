@@ -48,11 +48,11 @@ export function Connect() {
           <Logo size={56} />
         </div>
         <div className="mt-6 text-[24px] font-semibold tracking-tight">Cloth</div>
-        <div className="mt-1.5 max-w-[300px] text-[14px] leading-relaxed text-dim">Your developer hub, from your phone. Your PC does the work — models, files and keys stay there.</div>
+        <div className="mt-1.5 max-w-[300px] text-body leading-relaxed text-dim">Your developer hub, from your phone. Your PC does the work — models, files and keys stay there.</div>
       </motion.div>
 
       {unpaired && (
-        <div className="mt-8 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-[13px] text-danger-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
+        <div className="mt-8 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-ui text-danger-hi">{reason || 'This phone was unpaired.'} Pair again to reconnect.</div>
       )}
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ ...ENTER, delay: 0.08 }} className="mt-10 space-y-3 rounded-[20px] border border-line bg-panel p-5">
@@ -71,7 +71,7 @@ export function Connect() {
 
       <AnimatePresence>
         {error && (
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-[13px] text-danger-hi">
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6 rounded-[14px] border border-danger-line bg-danger-soft px-4 py-3 text-ui text-danger-hi">
             {error}
           </motion.div>
         )}
@@ -86,7 +86,7 @@ export function Connect() {
                 onChange={(e) => setCode(e.target.value)}
                 rows={3}
                 placeholder="Paste the pairing code (cloth://pair?d=…)"
-                className="mb-2.5 block w-full resize-none rounded-[14px] border border-line-strong bg-panel px-4 py-3 font-mono text-[12px] text-fg outline-none placeholder:text-dim focus:border-crimson-line"
+                className="mb-2.5 block w-full resize-none rounded-[14px] border border-line-strong bg-panel px-4 py-3 font-mono text-caption text-fg outline-none placeholder:text-dim focus:border-crimson-line"
               />
             </motion.div>
           )}
@@ -120,7 +120,7 @@ function Step({ n, icon, children }: { n: number; icon: React.ReactNode; childre
         {icon}
         <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[9px] font-bold text-white">{n}</span>
       </div>
-      <div className="pt-1.5 text-[13.5px] leading-snug text-muted">{children}</div>
+      <div className="pt-1.5 text-body leading-snug text-muted">{children}</div>
     </div>
   )
 }
@@ -133,8 +133,8 @@ function BigButton({ primary, disabled, onClick, children }: { primary?: boolean
       onClick={onClick}
       className={
         primary
-          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-crimson text-[15px] font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:bg-elev-2 disabled:text-dim'
-          : 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-line-strong text-[14px] font-medium text-muted'
+          ? 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-crimson text-section font-semibold text-white shadow-[0_8px_30px_-8px_rgb(220_38_69/0.6)] disabled:bg-elev-2 disabled:text-dim'
+          : 'flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-line-strong text-body font-medium text-muted'
       }
     >
       {children}

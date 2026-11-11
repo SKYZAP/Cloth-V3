@@ -77,7 +77,7 @@ export function DesignPage() {
         onDuplicated={(id) => void load(id)}
       />
     )
-  const hint = forProject && !forProject.designId && <p className="rounded-lg bg-elev-2 px-2.5 py-2 text-[12.5px] text-muted">Pick or make a design system for {forProject.name}.</p>
+  const hint = forProject && !forProject.designId && <p className="rounded-lg bg-elev-2 px-2.5 py-2 text-ui text-muted">Pick or make a design system for {forProject.name}.</p>
   // The default first, then the most recently changed.
   const ordered = [...designs].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId))
   if (loaded && !designs.length)
@@ -100,7 +100,7 @@ export function DesignPage() {
               ))}
             </div>
             <h1 className="text-[22px] font-semibold tracking-tight">Make your first design</h1>
-            <p className="text-[13px] text-muted">Colours, fonts and components that your projects’ chats follow.</p>
+            <p className="text-ui text-muted">Colours, fonts and components that your projects’ chats follow.</p>
             {hint}
             <div className="mt-2 flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={() => setGuided('describe')}>
@@ -119,7 +119,7 @@ export function DesignPage() {
           <BackLink label={back.label} onClick={goBack} />
           <div className="flex items-end justify-between gap-4">
             <div>
-              <h1 className="text-[18px] font-semibold tracking-tight">Design systems</h1>
+              <h1 className="text-title font-semibold tracking-tight">Design systems</h1>
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setGuided('describe')}>
               New
@@ -131,7 +131,7 @@ export function DesignPage() {
           {ordered.map((d) => (
             <DesignCard key={d.id} design={d} isDefault={d.id === defaultId} projects={projects.filter((p) => p.designId === d.id).length} onOpen={() => openDesign(d.id)} />
           ))}
-          <button onClick={() => setGuided('describe')} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-[12.5px] text-dim transition-colors hover:border-crimson-line hover:text-fg">
+          <button onClick={() => setGuided('describe')} className="flex min-h-[176px] flex-col items-center justify-center gap-1.5 rounded-[14px] border border-dashed border-line-strong text-ui text-dim transition-colors hover:border-crimson-line hover:text-fg">
             <Plus size={18} />
             New design system
           </button>
@@ -144,7 +144,7 @@ export function DesignPage() {
 /** Back to where the design page was opened from (it is not on the main nav). */
 function BackLink({ label, onClick }: { label: string; onClick(): void }) {
   return (
-    <button onClick={onClick} className="-ml-1.5 flex h-8 items-center gap-1 justify-self-start rounded-lg pl-1 pr-2 text-[12.5px] text-dim hover:bg-elev-2 hover:text-fg">
+    <button onClick={onClick} className="-ml-1.5 flex h-8 items-center gap-1 justify-self-start rounded-lg pl-1 pr-2 text-ui text-dim hover:bg-elev-2 hover:text-fg">
       <CaretLeft size={14} /> {label}
     </button>
   )
@@ -175,13 +175,13 @@ function DesignCard({ design, isDefault, projects, onOpen }: { design: DesignSys
         <span style={{ background: r.primary, color: r.onPrimary, borderRadius: Math.min(input.radius, 12), padding: '4px 10px', fontSize: 11.5, fontWeight: 600 }}>Action</span>
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3.5 py-2.5">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{design.name}</span>
+        <span className="min-w-0 flex-1 truncate text-ui font-medium">{design.name}</span>
         {isDefault && (
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-warn" title="New projects follow this system">
+          <span className="flex shrink-0 items-center gap-1 text-caption text-warn" title="New projects follow this system">
             <Star size={11} weight="fill" /> Default
           </span>
         )}
-        <span className="shrink-0 text-[11px] text-dim">{projects ? `${projects} project${projects === 1 ? '' : 's'}` : 'no projects'}</span>
+        <span className="shrink-0 text-caption text-dim">{projects ? `${projects} project${projects === 1 ? '' : 's'}` : 'no projects'}</span>
       </div>
     </button>
   )
@@ -297,10 +297,10 @@ function DesignEditor({
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5 mobile:px-3">
-        <button onClick={onBack} className="-ml-1.5 flex h-8 items-center gap-1 rounded-lg pl-1 pr-2 text-[12.5px] text-dim hover:bg-elev-2 hover:text-fg" aria-label="All design systems">
+        <button onClick={onBack} className="-ml-1.5 flex h-8 items-center gap-1 rounded-lg pl-1 pr-2 text-ui text-dim hover:bg-elev-2 hover:text-fg" aria-label="All design systems">
           <CaretLeft size={14} /> <span className="mobile:hidden">Designs</span>
         </button>
-        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-tight outline-none" />
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name" className="min-w-0 flex-1 bg-transparent text-section font-semibold tracking-tight outline-none" />
         <UseInProject designId={design.id} version={saves} forProjectId={forProjectId} />
         <Button icon={<Star size={14} weight={isDefault ? 'fill' : 'regular'} className={isDefault ? 'text-warn' : undefined} />} onClick={() => onDefault(!isDefault)} aria-pressed={isDefault} title={isDefault ? 'New projects follow this system. Click to stop.' : 'Make new projects follow this system'}>
           <span className="mobile:hidden">{isDefault ? 'Default' : 'Make default'}</span>

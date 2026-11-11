@@ -152,8 +152,8 @@ export function BottomSheet({
             </div>
             <div className="flex cursor-grab items-center gap-3 px-[22px] pb-3.5 pt-1.5 active:cursor-grabbing" {...dragProps}>
               <div className="min-w-0 flex-1">
-                <div className="text-[15px] font-semibold tracking-tight">{title}</div>
-                {description && <div className="text-[12px] text-dim">{description}</div>}
+                <div className="text-section font-semibold tracking-tight">{title}</div>
+                {description && <div className="text-caption text-dim">{description}</div>}
               </div>
               <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg" aria-label="Close">
                 <X size={15} />

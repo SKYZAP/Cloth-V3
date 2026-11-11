@@ -265,7 +265,7 @@ export function AutomationDetail({
               void flush()
             }}
             spellCheck={false}
-            className="min-w-[200px] flex-1 truncate border-b border-transparent bg-transparent py-0.5 text-[20px] font-semibold outline-none hover:border-line-strong focus:border-crimson-line focus-visible:outline-none"
+            className="min-w-[200px] flex-1 truncate border-b border-transparent bg-transparent py-0.5 text-title font-semibold outline-none hover:border-line-strong focus:border-crimson-line focus-visible:outline-none"
           />
           <span title={canTurnOn ? undefined : 'Add a schedule or a trigger first'}>
             <Switch
@@ -287,7 +287,7 @@ export function AutomationDetail({
             {busy ? 'Running…' : 'Run now'}
           </Button>
         </div>
-        <div className="mt-1 flex min-h-5 items-start gap-3 text-[12.5px]">
+        <div className="mt-1 flex min-h-5 items-start gap-3 text-ui">
           <p className="min-w-0 flex-1 text-dim">
             {first}
             {lastDone && (
@@ -297,7 +297,7 @@ export function AutomationDetail({
               </>
             )}
           </p>
-          <span aria-live="polite" className={clsx('max-w-[45%] shrink-0 text-right text-[12px]', saveState.kind === 'error' ? 'text-danger-hi' : 'text-dim')}>
+          <span aria-live="polite" className={clsx('max-w-[45%] shrink-0 text-right text-caption', saveState.kind === 'error' ? 'text-danger-hi' : 'text-dim')}>
             {saveState.kind === 'saving' ? 'Saving…' : saveState.kind === 'saved' ? 'Saved' : saveState.kind === 'error' ? saveState.text : ''}
           </span>
         </div>
@@ -308,7 +308,7 @@ export function AutomationDetail({
 
         <Section title="When it runs">
           <ScheduleSentence schedule={schedule} onChange={setSchedule} ok={upcoming.ok} />
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12.5px] text-dim">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-ui text-dim">
             <span className="mr-0.5">Also when</span>
             {(
               [
@@ -324,7 +324,7 @@ export function AutomationDetail({
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => setWatch(pressed ? null : newWatch(kind, configs, watch && watch.kind !== 'files' ? watch.everyMinutes : 15))}
-                  className={clsx('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors motion-reduce:transition-none', FOCUS, pressed ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line-strong text-muted hover:text-fg')}
+                  className={clsx('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-ui transition-colors motion-reduce:transition-none', FOCUS, pressed ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line-strong text-muted hover:text-fg')}
                 >
                   <Icon size={13} aria-hidden="true" />
                   {label}
@@ -336,7 +336,7 @@ export function AutomationDetail({
             <div className="mt-2 grid gap-2">
               <WatchPicker key={watch.kind} value={watch} onChange={setWatch} folder={workspace} configs={configs} status={status} />
               {watch.kind !== 'files' && savedWatch && savedWatch.kind === watch.kind && (
-                <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                <div className="flex flex-wrap items-center gap-2 text-caption">
                   <span className={checked?.error ? 'text-danger-hi' : 'text-dim'}>{checked?.error ? `Last check failed: ${checked.error}` : checked?.checkedAt ? `Last checked ${timeAgo(checked.checkedAt)}.` : 'Not checked yet.'}</span>
                   <Button size="sm" variant="ghost" className={FOCUS} icon={<RefreshCw size={12} aria-hidden="true" />} onClick={async () => setChecked((await attempt(() => api.workflows.checkNow(workflow.id))) ?? checked)}>
                     Check now
@@ -346,7 +346,7 @@ export function AutomationDetail({
             </div>
           )}
           {scheduledOn && upcoming.runs.length > 0 && (
-            <p className="mt-2 text-[12px] tabular-nums text-dim">
+            <p className="mt-2 text-caption tabular-nums text-dim">
               Coming up: <span className="font-medium text-muted">{shortWhen(upcoming.runs[0].getTime(), now)}</span>
               {upcoming.runs.slice(1).map((d) => `, ${shortWhen(d.getTime(), now)}`)}
             </p>
@@ -361,7 +361,7 @@ export function AutomationDetail({
                 {modelName && <Tag title={model?.modelId}>{`${modelName} · ${effortText}`}</Tag>}
               </>
             }>
-              <label className="grid gap-1.5 text-[12.5px] text-muted">
+              <label className="grid gap-1.5 text-ui text-muted">
                 Agent
                 <Select value={agentId ?? ''} onChange={(e) => setAgentId(e.target.value || null)} className="max-w-[320px]">
                   <option value="">Cloth</option>
@@ -380,7 +380,7 @@ export function AutomationDetail({
               <AccessPicker items={items} value={picked} onChange={setPicked} folder={!!workspace} commands={!!commands} title="Knowledge" />
             </UseRow>
             <UseRow id="folder" icon={FolderOpen} label="Folder" open={open} setOpen={setOpen} value={workspace ? <Tag mono title={workspace}>{workspace}</Tag> : <None />}>
-              <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+              <div className="flex flex-wrap items-center gap-2 text-ui">
                 <Button className={FOCUS} icon={<FolderOpen size={13} aria-hidden="true" />} onClick={() => void pickFolder()}>
                   {workspace ? `Change from ${folderName(workspace)}` : 'Choose a folder'}
                 </Button>
@@ -397,11 +397,11 @@ export function AutomationDetail({
             </UseRow>
             <div className="grid grid-cols-[28px_120px_minmax(0,1fr)] items-center gap-2.5 border-t border-line px-3.5 py-2.5 max-[700px]:grid-cols-[28px_minmax(0,1fr)] mobile:grid-cols-[28px_minmax(0,1fr)]">
               <Tile icon={Bell} />
-              <span className="text-[12.5px] text-muted max-[700px]:sr-only mobile:sr-only">Reports</span>
-              <span className="text-[12.5px] text-muted">A chat, a notification or a knowledge note</span>
+              <span className="text-ui text-muted max-[700px]:sr-only mobile:sr-only">Reports</span>
+              <span className="text-ui text-muted">A chat, a notification or a knowledge note</span>
             </div>
           </div>
-          <p className="mt-2 flex items-start gap-2 text-[12px] text-dim">
+          <p className="mt-2 flex items-start gap-2 text-caption text-dim">
             <ShieldCheck size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
             <span>Risky actions are refused: nobody is there to approve them.</span>
           </p>
@@ -418,11 +418,11 @@ export function AutomationDetail({
                   <>
                     <OutcomeIcon outcome={outcome} />
                     <span className="sr-only">{OUTCOME_WORD[outcome]}:</span>
-                    <span className="truncate text-[12.5px] tabular-nums text-muted">{r.status === 'running' ? 'Now' : cap(runWhen(r.startedAt, now))}</span>
-                    <span className={clsx('truncate text-[12.5px] max-[700px]:hidden mobile:hidden', outcome === 'failed' ? 'text-danger-hi' : 'text-dim')} title={summary}>
+                    <span className="truncate text-ui tabular-nums text-muted">{r.status === 'running' ? 'Now' : cap(runWhen(r.startedAt, now))}</span>
+                    <span className={clsx('truncate text-ui max-[700px]:hidden mobile:hidden', outcome === 'failed' ? 'text-danger-hi' : 'text-dim')} title={summary}>
                       {summary}
                     </span>
-                    <span className="whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-dim">{formatDuration((r.finishedAt ?? now) - r.startedAt)}</span>
+                    <span className="whitespace-nowrap text-right font-mono text-caption tabular-nums text-dim">{formatDuration((r.finishedAt ?? now) - r.startedAt)}</span>
                   </>
                 )
                 const cls = 'grid min-h-10 w-full grid-cols-[14px_150px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-2 text-left max-[700px]:grid-cols-[14px_minmax(0,1fr)_auto] mobile:grid-cols-[14px_minmax(0,1fr)_auto]'
@@ -440,14 +440,14 @@ export function AutomationDetail({
               })}
             </ul>
           ) : (
-            <p className="text-[12.5px] text-dim">No runs yet.</p>
+            <p className="text-ui text-dim">No runs yet.</p>
           )}
-          <button type="button" onClick={() => openChat(reported)} className={clsx('mt-1 inline-flex h-8 items-center rounded text-[12px] text-dim underline-offset-2 hover:text-fg hover:underline', FOCUS)}>
+          <button type="button" onClick={() => openChat(reported)} className={clsx('mt-1 inline-flex h-8 items-center rounded text-caption text-dim underline-offset-2 hover:text-fg hover:underline', FOCUS)}>
             Open all runs in the Automation project
           </button>
         </Section>
 
-        <div className="mt-[30px] flex flex-wrap items-center gap-2.5 border-t border-line pt-4 text-[12px] text-dim">
+        <div className="mt-[30px] flex flex-wrap items-center gap-2.5 border-t border-line pt-4 text-caption text-dim">
           <FooterButton onClick={() => void duplicate()}>Duplicate</FooterButton>
           <span aria-hidden="true">·</span>
           <FooterButton onClick={async () => (await flush()) && setExportOpen(true)}>Export as app</FooterButton>
@@ -465,9 +465,9 @@ export function AutomationDetail({
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="mt-[26px]">
-      <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold">
+      <h2 className="mb-2 flex items-baseline gap-2 text-ui font-semibold">
         {title}
-        {hint && <small className="text-[12px] font-normal tabular-nums text-dim">{hint}</small>}
+        {hint && <small className="text-caption font-normal tabular-nums text-dim">{hint}</small>}
       </h2>
       {children}
     </section>
@@ -476,7 +476,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 function FooterButton({ danger, onClick, children }: { danger?: boolean; onClick(): void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className={clsx('h-8 rounded px-1 text-[12.5px] text-dim', danger ? 'hover:text-danger-hi' : 'hover:text-fg', FOCUS)}>
+    <button type="button" onClick={onClick} className={clsx('h-8 rounded px-1 text-ui text-dim', danger ? 'hover:text-danger-hi' : 'hover:text-fg', FOCUS)}>
       {children}
     </button>
   )
@@ -492,13 +492,13 @@ function Tile({ icon: Icon }: { icon: typeof Bot }) {
 
 function Tag({ tone, mono, title, children }: { tone?: 'agent'; mono?: boolean; title?: string; children: ReactNode }) {
   return (
-    <span title={title ?? (typeof children === 'string' ? children : undefined)} className={clsx('max-w-full truncate rounded-md border px-[7px] py-px text-[12px]', tone === 'agent' ? 'border-transparent bg-agent-soft text-agent' : 'border-line', mono && 'font-mono text-[11.5px]')}>
+    <span title={title ?? (typeof children === 'string' ? children : undefined)} className={clsx('max-w-full truncate rounded-md border px-[7px] py-px text-caption', tone === 'agent' ? 'border-transparent bg-agent-soft text-agent' : 'border-line', mono && 'font-mono text-caption')}>
       {children}
     </span>
   )
 }
 
-const None = () => <span className="text-[12.5px] text-dim">None</span>
+const None = () => <span className="text-ui text-dim">None</span>
 
 function Tags({ items }: { items: string[] }) {
   if (!items.length) return <None />
@@ -521,11 +521,11 @@ function UseRow({ id, icon, label, value, open, setOpen, children }: { id: Row; 
     <div className="border-line [&+&]:border-t">
       <div className="grid grid-cols-[28px_120px_minmax(0,1fr)_auto] items-center gap-2.5 px-3.5 py-2 max-[700px]:grid-cols-[28px_minmax(0,1fr)_auto] mobile:grid-cols-[28px_minmax(0,1fr)_auto]">
         <Tile icon={icon} />
-        <span className="text-[12.5px] text-muted max-[700px]:sr-only mobile:sr-only">{label}</span>
+        <span className="text-ui text-muted max-[700px]:sr-only mobile:sr-only">{label}</span>
         <span className="flex min-w-0 flex-wrap items-center gap-[5px]">
           {value}
         </span>
-        <button type="button" aria-expanded={expanded} aria-controls={panel} aria-label={`${expanded ? 'Close' : 'Change'} ${label.toLowerCase()}`} onClick={() => setOpen(expanded ? null : id)} className={clsx('h-8 rounded px-2 text-[12px]', expanded ? 'text-fg' : 'text-dim hover:text-fg', FOCUS)}>
+        <button type="button" aria-expanded={expanded} aria-controls={panel} aria-label={`${expanded ? 'Close' : 'Change'} ${label.toLowerCase()}`} onClick={() => setOpen(expanded ? null : id)} className={clsx('h-8 rounded px-2 text-caption', expanded ? 'text-fg' : 'text-dim hover:text-fg', FOCUS)}>
           {expanded ? 'Done' : 'Change'}
         </button>
       </div>
@@ -538,14 +538,14 @@ function UseRow({ id, icon, label, value, open, setOpen, children }: { id: Row; 
   )
 }
 
-const pickClass = clsx('inline-flex h-8 rounded-lg border border-line-strong bg-elev-2 px-2.5 align-middle text-[13px] hover:border-crimson-line', FOCUS)
+const pickClass = clsx('inline-flex h-8 rounded-lg border border-line-strong bg-elev-2 px-2.5 align-middle text-ui hover:border-crimson-line', FOCUS)
 
 /** "Every weekday at 8:30", with the cadence, day and time as inline pickers. */
 function ScheduleSentence({ schedule, onChange, ok }: { schedule: Schedule; onChange(s: Schedule): void; ok: boolean }) {
   const timed = schedule.cadence === 'daily' || schedule.cadence === 'weekdays' || schedule.cadence === 'weekly'
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-[12px] border border-line bg-panel px-3.5 py-3 text-[14px]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-[12px] border border-line bg-panel px-3.5 py-3 text-body">
         <Select aria-label="How often" value={schedule.cadence} onChange={(e) => onChange({ ...schedule, cadence: e.target.value as Cadence })} className={clsx(pickClass, 'w-auto pr-8')}>
           {CADENCES.map((c) => (
             <option key={c.value} value={c.value}>
@@ -586,12 +586,12 @@ function ScheduleSentence({ schedule, onChange, ok }: { schedule: Schedule; onCh
         )}
       </div>
       {schedule.cadence === 'custom' && ok && (
-        <p id="cron-hint" className="mt-1.5 text-[12px] text-dim">
+        <p id="cron-hint" className="mt-1.5 text-caption text-dim">
           Five fields: minute hour day month weekday
         </p>
       )}
       {!ok && (
-        <p id="cron-error" className="mt-1.5 text-[12px] text-danger-hi">
+        <p id="cron-error" className="mt-1.5 text-caption text-danger-hi">
           That isn’t a valid cron schedule. Five fields: minute, hour, day of month, month, day of week (like 0 9 * * 1-5).
         </p>
       )}

@@ -93,11 +93,11 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
           {results && !searching ? `${shown.length} models` : ''}
         </p>
         {error ? (
-          <p className="px-1 py-6 text-[12.5px] text-danger-hi">
+          <p className="px-1 py-6 text-ui text-danger-hi">
             {error}. Check the connection and type again to retry.
           </p>
         ) : results && !shown.length ? (
-          <p className="px-1 py-6 text-[12.5px] text-dim">
+          <p className="px-1 py-6 text-ui text-dim">
             {results.length ? 'Nothing here fits this filter. Try “All”, or a smaller model.' : `No GGUF models match “${query}”.`}
           </p>
         ) : (
@@ -114,13 +114,13 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold" translate="no">
+                    <span className="min-w-0 flex-1 truncate text-ui font-semibold" translate="no">
                       {m.name}
                     </span>
                     {/* The filter already says it: only show the fit where it adds something. */}
                     {fit && fit !== filter && <FitPill fit={fit} />}
                   </span>
-                  <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-dim">
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-dim">
                     <span className="truncate" translate="no">
                       {m.author}
                     </span>
@@ -150,7 +150,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
               </li>
             ))}
             {!results && !error && (
-              <li className="flex items-center gap-2 px-3 py-6 text-[12.5px] text-dim">
+              <li className="flex items-center gap-2 px-3 py-6 text-ui text-dim">
                 <Spinner size={13} /> Loading popular models…
               </li>
             )}
@@ -180,7 +180,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
             />
           </label>
           {hardware && (
-            <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-muted">
+            <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted">
               <Monitor size={14} className="shrink-0 text-dim" aria-hidden="true" />
               <span className="truncate">This PC: {hardwareLine(hardware)}</span>
             </span>
@@ -196,7 +196,7 @@ export function AddModelModal({ open, hardware, onClose, onAdded }: { open: bool
               {picked ? (
                 <ModelDetail key={picked.id} model={picked} hardware={hardware} onAdded={onAdded} />
               ) : (
-                <p className="m-auto max-w-[260px] text-center text-[12.5px] text-dim">Choose a model to see its sizes and how each fits this PC.</p>
+                <p className="m-auto max-w-[260px] text-center text-ui text-dim">Choose a model to see its sizes and how each fits this PC.</p>
               )}
             </div>
           </div>
@@ -246,10 +246,10 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
           <Button size="sm" variant="ghost" icon={<ArrowLeft size={13} />} onClick={onBack} aria-label="Back to results" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-semibold" translate="no">
+          <div className="truncate text-body font-semibold" translate="no">
             {model.name}
           </div>
-          <div className="mt-0.5 flex flex-wrap gap-x-3 text-[12px] text-dim">
+          <div className="mt-0.5 flex flex-wrap gap-x-3 text-caption text-dim">
             {paramCount(model.params) && <span>{paramCount(model.params)} parameters</span>}
             {model.contextLength && <span>{tokens(model.contextLength)} context</span>}
             {model.reasoning && <span>{model.reasoning === 'levels' ? 'Reasoning levels' : 'Thinking on or off'}</span>}
@@ -262,21 +262,21 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
         {error ? (
-          <div className="grid gap-2 py-4 text-[12.5px]">
+          <div className="grid gap-2 py-4 text-ui">
             <p className="text-danger-hi">{error}</p>
             <Button size="sm" className="w-fit" onClick={load}>
               Try again
             </Button>
           </div>
         ) : !files ? (
-          <p className="flex items-center gap-2 py-4 text-[12.5px] text-dim">
+          <p className="flex items-center gap-2 py-4 text-ui text-dim">
             <Spinner size={13} /> Reading the file list…
           </p>
         ) : !files.groups.length ? (
-          <p className="py-4 text-[12.5px] text-dim">This repository has no GGUF files Cloth can tell apart. Download one yourself and choose it from disk.</p>
+          <p className="py-4 text-ui text-dim">This repository has no GGUF files Cloth can tell apart. Download one yourself and choose it from disk.</p>
         ) : (
           <fieldset className="grid gap-1">
-            <legend className="mb-2 text-[12.5px] font-semibold">Size</legend>
+            <legend className="mb-2 text-ui font-semibold">Size</legend>
             {files.groups.map((g) => (
               <label
                 key={g.quant}
@@ -288,12 +288,12 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
                 <input type="radio" name="quant" value={g.quant} checked={quant === g.quant} onChange={() => setQuant(g.quant)} className="accent-[var(--color-crimson)]" />
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
-                    <span className="font-mono text-[12.5px] font-medium" translate="no">
+                    <span className="font-mono text-ui font-medium" translate="no">
                       {g.quant}
                     </span>
-                    {g.recommended && <span className="rounded border border-crimson-line px-1.5 py-px text-[10.5px] font-medium text-crimson-text">Recommended</span>}
+                    {g.recommended && <span className="rounded border border-crimson-line px-1.5 py-px text-micro font-medium text-crimson-text">Recommended</span>}
                   </span>
-                  <span className="block text-[11.5px] tabular-nums text-dim">
+                  <span className="block text-caption tabular-nums text-dim">
                     {fileSize(g.size)} download{g.files.length > 1 ? ` in ${g.files.length} parts` : ''}, needs about {g.needGB} GB
                   </span>
                 </span>
@@ -304,11 +304,11 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
         )}
 
         {files && files.projectors.length > 0 && (
-          <label className="mt-3 flex items-start gap-2.5 rounded-[10px] px-3 py-2 text-[12.5px] hover:bg-elev-2">
+          <label className="mt-3 flex items-start gap-2.5 rounded-[10px] px-3 py-2 text-ui hover:bg-elev-2">
             <input type="checkbox" checked={!!projector} onChange={(e) => setProjector(e.target.checked ? ([...files.projectors].sort((a, b) => a.size - b.size)[0]?.path ?? null) : null)} className="mt-0.5 accent-[var(--color-crimson)]" />
             <span>
               Image input
-              <span className="block text-[11.5px] text-dim">
+              <span className="block text-caption text-dim">
                 Adds the vision file ({fileSize(files.projectors.find((p) => p.path === projector)?.size ?? files.projectors[0].size)}) so chats can send it pictures.
               </span>
             </span>
@@ -338,7 +338,7 @@ function MemoryPreview({ need, hardware }: { need: number; hardware: Hardware })
   const spill = gpu ? need - cap * 0.95 : 0
   return (
     <div className="grid gap-1.5">
-      <div className="flex items-baseline justify-between gap-2 text-[12px]">
+      <div className="flex items-baseline justify-between gap-2 text-caption">
         <span className="text-muted">With an 8K context</span>
         <span className="tabular-nums text-dim">
           {(need / GB).toFixed(1)} of {Math.round(cap / GB)} GB {gpu ? 'on the GPU' : 'memory'}
@@ -347,7 +347,7 @@ function MemoryPreview({ need, hardware }: { need: number; hardware: Hardware })
       <div className="h-2 overflow-hidden rounded-full bg-line" role="meter" aria-label="Memory needed" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
         <div className={clsx('h-full rounded-full', spill > 0 ? 'bg-warn' : 'bg-ok')} style={{ width: `${pct}%` }} />
       </div>
-      {spill > 0 && <p className="text-[11.5px] text-warn">About {(spill / GB).toFixed(1)} GB goes to system memory, which is several times slower.</p>}
+      {spill > 0 && <p className="text-caption text-warn">About {(spill / GB).toFixed(1)} GB goes to system memory, which is several times slower.</p>}
     </div>
   )
 }

@@ -132,15 +132,15 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
           <Icon size={14} />
         </span>
-        <span className="shrink-0 font-mono text-[12px] font-medium text-fg">{trace.subagent ? 'subagent' : trace.name}</span>
+        <span className="shrink-0 font-mono text-caption font-medium text-fg">{trace.subagent ? 'subagent' : trace.name}</span>
         {trace.subagent && (
-          <span title={runAbout(trace.subagent)} className={clsx('shrink-0 text-[12px]', trace.subagent.agent ? 'text-agent' : 'text-fg')}>
+          <span title={runAbout(trace.subagent)} className={clsx('shrink-0 text-caption', trace.subagent.agent ? 'text-agent' : 'text-fg')}>
             {runName(trace.subagent)}
           </span>
         )}
-        <span className={clsx('min-w-0 flex-1 truncate text-[12px]', trace.name === 'skill_use' ? 'font-mono text-skill' : trace.name === 'agent_mention' ? 'text-agent' : 'text-dim')}>{summarize(trace)}</span>
-        <span className="flex shrink-0 items-center gap-2 font-mono text-[11px] text-dim">
-          {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
+        <span className={clsx('min-w-0 flex-1 truncate text-caption', trace.name === 'skill_use' ? 'font-mono text-skill' : trace.name === 'agent_mention' ? 'text-agent' : 'text-dim')}>{summarize(trace)}</span>
+        <span className="flex shrink-0 items-center gap-2 font-mono text-caption text-dim">
+          {awaiting && <span className="rounded-full bg-warn/10 px-2 py-px text-micro text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>}
           {refs.length > 0 && <span>{refs.length} refs</span>}
           {trace.durationMs !== null && <span>{duration(trace.durationMs)}</span>}
           {trace.status === 'running' ? (
@@ -183,7 +183,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
       {changes.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pb-2.5 pl-12 pr-3">
           {changes.map((c) => (
-            <span key={c.path} className={clsx('flex items-center gap-1.5 rounded-full border border-line bg-elev py-0.5 pl-2 pr-2.5 text-[11.5px]', c.undone && 'opacity-50 line-through')}>
+            <span key={c.path} className={clsx('flex items-center gap-1.5 rounded-full border border-line bg-elev py-0.5 pl-2 pr-2.5 text-caption', c.undone && 'opacity-50 line-through')}>
               {c.kind === 'create' ? <FilePlus size={12} className="text-ok" /> : <NotePencil size={12} className="text-muted" />}
               <span className="font-mono text-muted">{c.path}</span>
               <DiffStat added={c.added} removed={c.removed} />
@@ -191,7 +191,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
           ))}
           <div className="flex-1" />
           {undone ? (
-            <span className="text-[11px] text-dim">undone</span>
+            <span className="text-caption text-dim">undone</span>
           ) : (
             onUndo && (
               <button
@@ -204,7 +204,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
                     setUndoing(false)
                   }
                 }}
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-dim transition-colors hover:bg-elev-2 hover:text-fg disabled:opacity-50"
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-dim transition-colors hover:bg-elev-2 hover:text-fg disabled:opacity-50"
                 title="Restore the files as they were before this step"
               >
                 <ArrowCounterClockwise size={12} />
@@ -234,7 +234,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
                   transition={{ delay: i * 0.05, duration: 0.3 }}
                   title={r.source}
                   onClick={() => /^https?:\/\//.test(r.source) && void api.app.openExternal(r.source)}
-                  className="flex max-w-[220px] shrink-0 items-center gap-1.5 rounded-full border border-line bg-elev py-1 pl-1 pr-2.5 text-[11.5px] text-muted transition-colors hover:border-line-strong hover:text-fg"
+                  className="flex max-w-[220px] shrink-0 items-center gap-1.5 rounded-full border border-line bg-elev py-1 pl-1 pr-2.5 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg"
                 >
                   <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-elev-2 text-[9px] text-dim">{i + 1}</span>
                   <span className="truncate">{refLabel(r)}</span>
@@ -263,7 +263,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
                 ))
               ) : (
                 <Section label="Arguments">
-                  <pre className="selectable max-h-48 overflow-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px] text-muted">{pretty(trace.args)}</pre>
+                  <pre className="selectable max-h-48 overflow-auto rounded-lg border border-line bg-bg p-2.5 font-mono text-caption text-muted">{pretty(trace.args)}</pre>
                 </Section>
               )}
               {refs.length > 0 ? (
@@ -276,7 +276,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
                 </Section>
               ) : (
                 <Section label={trace.status === 'error' ? 'Error' : 'Result'}>
-                  <pre className={clsx('selectable max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-[11px]', trace.status === 'error' ? 'text-danger-hi' : 'text-muted')}>
+                  <pre className={clsx('selectable max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-bg p-2.5 font-mono text-caption', trace.status === 'error' ? 'text-danger-hi' : 'text-muted')}>
                     {trace.result || (trace.status === 'running' ? 'Running…' : '(empty)')}
                   </pre>
                 </Section>
@@ -299,12 +299,12 @@ function SubagentBody({ trace }: { trace: Trace }) {
   return (
     <div className="pb-3 pl-12 pr-3">
       <div className="relative space-y-1 border-l border-line pl-3">
-        {steps.length > shown.length && <div className="text-[11px] text-dim">… {steps.length - shown.length} earlier step{steps.length - shown.length === 1 ? '' : 's'}</div>}
+        {steps.length > shown.length && <div className="text-caption text-dim">… {steps.length - shown.length} earlier step{steps.length - shown.length === 1 ? '' : 's'}</div>}
         <AnimatePresence initial={false}>
           {shown.map((s) => {
             const I = ICONS[s.name] ?? Wrench
             return (
-              <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-[11.5px]">
+              <motion.div key={s.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-caption">
                 <I size={12} className="shrink-0 text-dim" />
                 <span className="shrink-0 font-mono text-muted">{s.name}</span>
                 <span className="min-w-0 flex-1 truncate text-dim">{summarize(s)}</span>
@@ -320,7 +320,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
           })}
         </AnimatePresence>
         {run.running && (
-          <div className="flex items-center gap-2 pt-0.5 text-[11.5px] text-dim">
+          <div className="flex items-center gap-2 pt-0.5 text-caption text-dim">
             <span className="shimmer-text">{steps.length ? 'Working' : 'Starting'}</span>
             {run.current && (
               <span className="min-w-0 truncate">
@@ -332,7 +332,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
       </div>
       {!run.running && report && (
         <div className="mt-2.5 rounded-[10px] border border-line bg-bg px-3 py-2">
-          <div className="mb-1 flex items-center gap-2 text-[12px] font-medium text-dim">
+          <div className="mb-1 flex items-center gap-2 text-caption font-medium text-dim">
             Report
             <span className="font-normal normal-case tracking-normal">
               {steps.length} step{steps.length === 1 ? '' : 's'}
@@ -344,7 +344,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
               {full ? 'less' : 'more'}
             </button>
           </div>
-          <div className={clsx('text-[12.5px]', !full && 'line-clamp-4')}>
+          <div className={clsx('text-ui', !full && 'line-clamp-4')}>
             <Markdown text={report} />
           </div>
         </div>
@@ -356,7 +356,7 @@ function SubagentBody({ trace }: { trace: Trace }) {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 text-[12px] font-medium text-dim">{label}</div>
+      <div className="mb-1 text-caption font-medium text-dim">{label}</div>
       {children}
     </div>
   )
@@ -368,29 +368,29 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
   return (
     <div className="rounded-[10px] border border-line bg-bg px-3 py-2.5">
       <div className="flex items-start gap-2">
-        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-crimson-soft px-1 text-[10px] font-semibold text-crimson-text">{n}</span>}
+        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-crimson-soft px-1 text-micro font-semibold text-crimson-text">{n}</span>}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {isUrl ? <GlobeHemisphereWest size={12} className="shrink-0 text-dim" /> : <FileText size={12} className="shrink-0 text-dim" />}
-            <span className="truncate text-[12.5px] font-medium">{hit.title}</span>
+            <span className="truncate text-ui font-medium">{hit.title}</span>
           </div>
-          {hit.headingPath && <div className="truncate text-[11px] text-dim">{hit.headingPath}</div>}
+          {hit.headingPath && <div className="truncate text-caption text-dim">{hit.headingPath}</div>}
         </div>
-        <div className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-dim">
+        <div className="flex shrink-0 items-center gap-1 font-mono text-micro text-dim">
           {hit.bm25Rank !== null && <span title="BM25 rank">kw#{hit.bm25Rank}</span>}
           {hit.vectorRank !== null && <span title="Vector rank">vec#{hit.vectorRank}</span>}
           <span className="text-muted">{hit.score.toFixed(2)}</span>
         </div>
       </div>
-      <div className={clsx('selectable mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-muted', !expanded && 'line-clamp-3')} onClick={() => setExpanded(!expanded)}>
+      <div className={clsx('selectable mt-1.5 whitespace-pre-wrap text-caption leading-relaxed text-muted', !expanded && 'line-clamp-3')} onClick={() => setExpanded(!expanded)}>
         {hit.text}
       </div>
       {isUrl ? (
-        <button className="mt-1 block max-w-full truncate text-left font-mono text-[10.5px] text-dim hover:text-crimson-hi" title={hit.source} onClick={() => void api.app.openExternal(hit.source)}>
+        <button className="mt-1 block max-w-full truncate text-left font-mono text-micro text-dim hover:text-crimson-hi" title={hit.source} onClick={() => void api.app.openExternal(hit.source)}>
           {hit.source}
         </button>
       ) : (
-        <div className="mt-1 truncate font-mono text-[10.5px] text-dim" title={hit.source}>
+        <div className="mt-1 truncate font-mono text-micro text-dim" title={hit.source}>
           {hit.source}
         </div>
       )}

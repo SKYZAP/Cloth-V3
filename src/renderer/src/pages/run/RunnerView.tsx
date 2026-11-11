@@ -49,7 +49,7 @@ export function RunnerView({
   }
   const ready = !!runner.serverPath && !!runner.modelPath
 
-  const lock = locked && <span className="text-[12px] text-dim">Stop it to change</span>
+  const lock = locked && <span className="text-caption text-dim">Stop it to change</span>
   // Wide enough: settings on the left, the log filling the height on the right.
   return (
     <div className="@container">
@@ -76,7 +76,7 @@ export function RunnerView({
               <Row label="GPU layers">
                 <div className="flex items-center gap-2">
                   <CommitInput aria-label="GPU layers" type="number" inputMode="numeric" min={0} className="w-[90px]" value={String(runner.gpuLayers)} disabled={locked} onCommit={(v) => (v.trim() === '' ? Promise.resolve(false) : save({ gpuLayers: Number(v) }))} />
-                  <span className="text-[12px] text-dim">{runner.gpuLayers >= 99 ? 'All on the GPU' : runner.gpuLayers === 0 ? 'All on the CPU' : 'The rest run on the CPU'}</span>
+                  <span className="text-caption text-dim">{runner.gpuLayers >= 99 ? 'All on the GPU' : runner.gpuLayers === 0 ? 'All on the CPU' : 'The rest run on the CPU'}</span>
                 </div>
               </Row>
               <Row label="Flash attention">
@@ -122,23 +122,23 @@ function Header({ runner, status, meta, ready }: { runner: Runner; status: Runne
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <div className="min-w-[200px] flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2.5">
-          <h2 className="text-[17px] font-semibold tracking-tight" translate="no">
+          <h2 className="text-section font-semibold tracking-tight" translate="no">
             {runner.name}
           </h2>
-          {status.state === 'running' && <span className="text-[12.5px] text-ok">Running</span>}
+          {status.state === 'running' && <span className="text-ui text-ok">Running</span>}
           {status.state === 'starting' && (
-            <span className="flex items-center gap-1.5 text-[12.5px] text-warn">
+            <span className="flex items-center gap-1.5 text-ui text-warn">
               <Spinner size={12} className="text-warn" />
               Starting
             </span>
           )}
-          {status.state === 'error' && <span className="text-[12.5px] text-danger-hi">Stopped with an error</span>}
-          {status.state === 'stopped' && <span className="text-[12.5px] text-dim">Stopped</span>}
+          {status.state === 'error' && <span className="text-ui text-danger-hi">Stopped with an error</span>}
+          {status.state === 'stopped' && <span className="text-ui text-dim">Stopped</span>}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 text-[12px] text-dim">
+        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 text-caption text-dim">
           {about && <span translate="no">{about}</span>}
           {running && status.url && (
-            <span className="selectable font-mono text-[11.5px]" translate="no">
+            <span className="selectable font-mono text-caption" translate="no">
               {status.url}
             </span>
           )}
@@ -159,7 +159,7 @@ function Header({ runner, status, meta, ready }: { runner: Runner; status: Runne
           Start
         </Button>
       )}
-      {status.state === 'error' && status.error && <p className="selectable basis-full whitespace-pre-wrap break-words text-[12px] text-danger-hi">{status.error}</p>}
+      {status.state === 'error' && status.error && <p className="selectable basis-full whitespace-pre-wrap break-words text-caption text-danger-hi">{status.error}</p>}
     </div>
   )
 }
@@ -214,7 +214,7 @@ function Setup({
         {!runner.serverPath && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Warning size={15} className="shrink-0 text-warn" aria-hidden="true" />
-            <span className="min-w-0 flex-1 text-[12.5px]">{needsPrism ? "Bonsai needs PrismML's llama.cpp." : 'Choose which llama.cpp runs this model.'}</span>
+            <span className="min-w-0 flex-1 text-ui">{needsPrism ? "Bonsai needs PrismML's llama.cpp." : 'Choose which llama.cpp runs this model.'}</span>
             {usable ? (
               <Button size="sm" variant="primary" disabled={locked} onClick={() => void save({ serverPath: usable.path })}>
                 Use {FLAVOUR[usable.flavour].name} <span translate="no">{tagLabel(usable.tag)}</span>
@@ -232,7 +232,7 @@ function Setup({
           !runner.modelPath && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <Warning size={15} className="shrink-0 text-warn" aria-hidden="true" />
-              <span className="min-w-0 flex-1 text-[12.5px]">
+              <span className="min-w-0 flex-1 text-ui">
                 {download?.state === 'error' ? `The download failed: ${download.error ?? 'unknown error'}.` : runner.source ? "The model's download didn't finish." : 'No model file yet.'}
                 {runner.source && !runner.builtin && <span className="text-dim"> Delete this and add the model again to resume; finished files are kept.</span>}
               </span>
@@ -270,7 +270,7 @@ function usage(meta: ModelMeta | null, hardware: Hardware | null, runner: Runner
 function MemoryMeter({ meta, hardware, runner, context }: { meta: ModelMeta | null; hardware: Hardware | null; runner: Runner; context: number }) {
   if (!meta || !hardware) {
     return (
-      <p className="flex items-center gap-2 text-[12px] text-dim">
+      <p className="flex items-center gap-2 text-caption text-dim">
         <Spinner size={12} /> Reading the model…
       </p>
     )
@@ -286,7 +286,7 @@ function MemoryMeter({ meta, hardware, runner, context }: { meta: ModelMeta | nu
   const over = u.total > u.cap * 0.95
   return (
     <div className="grid gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[12px]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-caption">
         <span className="font-medium">
           {(u.total / GB).toFixed(1)} GB <span className="font-normal text-dim">of {(u.cap / GB).toFixed(0)} GB {u.gpu ? `on the ${u.gpu.name}` : 'system memory'}</span>
         </span>
@@ -298,7 +298,7 @@ function MemoryMeter({ meta, hardware, runner, context }: { meta: ModelMeta | nu
         ))}
         {u.total > u.cap && <div className="absolute inset-y-0 w-px bg-fg" style={{ left: `${(u.cap / scale) * 100}%` }} aria-hidden="true" />}
       </div>
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-dim">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-dim">
         {parts.map((p) => (
           <li key={p.label} className="flex items-center gap-1.5 tabular-nums">
             <span className={clsx('h-2 w-2 rounded-sm', p.color)} aria-hidden="true" />
@@ -332,7 +332,7 @@ function ContextWindow({
   const { maxFit, gpu } = usage(meta, hardware, runner, value)
   return (
     <ContextSlider id={`ctx-${runner.id}`} value={value} saved={runner.contextSize} max={trained} disabled={locked} onDraft={onDraft} onCommit={onCommit}>
-      <p className="text-[12px] text-dim">
+      <p className="text-caption text-dim">
         {trained && <>Trained for {tokens(trained)}. </>}
         {maxFit !== null &&
           gpu &&
@@ -363,7 +363,7 @@ function Reasoning({ kind, value, locked, onChange }: { kind: NonNullable<Reason
   const items = kind === 'levels' ? LEVELS : TOGGLE
   const current = items.some((i) => i.value === value) ? value : 'default'
   return (
-    <Section title="Reasoning" aside={locked && <span className="text-[12px] text-dim">Stop it to change</span>}>
+    <Section title="Reasoning" aside={locked && <span className="text-caption text-dim">Stop it to change</span>}>
       <fieldset disabled={locked} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3 disabled:opacity-60">
         <legend className="sr-only">Reasoning</legend>
         <Segmented value={current} onChange={onChange} items={items} />
@@ -394,14 +394,14 @@ function Advanced({ runner, locked, save, onRemoved }: { runner: Runner; locked:
 
   return (
     <details className="group rounded-[12px] border border-line bg-elev">
-      <summary className="flex min-h-[38px] cursor-default list-none items-center gap-2 rounded-[12px] px-3.5 py-2 text-[12.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-[38px] cursor-default list-none items-center gap-2 rounded-[12px] px-3.5 py-2 text-ui font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
         <CaretRight size={12} className="text-dim transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
         <span className="flex-1">Advanced</span>
       </summary>
       <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 border-t border-line px-3.5 py-3 mobile:grid-cols-1">
         <Row label="Name">
           {builtin ? (
-            <span className="text-[12.5px]" translate="no">
+            <span className="text-ui" translate="no">
               {runner.name}
             </span>
           ) : (
@@ -433,7 +433,7 @@ function Advanced({ runner, locked, save, onRemoved }: { runner: Runner; locked:
                 ['minP', 'min-p']
               ] as const
             ).map(([field, label]) => (
-              <label key={field} className="flex items-center gap-1.5 text-[11.5px] text-dim">
+              <label key={field} className="flex items-center gap-1.5 text-caption text-dim">
                 {label}
                 <CommitInput type="number" step="any" className="w-[72px]" placeholder="default" value={runner.sampling[field] === undefined ? '' : String(runner.sampling[field])} disabled={locked} onCommit={sample(field)} />
               </label>

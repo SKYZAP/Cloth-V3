@@ -89,7 +89,7 @@ export function SkillsPage() {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="min-w-[120px] flex-1 text-[18px] font-semibold tracking-tight">Skills</h1>
+            <h1 className="min-w-[120px] flex-1 text-title font-semibold tracking-tight">Skills</h1>
             <div className="relative w-[300px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
               <Input className="pl-7" type="search" aria-label="Search skills" placeholder={`Search ${skills.length} skills…`} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -116,7 +116,7 @@ export function SkillsPage() {
                   aria-pressed={filter === value}
                   onClick={() => setFilter(value)}
                   className={clsx(
-                    'flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line',
+                    'flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-caption transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line',
                     filter === value ? 'border-line-strong bg-elev text-fg' : 'border-line text-muted hover:text-fg'
                   )}
                 >
@@ -129,7 +129,7 @@ export function SkillsPage() {
           {shelves.map((shelf) => (
             <SkillShelf key={shelf.key} shelf={shelf} used={used} most={most} modes={modes} onOpen={setOpenName} onMode={(names, on) => void setMode(names, on)} onUpdate={updateSet} onRemove={(s) => void removeSet(s)} />
           ))}
-          {loaded && skills.length > 0 && !shelves.length && <p className="py-10 text-center text-[12.5px] text-dim">No skills match{q ? ` “${query.trim()}”` : ''}.</p>}
+          {loaded && skills.length > 0 && !shelves.length && <p className="py-10 text-center text-ui text-dim">No skills match{q ? ` “${query.trim()}”` : ''}.</p>}
           {loaded && !skills.length && (
             <div className="rounded-[14px] border border-dashed border-line-strong">
               <Empty
@@ -403,29 +403,29 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
           {searching && <Spinner size={13} className="absolute right-2.5 top-2.5" />}
         </div>
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-          {error && <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{error}</div>}
+          {error && <div className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-caption text-danger-hi">{error}</div>}
           {!results && !error && (
             <div className="p-2">
-              <div className="mb-2 text-[11.5px] text-dim">Browse the open agent-skills registry. Popular topics:</div>
+              <div className="mb-2 text-caption text-dim">Browse the open agent-skills registry. Popular topics:</div>
               <div className="flex flex-wrap gap-1.5">
                 {REGISTRY_TOPICS.map((t) => (
-                  <button key={t} onClick={() => setQuery(t)} className="rounded-full border border-line px-2.5 py-1 text-[12px] text-muted hover:border-crimson-line hover:text-fg">
+                  <button key={t} onClick={() => setQuery(t)} className="rounded-full border border-line px-2.5 py-1 text-caption text-muted hover:border-crimson-line hover:text-fg">
                     {t}
                   </button>
                 ))}
               </div>
             </div>
           )}
-          {results && !results.length && <div className="p-3 text-[12px] text-dim">No skills match “{query}”.</div>}
+          {results && !results.length && <div className="p-3 text-caption text-dim">No skills match “{query}”.</div>}
           {sourcesOf(results ?? []).map(([source, items]) => (
             <div key={source} className={clsx(items.length > 1 && 'my-1.5 rounded-[10px] border border-line')}>
               {items.length > 1 && (
                 <div className="flex items-center gap-2 border-b border-line px-2.5 py-1.5">
                   <Layers size={13} className="shrink-0 text-skill-dot" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium" translate="no">
+                  <span className="min-w-0 flex-1 truncate text-caption font-medium" translate="no">
                     {source}
                   </span>
-                  <span className="text-[11px] tabular-nums text-dim">{items.length}</span>
+                  <span className="text-caption tabular-nums text-dim">{items.length}</span>
                   {items.some((r) => !r.installedAs) && (
                     <Button size="sm" icon={<Download size={12} />} loading={installingSet === source} onClick={() => void installAll(source, items)}>
                       Install all
@@ -437,12 +437,12 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
                 <ListItem key={r.id} active={r.id === selected} onClick={() => setSelected(r.id)}>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-mono text-[12px] text-fg">{r.name}</span>
+                      <span className="truncate font-mono text-caption text-fg">{r.name}</span>
                       {r.installedAs && <Badge tone="ok">installed</Badge>}
                     </div>
-                    {items.length === 1 && <div className="truncate text-[11px] text-dim">{r.source}</div>}
+                    {items.length === 1 && <div className="truncate text-caption text-dim">{r.source}</div>}
                   </div>
-                  <span className="flex shrink-0 items-center gap-1 text-[11px] text-dim" title={`${r.installs.toLocaleString()} installs`}>
+                  <span className="flex shrink-0 items-center gap-1 text-caption text-dim" title={`${r.installs.toLocaleString()} installs`}>
                     <Download size={11} />
                     {compact(r.installs)}
                   </span>
@@ -459,7 +459,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
             Search the registry, pick a skill to preview its SKILL.md, then install it into your hub.
           </Empty>
         ) : previewError ? (
-          <div className="p-4 text-[12.5px] text-danger-hi">{previewError}</div>
+          <div className="p-4 text-ui text-danger-hi">{previewError}</div>
         ) : !preview ? (
           <div className="flex h-full items-center justify-center">
             <Spinner />
@@ -469,9 +469,9 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
             <div className="border-b border-line p-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="font-mono text-[14px] font-semibold">{preview.name}</div>
-                  <div className="mt-0.5 line-clamp-3 text-[12px] text-muted">{preview.description || 'No description'}</div>
-                  <button onClick={() => void api.app.openExternal(preview.url)} className="mt-1 flex max-w-full items-center gap-1 font-mono text-[11px] text-dim hover:text-crimson-hi" title={preview.url}>
+                  <div className="font-mono text-body font-semibold">{preview.name}</div>
+                  <div className="mt-0.5 line-clamp-3 text-caption text-muted">{preview.description || 'No description'}</div>
+                  <button onClick={() => void api.app.openExternal(preview.url)} className="mt-1 flex max-w-full items-center gap-1 font-mono text-caption text-dim hover:text-crimson-hi" title={preview.url}>
                     <ExternalLink size={11} className="shrink-0" />
                     <span className="truncate">{preview.id}</span>
                   </button>
@@ -498,7 +498,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
                   </Badge>
                 )}
               </div>
-              <div className="mt-2 text-[11px] text-dim">Third-party instructions from a public repository — review them before relying on the skill. Nothing in a skill runs until an agent chooses to follow it.</div>
+              <div className="mt-2 text-caption text-dim">Third-party instructions from a public repository — review them before relying on the skill. Nothing in a skill runs until an agent chooses to follow it.</div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <Markdown text={preview.body} />
@@ -534,7 +534,7 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
   return (
     <div className="h-[min(520px,60vh)] overflow-y-auto">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-[12px] text-dim">Skills found in ~/.claude/skills, ~/.agents/skills, ~/.codex/skills, ~/.cursor/skills and ~/.omp/skills.</div>
+        <div className="text-caption text-dim">Skills found in ~/.claude/skills, ~/.agents/skills, ~/.codex/skills, ~/.cursor/skills and ~/.omp/skills.</div>
         <Button
           size="sm"
           icon={<FolderOpen size={13} />}
@@ -549,13 +549,13 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
       {!found ? (
         <Spinner />
       ) : !found.length ? (
-        <div className="text-[12.5px] text-dim">No skills found in those folders.</div>
+        <div className="text-ui text-dim">No skills found in those folders.</div>
       ) : (
         <div className="space-y-4">
           {bySource.map(([source, items]) => (
             <div key={source}>
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="font-mono text-[11px] text-dim">{source}</span>
+                <span className="font-mono text-caption text-dim">{source}</span>
                 <Button size="sm" variant="ghost" onClick={() => void importOne(source)}>
                   Import all new
                 </Button>
@@ -564,8 +564,8 @@ function LocalImport({ open, onImported }: { open: boolean; onImported(): void }
                 {items.map((s) => (
                   <div key={s.dir} className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-0">
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono text-[12px]">{s.name}</div>
-                      <div className="truncate text-[11px] text-dim">{s.description}</div>
+                      <div className="font-mono text-caption">{s.name}</div>
+                      <div className="truncate text-caption text-dim">{s.description}</div>
                     </div>
                     {s.imported ? (
                       <Button size="sm" variant="ghost" onClick={async () => (await confirmAction(`The hub's copy of ${s.name} will be replaced with the version in ${s.source}.`, { title: 'Re-import skill?', confirmLabel: 'Re-import', danger: true })) && void importOne(s.dir, true)}>
@@ -733,7 +733,7 @@ function SkillView({ skill, onChanged, onClose }: { skill: Skill; onChanged(name
                 <Editor value={body} onChange={setBody} />
               </div>
               <div className="min-h-0 overflow-y-auto px-6 py-4">
-                <div className="mb-2 text-[12px] font-medium text-dim">Preview</div>
+                <div className="mb-2 text-caption font-medium text-dim">Preview</div>
                 <Markdown text={body} />
               </div>
             </div>
@@ -758,13 +758,13 @@ function SkillView({ skill, onChanged, onClose }: { skill: Skill; onChanged(name
           </>
         }
       >
-        <p className="mb-3 text-[12px] text-dim">
+        <p className="mb-3 text-caption text-dim">
           {update?.length ? `${update.length} file${update.length === 1 ? '' : 's'} would change. Red is what you have; green is the new version.` : 'Only the version number changed: the files are the same.'}
         </p>
         <div className="grid gap-3">
           {update?.map((f) => (
             <div key={f.path}>
-              <div className="mb-1 flex items-center gap-2 text-[12px]">
+              <div className="mb-1 flex items-center gap-2 text-caption">
                 <span className="font-mono text-muted">{f.path}</span>
                 <span className={f.kind === 'removed' ? 'text-danger-hi' : f.kind === 'added' ? 'text-ok' : 'text-dim'}>{f.kind}</span>
               </div>
@@ -791,7 +791,7 @@ function InstallModal({ open, onClose, skill }: { open: boolean; onClose(): void
       <div className="space-y-1.5">
         {sources.map((s) => (
           <div key={s} className="flex items-center gap-2 rounded-md border border-line px-3 py-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{s}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-caption">{s}</span>
             <Button size="sm" icon={<Download size={12} />} onClick={() => void install(s)}>
               Install
             </Button>
@@ -832,12 +832,12 @@ function SkillFiles({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
           {skill.files.map((f) => (
             <ListItem key={f} active={f === path} onClick={() => setPath(f)}>
               <FileCode2 size={13} className="shrink-0 text-dim" />
-              <span className="truncate font-mono text-[11.5px]">{f}</span>
+              <span className="truncate font-mono text-caption">{f}</span>
             </ListItem>
           ))}
         </div>
         <div className="flex gap-1.5 border-t border-line p-2">
-          <Input placeholder="references/api.md" value={newPath} onChange={(e) => setNewPath(e.target.value)} className="font-mono text-[11.5px]" />
+          <Input placeholder="references/api.md" value={newPath} onChange={(e) => setNewPath(e.target.value)} className="font-mono text-caption" />
           <Button
             size="sm"
             disabled={!newPath.trim()}
@@ -856,7 +856,7 @@ function SkillFiles({ skill, onChanged }: { skill: Skill; onChanged(): void }) {
         {path ? (
           <>
             <div className="flex items-center justify-between border-b border-line px-4 py-2">
-              <span className="font-mono text-[12px] text-muted">{path}</span>
+              <span className="font-mono text-caption text-muted">{path}</span>
               <Button
                 size="sm"
                 variant="primary"

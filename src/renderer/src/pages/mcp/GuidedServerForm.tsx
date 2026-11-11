@@ -105,7 +105,7 @@ export function GuidedServerForm({
   return (
     <div className="grid min-w-0 gap-4">
       <div className="grid justify-items-start gap-1.5">
-        <span className="text-[11.5px] font-medium text-muted">How Cloth reaches it</span>
+        <span className="text-caption font-medium text-muted">How Cloth reaches it</span>
         <Segmented
           value={kind}
           onChange={setKind}
@@ -142,10 +142,10 @@ export function GuidedServerForm({
             <Input spellCheck={false} autoComplete="off" placeholder="npx" value={command} onChange={(e) => setCommand(e.target.value)} onPaste={pasteCommand} className="font-mono" />
           </Field>
           <div className="grid gap-1.5">
-            <span className="text-[11.5px] font-medium text-muted">Arguments</span>
+            <span className="text-caption font-medium text-muted">Arguments</span>
             {args.map((a, i) => (
               <div key={a.id} className="flex items-center gap-1.5">
-                <span className="w-5 shrink-0 text-right text-[11px] tabular-nums text-dim">{i + 1}</span>
+                <span className="w-5 shrink-0 text-right text-caption tabular-nums text-dim">{i + 1}</span>
                 <Input
                   spellCheck={false}
                   autoComplete="off"
@@ -176,7 +176,7 @@ export function GuidedServerForm({
         />
       </Field>
 
-      <div aria-live="polite" className="min-h-4 text-[11.5px]">
+      <div aria-live="polite" className="min-h-4 text-caption">
         {problem && touched ? <span className="text-crimson-hi">{problem}</span> : touched && !problem ? <span className="break-all font-mono text-dim">{kind === 'http' ? (entry.url ?? '').replace(/([?&](?:userToken|token|key|api_key)=)[^&]+/i, '$1…') : [entry.command, ...entry.args].join(' ')}</span> : null}
       </div>
 
@@ -216,7 +216,7 @@ function Pairs({ label, add, keyHolder, valueHolder, items, onChange, secret }: 
   const set = (id: number, patch: Partial<Row>) => onChange(items.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   return (
     <div className="grid gap-1.5">
-      <span className="text-[11.5px] font-medium text-muted">{label}</span>
+      <span className="text-caption font-medium text-muted">{label}</span>
       {items.map((r) => (
         <div key={r.id} className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_24px] items-center gap-1.5">
           <Input spellCheck={false} autoComplete="off" aria-label={`${label}: name`} placeholder={keyHolder} value={r.key} onChange={(e) => set(r.id, { key: e.target.value })} className="font-mono" />
@@ -231,7 +231,7 @@ function Pairs({ label, add, keyHolder, valueHolder, items, onChange, secret }: 
 
 function AddButton({ onClick, children }: { onClick(): void; children: string }) {
   return (
-    <button type="button" onClick={onClick} className="flex h-7 w-fit items-center gap-1.5 rounded-md px-2 text-[12px] text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
+    <button type="button" onClick={onClick} className="flex h-7 w-fit items-center gap-1.5 rounded-md px-2 text-caption text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
       <Plus size={12} weight="bold" aria-hidden="true" />
       {children}
     </button>

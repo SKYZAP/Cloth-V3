@@ -58,7 +58,7 @@ export const FIT: Record<HubFit, { label: string; tone: string }> = {
 }
 
 export function FitPill({ fit, className }: { fit: HubFit; className?: string }) {
-  return <span className={clsx('inline-flex items-center rounded border px-1.5 py-px text-[11px] font-medium leading-4 whitespace-nowrap', FIT[fit].tone, className)}>{FIT[fit].label}</span>
+  return <span className={clsx('inline-flex items-center rounded border px-1.5 py-px text-caption font-medium leading-4 whitespace-nowrap', FIT[fit].tone, className)}>{FIT[fit].label}</span>
 }
 
 export function Section({ title, aside, children, className }: { title?: ReactNode; aside?: ReactNode; children: ReactNode; className?: string }) {
@@ -66,7 +66,7 @@ export function Section({ title, aside, children, className }: { title?: ReactNo
     <section className={clsx('rounded-[12px] border border-line bg-elev', className)}>
       {title && (
         <div className="flex min-h-[38px] items-center gap-2 border-b border-line px-3.5 py-2">
-          <h2 className="min-w-0 flex-1 text-[12.5px] font-semibold">{title}</h2>
+          <h2 className="min-w-0 flex-1 text-ui font-semibold">{title}</h2>
           {aside}
         </div>
       )}
@@ -78,7 +78,7 @@ export function Section({ title, aside, children, className }: { title?: ReactNo
 export function Row({ label, children, top }: { label: ReactNode; children: ReactNode; top?: boolean }) {
   return (
     <>
-      <span className={clsx('text-[12px] text-muted', top && 'self-start pt-1.5')}>{label}</span>
+      <span className={clsx('text-caption text-muted', top && 'self-start pt-1.5')}>{label}</span>
       <div className="min-w-0">{children}</div>
     </>
   )
@@ -106,7 +106,7 @@ export function CommitInput({ value, onCommit, ...rest }: Omit<React.InputHTMLAt
 export function PathRow({ value, locked, onChoose, onClear, extra }: { value: string | null; locked: boolean; onChoose(): void; onClear?(): void; extra?: ReactNode }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className={clsx('min-w-0 flex-1 truncate font-mono text-[11.5px]', value ? 'text-muted' : 'text-dim')} title={value ?? undefined} translate="no">
+      <span className={clsx('min-w-0 flex-1 truncate font-mono text-caption', value ? 'text-muted' : 'text-dim')} title={value ?? undefined} translate="no">
         {value ?? 'Not set'}
       </span>
       {extra}
@@ -130,19 +130,19 @@ export function ProgressBar({ p, onCancel, label }: { p: Progress; onCancel?(): 
       : `${p.file ? `${p.file.split('/').pop()} · ` : ''}${fileSize(p.received)}${p.total > 0 ? ` of ${fileSize(p.total)}` : ''}`
   return (
     <div className="grid gap-1.5">
-      {label && <div className="text-[12px] font-medium">{label}</div>}
+      {label && <div className="text-caption font-medium">{label}</div>}
       <div className="flex items-center gap-2">
         <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-line" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
           <div className={clsx('h-full rounded-full bg-crimson transition-[width] motion-reduce:transition-none', p.state === 'extracting' && 'animate-pulse')} style={{ width: `${p.state === 'extracting' ? 100 : pct}%` }} />
         </div>
-        <span className="w-10 shrink-0 text-right text-[11.5px] tabular-nums text-dim">{p.state === 'extracting' ? '' : `${Math.floor(pct)}%`}</span>
+        <span className="w-10 shrink-0 text-right text-caption tabular-nums text-dim">{p.state === 'extracting' ? '' : `${Math.floor(pct)}%`}</span>
         {onCancel && (
           <Button size="sm" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
         )}
       </div>
-      <span className="truncate text-[11.5px] tabular-nums text-dim" translate="no">
+      <span className="truncate text-caption tabular-nums text-dim" translate="no">
         {text}
       </span>
     </div>
@@ -236,7 +236,7 @@ export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className={clsx('selectable max-h-[280px] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line', tall && lines.length > 0 && '@[1040px]:h-[calc(100vh-330px)] @[1040px]:max-h-none')}
+        className={clsx('selectable max-h-[280px] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-caption leading-relaxed text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-crimson-line', tall && lines.length > 0 && '@[1040px]:h-[calc(100vh-330px)] @[1040px]:max-h-none')}
         translate="no"
       >
         {lines.map((line, i) => (
@@ -244,7 +244,7 @@ export function LogCard({ id, tall }: { id: string; tall?: boolean }) {
             {line || ' '}
           </div>
         ))}
-        {!lines.length && <p className="font-sans text-[12px] text-dim">Nothing yet. The runner’s output shows here once it starts.</p>}
+        {!lines.length && <p className="font-sans text-caption text-dim">Nothing yet. The runner’s output shows here once it starts.</p>}
       </div>
     </Section>
   )

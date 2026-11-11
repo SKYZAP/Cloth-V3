@@ -107,7 +107,7 @@ export function Files({ sessionId, visible, onAttach, onInsert, onPickFolder }: 
       <div className="grid h-full place-items-center p-6 text-center">
         <div className="space-y-3">
           <FolderDashed size={28} className="mx-auto text-dim" />
-          <div className="text-[12.5px] text-dim">This chat has no folder yet.</div>
+          <div className="text-ui text-dim">This chat has no folder yet.</div>
           {!isMobile && (
             <Button size="sm" icon={<FolderSimple size={13} />} onClick={onPickFolder}>
               Choose a folder
@@ -124,35 +124,35 @@ export function Files({ sessionId, visible, onAttach, onInsert, onPickFolder }: 
       <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2 py-1.5">
         <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line bg-panel px-2 focus-within:border-crimson-line">
           <MagnifyingGlass size={12} className="shrink-0 text-dim" />
-          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter open folders" aria-label="Filter files" className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-dim" />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter open folders" aria-label="Filter files" className="min-w-0 flex-1 bg-transparent text-caption outline-none placeholder:text-dim" />
         </div>
         <button onClick={() => void refresh()} className="flex h-7 w-7 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-fg" aria-label="Refresh" title="Refresh">
           <ArrowClockwise size={13} />
         </button>
       </div>
       {root?.container && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-line bg-info/[0.06] px-3 py-2 text-[11.5px] text-muted">
+        <div className="flex shrink-0 items-start gap-2 border-b border-line bg-info/[0.06] px-3 py-2 text-caption text-muted">
           <Cube size={13} className="mt-0.5 shrink-0 text-info" />
           The container's copy of your folder — changes reach your folder when you apply them.
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto py-1">
-        {error && <div className="px-3 py-2 text-[12px] text-warn">{error}</div>}
+        {error && <div className="px-3 py-2 text-caption text-warn">{error}</div>}
         {rows.map(({ e, depth }) => (
           <button
             key={e.path}
             onClick={() => (e.dir ? toggle(e.path) : void preview(e.path))}
             title={e.path}
-            className={clsx('flex h-[26px] w-full items-center gap-1.5 pr-2 text-left text-[12.5px] hover:bg-elev', e.ignored ? 'text-dim opacity-55 hover:opacity-100' : 'text-muted hover:text-fg')}
+            className={clsx('flex h-[26px] w-full items-center gap-1.5 pr-2 text-left text-ui hover:bg-elev', e.ignored ? 'text-dim opacity-55 hover:opacity-100' : 'text-muted hover:text-fg')}
             style={{ paddingLeft: 8 + depth * 14 }}
           >
             <span className="flex w-3 shrink-0 justify-center text-dim">{e.dir && !q ? open.has(e.path) ? <CaretDown size={10} /> : <CaretRight size={10} /> : null}</span>
             <span className="shrink-0">{icon(e, open.has(e.path))}</span>
             <span className="min-w-0 flex-1 truncate">{q ? e.path : e.name}</span>
-            {!e.dir && <span className="shrink-0 text-[10.5px] text-dim">{size(e.size)}</span>}
+            {!e.dir && <span className="shrink-0 text-micro text-dim">{size(e.size)}</span>}
           </button>
         ))}
-        {root?.path && dirs[''] && !rows.length && <div className="px-3 py-2 text-[12px] text-dim">{q ? 'Nothing matches in the open folders.' : 'The folder is empty.'}</div>}
+        {root?.path && dirs[''] && !rows.length && <div className="px-3 py-2 text-caption text-dim">{q ? 'Nothing matches in the open folders.' : 'The folder is empty.'}</div>}
       </div>
     </div>
   )
@@ -168,14 +168,14 @@ function Preview({ file, sessionId, onBack, onAttach, onInsert }: { file: Worksp
           <ArrowLeft size={14} />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12.5px] font-medium">{name}</div>
-          <div className="truncate text-[10.5px] text-dim">
+          <div className="truncate text-ui font-medium">{name}</div>
+          <div className="truncate text-micro text-dim">
             {file.path} · {size(file.size)}
             {file.truncated ? ' · first 1 MB' : ''}
           </div>
         </div>
         {file.kind !== 'binary' && (
-          <button onClick={onAttach} className="flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] text-muted hover:bg-elev hover:text-fg" title="Attach this file to your next message">
+          <button onClick={onAttach} className="flex h-7 items-center gap-1 rounded-md px-2 text-caption text-muted hover:bg-elev hover:text-fg" title="Attach this file to your next message">
             <Paperclip size={13} /> Attach
           </button>
         )}
@@ -194,9 +194,9 @@ function Preview({ file, sessionId, onBack, onAttach, onInsert }: { file: Worksp
             <img src={`data:${file.mimeType};base64,${file.data}`} alt={name} className="max-w-full object-contain" />
           </div>
         ) : file.kind === 'binary' ? (
-          <div className="p-6 text-center text-[12.5px] text-dim">A binary file — no preview.</div>
+          <div className="p-6 text-center text-ui text-dim">A binary file — no preview.</div>
         ) : (
-          <table className="w-full border-collapse font-mono text-[11.5px] leading-[1.55]">
+          <table className="w-full border-collapse font-mono text-caption leading-[1.55]">
             <tbody>
               {lines.map((l, i) => (
                 <tr key={i}>

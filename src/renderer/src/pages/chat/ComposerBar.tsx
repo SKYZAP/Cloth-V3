@@ -127,7 +127,7 @@ export function ComposerBar({
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 aria-label={`Folder: ${folder ?? 'none chosen'}`}
-                className={clsx('flex h-8 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
+                className={clsx('flex h-8 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-ui transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
               >
                 <FolderSimple size={17} weight={session.workspace ? 'fill' : 'regular'} className="shrink-0 text-crimson-hi" />
                 <span className="hidden max-w-[140px] truncate @[800px]:inline">{folder ?? 'Folder'}</span>
@@ -149,7 +149,7 @@ export function ComposerBar({
               aria-expanded={open}
               aria-label={`Mode: ${chatModeInfo(mode).name}${flow ? `, stage: ${STAGE_LABEL[flow.stage]}` : ''}`}
               title={flow ? `Spec → Ship · ${STAGE_LABEL[flow.stage]}` : specArmed ? 'Spec → Ship · starts with your next message' : `Mode: ${chatModeInfo(mode).name} (Shift+Tab switches Chat and Plan)`}
-              className={clsx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', MODE_TONE[mode])}
+              className={clsx('flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-ui font-semibold transition-colors', MODE_TONE[mode])}
             >
               <ModeIcon size={15} weight={mode === 'chat' ? 'regular' : 'bold'} className="shrink-0" />
               {mode === 'spec' ? (
@@ -186,7 +186,7 @@ export function ComposerBar({
               aria-expanded={open}
               aria-label={`Access: ${accessLevel(access).name}`}
               title={`Access: ${accessLevel(access).name}${mode === 'plan' ? ' (once the plan is approved)' : ''}`}
-              className={clsx('ml-1 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-[12.5px] font-semibold transition-colors', ACCESS_TONE[access])}
+              className={clsx('ml-1 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] border pl-2 pr-2.5 text-ui font-semibold transition-colors', ACCESS_TONE[access])}
             >
               <AccessIcon size={15} weight="fill" className="shrink-0" />
               <span className="hidden @[600px]:inline mobile:inline">{accessLevel(access).name}</span>
@@ -206,7 +206,7 @@ export function ComposerBar({
               aria-haspopup="dialog"
               aria-expanded={open}
               title="Model and reasoning effort"
-              className={clsx('ml-0.5 flex h-8 w-full min-w-[64px] max-w-max items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[10px] px-2 text-[12.5px] transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
+              className={clsx('ml-0.5 flex h-8 w-full min-w-[64px] max-w-max items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[10px] px-2 text-ui transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
             >
               <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
               <span className="min-w-[3ch] max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
@@ -220,7 +220,7 @@ export function ComposerBar({
         </ComposerPopover>
       </div>
       {usage && usage.cost > 0 && (
-        <span className="hidden shrink-0 whitespace-nowrap px-1 text-[12px] tabular-nums text-dim @[620px]:inline" title="Spent in this chat so far, including agents it handed work to">
+        <span className="hidden shrink-0 whitespace-nowrap px-1 text-caption tabular-nums text-dim @[620px]:inline" title="Spent in this chat so far, including agents it handed work to">
           {formatCost(usage.cost)}
         </span>
       )}
@@ -331,13 +331,13 @@ function MenuRow({
       className="grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-0.5 rounded-[10px] px-2.5 py-2 text-left outline-none hover:bg-elev-2 focus-visible:bg-elev-2 disabled:opacity-50 disabled:hover:bg-transparent"
     >
       <I size={16} weight={iconWeight ?? (on === false ? 'regular' : 'fill')} className={clsx('mt-0.5', iconTone)} />
-      <b className="text-[13px] font-semibold">{name}</b>
+      <b className="text-ui font-semibold">{name}</b>
       {checked !== undefined ? (
         <Check size={14} weight="bold" className={clsx('mt-0.5 text-crimson-hi', !checked && 'invisible')} />
       ) : (
-        <span className={clsx('self-center text-[11.5px]', on ? 'text-crimson-hi' : 'text-dim')}>{state}</span>
+        <span className={clsx('self-center text-caption', on ? 'text-crimson-hi' : 'text-dim')}>{state}</span>
       )}
-      {sub && <span className="col-start-2 text-[12px] text-dim">{sub}</span>}
+      {sub && <span className="col-start-2 text-caption text-dim">{sub}</span>}
     </button>
   )
 }
@@ -346,7 +346,7 @@ function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value:
   return (
     <MenuList>
       {!isMobile && (
-        <div className="flex items-center px-2.5 pb-1 pt-1.5 text-[11.5px] text-dim">
+        <div className="flex items-center px-2.5 pb-1 pt-1.5 text-caption text-dim">
           Mode
           <span className="ml-auto flex items-center gap-1">
             <Kbd>Shift</Kbd> + <Kbd>Tab</Kbd>
@@ -371,16 +371,16 @@ function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value:
         )
       })}
       {waiting && (
-        <p className="mx-1.5 mt-1 border-t border-line px-1 pb-1 pt-2 text-[11.5px] text-dim">
+        <p className="mx-1.5 mt-1 border-t border-line px-1 pb-1 pt-2 text-caption text-dim">
           <b className="font-semibold text-muted">Waiting for your first message.</b> Describe what you want to build and send it to start.
         </p>
       )}
       {flow && (
         <div className="mx-1.5 mt-1 border-t border-line pt-1">
-          <p className="px-1 pb-1 pt-1.5 text-[11.5px] text-dim">
+          <p className="px-1 pb-1 pt-1.5 text-caption text-dim">
             Stage {stageIndex(flow.stage, flow.route) + 1} of {routeStages(flow.route).length}: <b className="font-semibold text-muted">{STAGE_LABEL[flow.stage]}</b>. Picking Chat or Plan leaves Spec → Ship; the documents stay.
           </p>
-          <button role="menuitem" onClick={flow.docs} className="w-full rounded-[9px] px-1.5 py-1.5 text-left text-[13px] outline-none hover:bg-elev-2 focus-visible:bg-elev-2">
+          <button role="menuitem" onClick={flow.docs} className="w-full rounded-[9px] px-1.5 py-1.5 text-left text-ui outline-none hover:bg-elev-2 focus-visible:bg-elev-2">
             Show the documents
           </button>
         </div>
@@ -393,11 +393,11 @@ function AccessMenu({ value, planning, onPick }: { value: Access; planning: bool
   const note = accessLevel(value).note
   return (
     <MenuList>
-      {!isMobile && <div className="px-2.5 pb-1 pt-1.5 text-[11.5px] text-dim">Access</div>}
+      {!isMobile && <div className="px-2.5 pb-1 pt-1.5 text-caption text-dim">Access</div>}
       {ACCESS_LEVELS.map((m) => (
         <MenuRow key={m.id} icon={ACCESS_ICON[m.id]} iconTone={ACCESS_ICON_TONE[m.id]} name={m.name} sub={m.sub} checked={m.id === value} autoFocus={m.id === value} onClick={() => onPick(m.id)} />
       ))}
-      <p className="mx-1.5 mt-1 border-t border-line px-1 pb-0.5 pt-2 text-[11.5px] text-dim">
+      <p className="mx-1.5 mt-1 border-t border-line px-1 pb-0.5 pt-2 text-caption text-dim">
         {planning ? (
           <>
             <b className="font-semibold text-muted">Plan mode is read-only.</b> This applies once you approve the plan.
@@ -413,5 +413,5 @@ function AccessMenu({ value, planning, onPick }: { value: Access; planning: bool
 }
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-line-strong px-1 font-sans text-[10.5px] text-muted">{children}</kbd>
+  return <kbd className="rounded border border-line-strong px-1 font-sans text-micro text-muted">{children}</kbd>
 }

@@ -115,7 +115,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
     <div className="grid min-w-0 gap-6">
       <div className="grid gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="flex min-w-0 flex-1 items-center gap-2 text-[13px]">
+          <span className="flex min-w-0 flex-1 items-center gap-2 text-ui">
             <span className={clsx('h-2 w-2 shrink-0 rounded-full', c.enabled ? STATE[state].dot : 'bg-line-strong')} aria-hidden="true" />
             <span role="status">{label}</span>
           </span>
@@ -124,20 +124,20 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
           </Button>
         </div>
         {st?.state === 'error' && st.error && (
-          <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-[12px]">
-            <div className="selectable font-mono text-[11.5px] text-danger-hi">{st.error}</div>
+          <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-caption">
+            <div className="selectable font-mono text-caption text-danger-hi">{st.error}</div>
             <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and token under Connection, then try again.' : 'Check the program and its arguments under Connection, then try again.'}</div>
           </div>
         )}
       </div>
 
       <div className="grid gap-3">
-        <h3 className="text-[12.5px] font-semibold">In chats</h3>
+        <h3 className="text-ui font-semibold">In chats</h3>
         <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="Let chats use it" />
         <div className="grid gap-1">
           <Switch checked={c.defaultOn} disabled={!c.enabled} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} label="On in new chats" />
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-ui">
           <span>Before a tool runs</span>
           <Segmented
             value={c.approval}
@@ -152,7 +152,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
 
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-[12.5px] font-semibold">
+          <h3 className="text-ui font-semibold">
             Tools <span className="font-normal text-dim">{tools.length || ''}</span>
           </h3>
           <span className="flex-1" />
@@ -165,37 +165,37 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
               autoComplete="off"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="h-7 w-[180px] rounded-md border border-line bg-panel px-2 text-[12px] text-fg placeholder:text-dim focus:border-crimson-line focus:outline-none"
+              className="h-7 w-[180px] rounded-md border border-line bg-panel px-2 text-caption text-fg placeholder:text-dim focus:border-crimson-line focus:outline-none"
             />
           )}
         </div>
         {tools.length ? (
           <>
-            {!live && <p className="text-[12px] text-dim">From its last run.</p>}
+            {!live && <p className="text-caption text-dim">From its last run.</p>}
             <ul className="grid divide-y divide-line rounded-[10px] border border-line bg-panel">
               {shown.map((t) => (
-                <li key={t.name} className="grid gap-0.5 px-3 py-2 text-[12px]">
+                <li key={t.name} className="grid gap-0.5 px-3 py-2 text-caption">
                   <span className="truncate font-mono text-fg/90" translate="no" title={t.name}>
                     {t.name}
                   </span>
                   {t.description && <span className="line-clamp-2 text-dim">{t.description.split('\n')[0]}</span>}
                 </li>
               ))}
-              {!shown.length && <li className="px-3 py-2 text-[12px] text-dim">No tool matches “{filter.trim()}”.</li>}
+              {!shown.length && <li className="px-3 py-2 text-caption text-dim">No tool matches “{filter.trim()}”.</li>}
             </ul>
           </>
         ) : (
-          <p className="text-[12px] text-dim">Start it to see its tools.</p>
+          <p className="text-caption text-dim">Start it to see its tools.</p>
         )}
       </div>
 
       <details className="group grid gap-2">
         <summary className="flex cursor-default list-none items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
-          <span className="text-[12.5px] font-semibold">Connection</span>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-dim" translate="no">
+          <span className="text-ui font-semibold">Connection</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-caption text-dim" translate="no">
             {commandLine(c)}
           </span>
-          <span className="text-[12px] text-muted group-open:hidden">Edit</span>
+          <span className="text-caption text-muted group-open:hidden">Edit</span>
         </summary>
         <div className="mt-3 grid gap-3">
           <Segmented
@@ -260,7 +260,7 @@ export function ServerForm({ initial, taken, onSave, onCancel }: { initial?: Mcp
       <div className="h-[220px] overflow-hidden rounded-[10px] border border-line bg-bg focus-within:border-crimson-line" onBlur={tidy}>
         <Editor value={text} onChange={setText} lang="json" placeholder={EXAMPLE} />
       </div>
-      <div aria-live="polite" className="min-h-4 text-[11.5px]">
+      <div aria-live="polite" className="min-h-4 text-caption">
         {error ? (
           <span className="text-danger-hi">{error}</span>
         ) : valid && !initial ? (

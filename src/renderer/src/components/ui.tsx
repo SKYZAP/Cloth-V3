@@ -32,7 +32,7 @@ export function Button({
       disabled={disabled || loading}
       className={clsx(
         'inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed cursor-default',
-        size === 'sm' ? 'h-7 px-2.5 text-[12px]' : 'h-8 px-3 text-[12.5px]',
+        size === 'sm' ? 'h-7 px-2.5 text-caption' : 'h-8 px-3 text-ui',
         variants[variant],
         className
       )}
@@ -59,7 +59,7 @@ export function IconButton({ className, active, ...rest }: ButtonHTMLAttributes<
 const hasWidth = (c?: string) => !!c && /(^|\s)w-/.test(c)
 
 const fieldBase =
-  'rounded-md border border-line bg-panel px-2.5 text-[12.5px] text-fg placeholder:text-dim transition-colors focus:border-crimson-line focus:outline-none focus:ring-2 focus:ring-crimson-soft'
+  'rounded-md border border-line bg-panel px-2.5 text-ui text-fg placeholder:text-dim transition-colors focus:border-crimson-line focus:outline-none focus:ring-2 focus:ring-crimson-soft'
 
 export function Input({ className, ref, ...rest }: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
   return <input {...rest} ref={ref} className={clsx(fieldBase, 'h-8', !hasWidth(className) && 'w-full', className)} />
@@ -75,7 +75,7 @@ export function Select({ className, children, pill, ...rest }: SelectHTMLAttribu
       {...rest}
       className={clsx(
         pill
-          ? 'h-[30px] rounded-full border border-line bg-panel pl-3 text-[12px] text-muted transition-colors hover:border-line-strong hover:text-fg focus:border-crimson-line focus:outline-none'
+          ? 'h-[30px] rounded-full border border-line bg-panel pl-3 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg focus:border-crimson-line focus:outline-none'
           : clsx(fieldBase, 'h-8'),
         !hasWidth(className) && 'w-full',
         'pr-7 appearance-none bg-[length:12px] bg-[right_8px_center] bg-no-repeat',
@@ -103,7 +103,7 @@ export function Switch({ checked, onChange, label, ariaLabel, disabled }: { chec
       >
         <span className={clsx('absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-all', checked ? 'left-[16px]' : 'left-[2px]')} />
       </button>
-      {label && <span className="text-[12.5px] text-muted">{label}</span>}
+      {label && <span className="text-ui text-muted">{label}</span>}
     </label>
   )
 }
@@ -121,7 +121,7 @@ const tones: Record<Tone, string> = {
 
 export function Badge({ tone = 'neutral', children, className, title }: { tone?: Tone; children: ReactNode; className?: string; title?: string }) {
   return (
-    <span title={title} className={clsx('inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10.5px] font-medium leading-4 whitespace-nowrap', tones[tone], className)}>
+    <span title={title} className={clsx('inline-flex items-center gap-1 rounded border px-1.5 py-px text-micro font-medium leading-4 whitespace-nowrap', tones[tone], className)}>
       {children}
     </span>
   )
@@ -143,9 +143,9 @@ export function Card({ className, children, ...rest }: { className?: string; chi
 export function Field({ label, hint, children, className }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <label className={clsx('flex flex-col gap-1.5', className)}>
-      <span className="text-[11.5px] font-medium text-muted">{label}</span>
+      <span className="text-caption font-medium text-muted">{label}</span>
       {children}
-      {hint && <span className="text-[11px] text-dim">{hint}</span>}
+      {hint && <span className="text-caption text-dim">{hint}</span>}
     </label>
   )
 }
@@ -158,7 +158,7 @@ export function Tabs<T extends string>({ value, onChange, items, className }: { 
           key={it.value}
           onClick={() => onChange(it.value)}
           className={clsx(
-            'relative -mb-px flex h-9 items-center gap-1.5 px-3 text-[12.5px] font-medium transition-colors',
+            'relative -mb-px flex h-9 items-center gap-1.5 px-3 text-ui font-medium transition-colors',
             value === it.value ? 'text-fg' : 'text-dim hover:text-muted'
           )}
         >
@@ -179,7 +179,7 @@ export function Segmented<T extends string>({ value, onChange, items }: { value:
           title={it.title}
           aria-pressed={value === it.value}
           onClick={() => onChange(it.value)}
-          className={clsx('h-7 rounded px-2.5 text-[11.5px] font-medium transition-colors', value === it.value ? 'bg-elev-2 text-fg shadow-sm' : 'text-dim hover:text-muted')}
+          className={clsx('h-7 rounded px-2.5 text-caption font-medium transition-colors', value === it.value ? 'bg-elev-2 text-fg shadow-sm' : 'text-dim hover:text-muted')}
         >
           {it.label}
         </button>
@@ -207,7 +207,7 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
         aria-modal="true"
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <div className="text-[14px] font-semibold">{title}</div>
+          <div className="text-body font-semibold">{title}</div>
           <IconButton onClick={onClose} aria-label="Close">
             <X size={15} />
           </IconButton>
@@ -223,8 +223,8 @@ export function Empty({ icon, title, children, action }: { icon?: ReactNode; tit
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
       {icon && <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-line bg-elev text-crimson">{icon}</div>}
-      <div className="text-[14px] font-semibold">{title}</div>
-      {children && <div className="max-w-sm text-[12.5px] text-dim">{children}</div>}
+      <div className="text-body font-semibold">{title}</div>
+      {children && <div className="max-w-sm text-ui text-dim">{children}</div>}
       {action}
     </div>
   )
@@ -239,8 +239,8 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
     <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-x-2 mobile:gap-y-2.5 mobile:px-3 mobile:py-3">
       <SplitBack />
       <div className="min-w-0 mobile:flex-1">
-        <div className="truncate text-[15px] font-semibold tracking-tight">{title}</div>
-        {subtitle && <div className="truncate text-[12px] text-dim mobile:whitespace-normal">{subtitle}</div>}
+        <div className="truncate text-section font-semibold tracking-tight">{title}</div>
+        {subtitle && <div className="truncate text-caption text-dim mobile:whitespace-normal">{subtitle}</div>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2 mobile:w-full mobile:shrink mobile:flex-wrap">{actions}</div>}
     </div>
@@ -269,7 +269,7 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
       onClick={onClick}
       onKeyDown={(e) => onClick && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onClick())}
       className={clsx(
-        'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pl-3 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-[14px]',
+        'group relative mx-0.5 my-0.5 flex cursor-default items-center gap-2 rounded-[10px] py-2.5 pl-3 pr-2 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:min-h-[56px] mobile:gap-3 mobile:py-3 mobile:text-body',
         active && side ? 'bg-elev-2 text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg active:bg-elev-2',
         className
       )}
@@ -280,7 +280,7 @@ export function ListItem({ active, onClick, children, className }: { active?: bo
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="rounded border border-line bg-elev px-1 font-mono text-[10px] text-dim">{children}</kbd>
+  return <kbd className="rounded border border-line bg-elev px-1 font-mono text-micro text-dim">{children}</kbd>
 }
 
 export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {

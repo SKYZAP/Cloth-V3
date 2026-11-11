@@ -97,8 +97,8 @@ export function DashboardPage() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-line px-5 py-3.5 mobile:flex-wrap mobile:gap-2 mobile:px-4 mobile:py-3">
         <div className="min-w-0 flex-1 mobile:basis-full">
-          <div className="text-[15px] font-semibold tracking-tight">Dashboard</div>
-          <div className="truncate text-[12px] text-dim mobile:hidden">
+          <div className="text-section font-semibold tracking-tight">Dashboard</div>
+          <div className="truncate text-caption text-dim mobile:hidden">
             Models, tokens, cost, tools and skills across chat, flows, skill tests and MCP
             {stats && <> · updated {timeAgo(stats.generatedAt)}</>}
           </div>
@@ -133,7 +133,7 @@ export function DashboardPage() {
             {empty && (
               <Panel className="flex items-center gap-3 border-crimson-line bg-crimson-soft px-4 py-3" delay={0}>
                 <Lightning size={18} weight="fill" className="shrink-0 text-crimson-hi" />
-                <div className="text-[12.5px] text-muted">
+                <div className="text-ui text-muted">
                   Nothing recorded {range === 'all' ? 'yet' : 'in this period'}. Usage is logged as you chat, run flows, test skills, index knowledge or call Cloth over MCP.
                 </div>
               </Panel>
@@ -205,7 +205,7 @@ function Heading({ icon: I, title, right }: { icon: Icon; title: string; right?:
   return (
     <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
       <I size={15} className="text-crimson-hi" />
-      <span className="text-[12.5px] font-semibold tracking-tight">{title}</span>
+      <span className="text-ui font-semibold tracking-tight">{title}</span>
       <div className="flex-1" />
       {right}
     </div>
@@ -258,14 +258,14 @@ function pct(part: number, whole: number): string {
 function Delta({ now, before, lowerIsBetter }: { now: number; before: number | undefined; lowerIsBetter?: boolean }) {
   if (before === undefined) return null
   if (!before && !now) return null
-  if (!before) return <span className="rounded bg-elev-2 px-1.5 py-px text-[10.5px] text-dim">new</span>
+  if (!before) return <span className="rounded bg-elev-2 px-1.5 py-px text-micro text-dim">new</span>
   const change = (now - before) / before
-  if (Math.abs(change) < 0.005) return <span className="rounded bg-elev-2 px-1.5 py-px text-[10.5px] text-dim">±0%</span>
+  if (Math.abs(change) < 0.005) return <span className="rounded bg-elev-2 px-1.5 py-px text-micro text-dim">±0%</span>
   const up = change > 0
   const tone = lowerIsBetter === undefined ? 'bg-elev-2 text-muted' : lowerIsBetter !== up ? 'bg-ok/10 text-ok' : 'bg-danger-soft text-danger-hi'
   const I = up ? ArrowUpRight : ArrowDownRight
   return (
-    <span className={clsx('inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[10.5px] font-medium', tone)} title="vs the previous period">
+    <span className={clsx('inline-flex items-center gap-0.5 rounded px-1.5 py-px text-micro font-medium', tone)} title="vs the previous period">
       <I size={10} weight="bold" />
       {Math.abs(change) >= 10 ? `${Math.round(change)}×` : `${Math.round(Math.abs(change) * 100)}%`}
     </span>
@@ -336,14 +336,14 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
       {cards.map((c, i) => (
         <Panel key={c.label} delay={0.04 * i} className={clsx('group relative overflow-hidden p-4', i === cards.length - 1 && cards.length % 2 === 1 && 'col-span-2 md:col-span-1')}>
           <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-crimson/5 blur-2xl transition-opacity group-hover:bg-crimson/10" />
-          <div className="flex items-center gap-2 text-[11.5px] font-medium text-dim">
+          <div className="flex items-center gap-2 text-caption font-medium text-dim">
             <c.icon size={14} className="text-muted" />
             {c.label}
             <div className="flex-1" />
             {c.delta}
           </div>
-          <div className="mt-2 font-mono text-[26px] font-semibold leading-none tracking-tight text-fg tabular-nums">{c.value}</div>
-          <div className="mt-2 truncate text-[11.5px] text-dim mobile:line-clamp-2 mobile:whitespace-normal">{c.sub}</div>
+          <div className="mt-2 font-mono text-figure font-semibold leading-none tracking-tight text-fg tabular-nums">{c.value}</div>
+          <div className="mt-2 truncate text-caption text-dim mobile:line-clamp-2 mobile:whitespace-normal">{c.sub}</div>
           {c.foot && <div className="mt-2.5">{c.foot}</div>}
         </Panel>
       ))}
@@ -404,15 +404,15 @@ function Timeline({ stats }: { stats: DashboardStats }) {
         }
       />
       <div className="flex items-baseline gap-2 px-4">
-        <span className="font-mono text-[18px] font-semibold tabular-nums">{h ? fmt(value(h)) : fmt(total)}</span>
-        <span className="text-[11.5px] text-dim">
+        <span className="font-mono text-title font-semibold tabular-nums">{h ? fmt(value(h)) : fmt(total)}</span>
+        <span className="text-caption text-dim">
           {h ? `${label(h.t)}${stats.bucket === 'day' ? '' : ''}` : `total, per ${stats.bucket}`}
           {h && metric === 'tokens' && ` · ${compact(h.input)} in · ${compact(h.output)} out`}
           {h && metric === 'calls' && h.errors > 0 && <span className="text-danger-hi"> · {h.errors} failed</span>}
         </span>
         <div className="flex-1" />
         {metric === 'tokens' && (
-          <div className="flex items-center gap-3 text-[11px] text-dim">
+          <div className="flex items-center gap-3 text-caption text-dim">
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-sm" style={{ background: INPUT }} /> input
             </span>
@@ -426,7 +426,7 @@ function Timeline({ stats }: { stats: DashboardStats }) {
         <div className="relative h-[210px]">
           {[1, 0.5, 0].map((f) => (
             <div key={f} className="absolute inset-x-0 flex items-center gap-2" style={{ top: `${(1 - f) * 100}%` }}>
-              <span className="w-12 -translate-y-1/2 text-right font-mono text-[10px] text-dim">{nice ? fmt(nice * f) : ''}</span>
+              <span className="w-12 -translate-y-1/2 text-right font-mono text-micro text-dim">{nice ? fmt(nice * f) : ''}</span>
               <div className="h-px flex-1 -translate-y-1/2 bg-line/70" />
             </div>
           ))}
@@ -461,7 +461,7 @@ function Timeline({ stats }: { stats: DashboardStats }) {
         <div className="ml-14 mt-1.5 flex gap-[3px]">
           {data.map((b, i) => (
             <div key={b.t} className="relative flex-1">
-              {i % every === 0 && <span className="absolute left-0 whitespace-nowrap font-mono text-[10px] text-dim">{label(b.t)}</span>}
+              {i % every === 0 && <span className="absolute left-0 whitespace-nowrap font-mono text-micro text-dim">{label(b.t)}</span>}
             </div>
           ))}
         </div>
@@ -499,14 +499,14 @@ function Sources({ stats }: { stats: DashboardStats }) {
           ))}
         </div>
         <div className="mt-3 space-y-1.5">
-          {!stats.sources.length && <div className="py-3 text-[12px] text-dim">No model usage yet.</div>}
+          {!stats.sources.length && <div className="py-3 text-caption text-dim">No model usage yet.</div>}
           {stats.sources.map((s) => (
-            <div key={s.source} className="flex items-center gap-2 text-[12px]">
+            <div key={s.source} className="flex items-center gap-2 text-caption">
               <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SOURCE[s.source]?.color ?? '#555' }} />
               <span className="flex-1 text-muted">{SOURCE[s.source]?.label ?? s.source}</span>
-              <span className="font-mono text-[11px] text-dim">{s.calls} calls</span>
-              <span className="w-14 text-right font-mono text-[11px] text-muted tabular-nums">{compact(s.tokens)}</span>
-              <span className="w-10 text-right font-mono text-[11px] text-dim">{pct(s.tokens, total)}</span>
+              <span className="font-mono text-caption text-dim">{s.calls} calls</span>
+              <span className="w-14 text-right font-mono text-caption text-muted tabular-nums">{compact(s.tokens)}</span>
+              <span className="w-10 text-right font-mono text-caption text-dim">{pct(s.tokens, total)}</span>
             </div>
           ))}
         </div>
@@ -521,7 +521,7 @@ function Hours({ hours }: { hours: number[] }) {
   const now = new Date().getHours()
   return (
     <div className="pb-3.5">
-      <Heading icon={Timer} title="Busiest hours" right={peak >= 0 ? <span className="font-mono text-[11px] text-dim">peak {String(peak).padStart(2, '0')}:00</span> : null} />
+      <Heading icon={Timer} title="Busiest hours" right={peak >= 0 ? <span className="font-mono text-caption text-dim">peak {String(peak).padStart(2, '0')}:00</span> : null} />
       <div className="px-4">
         <div className="grid gap-[3px]" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
           {hours.map((n, h) => (
@@ -536,7 +536,7 @@ function Hours({ hours }: { hours: number[] }) {
               />
           ))}
         </div>
-        <div className="mt-1 flex justify-between font-mono text-[10px] text-dim">
+        <div className="mt-1 flex justify-between font-mono text-micro text-dim">
           <span>00</span>
           <span>06</span>
           <span>12</span>
@@ -554,14 +554,14 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
   const maxTokens = Math.max(...stats.models.map((m) => m.input + m.output), 0)
   return (
     <div className="pb-2">
-      <Heading icon={Cpu} title="Models" right={<span className="text-[11px] text-dim">{stats.models.length} used</span>} />
+      <Heading icon={Cpu} title="Models" right={<span className="text-caption text-dim">{stats.models.length} used</span>} />
       {!stats.models.length ? (
-        <div className="px-4 pb-3 text-[12px] text-dim">No model calls in this period.</div>
+        <div className="px-4 pb-3 text-caption text-dim">No model calls in this period.</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-[12px]">
+          <table className="w-full min-w-[760px] text-caption">
             <thead>
-              <tr className="border-y border-line text-left text-[12px] font-medium text-dim">
+              <tr className="border-y border-line text-left text-caption font-medium text-dim">
                 <th className="px-4 py-2 font-semibold">Model</th>
                 <th className="px-2 py-2 text-right font-semibold">Calls</th>
                 <th className="w-[26%] px-2 py-2 font-semibold">Tokens (in / out)</th>
@@ -577,12 +577,12 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
                 return (
                   <tr key={`${m.providerId}/${m.modelId}`} className="border-b border-line/60 last:border-0 hover:bg-elev/60">
                     <td className="px-4 py-2.5">
-                      <div className="font-mono text-[12px] text-fg">{m.modelId}</div>
-                      <div className="text-[11px] text-dim">{m.provider}</div>
+                      <div className="font-mono text-caption text-fg">{m.modelId}</div>
+                      <div className="text-caption text-dim">{m.provider}</div>
                     </td>
                     <td className="px-2 py-2.5 text-right font-mono tabular-nums">{m.calls.toLocaleString()}</td>
                     <td className="px-2 py-2.5">
-                      <div className="mb-1 flex justify-between font-mono text-[11px] tabular-nums">
+                      <div className="mb-1 flex justify-between font-mono text-caption tabular-nums">
                         <span className="text-muted">
                           {compact(m.input)} / {compact(m.output)}
                         </span>
@@ -604,14 +604,14 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
                       {m.priced ? (
                         money(m.cost)
                       ) : (
-                        <button onClick={onPricing} className="text-[11px] text-dim hover:text-crimson-hi" title="No price known — set one on the Models page">
+                        <button onClick={onPricing} className="text-caption text-dim hover:text-crimson-hi" title="No price known — set one on the Models page">
                           set price
                         </button>
                       )}
                     </td>
                     <td className="px-2 py-2.5 text-right font-mono tabular-nums text-muted">{m.avgLatencyMs === null ? '—' : duration(m.avgLatencyMs)}</td>
                     <td className="px-2 py-2.5 text-right font-mono tabular-nums">{m.errors ? <span className="text-danger-hi">{m.errors}</span> : <span className="text-dim">0</span>}</td>
-                    <td className="px-4 py-2.5 text-right text-[11.5px] text-dim">{timeAgo(m.lastUsed)}</td>
+                    <td className="px-4 py-2.5 text-right text-caption text-dim">{timeAgo(m.lastUsed)}</td>
                   </tr>
                 )
               })}
@@ -628,10 +628,10 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
 function Ranked({ rank, name, sub, right, children }: { rank: number; name: ReactNode; sub?: ReactNode; right: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2">
-      <span className={clsx('w-4 shrink-0 text-right font-mono text-[11px]', rank === 1 ? 'text-crimson-hi' : 'text-dim')}>{rank}</span>
+      <span className={clsx('w-4 shrink-0 text-right font-mono text-caption', rank === 1 ? 'text-crimson-hi' : 'text-dim')}>{rank}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate font-mono text-[12px] text-fg">{name}</span>
+          <span className="truncate font-mono text-caption text-fg">{name}</span>
           {sub}
           <div className="flex-1" />
           {right}
@@ -646,8 +646,8 @@ function Tools({ stats }: { stats: DashboardStats }) {
   const max = stats.tools[0]?.calls ?? 0
   return (
     <div className="pb-2">
-      <Heading icon={Wrench} title="Most used tools" right={<span className="text-[11px] text-dim">{stats.totals.toolCalls.toLocaleString()} calls</span>} />
-      {!stats.tools.length && <div className="px-4 pb-3 text-[12px] text-dim">No tool calls in this period.</div>}
+      <Heading icon={Wrench} title="Most used tools" right={<span className="text-caption text-dim">{stats.totals.toolCalls.toLocaleString()} calls</span>} />
+      {!stats.tools.length && <div className="px-4 pb-3 text-caption text-dim">No tool calls in this period.</div>}
       {stats.tools.slice(0, 8).map((t, i) => (
         <Ranked
           key={t.name}
@@ -659,7 +659,7 @@ function Tools({ stats }: { stats: DashboardStats }) {
             </Badge>
           ))}
           right={
-            <span className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
+            <span className="flex items-center gap-2 font-mono text-caption tabular-nums">
               {t.errors > 0 && <span className="text-danger-hi">{t.errors} failed</span>}
               {t.avgMs !== null && <span className="text-dim">{duration(t.avgMs)}</span>}
               <span className="w-10 text-right text-muted">{t.calls}</span>
@@ -681,7 +681,7 @@ function Skills({ stats }: { stats: DashboardStats }) {
         icon={Sparkle}
         title="Most used skills"
         right={
-          <div className="flex items-center gap-2.5 text-[10.5px] text-dim">
+          <div className="flex items-center gap-2.5 text-micro text-dim">
             {Object.entries(VIA).map(([k, v]) => (
               <span key={k} className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: v.color }} />
@@ -691,13 +691,13 @@ function Skills({ stats }: { stats: DashboardStats }) {
           </div>
         }
       />
-      {!stats.skills.length && <div className="px-4 pb-3 text-[12px] text-dim">No skills used in this period.</div>}
+      {!stats.skills.length && <div className="px-4 pb-3 text-caption text-dim">No skills used in this period.</div>}
       {stats.skills.slice(0, 8).map((s, i) => (
         <Ranked
           key={s.name}
           rank={i + 1}
           name={s.name}
-          right={<span className="w-10 text-right font-mono text-[11px] text-muted tabular-nums">{s.uses}</span>}
+          right={<span className="w-10 text-right font-mono text-caption text-muted tabular-nums">{s.uses}</span>}
         >
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-elev-2">
             <motion.div
@@ -740,7 +740,7 @@ function Ring({ value, size = 64, color = '#3fb97a', children }: { value: number
           transition={{ duration: 1, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
         />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center font-mono text-[12.5px] font-semibold">{children}</div>
+      <div className="absolute inset-0 flex items-center justify-center font-mono text-ui font-semibold">{children}</div>
     </div>
   )
 }
@@ -755,7 +755,7 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
         <Ring value={rate} color={rate >= 0.9 ? 'var(--color-ok)' : rate >= 0.6 ? 'var(--color-warn)' : 'var(--color-danger)'}>
           {w.runs ? `${Math.round(rate * 100)}%` : '—'}
         </Ring>
-        <div className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1.5 text-[11.5px]">
+        <div className="grid flex-1 grid-cols-2 gap-x-3 gap-y-1.5 text-caption">
           <Stat label="runs" value={w.runs} />
           <Stat label="failed" value={w.errors} tone={w.errors ? 'danger' : undefined} />
           <Stat label="avg duration" value={w.avgMs === null ? '—' : duration(w.avgMs)} />
@@ -764,14 +764,14 @@ function Flows({ stats, onOpen }: { stats: DashboardStats; onOpen(): void }) {
       </div>
       <div className="mt-3 space-y-1 px-4">
         {w.top.map((f) => (
-          <div key={f.id} className="flex items-center gap-2 text-[12px]">
+          <div key={f.id} className="flex items-center gap-2 text-caption">
             <span className="min-w-0 flex-1 truncate text-muted">{f.name}</span>
-            {f.errors > 0 && <span className="font-mono text-[10.5px] text-danger-hi">{f.errors}✕</span>}
-            <span className="font-mono text-[11px] text-dim tabular-nums">{f.runs} runs</span>
-            <span className="w-12 text-right font-mono text-[11px] text-dim">{f.avgMs === null ? '' : duration(f.avgMs)}</span>
+            {f.errors > 0 && <span className="font-mono text-micro text-danger-hi">{f.errors}✕</span>}
+            <span className="font-mono text-caption text-dim tabular-nums">{f.runs} runs</span>
+            <span className="w-12 text-right font-mono text-caption text-dim">{f.avgMs === null ? '' : duration(f.avgMs)}</span>
           </div>
         ))}
-        {!w.top.length && <div className="text-[12px] text-dim">No runs in this period.</div>}
+        {!w.top.length && <div className="text-caption text-dim">No runs in this period.</div>}
       </div>
     </div>
   )
@@ -796,8 +796,8 @@ function Library({ stats, go }: { stats: DashboardStats; go(p: Page): void }) {
       <div className="grid grid-cols-3 gap-1.5 px-3">
         {items.map((it) => (
           <button key={it.label} onClick={() => go(it.page)} className="group rounded-lg border border-transparent px-2 py-1.5 text-left transition-colors hover:border-line hover:bg-elev">
-            <div className="font-mono text-[16px] font-semibold tabular-nums text-fg">{it.value}</div>
-            <div className="flex items-center gap-1 text-[10.5px] text-dim group-hover:text-muted">
+            <div className="font-mono text-section font-semibold tabular-nums text-fg">{it.value}</div>
+            <div className="flex items-center gap-1 text-micro text-dim group-hover:text-muted">
               <it.icon size={11} />
               {it.label}
             </div>
@@ -813,22 +813,22 @@ function Recent({ stats }: { stats: DashboardStats }) {
   return (
     <div className="pb-2">
       <Heading icon={Lightning} title="Recent activity" />
-      {!stats.recent.length && <div className="px-4 pb-3 text-[12px] text-dim">Nothing yet.</div>}
+      {!stats.recent.length && <div className="px-4 pb-3 text-caption text-dim">Nothing yet.</div>}
       <div className="grid grid-cols-1 lg:grid-cols-2">
         {stats.recent.map((r, i) => {
           const I = icon[r.kind] ?? Lightning
           return (
-            <div key={`${r.at}-${i}`} className="flex items-center gap-2.5 border-t border-line/60 px-4 py-2 text-[12px]">
+            <div key={`${r.at}-${i}`} className="flex items-center gap-2.5 border-t border-line/60 px-4 py-2 text-caption">
               <span className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md border', r.ok ? 'border-line bg-elev text-muted' : 'border-danger-line bg-danger-soft text-danger-hi')}>
                 <I size={12} />
               </span>
-              <span className="min-w-0 truncate font-mono text-[11.5px] text-fg">{r.label}</span>
-              <span className="min-w-0 flex-1 truncate text-[11px] text-dim">{r.detail}</span>
-              <span className="flex shrink-0 items-center gap-1 text-[10.5px] text-dim">
+              <span className="min-w-0 truncate font-mono text-caption text-fg">{r.label}</span>
+              <span className="min-w-0 flex-1 truncate text-caption text-dim">{r.detail}</span>
+              <span className="flex shrink-0 items-center gap-1 text-micro text-dim">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE[r.source]?.color ?? '#555' }} />
                 {SOURCE[r.source]?.label ?? r.source}
               </span>
-              <span className="w-14 shrink-0 text-right text-[10.5px] text-dim">{timeAgo(r.at)}</span>
+              <span className="w-14 shrink-0 text-right text-micro text-dim">{timeAgo(r.at)}</span>
             </div>
           )
         })}
@@ -840,15 +840,15 @@ function Recent({ stats }: { stats: DashboardStats }) {
 function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 'danger' }) {
   return (
     <div>
-      <div className={clsx('font-mono text-[14px] font-semibold tabular-nums', tone === 'danger' ? 'text-danger-hi' : 'text-fg')}>{value}</div>
-      <div className="text-[10.5px] text-dim">{label}</div>
+      <div className={clsx('font-mono text-body font-semibold tabular-nums', tone === 'danger' ? 'text-danger-hi' : 'text-fg')}>{value}</div>
+      <div className="text-micro text-dim">{label}</div>
     </div>
   )
 }
 
 function LinkButton({ onClick, children }: { onClick(): void; children: ReactNode }) {
   return (
-    <button onClick={onClick} className="text-[11px] text-dim hover:text-crimson-hi">
+    <button onClick={onClick} className="text-caption text-dim hover:text-crimson-hi">
       {children} →
     </button>
   )

@@ -93,10 +93,10 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
 
   const header = (back: () => void, label: string) => (
     <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
-      <button onClick={back} className="flex h-8 items-center gap-1 rounded-lg pl-1 pr-2 text-[12.5px] text-dim hover:bg-elev-2 hover:text-fg">
+      <button onClick={back} className="flex h-8 items-center gap-1 rounded-lg pl-1 pr-2 text-ui text-dim hover:bg-elev-2 hover:text-fg">
         <CaretLeft size={14} /> Back
       </button>
-      <span className="text-[13px] text-muted">{label}</span>
+      <span className="text-ui text-muted">{label}</span>
       <div className="flex-1" />
       <button onClick={onCancel} title="Cancel" aria-label="Cancel" className="flex h-8 w-8 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg">
         <X size={15} />
@@ -113,7 +113,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
           <div className="mx-auto grid w-[min(620px,calc(100%-32px))] gap-5 py-10 mobile:py-6">
             <div className="grid gap-1.5">
               <h1 className="text-[22px] font-semibold tracking-tight">What are you making?</h1>
-              <p className="text-[13px] text-muted">Who it's for, how it should feel, and a colour if you have one.</p>
+              <p className="text-ui text-muted">Who it's for, how it should feel, and a colour if you have one.</p>
             </div>
             <Textarea rows={4} autoFocus={!isMobile} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="What you're making" placeholder="e.g. A booking site for a small yoga studio. Calm and warm; most people book on their phone." />
             <LogoField logo={logo} onLogo={setLogo} />
@@ -122,7 +122,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
                 <Button variant="primary" icon={<MagicWand size={14} />} disabled={!prompt.trim()} onClick={() => void generate(false)}>
                   Show me three looks
                 </Button>
-                <div className="flex min-w-0 items-center gap-2 text-[12px] text-dim">
+                <div className="flex min-w-0 items-center gap-2 text-caption text-dim">
                   Made by
                   <div className="w-56 max-w-full">
                     <ModelPicker value={model} onChange={setModel} />
@@ -130,11 +130,11 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
                 </div>
               </div>
             ) : (
-              <div className="rounded-[12px] border border-line bg-elev px-4 py-3 text-[13px] text-muted">
+              <div className="rounded-[12px] border border-line bg-elev px-4 py-3 text-ui text-muted">
                 Cloth needs an AI model to make looks from a description. Add one on the Models page, or pick from finished looks below.
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4 text-[12.5px] text-dim">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4 text-ui text-dim">
               <button onClick={showPresets} className="underline underline-offset-[3px] hover:text-fg">
                 Pick from finished looks
               </button>
@@ -176,8 +176,8 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
                         </div>
                       </div>
                       <div className="grid flex-1 content-start gap-1.5 p-3.5">
-                        <span className="text-[14px] font-semibold">{l.name}</span>
-                        <span className="text-[12.5px] leading-snug text-muted">{l.why}</span>
+                        <span className="text-body font-semibold">{l.name}</span>
+                        <span className="text-ui leading-snug text-muted">{l.why}</span>
                         <Button variant="primary" size="sm" className="mt-1.5 justify-self-start" onClick={() => pick(l)}>
                           Use this look
                         </Button>
@@ -204,7 +204,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
               <span key={s.id} className={clsx('h-1 flex-1 rounded-full', i < step ? 'bg-crimson' : i === step ? 'bg-crimson-hi' : 'bg-line-strong')} />
             ))}
           </div>
-          <div className="px-5 pt-2 text-[12px] text-dim">
+          <div className="px-5 pt-2 text-caption text-dim">
             Step {step + 1} of {STEPS.length}: {current.label}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-4">
@@ -261,7 +261,7 @@ function Option({ on, onClick, children, suggested }: { on: boolean; onClick(): 
       className={clsx('grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[11px] border px-3 py-2.5 text-left transition-colors', on ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-hover')}
     >
       {children}
-      {suggested ? <span className="whitespace-nowrap rounded-full border border-ok/35 px-2 py-px text-[11px] text-ok">Suggested</span> : <span />}
+      {suggested ? <span className="whitespace-nowrap rounded-full border border-ok/35 px-2 py-px text-caption text-ok">Suggested</span> : <span />}
     </button>
   )
 }
@@ -270,8 +270,8 @@ function Ask({ title, why, children }: { title: string; why?: string; children: 
   return (
     <div className="grid gap-4">
       <div className="grid gap-1">
-        <h2 className="text-[18px] font-semibold leading-tight tracking-tight">{title}</h2>
-        {why && <p className="text-[13px] text-muted">{why}</p>}
+        <h2 className="text-title font-semibold leading-tight tracking-tight">{title}</h2>
+        {why && <p className="text-ui text-muted">{why}</p>}
       </div>
       {children}
     </div>
@@ -311,14 +311,14 @@ function StepChoices({
               key={c.color}
               onClick={() => set({ ...input, brand: c.color })}
               aria-pressed={input.brand.toLowerCase() === c.color.toLowerCase()}
-              className={clsx('grid gap-1.5 rounded-[11px] border p-2 text-left text-[12px]', input.brand.toLowerCase() === c.color.toLowerCase() ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:bg-hover')}
+              className={clsx('grid gap-1.5 rounded-[11px] border p-2 text-left text-caption', input.brand.toLowerCase() === c.color.toLowerCase() ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:bg-hover')}
             >
               <span className="h-8 rounded-[7px]" style={{ background: c.color }} />
               {c.name}
             </button>
           ))}
         </div>
-        <label className="flex items-center gap-2.5 text-[13px] text-muted">
+        <label className="flex items-center gap-2.5 text-ui text-muted">
           <span className="relative h-8 w-10 overflow-hidden rounded-lg border border-line-strong" style={{ background: input.brand }}>
             <input type="color" value={input.brand} onChange={(e) => set({ ...input, brand: e.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
           </span>
@@ -339,8 +339,8 @@ function StepChoices({
             <Option on={ownOn} suggested onClick={() => set({ ...input, fontHeading: base.fontHeading, fontSans: base.fontSans, fontMono: base.fontMono, headingWeight: base.headingWeight, headingTracking: base.headingTracking })}>
               <Aa font={base.fontHeading} />
               <span>
-                <span className="block text-[13.5px] font-semibold">This look</span>
-                <span className="text-[12.5px] text-muted">
+                <span className="block text-body font-semibold">This look</span>
+                <span className="text-ui text-muted">
                   {base.fontHeading}
                   {base.fontSans !== base.fontHeading ? ` and ${base.fontSans}` : ''}
                 </span>
@@ -351,10 +351,10 @@ function StepChoices({
             <Option key={t} on={feel === t && !ownOn} suggested={baseFeel === t} onClick={() => set(withTextFeel(input, t))}>
               <Aa font={TEXT_FEELS[t].fontHeading} />
               <span>
-                <span className="block text-[13.5px] font-semibold" style={{ fontFamily: `'${TEXT_FEELS[t].fontHeading}', sans-serif` }}>
+                <span className="block text-body font-semibold" style={{ fontFamily: `'${TEXT_FEELS[t].fontHeading}', sans-serif` }}>
                   {TEXT_FEELS[t].label}
                 </span>
-                <span className="text-[12.5px] text-muted">{TEXT_FEELS[t].hint}</span>
+                <span className="text-ui text-muted">{TEXT_FEELS[t].hint}</span>
               </span>
             </Option>
           ))}
@@ -370,12 +370,12 @@ function StepChoices({
           {CORNER_IDS.map((c) => (
             <Option key={c} on={corners === c} suggested={cornersOf(base) === c} onClick={() => set(withCorners(input, c))}>
               <span className="block h-7 w-16 bg-muted" style={{ borderRadius: c === 'pill' ? 999 : CORNERS[c].radius }} />
-              <span className="text-[13.5px] font-semibold">{CORNERS[c].label}</span>
+              <span className="text-body font-semibold">{CORNERS[c].label}</span>
             </Option>
           ))}
         </div>
         <div className="grid gap-1.5">
-          <span className="text-[12.5px] font-medium text-muted">Spacing</span>
+          <span className="text-ui font-medium text-muted">Spacing</span>
           <Segmented value={input.density} onChange={(density) => set({ ...input, density })} items={(Object.keys(SPACINGS) as DesignInput['density'][]).map((d) => ({ value: d, label: SPACINGS[d] }))} />
         </div>
       </Ask>
@@ -389,8 +389,8 @@ function StepChoices({
             <Option key={m} on={input.mode === m} suggested={base.mode === m} onClick={() => set({ ...input, mode: m })}>
               <span className="h-9 w-11 rounded-lg border border-line-strong" style={{ background: m === 'light' ? '#f4f4f5' : m === 'dark' ? '#16161a' : 'linear-gradient(135deg,#f4f4f5 50%,#16161a 50%)' }} />
               <span>
-                <span className="block text-[13.5px] font-semibold">{MODES[m].label}</span>
-                <span className="text-[12.5px] text-muted">{MODES[m].hint}</span>
+                <span className="block text-body font-semibold">{MODES[m].label}</span>
+                <span className="text-ui text-muted">{MODES[m].hint}</span>
               </span>
             </Option>
           ))}
@@ -401,16 +401,16 @@ function StepChoices({
   return (
     <Ask title="Name your design">
       <label className="grid gap-1.5">
-        <span className="text-[12.5px] font-medium text-muted">Name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} className="h-9 rounded-[10px] border border-line-strong bg-elev px-3 text-[13.5px] outline-none focus:border-crimson-line" />
+        <span className="text-ui font-medium text-muted">Name</span>
+        <input value={name} onChange={(e) => setName(e.target.value)} className="h-9 rounded-[10px] border border-line-strong bg-elev px-3 text-body outline-none focus:border-crimson-line" />
       </label>
       {askDefault && (
-        <label className="flex items-center gap-2 text-[13px]">
+        <label className="flex items-center gap-2 text-ui">
           <input type="checkbox" checked={useDefault} onChange={(e) => setUseDefault(e.target.checked)} className="h-4 w-4 accent-[#dc2645]" />
           Use for new projects
         </label>
       )}
-      <div className="grid text-[13px]">
+      <div className="grid text-ui">
         {[
           ['Colour', <span key="c" className="inline-block h-3.5 w-3.5 rounded-[4px] align-[-2px]" style={{ background: input.brand }} />],
           ['Text', feel ? TEXT_FEELS[feel].label : input.fontHeading],
@@ -448,10 +448,10 @@ function LogoField({ logo, onLogo }: { logo: { url: string; color: string | null
   }
   return (
     <div className="grid gap-1.5">
-      <span className="text-[12.5px] font-medium text-muted">Logo (optional)</span>
+      <span className="text-ui font-medium text-muted">Logo (optional)</span>
       <div className="flex items-center gap-3 rounded-[12px] border border-dashed border-line-strong px-3 py-2.5">
         {logo ? <img src={logo.url} alt="" className="h-10 w-10 rounded-md bg-white object-contain" /> : <ImageSquare size={22} className="text-dim" />}
-        <span className="min-w-0 flex-1 text-[12.5px] text-muted">
+        <span className="min-w-0 flex-1 text-ui text-muted">
           {logo ? (
             logo.color ? (
               <>
@@ -464,12 +464,12 @@ function LogoField({ logo, onLogo }: { logo: { url: string; color: string | null
             'Add a logo and Cloth will match its colour.'
           )}
         </span>
-        <label className="cursor-pointer rounded-lg border border-line-strong bg-elev px-2.5 py-1 text-[12px] hover:bg-hover">
+        <label className="cursor-pointer rounded-lg border border-line-strong bg-elev px-2.5 py-1 text-caption hover:bg-hover">
           {logo ? 'Change' : 'Choose image'}
           <input type="file" accept="image/*" className="sr-only" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
         </label>
         {logo && (
-          <button onClick={() => onLogo(null)} className="text-[12px] text-dim hover:text-fg">
+          <button onClick={() => onLogo(null)} className="text-caption text-dim hover:text-fg">
             Remove
           </button>
         )}

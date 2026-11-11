@@ -54,7 +54,7 @@ export function ActivityGroup({
         <button
           onClick={() => setOpen(!open)}
           aria-expanded={shown}
-          className="-ml-1 inline-flex max-w-full items-center gap-2 rounded-lg px-2 py-[3px] text-left text-[13px] text-dim transition-colors hover:bg-panel hover:text-muted"
+          className="-ml-1 inline-flex max-w-full items-center gap-2 rounded-lg px-2 py-[3px] text-left text-ui text-dim transition-colors hover:bg-panel hover:text-muted"
         >
           {caret}
           <span className="min-w-0 truncate">
@@ -71,11 +71,11 @@ export function ActivityGroup({
             )}
           </span>
           {stats.changed && (
-            <span className="shrink-0 font-mono text-[11.5px]">
+            <span className="shrink-0 font-mono text-caption">
               <span className="text-ok">+{stats.added}</span> <span className="text-danger-hi">-{stats.removed}</span>
             </span>
           )}
-          {stats.failed > 0 && <span className="shrink-0 font-mono text-[11.5px] text-danger-hi">{stats.failed} failed</span>}
+          {stats.failed > 0 && <span className="shrink-0 font-mono text-caption text-danger-hi">{stats.failed} failed</span>}
         </button>
       )}
       <AnimatePresence initial={false}>
@@ -114,19 +114,19 @@ function LiveLine({ last, open, onToggle }: { last: UiBlock | undefined; open: b
   }, [])
   const step = last?.type === 'tool' && last.trace.status === 'running' ? toolVerb(last.trace) : null
   return (
-    <button onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-[9px] text-left text-[13px] text-muted">
+    <button onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-[9px] text-left text-ui text-muted">
       <span aria-hidden className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-crimson-hi motion-reduce:animate-none" />
       <span aria-live="polite" className="flex min-w-0 items-center gap-[9px]">
         {step ? (
           <>
             <span className="shrink-0">{step.verb}</span>
-            <span className="min-w-0 truncate font-mono text-[12px] text-dim">{step.target}</span>
+            <span className="min-w-0 truncate font-mono text-caption text-dim">{step.target}</span>
           </>
         ) : (
           <span className="shimmer-text">{last?.type === 'thinking' ? 'Thinking' : 'Working'}</span>
         )}
       </span>
-      <span className="ml-auto shrink-0 font-mono text-[11px] text-dim">{elapsed(now - start)}</span>
+      <span className="ml-auto shrink-0 font-mono text-caption text-dim">{elapsed(now - start)}</span>
     </button>
   )
 }
@@ -148,7 +148,7 @@ export function ThinkingRow({ text: raw }: { text: string }) {
     setFull(!full)
   }
   return (
-    <div className="-ml-1.5 grid grid-cols-[16px_minmax(0,1fr)] gap-2.5 px-1.5 py-1 text-[13px]">
+    <div className="-ml-1.5 grid grid-cols-[16px_minmax(0,1fr)] gap-2.5 px-1.5 py-1 text-ui">
       <span className="mt-[4px] flex text-dim">
         <Brain size={13} />
       </span>
@@ -179,20 +179,20 @@ export function ToolRow({ trace, open, awaiting, onToggle }: { trace: ToolTrace;
     <button
       onClick={onToggle}
       aria-expanded={open}
-      className={clsx('-ml-1.5 grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-baseline gap-2.5 rounded-[7px] px-1.5 py-1 text-left text-[13px] text-muted transition-colors hover:bg-panel', open && 'bg-panel')}
+      className={clsx('-ml-1.5 grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-baseline gap-2.5 rounded-[7px] px-1.5 py-1 text-left text-ui text-muted transition-colors hover:bg-panel', open && 'bg-panel')}
     >
       <span className={clsx('flex self-center', failed ? 'text-danger-hi' : 'text-dim')}>
         <Icon size={13} />
       </span>
       <span className="min-w-0 truncate">
-        <span className="font-medium text-fg">{verb}</span> <span className="font-mono text-[12px] text-dim">{target}</span>
+        <span className="font-medium text-fg">{verb}</span> <span className="font-mono text-caption text-dim">{target}</span>
       </span>
       {awaiting ? (
-        <span className="self-center rounded-full bg-warn/10 px-2 py-px text-[10.5px] text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>
+        <span className="self-center rounded-full bg-warn/10 px-2 py-px text-micro text-warn">{trace.name === 'ask_user' ? 'waiting for you' : 'awaiting approval'}</span>
       ) : trace.status === 'running' ? (
         <CircleNotch size={12} className="self-center animate-spin text-dim motion-reduce:animate-none" />
       ) : (
-        <span className={clsx('font-mono text-[11px]', failed ? 'text-danger-hi' : 'text-dim')}>
+        <span className={clsx('font-mono text-caption', failed ? 'text-danger-hi' : 'text-dim')}>
           {failed ? `failed${trace.durationMs !== null ? ` · ${duration(trace.durationMs)}` : ''}` : duration(trace.durationMs)}
         </span>
       )}
@@ -217,7 +217,7 @@ export function ChangedFiles({ traces, onUndo }: { traces: ToolTrace[]; onUndo?(
   }
   return (
     <div className="mb-2.5 mt-1.5 overflow-hidden rounded-[12px] border border-line">
-      <div className="flex items-center gap-2.5 border-b border-line px-3 py-2 text-[12.5px] text-dim">
+      <div className="flex items-center gap-2.5 border-b border-line px-3 py-2 text-ui text-dim">
         <b className="font-semibold text-fg">
           {files.length} {files.length === 1 ? 'file' : 'files'} changed
         </b>
@@ -228,21 +228,21 @@ export function ChangedFiles({ traces, onUndo }: { traces: ToolTrace[]; onUndo?(
             disabled={busy}
             onClick={() => void undoAll()}
             title="Restore every file as it was before this reply"
-            className="ml-auto flex items-center gap-1 text-[12px] text-dim transition-colors hover:text-fg disabled:opacity-50"
+            className="ml-auto flex items-center gap-1 text-caption text-dim transition-colors hover:text-fg disabled:opacity-50"
           >
             <ArrowCounterClockwise size={12} />
             Undo all
           </button>
         ) : (
-          !undoable.length && <span className="ml-auto text-[11px] text-dim">undone</span>
+          !undoable.length && <span className="ml-auto text-caption text-dim">undone</span>
         )}
       </div>
       {files.map((f, i) => (
-        <div key={f.path} className={clsx('flex items-center gap-2.5 px-3 py-[7px] text-[12.5px]', i > 0 && 'border-t border-line', f.undone && 'line-through opacity-50')}>
-          <span className="min-w-0 truncate font-mono text-[12px]" title={f.path}>
+        <div key={f.path} className={clsx('flex items-center gap-2.5 px-3 py-[7px] text-ui', i > 0 && 'border-t border-line', f.undone && 'line-through opacity-50')}>
+          <span className="min-w-0 truncate font-mono text-caption" title={f.path}>
             {f.path}
           </span>
-          <span className="ml-auto shrink-0 font-mono text-[11.5px]">
+          <span className="ml-auto shrink-0 font-mono text-caption">
             <span className="text-ok">+{f.added}</span> <span className="text-danger-hi">-{f.removed}</span>
           </span>
         </div>

@@ -36,14 +36,14 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
         <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg bg-elev-2 text-muted">
           <ChatCircleDots size={15} weight="fill" />
         </span>
-        <span className="flex-1 text-[12.5px] font-semibold">Question for you</span>
-        <span className="flex items-center gap-1 rounded-full bg-crimson-soft px-2 py-0.5 text-[10.5px] font-medium text-crimson-text">
+        <span className="flex-1 text-ui font-semibold">Question for you</span>
+        <span className="flex items-center gap-1 rounded-full bg-crimson-soft px-2 py-0.5 text-micro font-medium text-crimson-text">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-crimson-hi" />
           waiting for your answer
         </span>
       </div>
       <div className="space-y-3 p-3">
-        <div className="selectable whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg">{question.question}</div>
+        <div className="selectable whitespace-pre-wrap text-body leading-relaxed text-fg">{question.question}</div>
         {question.options.length > 0 && (
           <div className="flex flex-col gap-1.5">
             {question.options.map((o, i) => {
@@ -54,7 +54,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
                   disabled={busy}
                   onClick={() => (question.multiple ? setPicked((p) => (on ? p.filter((x) => x !== o) : [...p, o])) : void send(o))}
                   className={clsx(
-                    'flex min-h-9 items-center gap-2.5 rounded-lg border px-3 py-1.5 text-left text-[12.5px] transition-colors disabled:opacity-50',
+                    'flex min-h-9 items-center gap-2.5 rounded-lg border px-3 py-1.5 text-left text-ui transition-colors disabled:opacity-50',
                     on ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-bg text-muted hover:border-line-strong hover:text-fg'
                   )}
                 >
@@ -63,7 +63,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
                       {on && <Check size={10} weight="bold" />}
                     </span>
                   ) : (
-                    <span className="w-4 shrink-0 font-mono text-[11px] text-dim">{i + 1}</span>
+                    <span className="w-4 shrink-0 font-mono text-caption text-dim">{i + 1}</span>
                   )}
                   <span className="min-w-0 flex-1">{o}</span>
                 </button>
@@ -85,7 +85,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
               }}
               aria-label="Your answer"
               placeholder={question.options.length ? 'Or type your own answer' : 'Type your answer'}
-              className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-[12.5px] text-fg outline-none placeholder:text-dim focus:border-crimson-line"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-ui text-fg outline-none placeholder:text-dim focus:border-crimson-line"
             />
             {!question.multiple && (
               <button
@@ -105,7 +105,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
             <button
               disabled={busy || !multiAnswer}
               onClick={submitTyped}
-              className="h-8 rounded-lg bg-crimson px-3.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+              className="h-8 rounded-lg bg-crimson px-3.5 text-ui font-semibold text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
             >
               Send answer
             </button>
@@ -115,7 +115,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
             disabled={busy}
             onClick={() => void send(null)}
             title="Let the agent continue with its best judgement"
-            className="h-8 rounded-lg px-2.5 text-[12px] text-dim transition-colors hover:bg-elev-2 hover:text-muted disabled:opacity-50"
+            className="h-8 rounded-lg px-2.5 text-caption text-dim transition-colors hover:bg-elev-2 hover:text-muted disabled:opacity-50"
           >
             Skip question
           </button>

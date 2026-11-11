@@ -40,7 +40,7 @@ export function PromptBox({ value, onChange, items, onMention, onBlur }: { value
         aria-label="What it does"
         value={value}
         placeholder="Look at what changed in my project since yesterday and write me a short brief: what moved, what’s blocked, and the three things to do first today…"
-        className="min-h-[128px] w-full resize-y rounded-[12px] border border-line bg-panel px-3.5 py-3 text-[13.5px] leading-relaxed text-fg transition-colors placeholder:text-dim focus:border-crimson-line focus:outline-none focus:ring-2 focus:ring-crimson-soft"
+        className="min-h-[128px] w-full resize-y rounded-[12px] border border-line bg-panel px-3.5 py-3 text-body leading-relaxed text-fg transition-colors placeholder:text-dim focus:border-crimson-line focus:outline-none focus:ring-2 focus:ring-crimson-soft"
         onChange={(e) => {
           onChange(e.target.value)
           sync(e.target)
@@ -65,18 +65,18 @@ export function PromptBox({ value, onChange, items, onMention, onBlur }: { value
         <ul role="listbox" aria-label="Mention" className="absolute left-2 top-full z-10 mt-1 grid w-[min(360px,100%)] gap-0.5 rounded-[12px] border border-line-strong bg-elev p-1 shadow-[0_12px_40px_-12px_rgb(0_0_0/0.8)]">
           {matches.map((i, n) => (
             <li key={`${i.kind}:${i.id}`} role="option" aria-selected={n === active}>
-              <button onMouseDown={(e) => (e.preventDefault(), pick(i))} className={clsx('flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px]', n === active ? 'bg-elev-2' : 'hover:bg-elev-2')}>
+              <button onMouseDown={(e) => (e.preventDefault(), pick(i))} className={clsx('flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-ui', n === active ? 'bg-elev-2' : 'hover:bg-elev-2')}>
                 <span aria-hidden="true" className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md', KIND[i.kind].tile)}>
                   <i.icon size={13} />
                 </span>
                 <span className="min-w-0 flex-1 truncate">{i.label}</span>
-                <span className="text-[11px] text-dim">{KIND[i.kind].one}</span>
+                <span className="text-caption text-dim">{KIND[i.kind].one}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      <p className="text-[12px] text-dim">Type @ to add a tool, server, collection or skill.</p>
+      <p className="text-caption text-dim">Type @ to add a tool, server, collection or skill.</p>
     </div>
   )
 }
@@ -104,10 +104,10 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
   return (
     <div className="grid gap-3 rounded-[12px] border border-line bg-panel p-3.5">
       {value.kind === 'files' && (
-        <p className={clsx('text-[12.5px]', folder ? 'text-muted' : 'text-warn')}>{folder ? `Runs a few seconds after files in ${folder.split(/[\\/]/).filter(Boolean).pop()} change. It’s told which files.` : 'Choose its folder under “What it can use” first.'}</p>
+        <p className={clsx('text-ui', folder ? 'text-muted' : 'text-warn')}>{folder ? `Runs a few seconds after files in ${folder.split(/[\\/]/).filter(Boolean).pop()} change. It’s told which files.` : 'Choose its folder under “What it can use” first.'}</p>
       )}
       {value.kind === 'url' && (
-        <label className="grid gap-1 text-[12.5px] text-muted">
+        <label className="grid gap-1 text-ui text-muted">
           Page address
           <Input value={value.url} onChange={(e) => onChange({ ...value, url: e.target.value })} placeholder="https://example.com/pricing…" spellCheck={false} autoComplete="off" className="font-mono" />
         </label>
@@ -115,7 +115,7 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
       {value.kind === 'mcp' && (
         <div className="grid gap-2.5">
           {!configs.length ? (
-            <p className="text-[12.5px] text-warn">Add an MCP server on the MCP page first.</p>
+            <p className="text-ui text-warn">Add an MCP server on the MCP page first.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               <Select aria-label="Server" value={value.serverId} onChange={(e) => onChange({ ...value, serverId: e.target.value, tool: '' })} className="w-48">
@@ -141,11 +141,11 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
               )}
             </div>
           )}
-          <label className="grid gap-1 text-[12.5px] text-muted">
+          <label className="grid gap-1 text-ui text-muted">
             What to ask it (optional, JSON)
             <Textarea
               rows={2}
-              className="font-mono text-[11.5px]"
+              className="font-mono text-caption"
               spellCheck={false}
               value={argsText}
               placeholder='{ "repo": "owner/name", "state": "open" }…'
@@ -161,12 +161,12 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
                 }
               }}
             />
-            {argsError && <span className="text-[11.5px] text-danger-hi">{argsError}</span>}
+            {argsError && <span className="text-caption text-danger-hi">{argsError}</span>}
           </label>
         </div>
       )}
       {value.kind !== 'files' && (
-        <label className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+        <label className="flex flex-wrap items-center gap-2 text-ui text-muted">
           Check every
           <Select aria-label="How often to check" value={String(value.everyMinutes)} onChange={(e) => onChange({ ...value, everyMinutes: Number(e.target.value) })} className="w-32">
             {EVERY.map((m) => (
@@ -201,40 +201,40 @@ export function CommandsPicker({ value, onChange, folder, docker }: { value: Aut
             onClick={() => onChange(o.v === 'off' ? null : o.v === 'container' ? { mode: 'container', image: 'node:22', network: true } : { mode: 'allowlist', allow: allowText.split('\n').map((x) => x.trim()).filter(Boolean) })}
             className={clsx('grid content-start gap-0.5 rounded-[11px] border p-3 text-left', mode === o.v ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
           >
-            <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+            <span className="flex items-center gap-1.5 text-ui font-semibold">
               {o.icon && <o.icon size={14} aria-hidden="true" />}
               {o.label}
             </span>
-            <span className="text-[12px] text-dim">{o.sub}</span>
+            <span className="text-caption text-dim">{o.sub}</span>
           </button>
         ))}
       </div>
       {value && !folder && (
-        <p className="flex items-center gap-2 text-[12px] text-warn">
+        <p className="flex items-center gap-2 text-caption text-warn">
           <AlertTriangle size={13} aria-hidden="true" />
           Commands run in its folder. Choose one under Folder.
         </p>
       )}
       {value?.mode === 'container' && (
         <div className="grid gap-2.5 rounded-[12px] border border-line bg-panel p-3.5">
-          {docker && !docker.available && <p className="text-[12.5px] text-warn">{docker.error ?? 'Docker isn’t available.'} Runs will fail until it is.</p>}
-          <label className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+          {docker && !docker.available && <p className="text-ui text-warn">{docker.error ?? 'Docker isn’t available.'} Runs will fail until it is.</p>}
+          <label className="flex flex-wrap items-center gap-2 text-ui text-muted">
             Image
             <Input value={value.image} onChange={(e) => onChange({ ...value, image: e.target.value })} spellCheck={false} autoComplete="off" className="w-44 font-mono" />
             <span className="text-dim">The Linux system it runs in, such as node:22 or python:3.12.</span>
           </label>
-          <label className="flex min-h-8 cursor-pointer items-center gap-2 text-[12.5px]">
+          <label className="flex min-h-8 cursor-pointer items-center gap-2 text-ui">
             <input type="checkbox" className="accent-[#dc2645]" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
             Can reach the internet (to install packages)
           </label>
         </div>
       )}
       {value?.mode === 'allowlist' && (
-        <label className="grid gap-1 text-[12.5px] text-muted">
+        <label className="grid gap-1 text-ui text-muted">
           Commands it may run, one per line
           <Textarea
             rows={3}
-            className="font-mono text-[12px]"
+            className="font-mono text-caption"
             spellCheck={false}
             value={allowText}
             placeholder={'git log\nnpm test…'}
@@ -243,7 +243,7 @@ export function CommandsPicker({ value, onChange, folder, docker }: { value: Aut
               onChange({ mode: 'allowlist', allow: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })
             }}
           />
-          <span className="text-[11.5px] text-dim">Each line is how an allowed command starts: “git log” allows “git log --oneline” too. Anything else, or two commands chained together, is refused and the agent is told why.</span>
+          <span className="text-caption text-dim">Each line is how an allowed command starts: “git log” allows “git log --oneline” too. Anything else, or two commands chained together, is refused and the agent is told why.</span>
         </label>
       )}
     </div>

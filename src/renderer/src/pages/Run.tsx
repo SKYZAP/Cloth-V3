@@ -126,7 +126,7 @@ export function RunPage() {
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-[18px] font-semibold tracking-tight">Run</h1>
+              <h1 className="text-title font-semibold tracking-tight">Run</h1>
             </div>
             <Button icon={<FolderOpen size={13} />} onClick={() => void addFromDisk()}>
               From disk
@@ -195,10 +195,10 @@ function RunnerRow({ runner, status, download, selected, onClick }: { runner: Ru
     >
       <span className={clsx('h-[7px] w-[7px] shrink-0 rounded-full', download ? 'bg-info' : DOT[status.state])} aria-hidden="true" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-semibold" translate="no">
+        <span className="block truncate text-ui font-semibold" translate="no">
           {runner.name}
         </span>
-        <span className="block truncate text-[11.5px] tabular-nums text-dim">{sub}</span>
+        <span className="block truncate text-caption tabular-nums text-dim">{sub}</span>
       </span>
     </button>
   )
@@ -225,15 +225,15 @@ function FirstRun({
   return (
     <section aria-label="Get started" className="grid gap-4 rounded-[12px] border border-line bg-elev px-5 py-4">
       <div>
-        <h2 className="text-[14px] font-semibold">Run models on this PC</h2>
-        <p className="mt-0.5 text-[12.5px] text-dim">{hardware ? `${hardwareLine(hardware)}.` : 'Checking your hardware…'}</p>
+        <h2 className="text-body font-semibold">Run models on this PC</h2>
+        <p className="mt-0.5 text-ui text-dim">{hardware ? `${hardwareLine(hardware)}.` : 'Checking your hardware…'}</p>
       </div>
       <ol className="grid gap-3 sm:grid-cols-2">
         <li className="grid content-start gap-2 rounded-[10px] border border-line bg-panel px-4 py-3">
-          <div className="flex items-baseline gap-2 text-[13px] font-semibold">
+          <div className="flex items-baseline gap-2 text-ui font-semibold">
             <span className="tabular-nums text-crimson-hi">1</span> Install llama.cpp
           </div>
-          <p className="text-[12px] text-dim">
+          <p className="text-caption text-dim">
             {FLAVOUR.prism.name}'s build, {BACKEND[backend]} for {hardware?.gpus[0] ? `your ${hardware.gpus[0].name}` : 'this PC'}.
           </p>
           {downloading ? (
@@ -250,7 +250,7 @@ function FirstRun({
           )}
         </li>
         <li className="grid content-start gap-2 rounded-[10px] border border-line bg-panel px-4 py-3">
-          <div className="flex items-baseline gap-2 text-[13px] font-semibold">
+          <div className="flex items-baseline gap-2 text-ui font-semibold">
             <span className="tabular-nums text-crimson-hi">2</span> Add a model
           </div>
           <div className="flex flex-wrap items-center gap-2">

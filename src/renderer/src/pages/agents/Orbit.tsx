@@ -176,8 +176,8 @@ export function TeamOrbit({
               C
               <Ring n={rings.cloth} tone="ok" />
             </motion.span>
-            <span className="rounded-[6px] bg-bg/80 px-1.5 text-[13px] font-semibold">Cloth</span>
-            <span className="-mt-1 whitespace-nowrap rounded-[6px] bg-bg/80 px-1.5 text-[11.5px] text-dim">The main agent in every chat</span>
+            <span className="rounded-[6px] bg-bg/80 px-1.5 text-ui font-semibold">Cloth</span>
+            <span className="-mt-1 whitespace-nowrap rounded-[6px] bg-bg/80 px-1.5 text-caption text-dim">The main agent in every chat</span>
           </div>
 
           {agents.map((a, i) => {
@@ -203,10 +203,10 @@ export function TeamOrbit({
                   <Tile name={a.name} builtin={a.builtin} size="lg" className="shadow-[inset_0_0_0_1px_var(--color-line-strong)]" />
                   <Ring n={rings[a.id]} tone="crimson" />
                 </span>
-                <span className="max-w-full truncate rounded-[6px] bg-bg/80 px-1.5 text-[12px] font-semibold">{a.name}</span>
+                <span className="max-w-full truncate rounded-[6px] bg-bg/80 px-1.5 text-caption font-semibold">{a.name}</span>
                 <span
                   className={clsx(
-                    '-mt-1 max-w-full truncate text-[11px]',
+                    '-mt-1 max-w-full truncate text-caption',
                     l?.state === 'working' ? 'text-crimson-text' : l?.state === 'done' ? 'text-ok' : l?.state === 'failed' ? 'text-danger-hi' : 'text-dim'
                   )}
                   title={l?.text || undefined}
@@ -220,7 +220,7 @@ export function TeamOrbit({
         </>
       )}
 
-      <p aria-live="polite" className="pointer-events-none absolute bottom-1 left-0 max-w-[60%] truncate font-mono text-[11.5px] text-dim">
+      <p aria-live="polite" className="pointer-events-none absolute bottom-1 left-0 max-w-[60%] truncate font-mono text-caption text-dim">
         {team.latest}
       </p>
     </div>

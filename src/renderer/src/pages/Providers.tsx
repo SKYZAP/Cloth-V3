@@ -32,8 +32,8 @@ export function ProvidersPage() {
         header={
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[13px] font-semibold">Model providers</div>
-              <div className="text-[11px] text-dim">{providers.reduce((n, p) => n + p.models.length, 0)} models</div>
+              <div className="text-ui font-semibold">Model providers</div>
+              <div className="text-caption text-dim">{providers.reduce((n, p) => n + p.models.length, 0)} models</div>
             </div>
             <Button size="sm" variant="primary" icon={<Plus size={13} />} onClick={() => setAdding(true)}>
               Add
@@ -45,15 +45,15 @@ export function ProvidersPage() {
           <ListItem key={p.id} active={p.id === activeId} onClick={() => (setActiveId(p.id), setOpen(true))}>
             {isLocal(p.baseUrl) ? <HardDrive size={14} className="shrink-0 text-dim" /> : <Cloud size={14} className="shrink-0 text-dim" />}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12.5px]">{p.name}</div>
-              <div className="truncate text-[11px] text-dim">
+              <div className="truncate text-ui">{p.name}</div>
+              <div className="truncate text-caption text-dim">
                 {p.kind} · {p.models.length} models
               </div>
             </div>
             <Dot tone={p.enabled ? 'ok' : 'dim'} />
           </ListItem>
         ))}
-        {!providers.length && <div className="p-4 text-center text-[12px] text-dim">No providers yet — tap Add to connect OpenAI, Anthropic or a local server.</div>}
+        {!providers.length && <div className="p-4 text-center text-caption text-dim">No providers yet — tap Add to connect OpenAI, Anthropic or a local server.</div>}
       </ListPane>
       <SplitDetail>
         <div className="h-full overflow-y-auto">
@@ -160,8 +160,8 @@ function AddProvider({ open, onClose, onAdded }: { open: boolean; onClose(): voi
             <button key={p.id} onClick={() => choose(p)} className="flex items-start gap-2.5 rounded-lg border border-line p-3 text-left hover:border-crimson-line hover:bg-crimson-soft">
               {isLocal(p.baseUrl) ? <HardDrive size={15} className="mt-0.5 text-crimson-hi" /> : <Cloud size={15} className="mt-0.5 text-crimson-hi" />}
               <div>
-                <div className="text-[12.5px] font-semibold">{p.label}</div>
-                <div className="text-[11px] text-dim">{p.hint}</div>
+                <div className="text-ui font-semibold">{p.label}</div>
+                <div className="text-caption text-dim">{p.hint}</div>
               </div>
             </button>
           ))}
@@ -268,7 +268,7 @@ function ProviderView({ provider }: { provider: Provider }) {
         }
       />
       {test && (
-        <div className={clsx('mx-5 mt-4 rounded-md border px-3 py-2 text-[12px]', test.ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
+        <div className={clsx('mx-5 mt-4 rounded-md border px-3 py-2 text-caption', test.ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
           {test.ok ? '✓' : '✗'} {test.message} <span className="text-dim">({test.latencyMs}ms)</span>
         </div>
       )}
@@ -284,7 +284,7 @@ function ProviderView({ provider }: { provider: Provider }) {
             <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={provider.hasApiKey ? '•••••••• saved — type to replace' : 'none'} />
           </Field>
           <Field label="Extra headers (JSON)">
-            <Textarea rows={3} className="font-mono text-[11.5px]" value={headers} onChange={(e) => setHeaders(e.target.value)} />
+            <Textarea rows={3} className="font-mono text-caption" value={headers} onChange={(e) => setHeaders(e.target.value)} />
           </Field>
           <div className="flex justify-between">
             {provider.hasApiKey ? (
@@ -309,10 +309,10 @@ function ProviderView({ provider }: { provider: Provider }) {
 
         <Card>
           <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
-            <div className="text-[12.5px] font-semibold">Models</div>
+            <div className="text-ui font-semibold">Models</div>
             <Input className="h-7 max-w-52" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
             <div className="flex-1" />
-            <Input className="h-7 max-w-52 font-mono text-[11.5px]" placeholder="add model id manually" value={manual} onChange={(e) => setManual(e.target.value)} />
+            <Input className="h-7 max-w-52 font-mono text-caption" placeholder="add model id manually" value={manual} onChange={(e) => setManual(e.target.value)} />
             <Button
               size="sm"
               disabled={!manual.trim()}
@@ -337,10 +337,10 @@ function ProviderView({ provider }: { provider: Provider }) {
             </Button>
           </div>
           {!provider.models.length ? (
-            <div className="p-6 text-center text-[12px] text-dim">No models yet — click Fetch (the server must be running) or add an id manually.</div>
+            <div className="p-6 text-center text-caption text-dim">No models yet — click Fetch (the server must be running) or add an id manually.</div>
           ) : (
-            <table className="w-full table-fixed text-[12px]">
-              <thead className="text-left text-[11.5px] font-medium text-dim">
+            <table className="w-full table-fixed text-caption">
+              <thead className="text-left text-caption font-medium text-dim">
                 <tr>
                   <th className="px-3 py-2 font-medium">Model</th>
                   <th className="w-20 px-2 py-2 font-medium">Context</th>
@@ -362,17 +362,17 @@ function ProviderView({ provider }: { provider: Provider }) {
                       <td className="max-w-0 px-3 py-1.5">
                         <div className="flex items-center gap-1.5">
                           {isDefault && <Star size={11} className="shrink-0 fill-crimson text-crimson" />}
-                          <span className="truncate font-mono text-[11.5px]" title={m.id}>
+                          <span className="truncate font-mono text-caption" title={m.id}>
                             {m.id}
                           </span>
                         </div>
                         {ping && ping !== 'busy' && (
-                          <div className={clsx('truncate text-[10.5px]', ping.ok ? 'text-ok' : 'text-crimson-hi')} title={ping.text}>
+                          <div className={clsx('truncate text-micro', ping.ok ? 'text-ok' : 'text-crimson-hi')} title={ping.text}>
                             {ping.ok ? `✓ “${ping.text.slice(0, 40)}” in ${ping.latencyMs}ms` : `✗ ${ping.text}`}
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted">{compact(m.contextWindow)}</td>
+                      <td className="px-2 py-1.5 font-mono text-caption text-muted">{compact(m.contextWindow)}</td>
                       {(['embedding', 'reasoning', 'vision', 'image'] as const).map((k) => (
                         <td key={k} className="px-2 py-1.5 text-center">
                           <input type="checkbox" className="accent-[#dc2645]" checked={!!m[k]} onChange={() => void toggle(m.id, k)} />
@@ -446,7 +446,7 @@ function PriceCell({ value, onChange }: { value: { input: number; output: number
   }
   if (!editing) {
     return (
-      <button onClick={open} className="font-mono text-[11px] text-muted hover:text-crimson-hi" title="Set price (USD per 1M tokens)">
+      <button onClick={open} className="font-mono text-caption text-muted hover:text-crimson-hi" title="Set price (USD per 1M tokens)">
         {value ? `${value.input} · ${value.output}` : <span className="text-dim">auto</span>}
       </button>
     )
@@ -463,7 +463,7 @@ function PriceCell({ value, onChange }: { value: { input: number; output: number
         if (e.key === 'Enter') commit()
         if (e.key === 'Escape') setEditing(false)
       }}
-      className="h-6 w-full min-w-0 rounded border border-line-strong bg-bg px-1 font-mono text-[11px] outline-none focus:border-crimson"
+      className="h-6 w-full min-w-0 rounded border border-line-strong bg-bg px-1 font-mono text-caption outline-none focus:border-crimson"
     />
   )
   return (
@@ -505,13 +505,13 @@ function ImagePlayground({ model, onClose }: { model: ModelRef | null; onClose()
     }
   }
   return (
-    <Modal open={!!model} onClose={onClose} title={<span className="font-mono text-[13px]">{model?.modelId}</span>} width={560}>
+    <Modal open={!!model} onClose={onClose} title={<span className="font-mono text-ui">{model?.modelId}</span>} width={560}>
       <div className="space-y-3">
         <Textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the image" onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && void run()} />
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
             {SIZES.map((s) => (
-              <button key={s.value} onClick={() => setSize(s.value)} className={clsx('h-6 rounded px-2.5 text-[11.5px] font-medium transition-colors', size === s.value ? 'bg-elev-2 text-fg' : 'text-dim hover:text-muted')}>
+              <button key={s.value} onClick={() => setSize(s.value)} className={clsx('h-6 rounded px-2.5 text-caption font-medium transition-colors', size === s.value ? 'bg-elev-2 text-fg' : 'text-dim hover:text-muted')}>
                 {s.label}
               </button>
             ))}
@@ -522,7 +522,7 @@ function ImagePlayground({ model, onClose }: { model: ModelRef | null; onClose()
           </Button>
         </div>
         {image && <GeneratedImageCard image={image} onRetry={() => void run()} className="mx-auto max-w-[400px] pt-1" />}
-        {!image && <div className="rounded-[10px] border border-dashed border-line-strong p-6 text-center text-[12px] text-dim">Ctrl+Enter to generate.</div>}
+        {!image && <div className="rounded-[10px] border border-dashed border-line-strong p-6 text-center text-caption text-dim">Ctrl+Enter to generate.</div>}
       </div>
     </Modal>
   )

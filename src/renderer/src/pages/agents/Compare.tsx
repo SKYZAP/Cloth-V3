@@ -32,7 +32,7 @@ const ROWS: { label: string; cell(a: Agent, act?: AgentActivity): boolean | Reac
       )
     }
   },
-  { label: 'Model', cell: (a) => <span className="text-[11.5px] text-muted">{a.model ? a.model.modelId : "Chat's"}</span> },
+  { label: 'Model', cell: (a) => <span className="text-caption text-muted">{a.model ? a.model.modelId : "Chat's"}</span> },
   { label: 'Jobs this week', cell: (_a, act) => <span className="text-muted tabular-nums">{act?.jobs ?? 0}</span> }
 ]
 
@@ -44,10 +44,10 @@ export function CompareTable({ agents, activity, selected, onOpen }: { agents: A
   const [col, setCol] = useState<number | null>(null)
   return (
     <div className="col-span-full overflow-x-auto rounded-[12px] border border-line" onMouseLeave={() => setCol(null)}>
-      <table className="w-full min-w-[560px] border-collapse text-[12.5px]">
+      <table className="w-full min-w-[560px] border-collapse text-ui">
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 z-[1] border-b border-line bg-panel px-3 py-2.5 text-left align-bottom text-[11.5px] font-medium text-dim">
+            <th scope="col" className="sticky left-0 z-[1] border-b border-line bg-panel px-3 py-2.5 text-left align-bottom text-caption font-medium text-dim">
               Can it…
             </th>
             {agents.map((a, c) => (
@@ -58,7 +58,7 @@ export function CompareTable({ agents, activity, selected, onOpen }: { agents: A
                   onClick={() => onOpen(a.id)}
                   aria-haspopup="dialog"
                   aria-expanded={selected === a.id}
-                  className="mx-auto grid max-w-[130px] justify-items-center gap-1.5 rounded-[8px] p-1 text-[12px] font-semibold outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson-line"
+                  className="mx-auto grid max-w-[130px] justify-items-center gap-1.5 rounded-[8px] p-1 text-caption font-semibold outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson-line"
                 >
                   <Tile name={a.name} builtin={a.builtin} layoutId={`agent-tile-${a.id}`} />
                   <span className="max-w-full truncate">{a.name}</span>

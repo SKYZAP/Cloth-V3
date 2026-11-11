@@ -42,7 +42,7 @@ export function PhoneSettings() {
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 text-[12.5px] text-muted">{devices.length ? `${devices.length} paired phone${devices.length > 1 ? 's' : ''}` : 'No phones paired yet'}</div>
+        <div className="min-w-0 flex-1 text-ui text-muted">{devices.length ? `${devices.length} paired phone${devices.length > 1 ? 's' : ''}` : 'No phones paired yet'}</div>
         <Button variant="primary" icon={<Plus size={13} weight="bold" />} onClick={() => void pair()}>
           Pair a phone
         </Button>
@@ -54,7 +54,7 @@ export function PhoneSettings() {
       </div>
 
       {status && settings.remoteEnabled && (
-        <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
+        <div className="flex flex-wrap items-center gap-2 text-caption">
           <span className={clsx('h-1.5 w-1.5 rounded-full', status.running ? 'bg-ok' : 'bg-crimson')} />
           <span className={status.running ? 'text-muted' : 'text-danger-hi'}>{status.running ? `Listening on port ${status.port}` : (status.error ?? 'Not running')}</span>
           {reachable(status.hosts).map((h) => (
@@ -82,14 +82,14 @@ export function PhoneSettings() {
                     onKeyDown={(e) => (e.key === 'Enter' ? e.currentTarget.blur() : e.key === 'Escape' && setEditing(null))}
                   />
                 ) : (
-                  <div className="flex items-center gap-2 text-[12.5px] font-medium">
+                  <div className="flex items-center gap-2 text-ui font-medium">
                     {d.name}
                     <button onClick={() => setEditing(d.id)} className="text-dim hover:text-fg" aria-label="Rename">
                       <PencilSimple size={12} />
                     </button>
                   </div>
                 )}
-                <div className="text-[11px] text-dim">
+                <div className="text-caption text-dim">
                   {d.connected ? <span className="text-ok">Connected now</span> : `Last seen ${timeAgo(d.lastSeenAt)}`} · paired {timeAgo(d.createdAt)}
                 </div>
               </div>
@@ -149,8 +149,8 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
       {done ? (
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center gap-2 py-8 text-center">
           <CheckCircle size={44} weight="fill" className="text-ok" />
-          <div className="text-[15px] font-semibold">{device!.name} is connected</div>
-          <div className="text-[12.5px] text-dim">You can use Cloth from your phone now. Manage paired phones here in Settings.</div>
+          <div className="text-section font-semibold">{device!.name} is connected</div>
+          <div className="text-ui text-dim">You can use Cloth from your phone now. Manage paired phones here in Settings.</div>
           <Button variant="primary" className="mt-3" onClick={onClose}>
             Done
           </Button>
@@ -160,7 +160,7 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
           <div className={clsx('relative aspect-square overflow-hidden rounded-[10px] bg-white p-2 transition-opacity', expired && 'opacity-20')}>
             {qr && <img src={qr} alt="Pairing QR code" className="h-full w-full [image-rendering:pixelated]" />}
           </div>
-          <div className="space-y-3 text-[12.5px]">
+          <div className="space-y-3 text-ui">
             <ol className="list-decimal space-y-1.5 pl-4 text-muted">
               <li>Install the Cloth app on your Android phone.</li>
               <li>
@@ -168,14 +168,14 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
               </li>
               <li>Keep both on the same Wi-Fi — or on the same Tailscale network.</li>
             </ol>
-            <div className="flex items-center gap-2 text-[11.5px] text-dim">
+            <div className="flex items-center gap-2 text-caption text-dim">
               <WifiHigh size={14} />
               {pairing?.hosts.length ? reachable(pairing.hosts).map((h) => `${h.address} (${h.label})`).join(' · ') : 'No network address found — connect this PC to Wi-Fi or Ethernet.'}
             </div>
             {expired ? (
               <div className="text-crimson-hi">This code expired.</div>
             ) : (
-              <div className="flex items-center gap-2 text-[11.5px] text-dim">
+              <div className="flex items-center gap-2 text-caption text-dim">
                 <span className="pulse-crimson h-1.5 w-1.5 rounded-full bg-crimson" /> Waiting for your phone · code valid for {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
               </div>
             )}
@@ -185,7 +185,7 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
                 Cancel
               </Button>
             </div>
-            <div className="text-[11px] text-dim">No camera? Copy the code and paste it into the app.</div>
+            <div className="text-caption text-dim">No camera? Copy the code and paste it into the app.</div>
           </div>
         </div>
       )}

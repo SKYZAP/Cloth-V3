@@ -119,7 +119,7 @@ export function ModelPicker({
         className={clsx(
           'absolute top-0 flex h-full items-center gap-2 border transition-[width,border-radius,background-color,border-color] duration-300 ease-[cubic-bezier(0.22,1.2,0.36,1)]',
           growLeft ? 'right-0' : 'left-0',
-          pill ? 'rounded-full pl-3 pr-2.5 text-[12px]' : 'rounded-md pl-2.5 pr-2 text-[12.5px]',
+          pill ? 'rounded-full pl-3 pr-2.5 text-caption' : 'rounded-md pl-2.5 pr-2 text-ui',
           morph ? 'z-40 !rounded-[10px] border-crimson-line bg-elev shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]' : open ? 'border-crimson-line bg-bg' : pill ? 'border-line bg-panel hover:border-line-strong' : 'border-line bg-bg hover:border-line-strong'
         )}
         style={{ width: morph ? 'min(420px, calc(100vw - 24px))' : '100%' }}
@@ -168,7 +168,7 @@ export function ModelPicker({
           <div className="-mx-4">
             <div className="mx-4 mb-1 flex h-10 items-center gap-2 rounded-[10px] border border-line bg-bg px-3">
               <MagnifyingGlass size={15} className="text-dim" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" aria-label="Search models" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-dim" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" aria-label="Search models" className="h-full min-w-0 flex-1 bg-transparent text-section outline-none placeholder:text-dim" />
             </div>
             {body}
           </div>
@@ -226,7 +226,7 @@ export function ModelMenu({ value, onChange, autoFocus }: { value: ModelRef | nu
           placeholder="Search models…"
           aria-label="Search models"
           spellCheck={false}
-          className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-dim focus-visible:outline-none"
+          className="h-full min-w-0 flex-1 bg-transparent text-ui outline-none placeholder:text-dim focus-visible:outline-none"
         />
       </div>
       <PickerList
@@ -387,7 +387,7 @@ function PickerList({
                   onFilters(next)
                 }}
                 className={clsx(
-                  'flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] transition-colors',
+                  'flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-caption transition-colors',
                   on ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line-strong text-muted hover:text-fg'
                 )}
               >
@@ -406,7 +406,7 @@ function PickerList({
               type="button"
               onClick={() => onPick(o.ref)}
               title={`${o.provider.name} · ${o.model.id}`}
-              className={clsx('flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11.5px] transition-colors', o.key === currentKey ? 'border-crimson-line text-fg' : 'border-line bg-elev-2 text-muted hover:border-line-strong hover:text-fg')}
+              className={clsx('flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-caption transition-colors', o.key === currentKey ? 'border-crimson-line text-fg' : 'border-line bg-elev-2 text-muted hover:border-line-strong hover:text-fg')}
             >
               <Star size={11} weight="fill" className="text-warn" />
               {o.model.name}
@@ -429,21 +429,21 @@ function PickerList({
           >
             <span className="w-3.5 shrink-0 text-crimson-hi">{i === selectedIndex && <Check size={13} weight="bold" />}</span>
             {r.kind === 'none' ? (
-              <span className="flex-1 text-[12.5px] text-muted">{none}</span>
+              <span className="flex-1 text-ui text-muted">{none}</span>
             ) : r.kind === 'unavailable' ? (
-              <span className="min-w-0 flex-1 truncate text-[12.5px] text-dim">{r.ref.modelId} (unavailable)</span>
+              <span className="min-w-0 flex-1 truncate text-ui text-dim">{r.ref.modelId} (unavailable)</span>
             ) : (
               <ModelRow option={r.option} hits={r.hits} starred={starred.includes(r.option.key)} onStar={() => onStar(r.option.key)} selected={i === selectedIndex} />
             )}
           </div>
         ))}
         {!rows.length && (
-          <div className="px-4 py-7 text-center text-[12px] text-dim">
+          <div className="px-4 py-7 text-center text-caption text-dim">
             {options.length ? (filters?.size ? 'No model matches all of these. Turn a filter off to see more.' : `No model matches “${q}”.`) : 'No models yet. Add a provider on the Models page.'}
           </div>
         )}
       </div>
-      <div className="flex items-center gap-3 border-t border-line px-3 py-2 text-[11px] text-dim mobile:hidden">
+      <div className="flex items-center gap-3 border-t border-line px-3 py-2 text-caption text-dim mobile:hidden">
         <span className="flex items-center gap-1">
           <Kbd>↑</Kbd>
           <Kbd>↓</Kbd> move
@@ -468,16 +468,16 @@ function ModelRow({ option, hits, starred, onStar, selected }: { option: Option;
   return (
     <>
       <span className="min-w-0 flex-1 truncate">
-        <span className={clsx('text-[12.5px]', selected ? 'font-semibold text-fg' : 'text-fg')}>
+        <span className={clsx('text-ui', selected ? 'font-semibold text-fg' : 'text-fg')}>
           <Highlight text={m.name} hits={hits} />
         </span>
-        {m.name !== m.id && <span className="ml-2 font-mono text-[10.5px] text-dim">{m.id}</span>}
+        {m.name !== m.id && <span className="ml-2 font-mono text-micro text-dim">{m.id}</span>}
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {m.reasoning && <Brain size={12} className="text-dim" aria-label="Reasoning" />}
         {m.vision && <Eye size={12} className="text-dim" aria-label="Reads images" />}
-        <span className="rounded border border-line px-1 text-[10px] text-dim">{option.provider.name}</span>
-        <span className={clsx('w-10 text-right font-mono text-[10.5px] tabular-nums', guess ? 'text-warn' : 'text-muted')} title={guess ? "Estimated — the provider doesn't report this model's context size" : 'Context window'}>
+        <span className="rounded border border-line px-1 text-micro text-dim">{option.provider.name}</span>
+        <span className={clsx('w-10 text-right font-mono text-micro tabular-nums', guess ? 'text-warn' : 'text-muted')} title={guess ? "Estimated — the provider doesn't report this model's context size" : 'Context window'}>
           {guess ? '≈' : ''}
           {ctxLabel(m.contextWindow)}
         </span>
@@ -517,5 +517,5 @@ function Highlight({ text, hits }: { text: string; hits: number[] }) {
 }
 
 function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-line-strong bg-elev-2 px-1 font-mono text-[10px] text-muted">{children}</kbd>
+  return <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-line-strong bg-elev-2 px-1 font-mono text-micro text-muted">{children}</kbd>
 }

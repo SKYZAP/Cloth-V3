@@ -11,7 +11,7 @@ import { Button, Segmented } from '@/components/ui'
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="grid gap-2 border-b border-line px-4 py-4 last:border-b-0">
-      <h3 className="text-[12px] font-medium text-dim">{title}</h3>
+      <h3 className="text-caption font-medium text-dim">{title}</h3>
       {children}
     </section>
   )
@@ -38,7 +38,7 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
             />
           ))}
           <label title="Any colour" className="relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-dashed border-line-strong">
-            <span className="absolute inset-0 grid place-items-center text-[14px] text-dim">+</span>
+            <span className="absolute inset-0 grid place-items-center text-body text-dim">+</span>
             <input type="color" value={input.brand} onChange={(e) => set({ ...input, brand: e.target.value })} aria-label="Any colour" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
           </label>
         </div>
@@ -46,8 +46,8 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
       <Group title="Text">
         <div className="grid gap-1.5">
           {!feel && (
-            <div aria-pressed="true" className="flex min-w-0 items-center gap-2.5 rounded-[9px] border border-crimson-line bg-crimson-soft px-2.5 py-1.5 text-[12.5px]">
-              <b className="w-7 shrink-0 text-[16px]" style={{ fontFamily: `'${input.fontHeading}', sans-serif` }}>
+            <div aria-pressed="true" className="flex min-w-0 items-center gap-2.5 rounded-[9px] border border-crimson-line bg-crimson-soft px-2.5 py-1.5 text-ui">
+              <b className="w-7 shrink-0 text-section" style={{ fontFamily: `'${input.fontHeading}', sans-serif` }}>
                 Aa
               </b>
               <span className="min-w-0 truncate">
@@ -61,9 +61,9 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
               key={t}
               onClick={() => set(withTextFeel(input, t))}
               aria-pressed={feel === t}
-              className={clsx('flex w-full min-w-0 items-center gap-2.5 rounded-[9px] border px-2.5 py-1.5 text-left text-[12.5px]', feel === t ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-hover')}
+              className={clsx('flex w-full min-w-0 items-center gap-2.5 rounded-[9px] border px-2.5 py-1.5 text-left text-ui', feel === t ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-hover')}
             >
-              <b className="w-7 shrink-0 text-[16px]" style={{ fontFamily: `'${TEXT_FEELS[t].fontHeading}', sans-serif` }}>
+              <b className="w-7 shrink-0 text-section" style={{ fontFamily: `'${TEXT_FEELS[t].fontHeading}', sans-serif` }}>
                 Aa
               </b>
               <span className="shrink-0 font-medium">{TEXT_FEELS[t].label}</span>
@@ -154,13 +154,13 @@ export function UseInProject({ designId, version, forProjectId = null }: { desig
     <div ref={wrap} className="relative">
       <Button variant="primary" icon={<FolderSimple size={14} />} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">
         <span className="mobile:hidden">Use in a project</span>
-        {linked > 0 && <span className="rounded-full bg-white/20 px-1.5 text-[11px]">{linked}</span>}
+        {linked > 0 && <span className="rounded-full bg-white/20 px-1.5 text-caption">{linked}</span>}
         <CaretDown size={11} />
       </Button>
       {open && (
         <div role="dialog" aria-label="Use in a project" className="absolute right-0 top-full z-40 mt-2 grid w-[320px] max-w-[calc(100vw-24px)] gap-2 rounded-[14px] border border-line-strong bg-elev p-3 shadow-[0_24px_60px_-18px_rgb(0_0_0/0.85)]">
-          <div className="text-[13px] font-semibold">Use in a project</div>
-          <p className="text-[12px] text-dim">Chats in the project follow this design.</p>
+          <div className="text-ui font-semibold">Use in a project</div>
+          <p className="text-caption text-dim">Chats in the project follow this design.</p>
           <div className="grid max-h-[280px] gap-1 overflow-y-auto">
             {projects.map((p) => {
               const on = p.designId === designId
@@ -168,24 +168,24 @@ export function UseInProject({ designId, version, forProjectId = null }: { desig
               const outdated = on && !!s?.files.some((f) => f.state === 'outdated' || f.state === 'missing')
               return (
                 <div key={p.id} className={clsx('flex items-center gap-2 rounded-[9px] px-1.5 py-1 hover:bg-hover', p.id === forProjectId && 'bg-hover')}>
-                  <button onClick={() => void toggle(p)} disabled={busy === p.id} aria-pressed={on} className="flex min-w-0 flex-1 items-center gap-2 text-left text-[13px]">
+                  <button onClick={() => void toggle(p)} disabled={busy === p.id} aria-pressed={on} className="flex min-w-0 flex-1 items-center gap-2 text-left text-ui">
                     <span className={clsx('grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border', on ? 'border-crimson bg-crimson text-white' : 'border-line-strong')}>{on && <Check size={11} weight="bold" />}</span>
                     <FolderSimple size={14} weight="fill" style={{ color: p.color }} className="shrink-0" />
                     <span className="min-w-0 truncate">{p.name}</span>
-                    {p.designId && !on && <span className="shrink-0 text-[11px] text-dim">uses another</span>}
-                    {!p.folder && <span className="shrink-0 text-[11px] text-dim">no folder</span>}
+                    {p.designId && !on && <span className="shrink-0 text-caption text-dim">uses another</span>}
+                    {!p.folder && <span className="shrink-0 text-caption text-dim">no folder</span>}
                   </button>
                   {outdated && p.folder && (
-                    <button onClick={() => void update(p)} disabled={busy === p.id} className="shrink-0 rounded-md px-1.5 py-0.5 text-[11.5px] text-warn hover:bg-elev-2">
+                    <button onClick={() => void update(p)} disabled={busy === p.id} className="shrink-0 rounded-md px-1.5 py-0.5 text-caption text-warn hover:bg-elev-2">
                       Update files
                     </button>
                   )}
                 </div>
               )
             })}
-            {!projects.length && <p className="px-1.5 py-2 text-[12.5px] text-dim">No projects yet. Make one from the chat list, then come back.</p>}
+            {!projects.length && <p className="px-1.5 py-2 text-ui text-dim">No projects yet. Make one from the chat list, then come back.</p>}
           </div>
-          {note && <p className="rounded-lg bg-elev-2 px-2.5 py-2 text-[12px] text-muted">{note}</p>}
+          {note && <p className="rounded-lg bg-elev-2 px-2.5 py-2 text-caption text-muted">{note}</p>}
         </div>
       )}
     </div>

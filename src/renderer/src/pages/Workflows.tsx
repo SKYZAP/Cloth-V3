@@ -104,7 +104,7 @@ export function WorkflowsPage() {
     >
       <aside aria-label="Automations" className={clsx('flex h-full shrink-0 flex-col', side ? 'w-[340px] border-r border-line' : 'w-full')}>
         <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-[18px]">
-          <h1 className="flex-1 text-[17px] font-semibold">Automations</h1>
+          <h1 className="flex-1 text-section font-semibold">Automations</h1>
           <Button variant="primary" className={FOCUS} icon={<Plus size={13} aria-hidden="true" />} onClick={startNew}>
             New
           </Button>
@@ -112,12 +112,12 @@ export function WorkflowsPage() {
 
         {next && (
           <div className="mx-3 mb-2.5 rounded-[12px] border border-line bg-panel px-3 py-2.5">
-            <div className="text-[11.5px] text-dim">Next up</div>
+            <div className="text-caption text-dim">Next up</div>
             <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
               <span className="truncate font-semibold" title={next.name}>
                 {next.name}
               </span>
-              <span className="shrink-0 text-[12px] tabular-nums text-muted">
+              <span className="shrink-0 text-caption tabular-nums text-muted">
                 {shortWhen(next.at, now)} · {relativeIn(next.at, now)}
               </span>
             </div>
@@ -128,7 +128,7 @@ export function WorkflowsPage() {
               ])}
             </div>
             <span className="sr-only">{`${slots.filter(Boolean).length} hours today with a scheduled run.`}</span>
-            <div className="mt-[3px] flex justify-between text-[11px] tabular-nums text-dim" aria-hidden="true">
+            <div className="mt-[3px] flex justify-between text-caption tabular-nums text-dim" aria-hidden="true">
               <span>00:00</span>
               <span>today</span>
               <span>24:00</span>
@@ -145,7 +145,7 @@ export function WorkflowsPage() {
             move(e.key === 'ArrowDown' ? 1 : -1)
           }}
         >
-          {empty && <p className="px-2 py-2.5 text-[12.5px] text-dim">No automations yet.</p>}
+          {empty && <p className="px-2 py-2.5 text-ui text-dim">No automations yet.</p>}
           {onList.length > 0 && <Group label={`On · ${onList.length}`} />}
           {onList.map((f) => (
             <ListRow key={f.id} flow={f} active selected={side && !showCompose && f.id === selected} status={lastStatus(f.id)} onSelect={() => select(f.id)} />
@@ -202,7 +202,7 @@ export function WorkflowsPage() {
 }
 
 function Group({ label }: { label: string }) {
-  return <div className="px-2 pb-1 pt-2.5 text-[11.5px] text-dim">{label}</div>
+  return <div className="px-2 pb-1 pt-2.5 text-caption text-dim">{label}</div>
 }
 
 function ListRow({ flow, active, selected, status, onSelect }: { flow: Workflow; active: boolean; selected: boolean; status: WorkflowRun['status'] | undefined; onSelect(): void }) {
@@ -218,14 +218,14 @@ function ListRow({ flow, active, selected, status, onSelect }: { flow: Workflow;
     >
       <span aria-hidden="true" className={clsx('h-2 w-2 rounded-full', running ? 'bg-warn ring-[3px] ring-warn/20' : active ? 'bg-ok' : 'bg-line-strong')} />
       <span className="min-w-0">
-        <span className={clsx('block truncate text-[13px] font-semibold', !active && 'text-muted')} title={flow.name}>
+        <span className={clsx('block truncate text-ui font-semibold', !active && 'text-muted')} title={flow.name}>
           {flow.name}
         </span>
-        <span className="block truncate text-[12px] text-dim" title={when}>
+        <span className="block truncate text-caption text-dim" title={when}>
           {when}
         </span>
       </span>
-      <span className={clsx('whitespace-nowrap text-[11px] font-semibold', running ? 'font-normal text-muted' : status === 'ok' ? 'text-ok' : 'text-crimson-hi')}>
+      <span className={clsx('whitespace-nowrap text-caption font-semibold', running ? 'font-normal text-muted' : status === 'ok' ? 'text-ok' : 'text-crimson-hi')}>
         {running ? 'Running' : status === 'ok' ? 'Done' : status === 'error' ? 'Failed' : ''}
       </span>
     </button>

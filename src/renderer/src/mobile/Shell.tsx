@@ -106,7 +106,7 @@ function Rail({ page, onGo, onPc }: { page: Page; onGo(p: Page): void; onPc(): v
     <nav className="flex w-[76px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r border-line bg-panel/95 py-2">
       <LayoutGroup id="rail">
         {NAV.map((t) => (
-          <button key={t.page} onClick={() => onGo(t.page)} className="relative flex h-[58px] w-full flex-col items-center justify-center gap-1 text-[10.5px] font-medium">
+          <button key={t.page} onClick={() => onGo(t.page)} className="relative flex h-[58px] w-full flex-col items-center justify-center gap-1 text-micro font-medium">
             {page === t.page && <motion.span layoutId="rail-pill" transition={{ type: 'spring', stiffness: 500, damping: 38 }} className="absolute top-1.5 h-8 w-14 rounded-full bg-crimson-soft" />}
             <t.icon size={22} weight={page === t.page ? 'fill' : 'regular'} className={clsx('relative transition-colors', page === t.page ? 'text-crimson-hi' : 'text-dim')} />
             <span className={clsx('relative transition-colors', page === t.page ? 'text-fg' : 'text-dim')}>{t.label}</span>
@@ -124,7 +124,7 @@ function Rail({ page, onGo, onPc }: { page: Page; onGo(p: Page): void; onPc(): v
 
 function Tab({ icon: I, label, active, onClick }: { icon: Icon; label: string; active: boolean; onClick(): void }) {
   return (
-    <button onClick={onClick} className="relative flex h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[10.5px] font-medium">
+    <button onClick={onClick} className="relative flex h-[60px] flex-1 flex-col items-center justify-center gap-1 text-micro font-medium">
       {active && <motion.span layoutId="tab-pill" transition={{ type: 'spring', stiffness: 500, damping: 38 }} className="absolute top-2 h-8 w-14 rounded-full bg-crimson-soft" />}
       <I size={22} weight={active ? 'fill' : 'regular'} className={clsx('relative transition-colors', active ? 'text-crimson-hi' : 'text-dim')} />
       <span className={clsx('relative transition-colors', active ? 'text-fg' : 'text-dim')}>{label}</span>
@@ -148,7 +148,7 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
             key={p}
             whileTap={{ scale: 0.95 }}
             onClick={() => onGo(p)}
-            className={clsx('flex flex-col items-center gap-2 rounded-[14px] border py-4 text-[12.5px] font-medium', page === p ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted')}
+            className={clsx('flex flex-col items-center gap-2 rounded-[14px] border py-4 text-ui font-medium', page === p ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted')}
           >
             <I size={24} weight={page === p ? 'fill' : 'regular'} className={page === p ? 'text-crimson-hi' : ''} />
             {label}
@@ -163,18 +163,18 @@ function MoreSheet({ page, onGo, pages }: { page: Page; onGo(p: Page): void; pag
             <Desktop size={20} weight="fill" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-semibold">{info?.desktop ?? 'Your PC'}</div>
-            <div className="flex items-center gap-1.5 text-[12px] text-dim">
+            <div className="truncate text-body font-semibold">{info?.desktop ?? 'Your PC'}</div>
+            <div className="flex items-center gap-1.5 text-caption text-dim">
               <span className={clsx('h-1.5 w-1.5 rounded-full', state === 'online' ? 'bg-ok' : state === 'connecting' ? 'bg-warn' : 'bg-danger')} />
               {state === 'online' ? `Connected · ${info?.host}` : state === 'connecting' ? 'Connecting…' : 'Offline'}
             </div>
           </div>
         </div>
         <div className="mt-3 flex gap-2">
-          <button onClick={reconnectNow} disabled={state === 'online'} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-line-strong text-[13px] text-muted disabled:opacity-40">
+          <button onClick={reconnectNow} disabled={state === 'online'} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-line-strong text-ui text-muted disabled:opacity-40">
             <ArrowClockwise size={15} /> Reconnect
           </button>
-          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-danger-line text-[13px] text-danger-hi">
+          <button onClick={() => void forget()} className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] border border-danger-line text-ui text-danger-hi">
             <SignOut size={15} /> Forget PC
           </button>
         </div>
@@ -198,7 +198,7 @@ function ConnectionBanner() {
     <AnimatePresence initial={false}>
       {shown && (
         <motion.div key="banner" initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 36 }} className="shrink-0 overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-danger-line bg-danger-soft px-4 py-2.5 text-[12.5px]">
+          <div className="flex items-center gap-2.5 border-b border-danger-line bg-danger-soft px-4 py-2.5 text-ui">
             <WifiSlash size={16} className="shrink-0 text-danger-hi" />
             <span className="min-w-0 flex-1 truncate text-fg">
               {state === 'connecting' ? `Reconnecting to ${info?.desktop ?? 'your PC'}…` : (info?.error ?? `Can't reach ${info?.desktop ?? 'your PC'}`)}

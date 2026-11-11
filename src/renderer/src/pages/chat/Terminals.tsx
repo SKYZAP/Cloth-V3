@@ -50,7 +50,7 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
   useEffect(() => {
     const t = new Terminal({
       fontFamily: "'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace",
-      fontSize: 12.5,
+      fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
       scrollback: 5000,
@@ -170,7 +170,7 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
             key={t.id}
             onClick={() => setActive(t.id)}
             title={t.cwd}
-            className={clsx('group/tab flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1 text-[12px]', t.id === active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}
+            className={clsx('group/tab flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1 text-caption', t.id === active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}
           >
             <TerminalWindow size={13} className={t.running ? 'text-ok' : 'text-dim'} />
             {t.title}
@@ -189,7 +189,7 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
         <button onClick={() => void open()} disabled={opening} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-fg disabled:opacity-50" aria-label="New terminal" title={container ? 'New shell in the container' : 'New terminal'}>
           <Plus size={13} />
         </button>
-        {opening && <span className="pl-1 text-[11px] text-dim">{container ? 'Starting the container…' : 'Starting…'}</span>}
+        {opening && <span className="pl-1 text-caption text-dim">{container ? 'Starting the container…' : 'Starting…'}</span>}
       </div>
       <div className="relative min-h-0 flex-1 bg-panel">
         {list?.map((t) => <TerminalView key={t.id} info={t} active={visible && t.id === active} />)}
@@ -197,13 +197,13 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
           <div className="absolute inset-0 grid place-items-center p-6 text-center">
             {homeOnly ? (
               <div className="space-y-3">
-                <div className="text-[12.5px] text-dim">No folder yet. A terminal opens in your home folder.</div>
+                <div className="text-ui text-dim">No folder yet. A terminal opens in your home folder.</div>
                 <div className="flex flex-col items-center gap-2">
                   <Button size="sm" icon={<Plus size={13} />} onClick={() => void open()}>
                     Open a terminal
                   </Button>
                   {!isMobile && (
-                    <button onClick={onPickFolder} className="text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline">
+                    <button onClick={onPickFolder} className="text-caption text-muted underline-offset-2 hover:text-fg hover:underline">
                       Choose a folder
                     </button>
                   )}
@@ -211,7 +211,7 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="text-[12.5px] text-dim">No terminals open.</div>
+                <div className="text-ui text-dim">No terminals open.</div>
                 <Button size="sm" icon={<Plus size={13} />} onClick={() => void open()}>
                   New terminal
                 </Button>

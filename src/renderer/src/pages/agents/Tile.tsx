@@ -18,8 +18,8 @@ const TILE: Record<string, string> = {
 }
 
 const SIZE = {
-  sm: 'h-9 w-9 rounded-[9px] text-[12px]',
-  lg: 'h-10 w-10 rounded-[10px] text-[14px]'
+  sm: 'h-9 w-9 rounded-[9px] text-caption',
+  lg: 'h-10 w-10 rounded-[10px] text-body'
 }
 
 /**

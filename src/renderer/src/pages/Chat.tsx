@@ -216,7 +216,7 @@ export function ChatPage() {
         )}
       >
         {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" title="Working" />}
-        <span className={clsx('min-w-0 flex-1 truncate text-[12.5px] mobile:text-[14.5px]', on && side && 'font-medium')}>{s.title}</span>
+        <span className={clsx('min-w-0 flex-1 truncate text-ui mobile:text-body', on && side && 'font-medium')}>{s.title}</span>
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -314,7 +314,7 @@ export function ChatPage() {
         ) : (
           loose.map((s) => row(s, false))
         )}
-        {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-[12px] text-dim">No chats yet</div>}
+        {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-caption text-dim">No chats yet</div>}
       </ListPane>
       )}
 
@@ -857,7 +857,7 @@ function ChatView({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-crimson-line bg-bg/85 text-[14px] text-fg backdrop-blur-sm"
+            className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-crimson-line bg-bg/85 text-body text-fg backdrop-blur-sm"
           >
             <Paperclip size={26} className="text-crimson-hi" />
             Drop files or images to attach
@@ -882,7 +882,7 @@ function ChatView({
           </Tooltip>
         )}
         {listHidden && project && (
-          <span className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-[13px] text-dim" title={project.folder ?? undefined}>
+          <span className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-ui text-dim" title={project.folder ?? undefined}>
             <FolderSimple size={14} weight="fill" className="shrink-0" style={{ color: project.color }} />
             <span className="truncate">{project.name}</span>
             <span aria-hidden="true">/</span>
@@ -890,7 +890,7 @@ function ChatView({
         )}
         <input
           key={session.title}
-          className="min-w-0 flex-1 truncate bg-transparent text-[14px] font-semibold tracking-tight outline-none focus-visible:outline-none"
+          className="min-w-0 flex-1 truncate bg-transparent text-body font-semibold tracking-tight outline-none focus-visible:outline-none"
           defaultValue={session.title}
           onBlur={(e) => e.target.value.trim() && e.target.value !== session.title && void update({ title: e.target.value.trim() })}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
@@ -946,7 +946,7 @@ function ChatView({
           {!messages.length && <Welcome onPick={(t) => void send(t)} session={session} project={project} agent={agent} hasKnowledge={collections.length > 0 && session.knowledgeEnabled} />}
           {archived.length > 0 && (
             <div className="mb-6">
-              <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-[11.5px] text-dim transition-colors hover:border-line-strong hover:text-muted">
+              <button onClick={() => setShowArchived(!showArchived)} className="mx-auto flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-caption text-dim transition-colors hover:border-line-strong hover:text-muted">
                 <CaretRight size={11} className={clsx('transition-transform', showArchived && 'rotate-90')} />
                 {showArchived ? 'Hide' : 'Show'} {archived.length} earlier message{archived.length === 1 ? '' : 's'}
               </button>
@@ -980,7 +980,7 @@ function ChatView({
           </AnimatePresence>
           <AnimatePresence>
             {compacting && (
-              <motion.div key="compacting" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-9 flex items-center justify-center gap-2 text-[12.5px] text-dim">
+              <motion.div key="compacting" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-9 flex items-center justify-center gap-2 text-ui text-dim">
                 <NotePencil size={14} />
                 <span className="shimmer-text">Summarising earlier conversation</span>
               </motion.div>
@@ -990,7 +990,7 @@ function ChatView({
             {waiting && (
               <motion.div key="thinking" initial={{ opacity: 0, y: 10, filter: 'blur(6px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }} exit={{ opacity: 0 }} transition={ENTER} className="mb-9 grid grid-cols-[28px_1fr] gap-4">
                 <Logo size={28} />
-                <div className="flex items-center gap-2 pt-1 text-[12.5px] text-dim">
+                <div className="flex items-center gap-2 pt-1 text-ui text-dim">
                   <Brain size={14} />
                   <span className="shimmer-text">Thinking</span>
                 </div>
@@ -1013,7 +1013,7 @@ function ChatView({
               setUnseen(false)
               scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
             }}
-            className={clsx('absolute left-1/2 z-30', showBar ? 'bottom-[220px] mobile:bottom-[200px]' : 'bottom-[170px] mobile:bottom-[150px]', 'flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-[12px] text-muted shadow-lg shadow-black/40 hover:text-fg')}
+            className={clsx('absolute left-1/2 z-30', showBar ? 'bottom-[220px] mobile:bottom-[200px]' : 'bottom-[170px] mobile:bottom-[150px]', 'flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-panel px-3 text-caption text-muted shadow-lg shadow-black/40 hover:text-fg')}
           >
             <ArrowDown size={13} />
             {unseen && running ? 'New output' : 'Jump to latest'}
@@ -1045,7 +1045,7 @@ function ChatView({
           <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
           <div className="relative">
           {(inline.length > 0 || tagged.length > 0) && (
-            <div ref={mirror} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg [scrollbar-gutter:stable]">
+            <div ref={mirror} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-[18px] pb-1.5 pt-4 text-body leading-relaxed text-fg [scrollbar-gutter:stable]">
               <SkillText text={`${draft}\u200b`} known={known} agents={agentsBySlug} />
             </div>
           )}
@@ -1123,13 +1123,13 @@ function ChatView({
             rows={1}
             placeholder={!session.model ? 'Pick a model below to start' : specArmed ? 'Describe what you want to build. Spec → Ship starts when you send it.' : (hint ?? 'Ask anything — / for a skill, @ for an agent')}
             className={clsx(
-              'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-[14.5px] leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
+              'relative block max-h-[220px] w-full resize-none bg-transparent px-[18px] pb-1.5 pt-4 text-body leading-relaxed text-fg outline-none [scrollbar-gutter:stable] placeholder:text-dim focus-visible:outline-none',
               (inline.length > 0 || tagged.length > 0) && 'text-transparent caret-fg'
             )}
           />
           </div>
           {unknown.length > 0 && (
-            <div className="truncate px-[18px] pb-0.5 text-[11.5px] text-dim" role="status">
+            <div className="truncate px-[18px] pb-0.5 text-caption text-dim" role="status">
               No skill called {unknown.join(', ')}. It will be sent as text.
             </div>
           )}
@@ -1186,9 +1186,9 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
                 className="relative grid w-full grid-cols-[auto_1fr_auto] items-baseline gap-3 rounded-[10px] px-2.5 py-2 text-left"
               >
                 {i === index && <motion.span layoutId="slash-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-[10px] bg-elev-2" />}
-                <span className="relative font-mono text-[12.5px] text-skill">/{sk.name}</span>
-                <span className="relative truncate text-[11.5px] text-dim">{sk.description || 'No description'}</span>
-                <span className="relative font-mono text-[10.5px] tabular-nums text-dim" title="Roughly what its instructions add to the request">
+                <span className="relative font-mono text-ui text-skill">/{sk.name}</span>
+                <span className="relative truncate text-caption text-dim">{sk.description || 'No description'}</span>
+                <span className="relative font-mono text-micro tabular-nums text-dim" title="Roughly what its instructions add to the request">
                   +{tokensOf(sk)}
                 </span>
               </button>
@@ -1196,9 +1196,9 @@ function SlashMenu({ skills, total, index, query, onPick, onHover }: { skills: S
           </div>
         </LayoutGroup>
       ) : (
-        <div className="px-4 py-4 text-[12px] text-dim">{total ? `No skill matches “/${query}”.` : 'No skills yet — create or import one on the Skills page.'}</div>
+        <div className="px-4 py-4 text-caption text-dim">{total ? `No skill matches “/${query}”.` : 'No skills yet — create or import one on the Skills page.'}</div>
       )}
-      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-[11px] text-dim">
+      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-caption text-dim">
         <Key>↑</Key> <Key>↓</Key> to choose · <Key>Tab</Key> or <Key>Enter</Key> to insert · <Key>Esc</Key> to close
       </div>
     </motion.div>
@@ -1218,7 +1218,7 @@ function AgentMenu({ agents, total, index, query, onPick, onHover }: { agents: {
     >
       {agents.length ? (
         <LayoutGroup id="mention">
-          <div className="px-3.5 pb-0.5 pt-2 text-[11px] font-medium text-dim">Agents</div>
+          <div className="px-3.5 pb-0.5 pt-2 text-caption font-medium text-dim">Agents</div>
           <div role="listbox" aria-label="Agents" className="max-h-72 overflow-y-auto p-1.5 pt-1">
             {agents.map(({ agent: a, slug }, i) => (
               <button
@@ -1230,19 +1230,19 @@ function AgentMenu({ agents, total, index, query, onPick, onHover }: { agents: {
                 className="relative grid w-full grid-cols-[auto_auto_1fr] items-center gap-3 rounded-[10px] px-2.5 py-2 text-left"
               >
                 {i === index && <motion.span layoutId="mention-hl" transition={{ type: 'spring', stiffness: 520, damping: 38 }} className="absolute inset-0 rounded-[10px] bg-elev-2" />}
-                <span aria-hidden="true" className="relative flex h-6 w-6 items-center justify-center rounded-[7px] bg-agent-soft text-[10px] font-semibold tracking-tight text-agent">
+                <span aria-hidden="true" className="relative flex h-6 w-6 items-center justify-center rounded-[7px] bg-agent-soft text-micro font-semibold tracking-tight text-agent">
                   {initials(a.name)}
                 </span>
-                <span className="relative text-[12.5px] text-agent">{a.name}</span>
-                <span className="relative truncate text-[11.5px] text-dim">{a.purpose || 'No purpose given'}</span>
+                <span className="relative text-ui text-agent">{a.name}</span>
+                <span className="relative truncate text-caption text-dim">{a.purpose || 'No purpose given'}</span>
               </button>
             ))}
           </div>
         </LayoutGroup>
       ) : (
-        <div className="px-4 py-4 text-[12px] text-dim">{total ? `No agent matches “@${query}”.` : 'No agents yet — make one on the Agents page.'}</div>
+        <div className="px-4 py-4 text-caption text-dim">{total ? `No agent matches “@${query}”.` : 'No agents yet — make one on the Agents page.'}</div>
       )}
-      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-[11px] text-dim">
+      <div className="flex items-center gap-1 border-t border-line px-3.5 py-1.5 text-caption text-dim">
         <Key>↑</Key> <Key>↓</Key> to choose · <Key>Tab</Key> or <Key>Enter</Key> to insert · <Key>Esc</Key> to close
       </div>
     </motion.div>
@@ -1255,7 +1255,7 @@ const tokensOf = (sk: Skill) => {
 }
 
 function Key({ children }: { children: React.ReactNode }) {
-  return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-[10px] text-muted">{children}</kbd>
+  return <kbd className="rounded border border-b-2 border-line-strong px-1 font-mono text-micro text-muted">{children}</kbd>
 }
 
 /** Send; Stop while the chat works; Queue while it works and there's something written (it goes when the reply ends). */
@@ -1294,14 +1294,14 @@ function QueuedList({ items, running, onSendNow, onEdit, onRemove }: { items: Qu
   return (
     <ul aria-label="Queued messages" className="flex flex-col gap-1 border-b border-line px-2.5 pb-2 pt-2.5">
       {items.map((m, i) => (
-        <li key={m.id} className="flex min-w-0 items-center gap-2 rounded-[10px] bg-elev py-1 pl-2.5 pr-1 text-[12.5px]">
+        <li key={m.id} className="flex min-w-0 items-center gap-2 rounded-[10px] bg-elev py-1 pl-2.5 pr-1 text-ui">
           <ClockCountdown size={14} className="shrink-0 text-dim" aria-hidden="true" />
           <span className="shrink-0 text-dim">{i === 0 ? (running ? 'Next' : 'Sending') : `Queued ${i + 1}`}</span>
           <span className="min-w-0 flex-1 truncate text-fg" title={m.text}>
             {m.text || `${m.attachments.length} file${m.attachments.length === 1 ? '' : 's'}`}
           </span>
           {m.attachments.length > 0 && m.text && (
-            <span className="flex shrink-0 items-center gap-0.5 text-[11.5px] text-dim" title={m.attachments.map((a) => a.name).join(', ')}>
+            <span className="flex shrink-0 items-center gap-0.5 text-caption text-dim" title={m.attachments.map((a) => a.name).join(', ')}>
               <Paperclip size={12} aria-hidden="true" />
               {m.attachments.length}
             </span>
@@ -1346,8 +1346,8 @@ function Welcome({ onPick, session, project, agent, hasKnowledge }: { onPick(t: 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={ENTER} className="flex flex-col items-center pt-16 text-center">
       <Logo size={40} />
-      <div className="mt-5 text-[20px] font-semibold tracking-tight [text-wrap:balance]">{agent ? agent.name : project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
-      {agent?.purpose && <div className="mt-1 max-w-md text-[13px] text-muted [text-wrap:balance]">{agent.purpose}</div>}
+      <div className="mt-5 text-title font-semibold tracking-tight [text-wrap:balance]">{agent ? agent.name : project ? project.name : folder ? `Working in ${folder}` : 'What are we building?'}</div>
+      {agent?.purpose && <div className="mt-1 max-w-md text-ui text-muted [text-wrap:balance]">{agent.purpose}</div>}
       <div className="mt-8 grid w-full max-w-xl gap-2">
         {prompts.map((p, i) => (
           <motion.button
@@ -1357,7 +1357,7 @@ function Welcome({ onPick, session, project, agent, hasKnowledge }: { onPick(t: 
             transition={{ ...ENTER, delay: 0.08 + i * 0.06 }}
             whileHover={{ x: 3 }}
             onClick={() => onPick(p)}
-            className="flex items-center gap-2.5 rounded-[14px] border border-line bg-panel px-4 py-3 text-left text-[13px] text-muted transition-colors hover:border-crimson-line hover:text-fg"
+            className="flex items-center gap-2.5 rounded-[14px] border border-line bg-panel px-4 py-3 text-left text-ui text-muted transition-colors hover:border-crimson-line hover:text-fg"
           >
             <ChatCircleDots size={16} className="shrink-0 text-dim" />
             {p}
@@ -1381,7 +1381,7 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
     <motion.div {...enterProps(fresh)} className="mb-9 flex flex-col items-end gap-1.5">
       {message.attachments?.length ? <SentAttachments items={message.attachments} /> : null}
       {(text.trim() || leading.length > 0) && (
-        <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-[14px] leading-relaxed">
+        <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-body leading-relaxed">
           {leading.map((n) => (
             <span key={n}>
               <SkillToken name={n} />{' '}
@@ -1504,9 +1504,9 @@ function AssistantTurnView({
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
         })}
         {!streaming && <ChangedFiles traces={traces} onUndo={onUndo} />}
-        {message.error && <div className="mt-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-[12px] text-danger-hi">{message.error}</div>}
+        {message.error && <div className="mt-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-caption text-danger-hi">{message.error}</div>}
         {!streaming && (
-          <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-[11.5px] text-dim">
+          <motion.div initial={fresh ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="mt-2 flex items-center gap-3 text-caption text-dim">
             {message.model && <span>{message.model}</span>}
             {message.usage && message.usage.input + message.usage.output > 0 && <TokenCounts usage={message.usage} />}
             {own + agents > 0 && (
@@ -1575,7 +1575,7 @@ function SummaryDivider({ summary }: { summary: string }) {
     <div className="mb-8">
       <div className="flex items-center gap-3">
         <div className="h-px flex-1 bg-gradient-to-r from-transparent to-line-strong" />
-        <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1 text-[11.5px] text-muted transition-colors hover:border-line-strong hover:text-fg">
+        <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg">
           <NotePencil size={12} className="text-crimson-hi" />
           Earlier conversation summarised
           <CaretRight size={11} className={clsx('text-dim transition-transform', open && 'rotate-90')} />
@@ -1585,7 +1585,7 @@ function SummaryDivider({ summary }: { summary: string }) {
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="mt-3 rounded-[14px] border border-line bg-panel px-4 py-3 text-[13px]">
+            <div className="mt-3 rounded-[14px] border border-line bg-panel px-4 py-3 text-ui">
               <Markdown text={summary} />
             </div>
           </motion.div>

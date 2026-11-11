@@ -73,7 +73,7 @@ export function McpPage() {
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-[18px] font-semibold tracking-tight">MCP</h1>
+              <h1 className="text-title font-semibold tracking-tight">MCP</h1>
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setOpen({ kind: 'add' })} data-focus-key="add">
               Add server
@@ -97,7 +97,7 @@ export function McpPage() {
           {open?.kind === 'server' && openServer && <ServerDetail config={openServer} servers={servers} onRemoved={() => setOpen(null)} />}
           {open?.kind === 'add' && preset && (
             <div className="grid gap-4">
-              {preset.about && <p className="text-[12.5px] text-muted">{preset.about}.</p>}
+              {preset.about && <p className="text-ui text-muted">{preset.about}.</p>}
               <GuidedServerForm
                 key={preset.name}
                 prefill={preset}
@@ -125,7 +125,7 @@ export function McpPage() {
             <div className="grid gap-6">
               {servers.unused.length > 0 && (
                 <div className="grid gap-2.5">
-                  <h3 className="text-[12.5px] font-semibold">Ready to add</h3>
+                  <h3 className="text-ui font-semibold">Ready to add</h3>
                   <div className="grid gap-2">
                     {servers.unused.map((p) => (
                       <PresetCard key={p.name} preset={p} onAdd={() => void addPreset(p)} />
@@ -135,7 +135,7 @@ export function McpPage() {
               )}
               <div className="grid gap-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h3 className="text-[12.5px] font-semibold">{servers.unused.length ? 'Any other server' : 'Any MCP server'}</h3>
+                  <h3 className="text-ui font-semibold">{servers.unused.length ? 'Any other server' : 'Any MCP server'}</h3>
                   <span className="flex-1" />
                   <Segmented
                     value={addMode}
@@ -181,10 +181,10 @@ function PanelHead({ title, sub, onClose }: { title: string; sub?: string; onClo
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3">
       <div className="min-w-0 flex-1">
-        <h2 className="truncate text-[15px] font-semibold" translate="no">
+        <h2 className="truncate text-section font-semibold" translate="no">
           {title}
         </h2>
-        {sub && <p className="truncate text-[12px] text-dim">{sub}</p>}
+        {sub && <p className="truncate text-caption text-dim">{sub}</p>}
       </div>
       <button onClick={onClose} aria-label="Close" title="Close (Esc)" className="flex h-8 w-8 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
         <X size={15} />
@@ -224,7 +224,7 @@ function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServer
         )}
         <button
           onClick={onAdd}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-line-strong px-4 py-3.5 text-[13px] font-semibold text-muted transition-colors hover:border-muted/50 hover:bg-elev hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
+          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-line-strong px-4 py-3.5 text-ui font-semibold text-muted transition-colors hover:border-muted/50 hover:bg-elev hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
         >
           <Plus size={14} aria-hidden="true" /> {servers.configs.length ? 'Any other server' : 'Add an MCP server'}
         </button>
@@ -232,7 +232,7 @@ function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServer
 
       {servers.unused.length > 0 && (
         <div className="grid gap-2 pt-2">
-          <h3 className="text-[12.5px] font-semibold">Ready to add</h3>
+          <h3 className="text-ui font-semibold">Ready to add</h3>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2">
             {servers.unused.map((p) => (
               <PresetCard key={p.name} preset={p} onAdd={() => onPreset(p)} />
@@ -259,12 +259,12 @@ function ServerRow({ config: c, servers, onOpen }: { config: McpClientConfig; se
       </span>
       <div className="grid min-w-0 gap-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <button data-focus-key={c.id} onClick={onOpen} aria-haspopup="dialog" className="truncate rounded text-left text-[13.5px] font-semibold hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line" translate="no">
+          <button data-focus-key={c.id} onClick={onOpen} aria-haspopup="dialog" className="truncate rounded text-left text-body font-semibold hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line" translate="no">
             {c.name}
           </button>
-          <span className="min-w-0 truncate text-[12.5px] text-muted">{aboutOf(c, servers.presets)}</span>
+          <span className="min-w-0 truncate text-ui text-muted">{aboutOf(c, servers.presets)}</span>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-caption">
           <span className={clsx('min-w-0 truncate', TONE[line.tone])} title={line.tone === 'bad' ? (st?.error ?? undefined) : undefined}>
             {line.text}
           </span>
@@ -273,14 +273,14 @@ function ServerRow({ config: c, servers, onOpen }: { config: McpClientConfig; se
         {shown.length > 0 && (
           <ul className="mt-0.5 flex min-w-0 flex-wrap gap-1" aria-label={`Some of ${c.name}’s tools`}>
             {shown.map((t) => (
-              <li key={t.name} title={t.description} className="max-w-[220px] truncate rounded-md border border-line bg-panel px-1.5 py-px font-mono text-[11px] text-muted" translate="no">
+              <li key={t.name} title={t.description} className="max-w-[220px] truncate rounded-md border border-line bg-panel px-1.5 py-px font-mono text-caption text-muted" translate="no">
                 {t.name}
               </li>
             ))}
-            {tools.length > shown.length && <li className="px-1 py-px text-[11px] text-dim">+{tools.length - shown.length} more</li>}
+            {tools.length > shown.length && <li className="px-1 py-px text-caption text-dim">+{tools.length - shown.length} more</li>}
           </ul>
         )}
-        {!tools.length && state !== 'error' && <span className="truncate font-mono text-[11px] text-dim" translate="no">{commandLine(c)}</span>}
+        {!tools.length && state !== 'error' && <span className="truncate font-mono text-caption text-dim" translate="no">{commandLine(c)}</span>}
       </div>
       <div className="flex shrink-0 items-center gap-3 self-center">
         {state === 'error' && c.enabled && (
@@ -304,12 +304,12 @@ function PresetCard({ preset: p, onAdd }: { preset: McpPreset; onAdd(): void }) 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-line bg-elev px-3.5 py-3">
       <div className="grid min-w-0 gap-0.5">
-        <span className="flex items-center gap-1.5 text-[13px] font-semibold" translate="no">
+        <span className="flex items-center gap-1.5 text-ui font-semibold" translate="no">
           <Icon size={13} className="text-dim" aria-hidden="true" />
           {p.name}
         </span>
-        {p.about && <span className="line-clamp-2 text-[12px] text-muted">{p.about}</span>}
-        {p.needsToken && <span className="text-[11.5px] text-dim">Needs an access token</span>}
+        {p.about && <span className="line-clamp-2 text-caption text-muted">{p.about}</span>}
+        {p.needsToken && <span className="text-caption text-dim">Needs an access token</span>}
       </div>
       <Button size="sm" icon={<Plus size={12} />} onClick={onAdd} aria-label={`Add ${p.name}`}>
         Add
@@ -343,7 +343,7 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
     <section aria-labelledby="mcp-share" className="grid gap-4 rounded-[14px] border border-line bg-elev p-4">
       <div className="grid gap-1">
         <div className="flex items-center gap-3">
-          <h2 id="mcp-share" className="min-w-0 flex-1 text-[14px] font-semibold">
+          <h2 id="mcp-share" className="min-w-0 flex-1 text-body font-semibold">
             Use Cloth from other apps
           </h2>
           <Switch checked={on} onChange={(v) => void updateSettings({ mcpEnabled: v })} label={on ? 'On' : 'Off'} />
@@ -352,11 +352,11 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
 
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-[10px] border border-line bg-panel px-3 py-2">
         <span className={clsx('h-2 w-2 shrink-0 rounded-full', on && status.running ? 'bg-ok' : status.error ? 'bg-warn' : 'bg-line-strong')} aria-hidden="true" />
-        <span role="status" className="text-[12.5px] font-medium">
+        <span role="status" className="text-ui font-medium">
           {headline}
         </span>
         <span className="flex-1" />
-        <span className="flex min-w-0 items-center gap-1.5 font-mono text-[11.5px] text-muted" translate="no">
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-caption text-muted" translate="no">
           <span className="truncate">{status.url}</span>
           <CopyIcon text={status.url} label="Copy address" />
         </span>
@@ -368,7 +368,7 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
       </div>
 
       <div className="grid gap-2">
-        <h3 className="text-[12.5px] font-semibold">Connect an app</h3>
+        <h3 className="text-ui font-semibold">Connect an app</h3>
         <div className="overflow-x-auto">
           <Segmented
             value={client}
@@ -382,24 +382,24 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
           />
         </div>
         <div className="relative">
-          <pre className="selectable max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-[10px] border border-line bg-panel p-3 pr-10 font-mono text-[11.5px] leading-relaxed text-muted" translate="no">
+          <pre className="selectable max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-[10px] border border-line bg-panel p-3 pr-10 font-mono text-caption leading-relaxed text-muted" translate="no">
             {snippets[client]}
           </pre>
           <div className="absolute right-2 top-2">
             <CopyIcon text={snippets[client]} label="Copy setup" />
           </div>
         </div>
-        <p className="text-[12px] text-dim">{where[client]}</p>
+        <p className="text-caption text-dim">{where[client]}</p>
       </div>
 
       <div className="grid gap-2">
-        <h3 className="text-[12.5px] font-semibold">Connected apps</h3>
+        <h3 className="text-ui font-semibold">Connected apps</h3>
         {apps.length ? (
           <ul className="grid gap-1">
             {apps.map((a) => {
               const recent = Date.now() - a.lastSeen < RECENT
               return (
-                <li key={a.name} className="flex items-center gap-2 text-[12.5px]">
+                <li key={a.name} className="flex items-center gap-2 text-ui">
                   <span className={clsx('h-2 w-2 shrink-0 rounded-full', recent ? 'bg-ok' : 'bg-line-strong')} aria-hidden="true" />
                   <span className="min-w-0 truncate font-medium" title={a.name}>
                     {appName(a.name)}
@@ -411,12 +411,12 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
             })}
           </ul>
         ) : (
-          <p className="text-[12px] text-dim">None yet.</p>
+          <p className="text-caption text-dim">None yet.</p>
         )}
       </div>
 
       <div className="grid gap-2">
-        <h3 className="text-[12.5px] font-semibold">Access</h3>
+        <h3 className="text-ui font-semibold">Access</h3>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Switch checked={settings.mcpRequireToken} onChange={(v) => void updateSettings({ mcpRequireToken: v })} label="Require a token" />
           {status.requireToken && (
@@ -427,24 +427,24 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
         </div>
         {status.requireToken && (
           <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-2.5 py-1.5">
-            <span className="selectable min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted" translate="no">
+            <span className="selectable min-w-0 flex-1 truncate font-mono text-caption text-muted" translate="no">
               {status.token}
             </span>
             <CopyIcon text={status.token} label="Copy token" />
           </div>
         )}
-        <p className="text-[12px] text-dim">Only this computer can connect. Port {status.port} (Settings → MCP).</p>
+        <p className="text-caption text-dim">Only this computer can connect. Port {status.port} (Settings → MCP).</p>
       </div>
 
       <details className="group">
-        <summary className="flex cursor-default list-none items-center gap-1.5 rounded text-[12.5px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-default list-none items-center gap-1.5 rounded text-ui font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line [&::-webkit-details-marker]:hidden">
           <ChevronDown size={13} className="-rotate-90 text-dim transition-transform group-open:rotate-0 motion-reduce:transition-none" aria-hidden="true" />
           What other apps get
           <span className="font-normal text-dim">{plural(status.tools.length, 'tool')}</span>
         </summary>
         <ul className="mt-2 grid gap-1.5">
           {status.tools.map((t) => (
-            <li key={t.name} className="grid grid-cols-[124px_minmax(0,1fr)] gap-3 text-[12px]">
+            <li key={t.name} className="grid grid-cols-[124px_minmax(0,1fr)] gap-3 text-caption">
               <span className="font-mono text-fg/90" translate="no">
                 {t.name}
               </span>
@@ -460,7 +460,7 @@ function Share({ status, setStatus }: { status: McpStatus; setStatus(s: McpStatu
 /** Cloth's server couldn't start (often the port is taken): what happened and the fix, pinned to the bottom. */
 function PortProblem({ status, setStatus, onUsePort }: { status: McpStatus; setStatus(s: McpStatus): void; onUsePort(p: number): void }) {
   return (
-    <div role="alert" className="absolute inset-x-6 bottom-4 z-10 mx-auto flex max-w-[900px] flex-wrap items-center gap-3 rounded-[12px] border border-warn/40 bg-elev-2 px-4 py-2.5 text-[12.5px] shadow-lg shadow-black/40">
+    <div role="alert" className="absolute inset-x-6 bottom-4 z-10 mx-auto flex max-w-[900px] flex-wrap items-center gap-3 rounded-[12px] border border-warn/40 bg-elev-2 px-4 py-2.5 text-ui shadow-lg shadow-black/40">
       <span className="font-medium text-warn">{status.error}</span>
       <span className="min-w-[200px] flex-1 text-muted">{/in use/.test(status.error ?? '') ? 'Another program, often a second Cloth window, is using it, so other apps can’t reach this Cloth.' : 'Other apps can’t reach Cloth until it starts.'}</span>
       {status.suggestedPort ? (
@@ -483,7 +483,7 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
   return (
     <section aria-labelledby="mcp-activity" className="rounded-[12px] border border-line bg-elev">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5">
-        <h2 id="mcp-activity" className="text-[13px] font-semibold">
+        <h2 id="mcp-activity" className="text-ui font-semibold">
           Activity
         </h2>
         <span className="flex-1" />
@@ -499,7 +499,7 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
       </div>
       <div role="log" aria-label="MCP tool calls" className="max-h-[420px] overflow-y-auto overscroll-contain">
         {shown.length > 0 && (
-          <div className="grid grid-cols-[80px_minmax(0,200px)_minmax(0,1fr)_64px_84px] gap-3 border-b border-line px-4 py-1.5 text-[11.5px] text-dim max-[760px]:hidden" aria-hidden="true">
+          <div className="grid grid-cols-[80px_minmax(0,200px)_minmax(0,1fr)_64px_84px] gap-3 border-b border-line px-4 py-1.5 text-caption text-dim max-[760px]:hidden" aria-hidden="true">
             <span>Time</span>
             <span>Who called</span>
             <span>Tool and input</span>
@@ -508,10 +508,10 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
           </div>
         )}
         {shown.map((c, i) => (
-          <div key={`${c.at}-${i}`} className="grid grid-cols-[80px_minmax(0,200px)_minmax(0,1fr)_64px_84px] items-center gap-3 border-t border-line px-4 py-1.5 text-[12px] first:border-0 max-[760px]:grid-cols-[minmax(0,1fr)_84px]">
+          <div key={`${c.at}-${i}`} className="grid grid-cols-[80px_minmax(0,200px)_minmax(0,1fr)_64px_84px] items-center gap-3 border-t border-line px-4 py-1.5 text-caption first:border-0 max-[760px]:grid-cols-[minmax(0,1fr)_84px]">
             <span className="tabular-nums text-dim max-[760px]:hidden">{clock.format(c.at)}</span>
             <span className="truncate text-muted max-[760px]:hidden">{c.direction === 'out' ? `A chat → ${c.peer ?? 'server'}` : `${appName(c.peer ?? 'An app')} → Cloth`}</span>
-            <span className="min-w-0 truncate font-mono text-[11.5px]" title={c.error ?? preview(c.args, 400)} translate="no">
+            <span className="min-w-0 truncate font-mono text-caption" title={c.error ?? preview(c.args, 400)} translate="no">
               {c.tool} <span className="text-dim">{c.error ?? preview(c.args, 140)}</span>
             </span>
             <span className="text-right tabular-nums text-dim max-[760px]:hidden">{duration(c.durationMs)}</span>
@@ -522,7 +522,7 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
           </div>
         ))}
         {!shown.length && (
-          <p className="px-4 py-5 text-[12.5px] text-dim">
+          <p className="px-4 py-5 text-ui text-dim">
             {filter === 'in' ? 'No app has called Cloth yet.' : filter === 'out' ? 'No chat has used a server’s tools yet.' : 'Nothing yet. When a chat uses a server’s tools, or another app calls Cloth, the calls show here.'}
           </p>
         )}

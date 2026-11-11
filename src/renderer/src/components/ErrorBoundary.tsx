@@ -27,22 +27,22 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: u
     return (
       <div className="flex h-full items-center justify-center p-8">
         <div className="max-w-lg rounded-[14px] border border-danger-line bg-panel p-5">
-          <div className="flex items-center gap-2 text-[14px] font-semibold">
+          <div className="flex items-center gap-2 text-body font-semibold">
             <WarningCircle size={18} className="text-danger-hi" weight="fill" />
             This {this.props.label ?? 'view'} hit a problem
           </div>
-          <div className="selectable mt-2 break-words font-mono text-[12px] text-danger-hi">{error.message}</div>
+          <div className="selectable mt-2 break-words font-mono text-caption text-danger-hi">{error.message}</div>
           {stack && (
-            <details className="mt-2 text-[11px] text-dim">
+            <details className="mt-2 text-caption text-dim">
               <summary className="cursor-default">Details</summary>
               <pre className="selectable mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{stack.trim()}</pre>
             </details>
           )}
           <div className="mt-4 flex gap-2">
-            <button onClick={() => this.setState({ error: null, stack: '' })} className="flex h-8 items-center gap-1.5 rounded-md bg-crimson px-3 text-[12.5px] font-medium text-white hover:bg-crimson-hi">
+            <button onClick={() => this.setState({ error: null, stack: '' })} className="flex h-8 items-center gap-1.5 rounded-md bg-crimson px-3 text-ui font-medium text-white hover:bg-crimson-hi">
               <ArrowClockwise size={13} /> Try again
             </button>
-            <button onClick={() => location.reload()} className="h-8 rounded-md border border-line px-3 text-[12.5px] text-muted hover:text-fg">
+            <button onClick={() => location.reload()} className="h-8 rounded-md border border-line px-3 text-ui text-muted hover:text-fg">
               Reload the window
             </button>
           </div>

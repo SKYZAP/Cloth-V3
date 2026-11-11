@@ -113,15 +113,15 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
           <X size={20} />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-semibold">{req.title}</div>
-          <div className="truncate font-mono text-[11px] text-dim">{listing?.path ?? 'On your PC'}</div>
+          <div className="text-section font-semibold">{req.title}</div>
+          <div className="truncate font-mono text-caption text-dim">{listing?.path ?? 'On your PC'}</div>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!listing ? (
           <div className="p-2">
-            {error && <div className="m-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-[12.5px] text-danger-hi">{error}</div>}
+            {error && <div className="m-2 rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-ui text-danger-hi">{error}</div>}
             {roots.map((r) => (
               <Row key={r.path} icon={r.name === 'Home' ? <House size={20} className="text-crimson-hi" /> : <HardDrives size={20} className="text-muted" />} label={r.name} sub={r.path} onClick={() => go(r.path)} />
             ))}
@@ -150,7 +150,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
                 <Row key={e.path} icon={<File size={20} className="text-dim" />} label={e.name} onClick={() => toggle(e.path)} trailing={<Check4 on={chosen.includes(e.path)} onClick={() => toggle(e.path)} />} />
               )
             )}
-            {!loading && !entries.length && <div className="p-6 text-center text-[12.5px] text-dim">{req.directory ? 'No folders here' : 'Empty folder'}</div>}
+            {!loading && !entries.length && <div className="p-6 text-center text-ui text-dim">{req.directory ? 'No folders here' : 'Empty folder'}</div>}
           </div>
         )}
       </div>
@@ -160,7 +160,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
           <button
             disabled={!listing}
             onClick={() => listing && onDone([listing.path])}
-            className="h-12 flex-1 rounded-[14px] bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+            className="h-12 flex-1 rounded-[14px] bg-crimson text-body font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
           >
             {listing ? `Use “${listing.path.split(/[\\/]/).filter(Boolean).pop() ?? listing.path}”` : 'Open a folder first'}
           </button>
@@ -168,7 +168,7 @@ function FolderPicker({ req, onDone }: { req: PickRequest; onDone(paths: string[
           <button
             disabled={!chosen.length}
             onClick={() => onDone(chosen)}
-            className="h-12 flex-1 rounded-[14px] bg-crimson text-[14px] font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+            className="h-12 flex-1 rounded-[14px] bg-crimson text-body font-semibold text-white active:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
           >
             {chosen.length ? `Add ${chosen.length} item${chosen.length > 1 ? 's' : ''}` : 'Tap files to choose'}
           </button>
@@ -183,8 +183,8 @@ function Row({ icon, label, sub, onClick, trailing }: { icon: React.ReactNode; l
     <div role="button" onClick={onClick} className="flex min-h-[52px] items-center gap-3 rounded-[10px] px-3 py-2 active:bg-elev-2">
       <span className="flex w-6 justify-center">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px]">{label}</span>
-        {sub && <span className="block truncate font-mono text-[11px] text-dim">{sub}</span>}
+        <span className="block truncate text-body">{label}</span>
+        {sub && <span className="block truncate font-mono text-caption text-dim">{sub}</span>}
       </span>
       {trailing}
     </div>

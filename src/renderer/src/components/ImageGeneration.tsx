@@ -243,13 +243,13 @@ export function ImageGeneration({
             ) : null}
           </AnimatePresence>
 
-          {resolution ? <span className="absolute right-2 top-2 z-10 rounded-full bg-bg/75 px-2 py-0.5 font-mono text-[10px] tabular-nums text-muted backdrop-blur-sm">{resolution}</span> : null}
+          {resolution ? <span className="absolute right-2 top-2 z-10 rounded-full bg-bg/75 px-2 py-0.5 font-mono text-micro tabular-nums text-muted backdrop-blur-sm">{resolution}</span> : null}
         </div>
 
         {showStatus || prompt ? (
           <div className="mt-3 text-left">
             {showStatus ? (
-              <div aria-live="polite" className={clsx('flex min-h-5 items-center gap-2 text-[13px] font-medium text-fg', status === 'error' && 'text-danger-hi', statusClassName)}>
+              <div aria-live="polite" className={clsx('flex min-h-5 items-center gap-2 text-ui font-medium text-fg', status === 'error' && 'text-danger-hi', statusClassName)}>
                 <DitherMark status={status} reduce={reduce} />
                 <AnimatePresence mode="popLayout" initial={false}>
                   <motion.span
@@ -265,7 +265,7 @@ export function ImageGeneration({
                 {actions ? <span className="ml-auto flex items-center gap-1">{actions}</span> : null}
               </div>
             ) : null}
-            {prompt ? <p className="mt-0.5 truncate text-[12px] text-dim">“{prompt}”</p> : null}
+            {prompt ? <p className="mt-0.5 truncate text-caption text-dim">“{prompt}”</p> : null}
           </div>
         ) : null}
 
@@ -275,7 +275,7 @@ export function ImageGeneration({
             onClick={onRetry}
             whileTap={reduce ? undefined : { scale: 0.96 }}
             transition={SPRING_PRESS}
-            className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-[13px] font-medium text-fg outline-none transition-colors hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line"
+            className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-ui font-medium text-fg outline-none transition-colors hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line"
           >
             <ArrowCounterClockwise aria-hidden="true" size={16} />
             Try again

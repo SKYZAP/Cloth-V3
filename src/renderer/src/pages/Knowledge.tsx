@@ -134,8 +134,8 @@ export function KnowledgePage() {
     return (
       <div className="grid h-full place-items-center overflow-y-auto px-5">
         <div className="grid max-w-[520px] justify-items-center gap-3 py-10 text-center">
-          <h1 className="text-[20px] font-semibold tracking-tight">Give Cloth something to know</h1>
-          <p className="text-[13px] text-muted">Chats search your collections and cite what they find.</p>
+          <h1 className="text-title font-semibold tracking-tight">Give Cloth something to know</h1>
+          <p className="text-ui text-muted">Chats search your collections and cite what they find.</p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
               Load the examples
@@ -167,8 +167,8 @@ export function KnowledgePage() {
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[220px] flex-1">
-                  <h1 className="text-[18px] font-semibold tracking-tight">Knowledge</h1>
-                  <p className="mt-0.5 text-[12.5px] text-dim">{loaded ? `${plural(collections.length, 'collection')}, ${plural(totalDocs, 'document')}` : '…'}</p>
+                  <h1 className="text-title font-semibold tracking-tight">Knowledge</h1>
+                  <p className="mt-0.5 text-ui text-dim">{loaded ? `${plural(collections.length, 'collection')}, ${plural(totalDocs, 'document')}` : '…'}</p>
                 </div>
                 {!hasExamples && (
                   <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>
@@ -191,8 +191,8 @@ export function KnowledgePage() {
                   className="flex flex-col items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-line-strong p-4 text-center text-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson-line"
                 >
                   <Plus size={16} aria-hidden="true" />
-                  <span className="text-[13px] font-medium">New collection</span>
-                  <span className="text-[12px] text-dim">Folders, web pages or pasted text</span>
+                  <span className="text-ui font-medium">New collection</span>
+                  <span className="text-caption text-dim">Folders, web pages or pasted text</span>
                 </button>
               </section>
             </>
@@ -237,16 +237,16 @@ function CollectionCard({ collection: c, docs, onOpen }: { collection: Collectio
       onClick={onOpen}
       className="flex min-w-0 flex-col gap-2 rounded-[12px] border border-line bg-panel p-4 text-left outline-none hover:border-line-strong focus-visible:ring-2 focus-visible:ring-crimson-line"
     >
-      <span className="truncate text-[14px] font-semibold">{c.name}</span>
-      {c.description && <span className="line-clamp-2 text-[12.5px] text-muted">{c.description}</span>}
-      <span className="text-[12.5px] tabular-nums text-dim">
+      <span className="truncate text-body font-semibold">{c.name}</span>
+      {c.description && <span className="line-clamp-2 text-ui text-muted">{c.description}</span>}
+      <span className="text-ui tabular-nums text-dim">
         {plural(c.docCount, 'document')}, {plural(c.chunkCount, 'passage')}
       </span>
-      <span className={clsx('flex items-center gap-1.5 text-[12.5px]', need ? 'text-warn' : 'text-ok')}>
+      <span className={clsx('flex items-center gap-1.5 text-ui', need ? 'text-warn' : 'text-ok')}>
         <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', need ? 'bg-warn' : 'bg-ok')} aria-hidden="true" />
         {need ?? (c.embedding ? 'All embedded' : 'Keyword search')}
       </span>
-      <span className="mt-auto flex items-center gap-2 border-t border-line pt-2 text-[11.5px] text-dim">
+      <span className="mt-auto flex items-center gap-2 border-t border-line pt-2 text-caption text-dim">
         <span className="min-w-0 truncate" translate="no">
           {sources.length ? `${shortLabel(sources[0])}${sources.length > 1 ? ` +${sources.length - 1} more` : ''}` : 'No sources yet'}
         </span>
@@ -299,8 +299,8 @@ function CollectionPage({
       </div>
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-[220px] flex-1">
-          <h1 className="text-[18px] font-semibold tracking-tight">{c.name}</h1>
-          {c.description && <p className="mt-0.5 text-[12.5px] text-dim">{c.description}</p>}
+          <h1 className="text-title font-semibold tracking-tight">{c.name}</h1>
+          {c.description && <p className="mt-0.5 text-ui text-dim">{c.description}</p>}
         </div>
         <Button icon={<Plus size={13} />} onClick={onAdd} data-focus-key="add">
           Add sources
@@ -318,7 +318,7 @@ function CollectionPage({
           <Fact label="search" value={c.embeddingDim ? 'keywords + meaning' : 'keywords only'} small />
         </dl>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <span className={clsx('rounded-full border px-2 py-px text-[11.5px]', need ? 'border-warn/35 text-warn' : 'border-ok/35 text-ok')}>{need ?? (c.embedding ? 'all embedded' : 'keyword search')}</span>
+          <span className={clsx('rounded-full border px-2 py-px text-caption', need ? 'border-warn/35 text-warn' : 'border-ok/35 text-ok')}>{need ?? (c.embedding ? 'all embedded' : 'keyword search')}</span>
           {missing > 0 && (
             <Button size="sm" icon={<Zap size={12} />} onClick={() => void attempt(() => api.rag.embedMissing(c.id), 'Embedding complete')}>
               Embed {plural(missing, 'document')}
@@ -343,7 +343,7 @@ function CollectionPage({
               aria-selected={on}
               tabIndex={on ? 0 : -1}
               onClick={() => setTab(value)}
-              className={clsx('-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-[13px]', on ? 'border-crimson text-fg' : 'border-transparent text-muted hover:text-fg')}
+              className={clsx('-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-ui', on ? 'border-crimson text-fg' : 'border-transparent text-muted hover:text-fg')}
             >
               {label}
             </button>
@@ -359,12 +359,12 @@ function CollectionPage({
             {sources.length > 0 && (
               <div aria-label="Sources" className="flex flex-wrap gap-2">
                 {sources.map((s) => (
-                  <div key={s.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-[12.5px]">
+                  <div key={s.key} className="flex min-w-0 items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-ui">
                     {s.kind === 'folder' ? <FolderPlus size={13} className="shrink-0 text-dim" aria-hidden="true" /> : s.kind === 'site' ? <Globe size={13} className="shrink-0 text-dim" aria-hidden="true" /> : <TypeIcon size={13} className="shrink-0 text-dim" aria-hidden="true" />}
                     <span className="min-w-0 truncate" title={s.label} translate="no">
                       {shortLabel(s)}
                     </span>
-                    <span className="shrink-0 text-[12px] tabular-nums text-dim">{s.docs.length}</span>
+                    <span className="shrink-0 text-caption tabular-nums text-dim">{s.docs.length}</span>
                     {s.kind !== 'text' && (
                       <Button size="sm" variant="ghost" icon={<RefreshCw size={11} />} loading={syncing === s.key} onClick={() => void sync(s.key)} title={`Re-index ${s.label}: new and changed ${s.kind === 'folder' ? 'files' : 'pages'} come in, missing ones go`}>
                         Sync
@@ -385,8 +385,8 @@ function CollectionPage({
 function Fact({ label, value, small }: { label: string; value: ReactNode; small?: boolean }) {
   return (
     <div className="min-w-0">
-      <dd className={clsx('truncate font-semibold tabular-nums', small ? 'text-[12.5px]' : 'text-[17px]')}>{value}</dd>
-      <dt className="text-[12px] text-dim">{label}</dt>
+      <dd className={clsx('truncate font-semibold tabular-nums', small ? 'text-ui' : 'text-section')}>{value}</dd>
+      <dt className="text-caption text-dim">{label}</dt>
     </div>
   )
 }
@@ -426,7 +426,7 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
   if (docs && !docs.length)
     return (
       <div className="grid justify-items-center gap-3 rounded-[12px] border border-dashed border-line-strong px-4 py-8 text-center">
-        <p className="text-[12.5px] text-muted">No documents yet.</p>
+        <p className="text-ui text-muted">No documents yet.</p>
         <Button icon={<Plus size={13} />} onClick={onAdd}>
           Add sources
         </Button>
@@ -460,10 +460,10 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
             { value: 'attention', label: 'Needs attention' }
           ]}
         />
-        <span className="ml-auto text-[12px] tabular-nums text-dim">{plural(matching.length, 'document')}</span>
+        <span className="ml-auto text-caption tabular-nums text-dim">{plural(matching.length, 'document')}</span>
       </div>
       <div className="overflow-hidden rounded-[12px] border border-line">
-        <div className={clsx(cols, 'border-b border-line py-2 text-[11.5px] text-dim')}>
+        <div className={clsx(cols, 'border-b border-line py-2 text-caption text-dim')}>
           {head('name', 'Name')}
           <span className="mobile:hidden">Source</span>
           {head('passages', 'Passages', true)}
@@ -474,10 +474,10 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
           const state = d.status === 'error' ? 'failed' : d.status !== 'ready' ? 'indexing' : null
           const s = sourceOf.get(d.id)
           return (
-            <button key={d.id} data-focus-key={d.id} onClick={() => onOpen(d.id)} aria-haspopup="dialog" title={d.source} className={clsx(cols, 'w-full border-t border-line py-2 text-left text-[12.5px] first-of-type:border-t-0 hover:bg-elev-2')}>
+            <button key={d.id} data-focus-key={d.id} onClick={() => onOpen(d.id)} aria-haspopup="dialog" title={d.source} className={clsx(cols, 'w-full border-t border-line py-2 text-left text-ui first-of-type:border-t-0 hover:bg-elev-2')}>
               <span className="min-w-0 truncate" translate="no">
                 {name(d)}
-                {state && <span className={clsx('ml-2 text-[11.5px]', state === 'failed' ? 'text-danger-hi' : 'text-info')}>{state}</span>}
+                {state && <span className={clsx('ml-2 text-caption', state === 'failed' ? 'text-danger-hi' : 'text-info')}>{state}</span>}
               </span>
               <span className="min-w-0 truncate text-dim mobile:hidden" translate="no">
                 {s ? shortLabel(s) : ''}
@@ -488,8 +488,8 @@ function DocumentTable({ collection: c, docs, sources, onOpen, onAdd }: { collec
             </button>
           )
         })}
-        {docs && !matching.length && <p className="px-3.5 py-2.5 text-[12.5px] text-dim">No document matches.</p>}
-        {matching.length > 200 && <p className="border-t border-line px-3.5 py-2 text-[12px] text-dim">Showing 200 of {matching.length}; filter to find the rest.</p>}
+        {docs && !matching.length && <p className="px-3.5 py-2.5 text-ui text-dim">No document matches.</p>}
+        {matching.length > 200 && <p className="border-t border-line px-3.5 py-2 text-caption text-dim">Showing 200 of {matching.length}; filter to find the rest.</p>}
       </div>
     </div>
   )
@@ -522,24 +522,24 @@ function Passage({ hit, n, best, words, collection }: { hit: RagHit; n: number; 
   return (
     <article id={`cite-${n}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 border-t border-line py-3 first:border-t-0">
       <div className="flex items-center gap-2.5">
-        <span className="w-5 shrink-0 text-[12px] tabular-nums text-dim">{n}</span>
-        <span className="min-w-0 truncate font-mono text-[11.5px] text-muted" title={`${hit.source}${hit.headingPath ? ` › ${hit.headingPath}` : ''}`} translate="no">
+        <span className="w-5 shrink-0 text-caption tabular-nums text-dim">{n}</span>
+        <span className="min-w-0 truncate font-mono text-caption text-muted" title={`${hit.source}${hit.headingPath ? ` › ${hit.headingPath}` : ''}`} translate="no">
           {hit.title}
           {hit.headingPath && <span className="text-dim"> › {hit.headingPath}</span>}
         </span>
-        {collection && <span className="shrink-0 text-[11.5px] text-dim">{collection}</span>}
+        {collection && <span className="shrink-0 text-caption text-dim">{collection}</span>}
         <span className="flex-1" />
         <span className="h-[5px] w-16 shrink-0 overflow-hidden rounded-full bg-line-strong" aria-hidden="true">
           <span className="block h-full rounded-full bg-ok" style={{ width: `${Math.max(6, (hit.score / best) * 100)}%` }} />
         </span>
-        <span className="w-12 shrink-0 text-right text-[12px] tabular-nums text-dim" title="Relevance score (higher is closer)">
+        <span className="w-12 shrink-0 text-right text-caption tabular-nums text-dim" title="Relevance score (higher is closer)">
           {hit.score.toPrecision(2)}
         </span>
       </div>
-      <p className="whitespace-pre-wrap pl-[30px] text-[12.5px] leading-relaxed text-muted [overflow-wrap:anywhere]">
+      <p className="whitespace-pre-wrap pl-[30px] text-ui leading-relaxed text-muted [overflow-wrap:anywhere]">
         <Highlight text={short ? `${hit.text.slice(0, 360).trimEnd()}…` : hit.text} words={words} />
         {hit.text.length > 360 && (
-          <button onClick={() => setMore(!more)} className="ml-1.5 text-[12px] text-dim underline underline-offset-2 hover:text-fg">
+          <button onClick={() => setMore(!more)} className="ml-1.5 text-caption text-dim underline underline-offset-2 hover:text-fg">
             {more ? 'Less' : 'More'}
           </button>
         )}
@@ -610,7 +610,7 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
       >
         <Search size={15} className="shrink-0 text-dim" aria-hidden="true" />
         <input
-          className="h-8 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-dim"
+          className="h-8 min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-dim"
           placeholder={asking ? askLabel : placeholder}
           aria-label={asking ? askLabel : placeholder}
           value={query}
@@ -632,7 +632,7 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
         </Button>
       </form>
       {options && (
-        <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-line bg-panel px-3 py-2 text-[12px] text-muted">
+        <div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-line bg-panel px-3 py-2 text-caption text-muted">
           <Segmented
             value={mode}
             onChange={setMode}
@@ -654,23 +654,23 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
           )}
         </div>
       )}
-      {how === 'ask' && !hasModel && <p className="text-[12px] text-warn">Set a default model under Models to get answers; until then Ask shows passages only.</p>}
-      <div aria-live="polite" className="min-h-[18px] text-[12px] text-dim">
+      {how === 'ask' && !hasModel && <p className="text-caption text-warn">Set a default model under Models to get answers; until then Ask shows passages only.</p>}
+      <div aria-live="polite" className="min-h-[18px] text-caption text-dim">
         {loading && <Spinner size={12} className="mr-1.5 inline text-crimson" />}
         {status}
       </div>
 
       {error && (
-        <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-[12.5px] text-crimson-hi">
+        <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-ui text-crimson-hi">
           {error}
         </div>
       )}
 
       {!loading && !result && !error && suggestions.length > 0 && (
         <div className="grid gap-1.5">
-          <span className="text-[12px] font-medium text-dim">Try</span>
+          <span className="text-caption font-medium text-dim">Try</span>
           {suggestions.map((s) => (
-            <button key={s} onClick={() => void run(s)} className="rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-left text-[12.5px] text-muted hover:border-crimson-line hover:text-fg">
+            <button key={s} onClick={() => void run(s)} className="rounded-[10px] border border-line bg-panel px-3.5 py-2.5 text-left text-ui text-muted hover:border-crimson-line hover:text-fg">
               {s}
             </button>
           ))}
@@ -680,7 +680,7 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
       {!loading && result && (
         <>
           {result.search.hits.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-[12.5px] text-dim">
+            <div className="rounded-[10px] border border-dashed border-line-strong px-4 py-5 text-center text-ui text-dim">
               Nothing{single ? ` in ${single.name}` : ''} matched “{asked}”.
               <div className="mt-1">{collections.every((c) => c.docCount === 0) ?'Add sources first, then search again.' : 'Try other words, or Keywords + meaning under the options.'}</div>
             </div>
@@ -688,14 +688,14 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
             <>
               {result.answer && (
                 <div className="min-w-0 rounded-[12px] border border-line-strong bg-elev p-4 [&_pre]:max-w-full [&_pre]:overflow-x-auto">
-                  <div className="mb-2 text-[12px] text-dim">
+                  <div className="mb-2 text-caption text-dim">
                     Answer{result.model ? ` from ${result.model}` : ''} in {(result.tookMs / 1000).toFixed(1)} s, citing the passages below
                   </div>
                   <Markdown text={result.answer} references={result.search.hits} />
                 </div>
               )}
-              {result.error && <div className="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-[12px] text-warn">{result.error}</div>}
-              {result.search.queries.length > 1 && <p className="text-[12px] text-dim">Searched for: {result.search.queries.join('; ')}</p>}
+              {result.error && <div className="rounded-[10px] border border-warn/30 bg-warn/10 px-3.5 py-2.5 text-caption text-warn">{result.error}</div>}
+              {result.search.queries.length > 1 && <p className="text-caption text-dim">Searched for: {result.search.queries.join('; ')}</p>}
               <div>
                 {result.search.hits.map((h, i) => (
                   <Passage key={h.chunkId} hit={h} n={i + 1} best={best} words={words} collection={spread ? names?.[h.collectionId] : undefined} />
@@ -743,20 +743,20 @@ function DocView({ doc, onClose, reload }: { doc?: RagDocument; onClose(): void;
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <p className="mb-3 truncate font-mono text-[11.5px] text-dim" title={doc.source} translate="no">
+        <p className="mb-3 truncate font-mono text-caption text-dim" title={doc.source} translate="no">
           {doc.source}
         </p>
-        {doc.error && <p className="mb-3 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">{doc.error}</p>}
+        {doc.error && <p className="mb-3 rounded-[10px] border border-warn/30 bg-warn/10 px-3 py-2 text-caption text-warn">{doc.error}</p>}
         <div className="grid gap-2">
           {chunks.map((c) => (
             <div key={c.id} className="rounded-[10px] border border-line bg-panel p-3">
-              <div className="mb-1 flex items-center gap-2 text-[11.5px] text-dim">
+              <div className="mb-1 flex items-center gap-2 text-caption text-dim">
                 <span className="tabular-nums">#{c.ord}</span>
                 {c.headingPath && <span className="truncate">{c.headingPath}</span>}
                 <span className="flex-1" />
                 {c.embedded && <span className="text-ok">embedded</span>}
               </div>
-              <pre className="selectable whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-muted">{c.text}</pre>
+              <pre className="selectable whitespace-pre-wrap font-mono text-caption leading-relaxed text-muted">{c.text}</pre>
             </div>
           ))}
         </div>
@@ -894,10 +894,10 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
     <div className="grid gap-4 p-5">
       <div className="space-y-4">
         <section className="rounded-[12px] border border-line bg-elev p-4">
-          <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
+          <div className="mb-1 flex items-center gap-2 text-ui font-semibold">
             <FolderPlus size={14} className="text-crimson-hi" /> Files & folders
           </div>
-          <div className="mb-3 text-[12px] text-dim">Markdown, text, code, PDF, DOCX and HTML.</div>
+          <div className="mb-3 text-caption text-dim">Markdown, text, code, PDF, DOCX and HTML.</div>
           <div className="flex gap-2">
             <Button icon={<FilePlus2 size={13} />} onClick={() => void pick(false)}>
               Add files
@@ -909,10 +909,10 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
         </section>
 
         <section className="rounded-[12px] border border-line bg-elev p-4">
-          <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
+          <div className="mb-1 flex items-center gap-2 text-ui font-semibold">
             <Globe size={14} className="text-crimson-hi" /> Web page / docs site
           </div>
-          <div className="mb-3 text-[12px] text-dim">
+          <div className="mb-3 text-caption text-dim">
             Readability extraction to Markdown. JavaScript-rendered sites (React/Angular docs) are rendered with the bundled Obscura browser automatically. Crawl follows links under the same path prefix.
           </div>
           <div className="flex gap-2">
@@ -929,7 +929,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
             </Button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-[12px] text-muted">
+            <label className="flex items-center gap-2 text-caption text-muted">
               JS rendering
               <Segmented
                 value={render}
@@ -944,7 +944,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
             <Switch checked={crawl} onChange={setCrawl} label="Crawl linked pages" />
             {crawl && (
               <>
-                <label className="flex items-center gap-2 text-[12px] text-muted">
+                <label className="flex items-center gap-2 text-caption text-muted">
                   max pages
                   <Input type="number" className="w-20" min={1} max={1000} value={maxPages} onChange={(e) => setMaxPages(Number(e.target.value))} />
                 </label>
@@ -955,11 +955,11 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
         </section>
 
         <section className="rounded-[12px] border border-line bg-elev p-4">
-          <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold">
+          <div className="mb-3 flex items-center gap-2 text-ui font-semibold">
             <TypeIcon size={14} className="text-crimson-hi" /> Paste text
           </div>
           <Input className="mb-2" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <Textarea rows={6} placeholder="Markdown or plain text…" value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-[12px]" />
+          <Textarea rows={6} placeholder="Markdown or plain text…" value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-caption" />
           <div className="mt-2 flex justify-end">
             <Button
               variant="primary"
@@ -979,8 +979,8 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
       </div>
 
       <section className="flex max-h-[640px] flex-col rounded-[12px] border border-line bg-elev">
-        <div className="border-b border-line px-3 py-2 text-[12px] font-semibold">Ingestion log</div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px]">
+        <div className="border-b border-line px-3 py-2 text-caption font-semibold">Ingestion log</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-caption">
           {log.map((l, i) => (
             <div key={i} className={clsx('truncate px-1 py-0.5', l.error ? 'text-danger-hi' : l.done ? 'text-ok' : 'text-dim')} title={l.error ?? l.message}>
               {l.error ? `Failed: ${l.message}: ${l.error}` : l.message}

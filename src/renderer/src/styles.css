@@ -9,6 +9,18 @@
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Code', monospace;
 
+  /* Type scale: use these, not pixel sizes. Line height is inherited (1.5 from body) unless a leading-* class sets it.
+     micro: badges, counters and keyboard hints only · caption: timestamps, metadata, table headers ·
+     ui: buttons, inputs, nav, menus, code · body: descriptions and help text · section: card and panel titles ·
+     title: one per screen · figure: dashboard numbers. */
+  --text-micro: 11px;
+  --text-caption: 12px;
+  --text-ui: 13px;
+  --text-body: 14px;
+  --text-section: 16px;
+  --text-title: 20px;
+  --text-figure: 28px;
+
   --color-bg: #09090a;
   --color-panel: #0f0f11;
   --color-elev: #151518;
@@ -90,7 +102,7 @@
     background: var(--color-bg);
     color: var(--color-fg);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: var(--text-ui);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     font-feature-settings: 'cv11', 'ss01';
@@ -198,7 +210,7 @@
   border-radius: 8px;
   padding: 12px 14px;
   overflow-x: auto;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   line-height: 1.55;
 }
 .prose-cloth pre code {
@@ -233,7 +245,7 @@
 }
 .prose-cloth th {
   background: var(--color-panel);
-  font-size: 11px;
+  font-size: var(--text-caption);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-dim);
@@ -254,7 +266,7 @@
 /* ── CodeMirror ───────────────────────────────────────────────────────── */
 .cm-editor {
   background: transparent !important;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
 }
 .cm-editor .cm-scroller {
   font-family: var(--font-mono) !important;
@@ -355,7 +367,7 @@ html.mobile .prose-cloth td {
   padding: 8px 12px;
 }
 html.mobile .prose-cloth pre {
-  font-size: 11.5px;
+  font-size: var(--text-caption);
 }
 
 /* Model picker panel: drops in from the field. */

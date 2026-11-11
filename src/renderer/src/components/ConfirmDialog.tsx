@@ -102,10 +102,10 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
             <Icon size={18} weight="fill" />
           </div>
           <div className="min-w-0 pt-0.5">
-            <div id={`confirm-title-${req.id}`} className="text-[14.5px] font-semibold tracking-tight text-fg">
+            <div id={`confirm-title-${req.id}`} className="text-body font-semibold tracking-tight text-fg">
               {req.title ?? first}
             </div>
-            <div id={`confirm-body-${req.id}`} className="selectable mt-1.5 space-y-2 text-[12.5px] leading-relaxed text-muted">
+            <div id={`confirm-body-${req.id}`} className="selectable mt-1.5 space-y-2 text-ui leading-relaxed text-muted">
               {(req.title ? [first, ...rest] : rest).map((p, i) => (
                 <p key={i} className="whitespace-pre-wrap break-words">
                   {p}
@@ -118,7 +118,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
           <button
             ref={cancelRef}
             onClick={() => finish(false)}
-            className="h-8 rounded-lg border border-line-strong px-3.5 text-[12.5px] font-medium text-muted transition-colors hover:border-line-strong hover:bg-elev-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
+            className="h-8 rounded-lg border border-line-strong px-3.5 text-ui font-medium text-muted transition-colors hover:border-line-strong hover:bg-elev-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
           >
             {req.cancelLabel ?? 'Cancel'}
           </button>
@@ -126,7 +126,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
             ref={confirmRef}
             onClick={() => finish(true)}
             className={clsx(
-              'h-8 rounded-lg px-3.5 text-[12.5px] font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
+              'h-8 rounded-lg px-3.5 text-ui font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
               req.danger ? 'bg-danger hover:bg-danger-hi focus-visible:ring-danger' : 'bg-crimson hover:bg-crimson-hi focus-visible:ring-crimson-line'
             )}
           >

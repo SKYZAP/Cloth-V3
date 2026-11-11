@@ -168,8 +168,8 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
   return (
     <section aria-label={title} className="grid gap-3.5">
       <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="flex-1 text-[14px] font-semibold">{title}</h2>
-        <span className="text-[12px] text-dim">Start from</span>
+        <h2 className="flex-1 text-body font-semibold">{title}</h2>
+        <span className="text-caption text-dim">Start from</span>
         <div role="group" aria-label="Start from a preset" className="inline-flex rounded-[10px] border border-line bg-panel p-0.5">
           {PRESETS.map((p) => (
             <button
@@ -179,7 +179,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                 setPicked(p.pick(items))
                 setPreset(p.label)
               }}
-              className={clsx('h-[30px] rounded-lg px-3 text-[12.5px]', preset === p.label ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:text-fg')}
+              className={clsx('h-[30px] rounded-lg px-3 text-ui', preset === p.label ? 'bg-elev-2 font-medium text-fg' : 'text-muted hover:text-fg')}
             >
               {p.label}
             </button>
@@ -187,19 +187,19 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
         </div>
       </div>
       {pre && (
-        <p className="-mt-1.5 text-[12px] text-dim" aria-live="polite">
+        <p className="-mt-1.5 text-caption text-dim" aria-live="polite">
           {pre.label}: {pre.does}. Change anything below.
         </p>
       )}
 
       <div role="list" aria-label="What this lets it do" className="flex flex-wrap items-center gap-1.5 rounded-[14px] border border-line bg-panel p-2.5">
-        <span className="px-1.5 text-[12px] text-muted">It can</span>
+        <span className="px-1.5 text-caption text-muted">It can</span>
         {abilities.map((ab) => (
           <span
             key={ab.label}
             role="listitem"
             className={clsx(
-              'inline-flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors motion-reduce:transition-none',
+              'inline-flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-ui transition-colors motion-reduce:transition-none',
               ab.on ? (ab.risky ? 'border-warn/45 bg-warn/10 text-warn' : 'border-ok/40 bg-ok/10 text-ok') : 'border-line text-dim'
             )}
           >
@@ -210,7 +210,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
         ))}
       </div>
       {has([...READS, ...WRITES]) && folder === false && (
-        <p className="-mt-1 flex items-center gap-2 text-[12px] text-warn">
+        <p className="-mt-1 flex items-center gap-2 text-caption text-warn">
           <AlertTriangle size={13} aria-hidden="true" />
           File tools need a folder to work in.
         </p>
@@ -219,16 +219,16 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
       <div className="flex flex-wrap overflow-hidden rounded-[16px] border border-line bg-panel">
         <div className="grid min-w-0 flex-[1_1_270px] content-start gap-3 border-r border-line bg-bg/40 p-3.5 mobile:border-b mobile:border-r-0">
           <div className="flex items-baseline gap-2">
-            <h3 className="text-[13px] font-semibold">Allowed</h3>
-            <span className="text-[12px] tabular-nums text-dim">{allowed.length}</span>
+            <h3 className="text-ui font-semibold">Allowed</h3>
+            <span className="text-caption tabular-nums text-dim">{allowed.length}</span>
           </div>
-          {!allowed.length && <p className="py-4 text-[12.5px] text-dim">Nothing yet. It can only read the prompt and write an answer. Add things from the list.</p>}
+          {!allowed.length && <p className="py-4 text-ui text-dim">Nothing yet. It can only read the prompt and write an answer. Add things from the list.</p>}
           {KINDS.map((k) => {
             const group = allowed.filter((i) => i.kind === k)
             if (!group.length) return null
             return (
               <div key={k} className="grid gap-0.5">
-                <div className="flex items-center gap-1.5 px-1 pb-0.5 text-[11.5px] text-dim">
+                <div className="flex items-center gap-1.5 px-1 pb-0.5 text-caption text-dim">
                   <span aria-hidden="true" className={clsx('h-[7px] w-[7px] rounded-full', KIND[k].dot)} />
                   {KIND[k].label}
                 </div>
@@ -243,9 +243,9 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                         <span aria-hidden="true" className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', KIND[i.kind].tile)}>
                           <i.icon size={14} />
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{i.label}</span>
+                        <span className="min-w-0 flex-1 truncate text-ui font-medium">{i.label}</span>
                         {i.kind === 'mcp' && all.length > 0 && (
-                          <button aria-expanded={isOpen} onClick={() => setOpen((o) => ({ ...o, [i.id]: !isOpen }))} className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-line-strong px-2 text-[11.5px] text-info">
+                          <button aria-expanded={isOpen} onClick={() => setOpen((o) => ({ ...o, [i.id]: !isOpen }))} className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-line-strong px-2 text-caption text-info">
                             {sp?.tools === null || chosen.length === all.length ? 'All tools' : `${chosen.length} of ${all.length} tools`}
                             <ChevronDown size={11} aria-hidden="true" className={clsx('transition-transform motion-reduce:transition-none', isOpen && 'rotate-180')} />
                           </button>
@@ -257,7 +257,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                       {isOpen && (
                         <div className="mb-1.5 ml-10 grid gap-0.5 border-l-2 border-info/35 py-1 pl-2.5">
                           {all.map((t) => (
-                            <label key={t} className="flex min-h-[30px] cursor-pointer items-center gap-2 text-[12.5px]">
+                            <label key={t} className="flex min-h-[30px] cursor-pointer items-center gap-2 text-ui">
                               <input
                                 type="checkbox"
                                 className="h-[15px] w-[15px] accent-[#6b9cf0]"
@@ -268,7 +268,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                                   setServerTools(i.id, next.length === all.length ? null : next)
                                 }}
                               />
-                              <span className="truncate font-mono text-[12px]" translate="no">
+                              <span className="truncate font-mono text-caption" translate="no">
                                 {t}
                               </span>
                             </label>
@@ -284,7 +284,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
         </div>
 
         <div className="grid min-w-0 flex-[999_1_340px] content-start gap-2.5 p-3.5">
-          <h3 className="text-[13px] font-semibold">Add more</h3>
+          <h3 className="text-ui font-semibold">Add more</h3>
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
             <Input className="pl-8" aria-label="Search tools, servers, Knowledge and skills" placeholder="Search tools, servers, Knowledge and skills…" spellCheck={false} autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -296,11 +296,11 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                 role="tab"
                 aria-selected={kind === k}
                 onClick={() => setKind(k)}
-                className={clsx('flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px]', kind === k ? 'border-line-strong bg-elev-2 font-medium text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg')}
+                className={clsx('flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-ui', kind === k ? 'border-line-strong bg-elev-2 font-medium text-fg' : 'border-transparent text-muted hover:bg-elev hover:text-fg')}
               >
                 <span aria-hidden="true" className={clsx('h-[7px] w-[7px] rounded-full', k === 'all' ? 'bg-muted' : KIND[k].dot)} />
                 {k === 'all' ? 'Everything' : KIND[k].label}
-                <span className="text-[11px] tabular-nums text-dim">{items.filter((i) => k === 'all' || i.kind === k).length}</span>
+                <span className="text-caption tabular-nums text-dim">{items.filter((i) => k === 'all' || i.kind === k).length}</span>
               </button>
             ))}
           </div>
@@ -314,10 +314,10 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                   </span>
                   <span className="grid min-w-0 flex-1 gap-px">
                     <span className="flex flex-wrap items-baseline gap-x-2">
-                      <span className="text-[13.5px] font-semibold">{i.label}</span>
-                      <span className="text-[11.5px] text-dim">{kind === 'all' ? `${KIND[i.kind].one}, ${i.meta.charAt(0).toLowerCase()}${i.meta.slice(1)}` : i.meta}</span>
+                      <span className="text-body font-semibold">{i.label}</span>
+                      <span className="text-caption text-dim">{kind === 'all' ? `${KIND[i.kind].one}, ${i.meta.charAt(0).toLowerCase()}${i.meta.slice(1)}` : i.meta}</span>
                     </span>
-                    <span className="line-clamp-2 text-[12px] text-dim">
+                    <span className="line-clamp-2 text-caption text-dim">
                       {i.desc}
                       {i.warn && <span className="text-warn"> {i.warn}.</span>}
                     </span>
@@ -326,7 +326,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                     aria-pressed={on}
                     aria-label={`${on ? 'Remove' : 'Add'} ${i.label}`}
                     onClick={() => toggle(i)}
-                    className={clsx('flex h-8 min-w-[84px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] transition-colors motion-reduce:transition-none', on ? KIND[i.kind].on : 'border-line-strong bg-elev hover:border-muted/40')}
+                    className={clsx('flex h-8 min-w-[84px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-ui transition-colors motion-reduce:transition-none', on ? KIND[i.kind].on : 'border-line-strong bg-elev hover:border-muted/40')}
                   >
                     {on ? <Check size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
                     {on ? 'Added' : 'Add'}
@@ -335,7 +335,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
               )
             })}
             {!visible.length && (
-              <p className="px-1 py-4 text-[12.5px] text-dim">
+              <p className="px-1 py-4 text-ui text-dim">
                 {query ? `Nothing matches “${q.trim()}”.` : 'Nothing of this kind yet.'} Make tools on the Tools page and add servers on the MCP page.
               </p>
             )}
