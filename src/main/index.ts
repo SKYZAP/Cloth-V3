@@ -46,10 +46,10 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    backgroundColor: '#0a0a0b',
+    backgroundColor: '#09090c',
     title: 'Cloth',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#0a0a0b', symbolColor: '#a1a1aa', height: 36 },
+    titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#09090c', symbolColor: '#bdbdc5', height: 36 },
     icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),

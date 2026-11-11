@@ -260,7 +260,7 @@ export function AccessPicker({ items, value, onChange, folder, commands, title =
                             <label key={t} className="flex min-h-[30px] cursor-pointer items-center gap-2 text-ui">
                               <input
                                 type="checkbox"
-                                className="h-[15px] w-[15px] accent-[#6b9cf0]"
+                                className="h-[15px] w-[15px] accent-info"
                                 checked={sp?.tools === null || chosen.includes(t)}
                                 onChange={(e) => {
                                   const cur = sp?.tools ?? all

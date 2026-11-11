@@ -67,7 +67,7 @@ export async function scanQr(): Promise<string | null> {
 
 export async function openExternal(url: string): Promise<void> {
   if (!/^https?:\/\//.test(url)) return
-  if (native) await Browser.open({ url, toolbarColor: '#0a0a0b' })
+  if (native) await Browser.open({ url, toolbarColor: '#09090c' })
   else window.open(url, '_blank', 'noopener')
 }
 
@@ -115,7 +115,7 @@ export async function styleSystemBars(): Promise<void> {
   if (!native) return
   try {
     await StatusBar.setStyle({ style: Style.Dark })
-    await StatusBar.setBackgroundColor({ color: '#0a0a0b' })
+    await StatusBar.setBackgroundColor({ color: '#09090c' })
   } catch {
     /* edge-to-edge devices ignore this */
   }

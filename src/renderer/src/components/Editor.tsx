@@ -6,13 +6,13 @@ import { EditorView } from '@codemirror/view'
 
 const theme = EditorView.theme(
   {
-    '&': { color: '#ececef', backgroundColor: 'transparent' },
-    '.cm-content': { caretColor: '#ef3d5c', padding: '12px 0' },
-    '.cm-cursor': { borderLeftColor: '#ef3d5c' },
+    '&': { color: '#f1f1f4', backgroundColor: 'transparent' },
+    '.cm-content': { caretColor: '#e54056', padding: '12px 0' },
+    '.cm-cursor': { borderLeftColor: '#e54056' },
     '.cm-gutters': { backgroundColor: 'transparent', color: '#4a4a52', border: 'none' },
     '.cm-activeLine': { backgroundColor: 'rgb(255 255 255 / 0.025)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#a3a3ad' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgb(220 38 69 / 0.28) !important' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#bdbdc5' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgb(207 40 69 / 0.28) !important' },
     '.cm-line': { padding: '0 14px' }
   },
   { dark: true }

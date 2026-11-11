@@ -839,7 +839,7 @@ function ParamsEditor({ params, onChange }: { params: ToolParam[]; onChange(p: T
                 ))}
               </Select>
               <Input aria-label={`Input ${i + 1}: what to put here`} placeholder="e.g. City name, like Lisbon…" value={p.description} onChange={(e) => update(i, { description: e.target.value })} />
-              <input aria-label={`Input ${i + 1} is needed`} type="checkbox" className="h-4 w-4 justify-self-center accent-[#dc2645]" checked={p.required} onChange={(e) => update(i, { required: e.target.checked })} />
+              <input aria-label={`Input ${i + 1} is needed`} type="checkbox" className="h-4 w-4 justify-self-center accent-crimson" checked={p.required} onChange={(e) => update(i, { required: e.target.checked })} />
               <IconButton aria-label={`Remove input ${i + 1}`} title="Remove" onClick={() => onChange(params.filter((_, j) => j !== i))}>
                 <Trash2 size={12} />
               </IconButton>

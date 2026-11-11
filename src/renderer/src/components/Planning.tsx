@@ -44,11 +44,11 @@ export function TodoList({ todos, dense }: { todos: TodoItem[]; dense?: boolean 
 
 const SLICE_COLOR: Record<ContextSliceKey, string> = {
   system: '#8b8b95',
-  tools: '#6b9cf0',
+  tools: '#6cb2ec',
   skills: '#e0a43a',
-  summary: '#c084fc',
-  user: '#3fb97a',
-  assistant: '#dc2645',
+  summary: '#c9a3f5',
+  user: '#5ccb89',
+  assistant: '#cf2845',
   toolResults: '#fb923c'
 }
 

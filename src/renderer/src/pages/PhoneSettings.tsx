@@ -126,7 +126,7 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     setQr(null)
-    if (pairing) void QRCode.toDataURL(pairing.link, { margin: 1, width: 560, errorCorrectionLevel: 'M', color: { dark: '#0a0a0b', light: '#ffffff' } }).then(setQr)
+    if (pairing) void QRCode.toDataURL(pairing.link, { margin: 1, width: 560, errorCorrectionLevel: 'M', color: { dark: '#09090c', light: '#ffffff' } }).then(setQr)
   }, [pairing])
   useEffect(() => {
     if (!pairing) return

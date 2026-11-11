@@ -37,25 +37,25 @@ const RANGES: { value: UsageRange; label: string }[] = [
 ]
 
 const SOURCE: Record<UsageSource, { label: string; color: string }> = {
-  chat: { label: 'Chat', color: '#dc2645' },
+  chat: { label: 'Chat', color: '#cf2845' },
   workflow: { label: 'Flows', color: '#fb923c' },
   skills: { label: 'Skill tests', color: '#e0a43a' },
-  knowledge: { label: 'Knowledge', color: '#6b9cf0' },
-  mcp: { label: 'MCP clients', color: '#3fb97a' },
-  builder: { label: 'Flow builder', color: '#c084fc' },
+  knowledge: { label: 'Knowledge', color: '#6cb2ec' },
+  mcp: { label: 'MCP clients', color: '#5ccb89' },
+  builder: { label: 'Flow builder', color: '#c9a3f5' },
   tools: { label: 'Tools page', color: '#a3e635' },
   other: { label: 'Other', color: '#6c6c76' }
 }
 
 const VIA: Record<string, { label: string; color: string }> = {
-  slash: { label: '/ command', color: '#c084fc' },
+  slash: { label: '/ command', color: '#c9a3f5' },
   tool: { label: 'agent', color: '#e0a43a' },
-  mcp: { label: 'MCP', color: '#3fb97a' },
+  mcp: { label: 'MCP', color: '#5ccb89' },
   workflow: { label: 'flow', color: '#fb923c' }
 }
 
 const INPUT = '#4b4b56'
-const OUTPUT = '#dc2645'
+const OUTPUT = '#cf2845'
 
 export function DashboardPage() {
   const [range, setRangeState] = useState<UsageRange>(() => {
@@ -287,7 +287,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
           {compact(t.inputTokens + t.cacheTokens)} in · {compact(t.outputTokens)} out{t.embedTokens ? ` · ${compact(t.embedTokens)} embed` : ''}
         </>
       ),
-      foot: <SplitBar parts={[{ v: t.inputTokens + t.cacheTokens, c: INPUT }, { v: t.outputTokens, c: OUTPUT }, { v: t.embedTokens, c: '#6b9cf0' }]} />
+      foot: <SplitBar parts={[{ v: t.inputTokens + t.cacheTokens, c: INPUT }, { v: t.outputTokens, c: OUTPUT }, { v: t.embedTokens, c: '#6cb2ec' }]} />
     },
     {
       icon: Coins,
@@ -532,7 +532,7 @@ function Hours({ hours }: { hours: number[] }) {
                 initial={{ opacity: 0, scale: 0.6 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.25 + h * 0.015 }}
-                style={{ background: n ? `rgb(220 38 69 / ${0.14 + 0.86 * (n / max)})` : 'var(--color-elev-2)' }}
+                style={{ background: n ? `rgb(189 189 197 / ${0.14 + 0.86 * (n / max)})` : 'var(--color-elev-2)' }}
               />
           ))}
         </div>
@@ -719,7 +719,7 @@ function Skills({ stats }: { stats: DashboardStats }) {
 
 // ─── Flows, skill health, library ───────────────────────────────────────────
 
-function Ring({ value, size = 64, color = '#3fb97a', children }: { value: number; size?: number; color?: string; children?: ReactNode }) {
+function Ring({ value, size = 64, color = '#5ccb89', children }: { value: number; size?: number; color?: string; children?: ReactNode }) {
   const r = size / 2 - 5
   const c = 2 * Math.PI * r
   return (

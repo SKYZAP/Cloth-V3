@@ -21,55 +21,55 @@
   --text-title: 20px;
   --text-figure: 28px;
 
-  --color-bg: #09090a;
-  --color-panel: #0f0f11;
-  --color-elev: #151518;
-  --color-elev-2: #1b1b1f;
-  --color-hover: #202025;
-  --color-line: #232328;
-  --color-line-strong: #303036;
-  --color-fg: #ececef;
-  --color-muted: #a3a3ad;
-  --color-dim: #85858f;
+  --color-bg: #09090c;
+  --color-panel: #141518;
+  --color-elev: #1e1e22;
+  --color-elev-2: #26262b;
+  --color-hover: #2d2d33;
+  --color-line: #36363c;
+  --color-line-strong: #494a51;
+  --color-fg: #f1f1f4;
+  --color-muted: #bdbdc5;
+  --color-dim: #94949e;
 
-  --color-crimson: #dc2645;
-  --color-crimson-hi: #ef3d5c;
-  --color-crimson-lo: #9f1830;
-  --color-crimson-soft: rgb(220 38 69 / 0.12);
-  --color-crimson-line: rgb(220 38 69 / 0.35);
+  --color-crimson: #cf2845;
+  --color-crimson-hi: #e54056;
+  --color-crimson-lo: #97182f;
+  --color-crimson-soft: rgb(207 40 69 / 0.12);
+  --color-crimson-line: rgb(207 40 69 / 0.35);
   /* Small crimson text on a crimson-soft tint (badges, chips): crimson-hi is under 4.5:1 there. */
-  --color-crimson-text: #ff7a90;
+  --color-crimson-text: #f88d96;
 
-  /* Errors, failures, deletions and destructive actions: orange, far enough from crimson that they never read as the brand,
+  /* Errors, failures, deletions and destructive actions: coral orange, far enough from crimson that they never read as the brand,
      including for red-green colour blindness. Always pair with an icon. */
-  --color-danger: #f76b15;
-  --color-danger-hi: #ff9454;
-  --color-danger-lo: #ad4b0f;
-  --color-danger-soft: rgb(247 107 21 / 0.12);
-  --color-danger-line: rgb(247 107 21 / 0.4);
+  --color-danger: #f57050;
+  --color-danger-hi: #fe9975;
+  --color-danger-lo: #b5462b;
+  --color-danger-soft: rgb(245 112 80 / 0.12);
+  --color-danger-line: rgb(245 112 80 / 0.4);
 
   /* Cancelled or stopped by the user: neutral, not a failure. Pair with a slashed-circle icon. */
-  --color-cancel: #85858f;
-  --color-cancel-text: #a3a3ad;
+  --color-cancel: #94949e;
+  --color-cancel-text: #bdbdc5;
 
-  --color-ok: #3fb97a;
-  /* Yellow, kept clear of the orange danger colour. */
-  --color-warn: #f5e147;
-  --color-info: #6b9cf0;
+  --color-ok: #5ccb89;
+  /* Amber, kept clear of the coral danger colour. */
+  --color-warn: #f6b84d;
+  --color-info: #6cb2ec;
 
   /* Skills: the slash command in the message box, sent messages and the setup sidebar. */
-  --color-skill: #dcb6ff;
-  --color-skill-dot: #c084fc;
-  --color-skill-soft: rgb(192 132 252 / 0.15);
+  --color-skill: #dac1f8;
+  --color-skill-dot: #c9a3f5;
+  --color-skill-soft: rgb(201 163 245 / 0.15);
 
   /* Agents: saved agents tagged with @ in the message box, sent messages and subagent runs. */
-  --color-agent: #9cdcff;
-  --color-agent-dot: #38bdf8;
-  --color-agent-soft: rgb(56 189 248 / 0.15);
+  --color-agent: #9fdbf4;
+  --color-agent-dot: #70ccee;
+  --color-agent-soft: rgb(112 204 238 / 0.15);
   /* Spec → Ship: the workflow mode chip, its stage meter and stage dividers. */
-  --color-mode: #d8b4fe;
-  --color-mode-soft: rgb(216 180 254 / 0.10);
-  --color-mode-line: rgb(216 180 254 / 0.35);
+  --color-mode: #dac1f8;
+  --color-mode-soft: rgb(218 193 248 / 0.10);
+  --color-mode-line: rgb(218 193 248 / 0.35);
 }
 
 /* Base rules live in the base layer so Tailwind utilities (outline-none, [scrollbar-width:none], …)
@@ -119,12 +119,12 @@
   }
 
   ::selection {
-    background: rgb(220 38 69 / 0.35);
+    background: rgb(207 40 69 / 0.35);
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2a2a30 transparent;
+    scrollbar-color: #36363c transparent;
   }
 
   .drag {
@@ -144,7 +144,7 @@
 .prose-cloth {
   font-size: 14.5px;
   line-height: 1.75;
-  color: #e4e4e8;
+  color: #e6e6ea;
   overflow-wrap: anywhere;
 }
 .prose-cloth > :first-child {
@@ -205,7 +205,7 @@
   padding: 0.05em 0.35em;
 }
 .prose-cloth pre {
-  background: #0c0c0e;
+  background: #101014;
   border: 1px solid var(--color-line);
   border-radius: 8px;
   padding: 12px 14px;
@@ -279,10 +279,10 @@
 @keyframes pulse-crimson {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(220 38 69 / 0.45);
+    box-shadow: 0 0 0 0 rgb(207 40 69 / 0.45);
   }
   50% {
-    box-shadow: 0 0 0 5px rgb(220 38 69 / 0);
+    box-shadow: 0 0 0 5px rgb(207 40 69 / 0);
   }
 }
 .pulse-crimson {

@@ -224,7 +224,7 @@ export function CommandsPicker({ value, onChange, folder, docker }: { value: Aut
             <span className="text-dim">The Linux system it runs in, such as node:22 or python:3.12.</span>
           </label>
           <label className="flex min-h-8 cursor-pointer items-center gap-2 text-ui">
-            <input type="checkbox" className="accent-[#dc2645]" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
+            <input type="checkbox" className="accent-crimson" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
             Can reach the internet (to install packages)
           </label>
         </div>

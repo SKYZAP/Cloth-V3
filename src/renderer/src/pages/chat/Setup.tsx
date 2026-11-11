@@ -18,7 +18,7 @@ type View = 'overview' | SetupSection
 export const AGENT_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools']
 
 /** Colours of the four parts of the request budget, shared by the bar and the legend. */
-const PART = { servers: '#6b9cf0', builtin: '#a3a3ad', skills: '#c084fc', knowledge: '#3fb97a' }
+const PART = { servers: '#6cb2ec', builtin: '#bdbdc5', skills: '#c9a3f5', knowledge: '#5ccb89' }
 
 type FlagKey = 'webEnabled' | 'subagents' | 'imagesEnabled' | 'codeIntel' | 'customTools'
 interface Group {

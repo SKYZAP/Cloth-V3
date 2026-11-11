@@ -88,7 +88,7 @@ export function BottomSheet({
       const body = bodyRef.current
       if (!el || !body) return
       body.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' })
-      el.animate([{ backgroundColor: 'rgb(220 38 69 / 0.12)' }, { backgroundColor: 'rgb(220 38 69 / 0)' }], { duration: 1200, delay: 350, easing: 'ease-out' })
+      el.animate([{ backgroundColor: 'rgb(207 40 69 / 0.12)' }, { backgroundColor: 'rgb(207 40 69 / 0)' }], { duration: 1200, delay: 350, easing: 'ease-out' })
     }, 60)
     return () => clearTimeout(t)
   }, [open, scrollTo])

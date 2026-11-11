@@ -375,7 +375,7 @@ function ProviderView({ provider }: { provider: Provider }) {
                       <td className="px-2 py-1.5 font-mono text-caption text-muted">{compact(m.contextWindow)}</td>
                       {(['embedding', 'reasoning', 'vision', 'image'] as const).map((k) => (
                         <td key={k} className="px-2 py-1.5 text-center">
-                          <input type="checkbox" className="accent-[#dc2645]" checked={!!m[k]} onChange={() => void toggle(m.id, k)} />
+                          <input type="checkbox" className="accent-crimson" checked={!!m[k]} onChange={() => void toggle(m.id, k)} />
                         </td>
                       ))}
                       <td className="px-2 py-1.5">

@@ -406,7 +406,7 @@ function StepChoices({
       </label>
       {askDefault && (
         <label className="flex items-center gap-2 text-ui">
-          <input type="checkbox" checked={useDefault} onChange={(e) => setUseDefault(e.target.checked)} className="h-4 w-4 accent-[#dc2645]" />
+          <input type="checkbox" checked={useDefault} onChange={(e) => setUseDefault(e.target.checked)} className="h-4 w-4 accent-crimson" />
           Use for new projects
         </label>
       )}

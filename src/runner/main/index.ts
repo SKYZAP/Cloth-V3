@@ -123,10 +123,10 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 560,
     show: false,
-    backgroundColor: '#09090a',
+    backgroundColor: '#09090c',
     title: manifest.name,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#09090a', symbolColor: '#a1a1aa', height: 36 },
+    titleBarOverlay: { color: '#09090c', symbolColor: '#bdbdc5', height: 36 },
     icon: existsSync(join(bundleDir, 'icon.png')) ? join(bundleDir, 'icon.png') : undefined,
     webPreferences: { preload: join(__dirname, '../preload/index.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
