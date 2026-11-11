@@ -12,6 +12,7 @@ import { errorMessage } from './core/context'
 import type { UsageService } from './core/usage'
 import type { UsageSource, WorkflowEvent } from '@shared/types'
 import { createComputer } from './computer/host'
+import { loadLoginShellPath } from './core/shell-env'
 import type { ComputerController } from './computer/tool'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -121,6 +122,8 @@ else {
   void app.whenReady().then(async () => {
     // Runs from source get their own id, so Windows never mixes them (and Electron's icon) up with the installed Cloth on the taskbar.
     app.setAppUserModelId(app.isPackaged ? 'dev.cloth.app' : 'dev.cloth.app.source')
+    // macOS/Linux: an app opened from Finder or the Dock has a bare PATH; use the login shell's (Homebrew, nvm, Docker …).
+    await loadLoginShellPath().catch(() => undefined)
     // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
     const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({

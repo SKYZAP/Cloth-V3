@@ -24,6 +24,7 @@ import type { LspManager } from './lsp'
 import { folderNotes, loadRules } from './rules'
 import type { ImageService } from '../images'
 import { json } from '../core/db'
+import { hostShellNote } from '../core/shell-env'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
 import { DEFAULT_AGENT_TIERS, DEFAULT_SUBAGENTS, type SettingsService } from '../core/settings'
@@ -512,6 +513,7 @@ export class AgentRuntime {
                     : unattended
                       ? `You can run commands with ${shell} (working directory = the workspace).`
                       : `You can run commands with ${shell} (working directory = the workspace). The user approves each command, so prefer read-only commands and explain why a command is needed.`,
+              ...(!scope.container && hostShellNote() ? [hostShellNote()!] : []),
               ...(scope.container
                 ? [
                     'Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file, listening on 0.0.0.0 (e.g. `nohup npm run dev -- --host 0.0.0.0 > /tmp/dev.log 2>&1 &`), then check they respond (e.g. with curl) and tell the user the port. Cloth opens container servers on the user’s PC automatically.'

@@ -98,7 +98,7 @@ export class SkillInsights {
     }
     for (const rt of need) {
       const found = this.hasRuntime(rt)
-      out.push(found ? { id: `rt-${rt}`, level: 'ok', title: `Its scripts need ${rt === 'python' ? 'Python' : 'bash'}, which was found` } : { id: `rt-${rt}`, level: 'warn', title: `Its scripts need ${rt === 'python' ? 'Python' : 'bash'}, which wasn't found`, detail: `Install ${rt === 'python' ? 'Python 3' : 'Git for Windows (bash)'} or the skill's scripts will fail.` })
+      out.push(found ? { id: `rt-${rt}`, level: 'ok', title: `Its scripts need ${rt === 'python' ? 'Python' : 'bash'}, which was found` } : { id: `rt-${rt}`, level: 'warn', title: `Its scripts need ${rt === 'python' ? 'Python' : 'bash'}, which wasn't found`, detail: `Install ${rt === 'python' ? (process.platform === 'darwin' ? 'Python 3 (brew install python, or xcode-select --install)' : 'Python 3') : process.platform === 'win32' ? 'Git for Windows (bash)' : 'bash'} or the skill's scripts will fail.` })
     }
 
     const tokens = Math.ceil(this.skills.instructions(skill).length / 4)
