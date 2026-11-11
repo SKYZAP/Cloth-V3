@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { delimiter } from 'node:path'
 
 const MARK = '__CLOTH_PATH__'
 
@@ -30,16 +29,20 @@ export function parseMarkedPath(stdout: string): string | null {
   return path || null
 }
 
-/** Entries of `primary` first, then the rest of `fallback`, then common install folders that exist; no duplicates. */
+/**
+ * Entries of `primary` first, then the rest of `fallback`, then common install folders that exist; no duplicates.
+ * Only used on macOS and Linux, so it splits on the POSIX `:` whatever platform runs it (the tests run on Windows too).
+ */
 export function mergePath(primary: string | null | undefined, fallback: string | null | undefined, exists: (p: string) => boolean = existsSync): string {
+  const DELIM = ':'
   const out: string[] = []
   const add = (p: string) => {
     if (p && !out.includes(p)) out.push(p)
   }
-  for (const p of (primary ?? '').split(delimiter)) add(p)
-  for (const p of (fallback ?? '').split(delimiter)) add(p)
+  for (const p of (primary ?? '').split(DELIM)) add(p)
+  for (const p of (fallback ?? '').split(DELIM)) add(p)
   for (const p of COMMON_DIRS) if (exists(p)) add(p)
-  return out.join(delimiter)
+  return out.join(DELIM)
 }
 
 /**
