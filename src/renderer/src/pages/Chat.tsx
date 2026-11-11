@@ -655,6 +655,10 @@ function ChatView({
     const s = await attempt(() => api.chat.setWorkflowAutoContinue(session.id, on))
     if (s) onChange(s)
   }
+  const setApproveSpec = async (on: boolean) => {
+    const s = await attempt(() => api.chat.setWorkflowApproveSpec(session.id, on))
+    if (s) onChange(s)
+  }
   const reviseStage = () => {
     setHint('Say what to change')
     textarea.current?.focus()
@@ -803,8 +807,8 @@ function ChatView({
   }
 
   // The turns' buttons go through these, which never change: a streamed update then re-renders only the turn it changed.
-  const latest = useRef({ regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue })
-  latest.current = { regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue }
+  const latest = useRef({ regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue, setApproveSpec })
+  latest.current = { regenerate, undo, approvePlan, revisePlan, answerRound, approveStage, reviseStage, fixFindings, setAutoContinue, setApproveSpec }
   const turnActions = useMemo(
     () => ({
       regenerate: (id: string) => void latest.current.regenerate(id),
@@ -815,7 +819,8 @@ function ChatView({
       approveStage: () => latest.current.approveStage(),
       reviseStage: () => latest.current.reviseStage(),
       fixFindings: (text: string) => latest.current.fixFindings(text),
-      setAutoContinue: (on: boolean) => void latest.current.setAutoContinue(on)
+      setAutoContinue: (on: boolean) => void latest.current.setAutoContinue(on),
+      setApproveSpec: (on: boolean) => void latest.current.setApproveSpec(on)
     }),
     []
   )
@@ -962,7 +967,7 @@ function ChatView({
                 {m.workflowStage ? <StageDivider message={m} fresh={fresh} route={session.workflow?.route} /> : m.planApproval ? <PlanApprovalLine message={m} fresh={fresh} /> : <UserBubble message={m} fresh={fresh} />}
               </div>
             ) : (
-              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => turnActions.regenerate(m.id)} awaiting={awaiting} onUndo={running || m.archived ? undefined : turnActions.undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: turnActions.approvePlan, onRevise: turnActions.revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: turnActions.answerRound, onApprove: turnActions.approveStage, onRevise: turnActions.reviseStage, onFix: turnActions.fixFindings, flow: session.workflow, onAutoContinue: turnActions.setAutoContinue, docs: specDocs }} />
+              <AssistantTurn key={m.id} message={m} invoked={live[i - 1]?.role === 'user' ? live[i - 1].skills : undefined} tagged={live[i - 1]?.role === 'user' ? live[i - 1].agents : undefined} fresh={fresh} streaming={running && i === live.length - 1} onRegenerate={() => turnActions.regenerate(m.id)} awaiting={awaiting} onUndo={running || m.archived ? undefined : turnActions.undo} plan={{ actionable: planStatus(live, i, running) === 'open', onApprove: turnActions.approvePlan, onRevise: turnActions.revisePlan }} workflow={{ actionable: !running && i === live.length - 1 && !!session.workflow && session.workflow.stage !== 'done', onAnswer: turnActions.answerRound, onApprove: turnActions.approveStage, onRevise: turnActions.reviseStage, onFix: turnActions.fixFindings, flow: session.workflow, onAutoContinue: turnActions.setAutoContinue, onApproveSpec: turnActions.setApproveSpec, docs: specDocs }} />
             )
           })}
           <AnimatePresence>
@@ -1434,7 +1439,7 @@ function AssistantTurnView({
   /** A plan this turn presented: whether it can still be approved, and what its buttons do. */
   plan?: { actionable: boolean; onApprove(mode: 'auto' | 'manual'): Promise<void>; onRevise(): void }
   /** Spec → Ship: whether this turn's latest round or gate can still be answered, and what its buttons do. */
-  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string>; finished: ReadonlySet<string> } }
+  workflow?: { actionable: boolean; onAnswer(text: string): Promise<void>; onApprove(): Promise<void>; onRevise(): void; onFix?(text: string): Promise<void>; flow?: SpecWorkflow | null; onAutoContinue?(on: boolean): void; onApproveSpec?(on: boolean): void; docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string>; finished: ReadonlySet<string> } }
 }) {
   const [showSources, setShowSources] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -1493,7 +1498,7 @@ function AssistantTurnView({
           if (block.type === 'tool' && block.trace.questions)
             return <RoundCard key={block.trace.id} round={block.trace.questions} actionable={!!workflow?.actionable && i === lastFlowIdx} onAnswer={(t) => workflow?.onAnswer(t) ?? Promise.resolve()} />
           if (block.type === 'tool' && block.trace.stageGate)
-            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} onFix={workflow?.onFix} flow={workflow?.flow} onAutoContinue={workflow?.onAutoContinue} docs={workflow?.docs} />
+            return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} onFix={workflow?.onFix} flow={workflow?.flow} onAutoContinue={workflow?.onAutoContinue} onApproveSpec={workflow?.onApproveSpec} docs={workflow?.docs} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />

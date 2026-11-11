@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxTurns: 30,
     maxParallel: 4,
     allowWorkers: true,
+    reviewModel: null,
     instructions: ''
   },
   agentTiers: DEFAULT_AGENT_TIERS,

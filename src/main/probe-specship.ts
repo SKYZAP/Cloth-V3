@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Services } from './services'
-import type { QuestionRound, UiBlock, UiMessage } from '@shared/types'
+import type { QuestionRound, SubagentRun, UiBlock, UiMessage } from '@shared/types'
+import { openFix } from '@shared/types'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -153,6 +154,43 @@ function sh(cwd: string, cmd: string, args: string[]): { code: number; out: stri
   }
 }
 
+/** What the review's checks did: verifier runs by verdict, and the findings by kind, proof and whether they were fixed. */
+export function reviewStats(messages: UiMessage[]) {
+  const runs: SubagentRun[] = []
+  const walk = (blocks: UiBlock[]) => {
+    for (const b of blocks) {
+      if (b.type !== 'tool' || !b.trace.subagent) continue
+      runs.push(b.trace.subagent)
+      walk(b.trace.subagent.blocks)
+    }
+  }
+  for (const m of messages) walk(m.blocks)
+  const verifiers = runs.filter((r) => r.role === 'verifier')
+  const verdicts: Record<string, number> = {}
+  for (const v of verifiers) verdicts[v.verdict ?? 'none'] = (verdicts[v.verdict ?? 'none'] ?? 0) + 1
+  const gate = messages
+    .flatMap((m) => m.blocks)
+    .flatMap((b) => (b.type === 'tool' && b.trace.stageGate?.stage === 'review' ? [b.trace.stageGate] : []))
+    .at(-1)
+  const findings = gate?.findings ?? []
+  const byAxis: Record<string, number> = {}
+  for (const f of findings) byAxis[f.axis] = (byAxis[f.axis] ?? 0) + 1
+  return {
+    verifierRuns: verifiers.length,
+    verdicts,
+    provenByVerifiers: verifiers.reduce((n, v) => n + (v.proven ?? 0), 0),
+    workers: runs.filter((r) => r.role === 'worker').length,
+    findings: findings.length,
+    byAxis,
+    proven: findings.filter((f) => f.proof).length,
+    mustFix: findings.filter((f) => f.fix).length,
+    fixed: findings.filter((f) => f.status === 'fixed').length,
+    stillOpen: findings.filter(openFix).length,
+    rounds: gate?.rounds ?? 0,
+    attention: gate?.attention ?? []
+  }
+}
+
 function listFiles(dir: string, base = ''): string[] {
   if (!existsSync(dir)) return []
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.name === '.git' || e.name === 'node_modules' ? [] : e.isDirectory() ? listFiles(join(dir, e.name), `${base}${e.name}/`) : [`${base}${e.name}`]))
@@ -195,6 +233,8 @@ export async function probeSpecShip(s: Services, outDir: string, note: (m: strin
   const deadline = t0 + Number(process.env.CLOTH_PROBE_MINUTES ?? 90) * 60_000
   let nudges = 0
   let idle = 0
+  // The stages that stopped for the person (the rest went on by themselves).
+  const stops: string[] = []
   while (Date.now() < deadline) {
     await wait(1500)
     for (const q of s.chat.pendingQuestions(id)) {
@@ -222,6 +262,7 @@ export async function probeSpecShip(s: Services, outDir: string, note: (m: strin
       log(`round ${round.round}: ${round.questions.length} questions, accepting all`)
       await s.chat.send(id, acceptAll(round))
     } else if (gate) {
+      stops.push(gate.stage)
       log(`gate ${gate.stage}: ${gate.summary.length} lines${gate.findings ? `, ${gate.findings.length} findings (${gate.findings.filter((f) => f.fix).length} to fix)` : ''}; approving`)
       await s.chat.advanceWorkflow(id)
     } else if (nudges++ < 4) {
@@ -251,6 +292,9 @@ export async function probeSpecShip(s: Services, outDir: string, note: (m: strin
     total,
     perStage,
     events,
+    // How much the person had to do, and what the review proved and fixed on its own.
+    stops,
+    review: reviewStats(messages),
     gates,
     tests: { code: tests.code, tail: tests.out.split('\n').slice(-25).join('\n') },
     commits: git('log', '--format=%h %s', `${startCommit}..HEAD`).out.trim().split('\n').filter(Boolean),

@@ -266,16 +266,23 @@ export const BUILTINS: BuiltinSpec[] = [
       findings: Type.Optional(
         Type.Array(
           Type.Object({
-            axis: Type.Union([Type.Literal('standards'), Type.Literal('spec')]),
-            fix: Type.Boolean({ description: 'true: fix before this ships; false: optional' }),
+            axis: Type.Union([Type.Literal('spec'), Type.Literal('break'), Type.Literal('safety'), Type.Literal('standards')], { description: 'spec: a criterion missing or wrong; break: an adversary broke it; safety: the blast-radius check; standards: the read-only review' }),
+            fix: Type.Boolean({ description: 'true: must be fixed before this ships; false: optional' }),
             title: Type.String({ description: 'What is wrong, in one or two sentences' }),
-            where: Type.Optional(Type.String({ description: 'File and line, or the criterion' }))
+            where: Type.Optional(Type.String({ description: 'File and line, or the criterion' })),
+            proof: Type.Optional(
+              Type.Object({ command: Type.String(), observed: Type.String(), expected: Type.Optional(Type.String()) }, { description: 'How a check proved it: the command, what it printed, and what was required' })
+            ),
+            status: Type.Optional(Type.Union([Type.Literal('open'), Type.Literal('fixed')], { description: 'fixed: you fixed it and its command now passes' }))
           }),
-          { description: 'Review only: every finding, on its axis' }
+          { description: 'Review only: every finding' }
         )
-      )
+      ),
+      rounds: Type.Optional(Type.Integer({ description: 'Review only: how many rounds of fixes you made' })),
+      attention: Type.Optional(Type.Array(Type.String(), { description: 'Review only: the second opinion\'s flags, one line each' }))
     }),
-    description: () => "Finish the workflow's current stage: show the person what it produced and stop. The next stage starts only when they approve it; if they ask for changes, make them and call this again.",
+    description: () =>
+      "Finish the workflow's current stage: show the person what it produced and stop. Cloth starts the next stage by itself when nothing needs the person, and otherwise waits for their OK; if they ask for changes, make them and call this again.",
     when: (ctx) => !!ctx.scope.sessionId && !ctx.scope.depth && inWorkflow(ctx.scope),
     async run(p, ctx) {
       const w = ctx.scope.workflow?.()
@@ -309,13 +316,34 @@ export const BUILTINS: BuiltinSpec[] = [
           )
       }
       const files = [...new Set((p.files ?? []).map((f) => String(f).trim().replace(/\\/g, '/')).filter(Boolean))]
+      const axes: ReviewFinding['axis'][] = ['spec', 'break', 'safety', 'standards']
       const findings: ReviewFinding[] =
         w.stage === 'review'
           ? (p.findings ?? [])
-              .map((f) => ({ axis: f.axis === 'standards' ? ('standards' as const) : ('spec' as const), fix: !!f.fix, title: String(f.title ?? '').trim(), ...(f.where?.trim() ? { where: f.where.trim() } : {}) }))
+              .map((f): ReviewFinding => {
+                const proof = f.proof && String(f.proof.command ?? '').trim() && String(f.proof.observed ?? '').trim() ? f.proof : null
+                return {
+                  axis: axes.includes(f.axis) ? f.axis : 'spec',
+                  fix: !!f.fix,
+                  title: String(f.title ?? '').trim(),
+                  ...(f.where?.trim() ? { where: f.where.trim() } : {}),
+                  ...(proof ? { proof: { command: proof.command.trim(), observed: proof.observed.trim(), ...(proof.expected?.trim() ? { expected: proof.expected.trim() } : {}) } } : {}),
+                  ...(f.status === 'fixed' ? { status: 'fixed' as const } : f.fix ? { status: 'open' as const } : {})
+                }
+              })
               .filter((f) => f.title)
           : []
-      const gate: StageGate = { stage: w.stage, summary, ...(files.length ? { files } : {}), ...(route ? { route } : {}), ...(findings.length ? { findings } : {}) }
+      const attention = w.stage === 'review' ? (p.attention ?? []).map((a) => String(a).trim()).filter((a) => a && !/^(none|nothing)\.?$/i.test(a)) : []
+      const rounds = w.stage === 'review' && typeof p.rounds === 'number' && p.rounds > 0 ? Math.floor(p.rounds) : 0
+      const gate: StageGate = {
+        stage: w.stage,
+        summary,
+        ...(files.length ? { files } : {}),
+        ...(route ? { route } : {}),
+        ...(findings.length ? { findings } : {}),
+        ...(rounds ? { rounds } : {}),
+        ...(attention.length ? { attention } : {})
+      }
       ctx.scope.stageFinished?.(gate)
       return {
         text: 'Shown to the person. Stop here: they approve it (the next stage starts) or ask for changes.',

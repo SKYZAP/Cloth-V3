@@ -266,6 +266,9 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         <Row label="Model">
           <ModelPicker className="w-72 mobile:w-full" value={value.model} onChange={(model) => set({ model })} allowNone noneLabel="Same as the chat" />
         </Row>
+        <Row label="Checks" hint="The model verifiers run on, such as Spec → Ship's review checks. Another model family than the one that builds catches more.">
+          <ModelPicker className="w-72 mobile:w-full" value={value.reviewModel ?? null} onChange={(reviewModel) => set({ reviewModel })} allowNone noneLabel="Same as other subagents" />
+        </Row>
         <Row label="Thinking">
           <select
             value={value.thinking === 'inherit' ? 'inherit' : normalizeEffort(value.thinking)}

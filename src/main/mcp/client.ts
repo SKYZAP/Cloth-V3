@@ -55,9 +55,12 @@ export const MCP_PRESETS: McpPreset[] = [
   // Deploying and stopping apps changes the Pi, so those calls ask first; reading and writing notes runs.
   { name: 'homelab', transport: 'http', url: 'http://mcp.example.internal/mcp', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'ask', needsToken: true, about: 'Deploys and controls apps on the Pi through Dokploy' },
   { name: 'obsidian', transport: 'http', url: 'http://obsidian.example.internal/mcp', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'auto', needsToken: true, about: 'Reads, searches and writes notes in the Obsidian vault' },
-  // Penpot's own MCP on the Pi; its key goes in the address. It works on the file connected in Penpot
-  // (File → MCP Server → Connect), so calls run without asking.
-  { name: 'penpot', transport: 'http', url: 'http://design.example.internal/mcp/stream', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'auto', needsToken: true, tokenQuery: 'userToken', about: 'Reads and edits designs in the self-hosted Penpot (connect a file there first)' }
+  // penpot-api-mcp on the Pi: talks to Penpot's API, so nothing has to be open in a browser.
+  // Design edits run without asking, as with Penpot's own MCP before it; the penpot skill says how to use it.
+  { name: 'penpot', transport: 'http', url: 'http://penpot-mcp.example.internal/mcp', headers: {}, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'auto', needsToken: true, about: 'Reads, edits and exports designs in the self-hosted Penpot; nothing needs to be open' },
+  // Plane's official MCP server on the Pi, for the self-hosted Plane (plane.example.internal, workspace "acme"). It takes a Plane
+  // personal access token as the bearer token; OAuth would need Plane's paid edition.
+  { name: 'plane', transport: 'http', url: 'http://plane-mcp.example.internal/http/api-key/mcp', headers: { 'X-Workspace-slug': 'acme' }, command: '', args: [], env: {}, enabled: true, defaultOn: false, approval: 'ask', needsToken: true, about: 'Reads and changes projects, work items, cycles and modules in the self-hosted Plane' }
 ]
 
 /** Where a server's tool list from its last run is kept. */

@@ -3,11 +3,11 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import { CheckCircle, ListChecks, ListBullets } from '@phosphor-icons/react'
 import type { QuestionRound, SpecWorkflow, StageGate, UiMessage, WorkflowRoute, WorkflowStage } from '@shared/types'
-import { routeStages } from '@shared/types'
+import { FINDING_AXES, openFix, routeStages } from '@shared/types'
 import { Markdown } from '@/components/Markdown'
 import { api } from '@/lib/api'
 import { parseTicket, ticketStatus, type Ticket, type TicketStatus } from '@/lib/tickets'
-import { fixMessage, isNothing, splitSummary } from '@/lib/stageGate'
+import { AXIS_NAME, fixMessage, isNothing, splitSummary } from '@/lib/stageGate'
 import { Modal } from '@/components/ui'
 
 export const STAGE_LABEL: Record<WorkflowStage, string> = { grill: 'Grill', spec: 'Spec', tickets: 'Tickets', build: 'Build', review: 'Review', done: 'Done' }
@@ -22,6 +22,8 @@ const APPROVE: Record<Exclude<WorkflowStage, 'done'>, string> = {
   review: 'Accept and finish'
 }
 const GATE_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Approve the spec and tickets', tickets: 'Approve the tickets', build: 'Build done', review: 'Accept the review' }
+/** A stop that's behind it (approved, or gone on by itself). */
+const PAST_TITLE: Record<Exclude<WorkflowStage, 'done'>, string> = { grill: 'Grilling done', spec: 'Spec and tickets', tickets: 'Tickets', build: 'Build done', review: 'Review done' }
 
 const BTN = 'h-8 rounded-[9px] px-3 text-[12.5px] transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi'
 const PRIMARY = clsx(BTN, 'bg-crimson font-semibold text-white hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim disabled:opacity-100')
@@ -126,6 +128,7 @@ export function StageGateCard({
   onFix,
   flow,
   onAutoContinue,
+  onApproveSpec,
   docs
 }: {
   gate: StageGate
@@ -137,6 +140,8 @@ export function StageGateCard({
   /** The chat's workflow now, for the route and whether Build goes straight on to Review. */
   flow?: SpecWorkflow | null
   onAutoContinue?(on: boolean): void
+  /** Whether the spec and tickets wait for the person's OK before Build. */
+  onApproveSpec?(on: boolean): void
   /** The chat's folder and feature, to show the documents this stage wrote. */
   docs?: { sessionId: string; slug: string | null; version: number; active: ReadonlySet<string>; finished: ReadonlySet<string> }
 }) {
@@ -152,10 +157,13 @@ export function StageGateCard({
   const showBoard = (gate.stage === 'spec' || gate.stage === 'tickets' || gate.stage === 'build') && loaded.tickets.length > 0
   const { bullets, assumed, unverified } = splitSummary(gate.summary)
   const findings = gate.stage === 'review' ? (gate.findings ?? []) : []
-  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set(findings.flatMap((f, i) => (f.fix ? [i] : []))))
-  // The last stop before Build is where you decide whether Build waits for you once it's done.
-  const beforeBuild = gate.stage === (quick ? 'grill' : 'spec')
+  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set(findings.flatMap((f, i) => (openFix(f) ? [i] : []))))
+  const axes = FINDING_AXES.filter((a) => findings.some((f) => f.axis === a))
+  const fixed = findings.filter((f) => f.status === 'fixed').length
+  // The grilling is the last stop that always waits for you: that's where you decide how much of the rest does.
+  // While the spec still waits for an OK, its stop offers the same choice.
   const autoContinue = flow?.autoContinue !== false
+  const showAuto = gate.stage === 'grill' || (gate.stage === 'spec' && !!flow?.approveSpec)
   const go = async (fn: () => Promise<void>) => {
     setBusy(true)
     try {
@@ -168,7 +176,7 @@ export function StageGateCard({
     <div className={CARD}>
       <h4 className="mb-2 flex items-center gap-2 text-[13.5px] font-semibold">
         <ListChecks size={15} weight="fill" className="shrink-0 text-crimson-hi" aria-hidden="true" />
-        {gate.stage === 'grill' && quick ? 'Grilling and spec done' : GATE_TITLE[gate.stage]}
+        {gate.stage === 'grill' && quick ? 'Grilling and spec done' : (actionable ? GATE_TITLE : PAST_TITLE)[gate.stage]}
         {gate.stage === 'grill' && route && <RouteBadge route={route} />}
       </h4>
       {bullets.length > 0 && (
@@ -180,26 +188,46 @@ export function StageGateCard({
           ))}
         </ul>
       )}
+      {gate.stage === 'review' && (gate.rounds || fixed > 0) ? (
+        <p className="mb-2 text-[12.5px] text-muted">
+          Fixed {fixed} of {findings.filter((f) => f.fix).length} must-fix finding{findings.filter((f) => f.fix).length === 1 ? '' : 's'} itself
+          {gate.rounds ? ` in ${gate.rounds} round${gate.rounds === 1 ? '' : 's'}` : ''}.
+        </p>
+      ) : null}
       {findings.length > 0 && (
-        <div className="mb-3 grid grid-cols-2 gap-2.5 mobile:grid-cols-1">
-          {(['standards', 'spec'] as const).map((axis) => (
+        <div className={clsx('mb-3 grid gap-2.5 mobile:grid-cols-1', axes.length > 1 && 'grid-cols-2')}>
+          {axes.map((axis) => (
             <div key={axis} className="min-w-0 rounded-[10px] border border-line bg-panel">
-              <h5 className="border-b border-line px-2.5 py-1.5 text-[12px] font-semibold text-muted">{axis === 'standards' ? 'Standards' : 'Spec'}</h5>
-              {findings.every((f) => f.axis !== axis) && <p className="px-2.5 py-2 text-[12.5px] text-dim">No findings</p>}
+              <h5 className="border-b border-line px-2.5 py-1.5 text-[12px] font-semibold text-muted">{AXIS_NAME[axis]}</h5>
               {findings.map((f, i) =>
                 f.axis !== axis ? null : (
-                  <label key={i} className={clsx('flex gap-2 px-2.5 py-2 text-[12.5px] [&+&]:border-t [&+&]:border-line', actionable && 'cursor-pointer')}>
+                  <label key={i} className={clsx('flex gap-2 px-2.5 py-2 text-[12.5px] [&+&]:border-t [&+&]:border-line', actionable && f.status !== 'fixed' && 'cursor-pointer')}>
                     <input
                       type="checkbox"
-                      disabled={!actionable}
+                      disabled={!actionable || f.status === 'fixed'}
                       checked={picked.has(i)}
                       onChange={() => setPicked((p) => (p.has(i) ? new Set([...p].filter((x) => x !== i)) : new Set([...p, i])))}
                       className="mt-0.5 size-[14px] shrink-0 accent-crimson"
+                      aria-label={`Fix: ${f.title}`}
                     />
                     <span className="selectable min-w-0">
-                      <span className={clsx('mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold', f.fix ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-line-strong text-dim')}>{f.fix ? 'Fix before ship' : 'Optional'}</span>
-                      {f.title}
+                      <span
+                        className={clsx(
+                          'mr-1.5 inline-block rounded-[4px] border px-1 text-[10.5px] font-semibold',
+                          f.status === 'fixed' ? 'border-ok/40 text-ok' : f.fix ? 'border-danger-line bg-danger-soft text-danger-hi' : 'border-line-strong text-dim'
+                        )}
+                      >
+                        {f.status === 'fixed' ? 'Fixed' : f.fix ? 'Fix before ship' : 'Optional'}
+                      </span>
+                      <span className={clsx(f.status === 'fixed' && 'text-muted')}>{f.title}</span>
                       {f.where && <span className="mt-0.5 block font-mono text-[11px] text-dim">{f.where}</span>}
+                      {f.proof && (
+                        <span className="mt-1 block rounded-[6px] border border-line bg-bg px-2 py-1 font-mono text-[11px] leading-relaxed">
+                          <span className="block break-all text-fg">$ {f.proof.command}</span>
+                          <span className="block break-words text-dim">{f.proof.observed}</span>
+                          {f.proof.expected && <span className="block break-words text-muted">Expected: {f.proof.expected}</span>}
+                        </span>
+                      )}
                     </span>
                   </label>
                 )
@@ -208,6 +236,18 @@ export function StageGateCard({
           ))}
         </div>
       )}
+      {gate.attention?.length ? (
+        <div className="mb-3 rounded-[10px] border border-line bg-panel px-2.5 py-2 text-[12.5px]">
+          <h5 className="mb-1 font-semibold text-muted">Second opinion</h5>
+          <ul className="list-disc space-y-0.5 pl-[18px] text-fg marker:text-dim">
+            {gate.attention.map((a, i) => (
+              <li key={i} className="selectable">
+                {a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {(assumed !== null || unverified !== null) && (
         <dl className="mb-3 rounded-[10px] border border-line bg-panel text-[12.5px]">
           {assumed !== null && (
@@ -236,14 +276,22 @@ export function StageGateCard({
           {gate.files.join(' · ')}
         </p>
       ) : null}
-      {actionable && beforeBuild && onAutoContinue && (
-        <label className="mb-3 flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
-          <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
-          <span>
-            Go on without stopping when nothing needs me
-            <span className="block text-dim">Build goes straight to Review, and a review with nothing to fix finishes the workflow. You’ll still see every result.</span>
-          </span>
-        </label>
+      {actionable && showAuto && onAutoContinue && (
+        <div className="mb-3 space-y-2">
+          <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
+            <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
+            <span>
+              Build, check and fix it on its own, then report back
+              <span className="block text-dim">It stops only when something needs your decision or a must-fix finding is still open after two rounds of fixes. You’ll still see every result.</span>
+            </span>
+          </label>
+          {autoContinue && !quick && onApproveSpec && (
+            <label className="ml-[22px] flex cursor-pointer items-start gap-2 text-[12.5px] text-muted">
+              <input type="checkbox" checked={!!flow?.approveSpec} onChange={(e) => onApproveSpec(e.target.checked)} className="mt-0.5 size-[14px] shrink-0 accent-crimson" />
+              <span>Let me approve the spec and tickets before it builds</span>
+            </label>
+          )}
+        </div>
       )}
       {actionable && (
         <div className="flex flex-wrap items-center gap-2">

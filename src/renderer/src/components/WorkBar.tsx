@@ -262,13 +262,13 @@ export function WorkBar({
                     status={i < at ? 'completed' : i === at ? 'in_progress' : 'pending'}
                     record={i <= at ? records?.[s] : undefined}
                     live={i === at ? bar : null}
-                    note={i > at && s === 'build' && autoContinue ? 'continues on its own' : ''}
+                    note={i > at && autoContinue && (s === 'review' || (s === 'build' && (flow?.route === 'quick' || !flow?.approveSpec))) ? 'continues on its own' : ''}
                   />
                 ))}
               {stage && onAutoContinue && (
                 <label className="mx-1.5 mt-1 flex cursor-pointer items-center gap-2 border-t border-line px-1.5 pb-0.5 pt-2 text-[12px] text-muted">
                   <input type="checkbox" checked={autoContinue} onChange={(e) => onAutoContinue(e.target.checked)} className="size-[13px] shrink-0 accent-crimson" />
-                  Go on without stopping when nothing needs me
+                  Build, check and fix on its own, then report back
                 </label>
               )}
               {!stage &&

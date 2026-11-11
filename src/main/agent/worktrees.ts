@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { copyFile, lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
+import { dirname, join, relative, sep } from 'node:path'
 import { git, repoRoot } from '../panel/git'
 
 /*
@@ -79,7 +79,7 @@ const slugPart = (s: string) =>
 export async function commitWorkflowDocs(root: string, workspace: string, slug: string | null): Promise<boolean> {
   const sub = subfolder(root, workspace).split(sep).join('/')
   const at = (p: string) => (sub ? `${sub}/${p}` : p)
-  const paths = [at('GLOSSARY.md'), at('GLOSSARY-MAP.md'), at('docs/adr'), ...(slug ? [at(`docs/specs/${slug}`)] : [])]
+  const paths = [at('GLOSSARY.md'), at('GLOSSARY-MAP.md'), at('docs/adr'), at('docs/verify'), ...(slug ? [at(`docs/specs/${slug}`)] : [])]
   const existing = paths.filter((p) => existsSync(join(root, p)))
   if (!existing.length) return false
   const dirty = (await run(root, ['status', '--porcelain', '--untracked-files=all', '--', ...existing])).trim()
@@ -100,7 +100,7 @@ export async function commitWorkflowFinish(workspace: string, slug: string | nul
   if (!root) return null
   const sub = subfolder(root, workspace).split(sep).join('/')
   const at = (p: string) => (sub ? `${sub}/${p}` : p)
-  const paths = [...new Set(['GLOSSARY.md', 'GLOSSARY-MAP.md', 'docs/adr', 'docs/specs/README.md', ...(slug ? [`docs/specs/${slug}`] : []), ...files].map((p) => at(p.replace(/\\/g, '/').replace(/^\.\//, ''))))]
+  const paths = [...new Set(['GLOSSARY.md', 'GLOSSARY-MAP.md', 'docs/adr', 'docs/verify', 'docs/specs/README.md', 'docs/specs/FINDINGS.md', ...(slug ? [`docs/specs/${slug}`] : []), ...files].map((p) => at(p.replace(/\\/g, '/').replace(/^\.\//, ''))))]
   return serial(root, async () => {
     // Paths are repository-relative in porcelain output; -z keeps odd names unquoted. Gone files count too.
     const out = (await run(root, ['status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', ...paths])).split('\0').filter(Boolean)
@@ -172,6 +172,28 @@ export async function finishWorkerTree(t: WorkerTree, message: string): Promise<
   })
   await removeWorkerTree(t, result.merged)
   return result
+}
+
+/**
+ * Bring what the chat's checkout has uncommitted (changed, new and deleted files) into a fresh tree, so a verifier
+ * checks the change as it stands rather than the last commit. Returns how many files it carried over.
+ */
+export async function copyWorkingChanges(t: WorkerTree): Promise<number> {
+  const out = (await run(t.root, ['status', '--porcelain', '-z', '--no-renames', '--untracked-files=all'])).split('\0').filter(Boolean)
+  let n = 0
+  for (const line of out) {
+    const rel = line.slice(3)
+    if (!rel || rel.endsWith('/')) continue
+    const from = join(t.root, rel)
+    const to = join(t.dir, rel)
+    if (line[0] === 'D' || line[1] === 'D' || !existsSync(from)) await rm(to, { force: true }).catch(() => undefined)
+    else {
+      await mkdir(dirname(to), { recursive: true })
+      await copyFile(from, to)
+    }
+    n++
+  }
+  return n
 }
 
 /** Remove a worker's checkout (and its branch, once merged). */

@@ -11,7 +11,8 @@ import type { McpClientConfig, McpPreset } from '@shared/types'
 export const PRESET_TOKEN_KEYS: Record<string, string> = {
   homelab: 'MCP_AUTH_TOKEN',
   obsidian: 'OBSIDIAN_MCP_TOKEN',
-  penpot: 'PENPOT_MCP_TOKEN'
+  penpot: 'PENPOT_MCP_TOKEN',
+  plane: 'PLANE_API_KEY'
 }
 
 export const homelabEnvPath = (): string => process.env.HOMELAB_ENV || join(homedir(), '.homelab', 'env')
@@ -56,6 +57,22 @@ export function presetsWithTokens(presets: McpPreset[], env: Record<string, stri
     const token = p.needsToken ? env[PRESET_TOKEN_KEYS[p.name] ?? ''] : undefined
     return token ? { ...withToken(p, token), about: p.about } : p
   })
+}
+
+/** Penpot's plugin-based MCP, replaced by penpot-api-mcp. */
+const OLD_PENPOT_URL = 'http://design.example.internal/mcp/stream'
+
+/**
+ * Points a server still set up for Penpot's old plugin-based MCP at the new one, keeping its id and
+ * on/off choices. With the token on file it is ready to use; without, the token field is left empty.
+ * Returns null when nothing needs to change.
+ */
+export function migrateOldPenpot(clients: McpClientConfig[], presets: McpPreset[], env: Record<string, string>): McpClientConfig[] | null {
+  const preset = presets.find((p) => p.name === 'penpot')
+  if (!preset || !clients.some((c) => c.url?.startsWith(OLD_PENPOT_URL))) return null
+  const token = env[PRESET_TOKEN_KEYS.penpot]
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+  return clients.map((c) => (c.url?.startsWith(OLD_PENPOT_URL) ? { ...c, url: preset.url, headers } : c))
 }
 
 /**

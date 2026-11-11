@@ -86,14 +86,14 @@ describe('Spec → Ship helpers', () => {
     // A Quick bug fix settles the symptom while grilling and is diagnosed before it is changed.
     expect(at('grill')).toContain('settle the symptom, not the cause')
     expect(at('build')).toContain('Build a feedback loop first')
-    expect(at('review')).toContain('undo the fix and check the regression test fails')
+    expect(at('review')).toContain('undoes the fix in its copy and confirms the regression test then fails')
     expect(at('spec')).toMatch(/numbered AC-1/)
     expect(at('tickets')).toContain('never restate their text')
     // Preserve pins behaviour on a real running instance: an in-process stand-in missed a Spring Security error-dispatch change.
     expect(at('tickets')).toContain('not an in-process stand-in')
     expect(at('tickets')).toContain('normal test suite, not a side script')
     expect(at('build')).toContain('every new test appears in its output')
-    expect(at('review')).toContain('whether you recommend fixing it before this ships')
+    expect(at('review')).toContain('whether it must be fixed before this ships')
     expect(at('review')).toContain('"Assumed: …"')
     expect(stageNote('done', 'x')).toContain('docs/specs/README.md')
     // Fix rounds are for behaviour; a test that covers a criterion without naming it is optional.
@@ -108,8 +108,8 @@ describe('Spec → Ship helpers', () => {
     // The board follows Build's progress: a todo item per ticket, boxes ticked as each one finishes.
     expect(at('build')).toContain('one item per ticket starting with its number ("Ticket 01: …")')
     expect(at('build')).toContain("tick a ticket's boxes when you finish that ticket, before starting the next")
-    expect(at('review')).toContain('rerun them only if something changed since')
-    expect(at('review')).toContain('Give each reviewer the change itself')
+    expect(at('review')).toContain("don't rerun them unless something changed since")
+    expect(at('review')).toContain('Brief each with the change itself')
     expect(stageNote('done', 'x', 'standard')).toContain("don't explore the code")
     expect(at('grill')).toContain('ask no round at all')
     expect(at('spec')).toContain('approves the spec and its tickets together')
@@ -239,7 +239,7 @@ describe('Spec → Ship in a chat', () => {
     expect(getCurrentSystemPrompt(seen[0].messages)).toContain('### Stage: Review')
     expect(r.msgs.filter((m) => m.role === 'user').at(-1)).toMatchObject({ workflowStage: 'review', blocks: [{ type: 'text', text: 'Approved the build' }] })
     // Blank findings are dropped.
-    expect(r.traces.find((t) => t.id === 'r')?.stageGate?.findings).toEqual([{ axis: 'spec', fix: true, title: 'AC-2 untested', where: 'AC-2' }])
+    expect(r.traces.find((t) => t.id === 'r')?.stageGate?.findings).toEqual([{ axis: 'spec', fix: true, title: 'AC-2 untested', where: 'AC-2', status: 'open' }])
 
     // Switched off, a finished build waits for the person.
     env.services.chat.update(env.session.id, { workflow: { kind: 'spec-ship', stage: 'build', slug: 'x', route: 'quick' } })
@@ -308,6 +308,43 @@ describe('Spec → Ship in a chat', () => {
     expect((await git(env.root, ['log', '-1', '--format=%s'])).stdout.trim()).toMatch(/^Merge cloth\/feat\/ticket-01-/)
     // The worker's workspace was its checkout, not the chat's folder.
     expect(system(seen[1])).toContain('cloth-worktrees')
+  }, 60_000)
+
+  it('runs a check in a throwaway copy with the uncommitted change, and keeps only its verdict and proof', async () => {
+    const env = setup('manual')
+    const g = (...args: string[]) => git(env.root, ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+    await g('init', '-q', '-b', 'main')
+    await g('config', 'core.autocrlf', 'false')
+    writeFileSync(join(env.root, 'README.md'), '# app')
+    await g('add', '-A')
+    await g('commit', '-q', '-m', 'start')
+    // The change under review isn't committed yet: the check must still see it.
+    writeFileSync(join(env.root, 'feature.txt'), 'built')
+    env.services.chat.update(env.session.id, { subagents: true, workflow: { kind: 'spec-ship', stage: 'review', slug: 'feat' } })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    const seen: Context[] = []
+    const report = ['Result: issues', '### Finding: feature.txt says built, not done', 'Criterion: AC-1', 'Command: `cat feature.txt`', 'Observed: built', 'Expected: done', 'Fix before ship: yes'].join('\n')
+    faux.setResponses([
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('task', { description: 'Spec AC-1', prompt: 'Check AC-1', role: 'verifier' }, { id: 't' })], { stopReason: 'toolUse' })),
+      // The check reads the uncommitted file in its copy and leaves a probe there, without asking (Manual chat).
+      (ctx) => (seen.push(ctx), fauxAssistantMessage([fauxToolCall('read', { path: 'feature.txt' }, { id: 'r' }), fauxToolCall('write', { path: 'probe.txt', content: 'scratch' }, { id: 'w' })], { stopReason: 'toolUse' })),
+      () => fauxAssistantMessage(report),
+      () => fauxAssistantMessage('Checked.')
+    ])
+    await env.services.chat.send(env.session.id, 'check AC-1')
+    const { traces } = await settle(env)
+    const task = traces.find((t) => t.id === 't')!
+    expect(task.subagent).toMatchObject({ role: 'verifier', verdict: 'issues', proven: 1 })
+    expect(task.result).toContain('Verdict: issues; 1 proven finding.')
+    const inner = (task.subagent?.blocks ?? []).flatMap((b) => (b.type === 'tool' ? [b.trace] : []))
+    expect(inner.find((t) => t.id === 'r')?.result).toContain('built')
+    expect(inner.find((t) => t.id === 'w')?.status).not.toBe('error')
+    expect(env.services.chat.pendingApprovals(env.session.id)).toEqual([])
+    // Its copy and branch are gone, and nothing it wrote reached the chat's folder.
+    expect(existsSync(join(env.root, 'probe.txt'))).toBe(false)
+    expect((await git(env.root, ['branch', '--format=%(refname:short)'])).stdout.trim()).toBe('main')
+    expect(system(seen[1])).toContain('throwaway copy')
+    expect(system(seen[1])).toContain('Result: pass | issues | blocked')
   }, 60_000)
 
   it('runs a second feature in the same chat: fresh context, its own folder, the earlier one untouched', async () => {

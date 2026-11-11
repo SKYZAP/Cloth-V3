@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { FileText, X } from '@phosphor-icons/react'
 import type { ChatAttachment, UiAttachment } from '@shared/types'
-import { BottomSheet } from '@/components/BottomSheet'
+import { useBackHandler } from '@/lib/back'
 
 export const MAX_ATTACHMENTS = 10
 const MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -155,9 +156,49 @@ export function SentAttachments({ items }: { items: UiAttachment[] }) {
           ))}
         </div>
       )}
-      <BottomSheet open={!!open} onClose={() => setOpen(null)} title="Image">
-        {open && <img src={open} alt="" className="mx-auto max-h-[75vh] max-w-full rounded-[14px] object-contain" />}
-      </BottomSheet>
+      <ImageViewer src={open} onClose={() => setOpen(null)} />
     </>
+  )
+}
+
+/** An image over the whole window, fitted to it; a click anywhere, Escape or Back closes it. */
+function ImageViewer({ src, onClose }: { src: string | null; onClose(): void }) {
+  useBackHandler(!!src, onClose)
+  useEffect(() => {
+    if (!src) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [src, onClose])
+  return createPortal(
+    <AnimatePresence>
+      {src && (
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-[3px] mobile:p-3"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          onClick={onClose}
+        >
+          <motion.img
+            src={src}
+            alt=""
+            className="max-h-full max-w-full rounded-[10px] object-contain shadow-2xl"
+            initial={{ scale: 0.96 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0.96 }}
+            transition={{ duration: 0.18 }}
+          />
+          <button onClick={onClose} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white" aria-label="Close">
+            <X size={16} />
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
   )
 }

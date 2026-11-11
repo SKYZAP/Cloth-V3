@@ -1,4 +1,4 @@
-import type { ReviewFinding } from '@shared/types'
+import type { FindingAxis, ReviewFinding } from '@shared/types'
 
 /* What a Spec → Ship stage stop shows: its summary split up, and the message that sends review findings back. */
 
@@ -18,11 +18,13 @@ export function splitSummary(summary: string[]): { bullets: string[]; assumed: s
 
 export const isNothing = (s: string) => /^(nothing|none|n\/a)\.?$/i.test(s.trim())
 
+/** What each kind of finding is called on the review's stop. */
+export const AXIS_NAME: Record<FindingAxis, string> = { spec: 'Spec', break: 'Break', safety: 'Safety', standards: 'Standards' }
+
 /** The message that sends the chosen review findings back to be fixed. */
 export function fixMessage(findings: ReviewFinding[]): string {
-  const axis = { standards: 'Standards', spec: 'Spec' }
   return [
-    `Fix ${findings.length === 1 ? 'this review finding' : `these ${findings.length} review findings`}, then run the tests and review again:`,
-    ...findings.map((f) => `- [${axis[f.axis]}] ${f.title}${f.where ? ` (${f.where})` : ''}`)
+    `Fix ${findings.length === 1 ? 'this review finding' : `these ${findings.length} review findings`}, then run the tests and check them again:`,
+    ...findings.map((f) => `- [${AXIS_NAME[f.axis] ?? f.axis}] ${f.title}${f.where ? ` (${f.where})` : ''}${f.proof ? `; shown by \`${f.proof.command}\`` : ''}`)
   ].join('\n')
 }

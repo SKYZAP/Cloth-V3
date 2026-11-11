@@ -1,14 +1,16 @@
 import { basename, join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { git, repoRoot } from '../panel/git'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
-import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, SharedSkills, SkillMode, SpecWorkflow, StageGate, WorkflowStage } from '@shared/types'
-import { handoverText, nextFeatureNote, nextStage, specIndexLine, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
-import { commitWorkflowFinish, createWorkerTree, finishWorkerTree, parkWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
-import { contextIsGuess } from '@shared/types'
+import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, ReviewFinding, SharedSkills, SkillMode, SpecWorkflow, StageGate, WorkflowStage } from '@shared/types'
+import { FINDINGS_HEAD, findingsLogLines, handoverText, nextFeatureNote, nextStage, specIndexLine, STAGE_NAME, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
+import { commitWorkflowFinish, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
+import { checkNote, parseCheckReport, VERIFIER_INSTRUCTIONS } from './checks'
+import { contextIsGuess, openFix } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
 import { normalizeEffort } from '@shared/effort'
@@ -41,14 +43,45 @@ import { pruneScreenshots } from '../computer/prune'
 import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
 
-const SUBAGENT_INSTRUCTIONS = (role: 'scout' | 'worker') =>
-  [
+const SUBAGENT_INSTRUCTIONS = (role: SubagentRun['role']) =>
+  role === 'verifier'
+    ? ['You are a subagent: another agent delegated this job to you. Work autonomously — you cannot ask the user or the other agent questions.', VERIFIER_INSTRUCTIONS].join('\n')
+    : [
     'You are a subagent: another agent delegated this job to you. Work autonomously — you cannot ask the user or the other agent questions.',
     role === 'scout'
       ? 'You are a read-only scout: investigate with the tools you have and do not attempt to change anything.'
       : 'You are a worker: make the changes the job asks for, keeping them minimal. Each edit may be reviewed by the user.',
     `When done, reply with a report — it is all the other agent will see. Start it with a line \`Result: done\`, \`Result: partly done\` or \`Result: blocked\`, then: ${role === 'scout' ? 'what you found (file paths with line numbers, names, facts)' : 'the files you changed, one line each with what changed'}; the verification you ran and its outcome; open questions or risks ("none" if none). Keep it under ~300 words, no preamble.`
   ].join('\n')
+
+/**
+ * Whether a finished stage moves on without the person: the spec (unless they want to approve it), a build, and a
+ * review with nothing left that must be fixed. Grilling always waits: its decisions are the person's.
+ */
+export function autoAdvances(gate: StageGate | undefined, flow: SpecWorkflow | null | undefined): boolean {
+  if (!gate || !flow || flow.autoContinue === false) return false
+  if (gate.stage === 'spec' || gate.stage === 'tickets') return !flow.approveSpec
+  if (gate.stage === 'build') return true
+  if (gate.stage === 'review') return !(gate.findings ?? []).some(openFix)
+  return false
+}
+
+/** The notice a Spec → Ship run sends when it ends: finished, waiting for the person, or failed (null: it went on by itself). */
+export function workflowReport(r: { error?: string; finished?: StageGate; onward: boolean; wrapped: boolean; slug: string | null; reply: string }): { title: string; body: string } | null {
+  const what = r.slug ? ` (${r.slug})` : ''
+  const clipped = (s: string) => (s.length > 180 ? `${s.slice(0, 180)}…` : s)
+  if (r.wrapped && !r.error) return { title: `Spec → Ship finished${what}`, body: clipped(r.reply.replace(/\s+/g, ' ').trim()) || 'The feature is built, checked and committed.' }
+  if (r.error && (r.finished || r.wrapped)) return { title: `Spec → Ship stopped${what}`, body: clipped(r.error) }
+  if (!r.finished || r.onward) return null
+  const open = (r.finished.findings ?? []).filter(openFix).length
+  const body =
+    r.finished.stage === 'review' && open
+      ? `${open} finding${open === 1 ? '' : 's'} to fix before shipping still open: pick what to fix.`
+      : r.finished.stage === 'grill'
+        ? 'The decisions are settled: approve them to start the spec.'
+        : `${STAGE_NAME[r.finished.stage]} is waiting for your OK.`
+  return { title: `Spec → Ship needs you${what}`, body }
+}
 
 /** What a subagent's report says it achieved: its first `Result:` line, or undefined without one. */
 export function parseOutcome(text: string): SubagentRun['outcome'] {
@@ -452,7 +485,7 @@ export class AgentRuntime {
       lines.push(
         '',
         '## Subagents',
-        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
+        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files; role "verifier" checks work by running it (tests, probe scripts, the real app) and reports only findings it proved with a command and its output. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
       const named = this.delegates(scope.agentId)
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
@@ -695,12 +728,12 @@ export class AgentRuntime {
       name: 'task',
       label: 'Subagent',
       description: this.subagentSettings().allowWorkers
-        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role sets what a plain job may do: "scout" (default) is read-only — it can read and search but not change anything; "worker" can also edit files in the workspace. The subagent cannot see this conversation — put everything it needs in prompt.'
+        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role sets what a plain job may do: "scout" (default) is read-only — it can read and search but not change anything; "worker" can also edit files in the workspace; "verifier" checks work by running it (tests, probe scripts, the real app) and reports only findings it proved with a command and its output — in Spec → Ship it works in a throwaway copy of the project. The subagent cannot see this conversation — put everything it needs in prompt.'
         : 'Run a read-only subagent on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation — put everything it needs in prompt.',
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
-        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker')])),
+        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker'), Type.Literal('verifier')])),
         ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain job: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
         ...(tiers.length
           ? {
@@ -718,13 +751,20 @@ export class AgentRuntime {
           : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        const p = params as { description: string; prompt: string; role?: 'scout' | 'worker'; agent?: string; tier?: string; step?: number; continueFrom?: string }
+        const p = params as { description: string; prompt: string; role?: SubagentRun['role']; agent?: string; tier?: string; step?: number; continueFrom?: string }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
         if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
         const wantsWrite = named ? named.fileAccess === 'write' : p.role === 'worker'
-        const role: SubagentRun['role'] = wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
-        let scope: ToolScope = { ...parent.scope, depth: 1, subagents: false, ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : {}) }
+        // A verifier runs things, so it needs a chat that may run commands; without that it is a scout.
+        const role: SubagentRun['role'] =
+          !named && p.role === 'verifier' && parent.scope.shell && !!parent.scope.workspace ? 'verifier' : wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
+        let scope: ToolScope = {
+          ...parent.scope,
+          depth: 1,
+          subagents: false,
+          ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : role === 'verifier' ? { fileAccess: 'read' as const, shell: true } : {})
+        }
         if (named) {
           scope = { ...agentScope(named, scope), depth: 1, subagents: false }
           if (named.mcpServers && this.ws.mcp) {
@@ -739,7 +779,7 @@ export class AgentRuntime {
         const usable = (m: ModelRef | null | undefined): m is ModelRef => !!m && this.providers.list().some((pr) => pr.id === m.providerId && pr.enabled)
         // The tier asked for, the agent's own model and effort, its tier, then Settings → Subagents and the chat.
         // A plain job (no saved agent) goes straight from the tier to Settings → Subagents and the chat.
-        const { model, thinking, tier, note } = resolveDelegation({
+        const delegation = resolveDelegation({
           tierArg: p.tier,
           autoTiers: !!parent.scope.autoTiers,
           tiers: this.tiers(),
@@ -748,6 +788,9 @@ export class AgentRuntime {
           fallback: { model: usable(cfg.model) ? cfg.model : parent.model, thinking: cfg.thinking === 'inherit' ? parent.thinking : cfg.thinking },
           usable
         })
+        const { thinking, tier, note } = delegation
+        // Checks run on the review model when one is set: a second family catches what the builder's own misses.
+        const model = role === 'verifier' && usable(cfg.reviewModel) ? cfg.reviewModel : delegation.model
         const todos = steps && typeof p.step === 'number' && Number.isInteger(p.step) ? (parent.scope.todos?.() ?? []) : []
         const step = p.step !== undefined && p.step >= 1 && p.step <= todos.length ? { step: p.step, stepText: todos[p.step - 1].content } : {}
         const base = {
@@ -763,16 +806,24 @@ export class AgentRuntime {
         )
         const started = Date.now()
         let files: string[] = []
-        // Spec → Ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends.
+        // Spec → Ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends (in Review
+        // too, where workers fix what the checks proved). A verifier gets a throwaway checkout with the change as it
+        // stands, uncommitted files included, and may change anything there for its probes.
         const flow = parent.scope.workflow?.()
         let tree: WorkerTree | null = null
         let treeNote = ''
-        if (flow?.stage === 'build' && role === 'worker' && scope.workspace && !scope.container) {
-          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label: p.description || 'ticket', id, from: p.continueFrom?.trim() || undefined }).catch((err) => {
-            treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder.`
+        if ((flow?.stage === 'build' || flow?.stage === 'review') && (role === 'worker' || role === 'verifier') && scope.workspace && !scope.container) {
+          const label = role === 'verifier' ? `check ${p.description || ''}`.trim() : p.description || 'ticket'
+          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label, id, from: role === 'worker' ? p.continueFrom?.trim() || undefined : undefined }).catch((err) => {
+            treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder${role === 'verifier' ? ', changing nothing' : ''}.`
             return null
           })
-          if (tree) scope = { ...scope, workspace: tree.workspace }
+          if (tree && role === 'verifier') await copyWorkingChanges(tree).catch((err) => (treeNote = `Its copy may miss uncommitted changes (${errorMessage(err)}).`))
+          if (tree) {
+            scope = { ...scope, workspace: tree.workspace, ...(role === 'verifier' ? { fileAccess: 'write' as const } : {}) }
+            // Going on by itself, work in its own copy doesn't stop for approvals (risky actions still ask in Manual).
+            if (flow.autoContinue !== false) scope = { ...scope, autoApprove: () => 'all' }
+          }
         }
         // Live progress for the chat, at most four updates a second.
         const progress = throttle((run: SubagentRun) => onUpdate?.({ content: [{ type: 'text', text: 'Working…' }], details: { subagent: run } as unknown as ToolDetails }), 250)
@@ -783,7 +834,9 @@ export class AgentRuntime {
             systemPrompt: [
               SUBAGENT_INSTRUCTIONS(role),
               tier?.instructions?.trim() ? `Rules for this job (${tier.name} tier):\n${tier.instructions.trim()}` : '',
-              tree
+              tree && role === 'verifier'
+                ? `You are working in your own throwaway copy of the project (with the change as it stands, uncommitted files included). Change whatever your probes need: the copy is deleted when you finish and nothing in it is kept.`
+                : tree
                 ? [
                     `You are working in your own git copy of the project, on branch ${tree.branch}. Don't commit, merge or switch branches: when you finish, Cloth commits your changes and merges them into ${tree.base} itself, and tells the agent that sent you whether that worked.`,
                     tree.from
@@ -801,8 +854,8 @@ export class AgentRuntime {
             scope,
             thinking,
             signal,
-            // A ticket is a whole vertical slice: Build workers get more room than a quick job.
-            maxTurns: Math.max(1, cfg.maxTurns, tree ? 80 : 0),
+            // A ticket is a whole vertical slice: Build workers get more room than a quick job, and so do checks that drive the app.
+            maxTurns: Math.max(1, cfg.maxTurns, tree ? 80 : 0, role === 'verifier' ? 40 : 0),
             onEvent: (turn, now) => {
               files = now.files
               progress({ ...base, blocks: turn.blocks, running: true, ...(turn.usage ? { usage: turn.usage } : {}), ...(now.current ? { current: now.current } : {}), ...(files.length ? { files } : {}) })
@@ -812,7 +865,8 @@ export class AgentRuntime {
           .catch(async (err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
             if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, false)
-            if (tree) {
+            if (tree && role === 'verifier') await removeWorkerTree(tree, true).catch(() => undefined)
+            else if (tree) {
               const kept = await parkWorkerTree(tree, p.description || 'ticket').catch(() => null)
               if (kept) throw new Error(`${errorMessage(err)}. Its unfinished work is kept on branch ${kept}: start the next worker with continueFrom "${kept}" to carry on from it.`)
             }
@@ -827,19 +881,26 @@ export class AgentRuntime {
         for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
         // Its own checkout: commit and merge back. Its changes are commits now, so they aren't offered for undo.
         let merged = ''
-        if (tree) {
+        if (tree && role === 'verifier') {
+          // A check's copy is thrown away: its probes and scratch files never reach the chat's folder.
+          await removeWorkerTree(tree, true).catch((err) => console.warn('[cloth] removing a check copy failed:', errorMessage(err)))
+          files = []
+        } else if (tree) {
           const t = tree
           const m = await finishWorkerTree(t, p.description || 'Ticket').catch((err): MergeResult => ({ merged: false, files: [], error: `Couldn't merge its work: ${errorMessage(err)}. It is kept on branch ${t.branch}.` }))
           merged = m.merged ? (m.files.length ? `Worked in its own git copy; merged into ${t.base} (${m.files.length} file${m.files.length === 1 ? '' : 's'}).` : 'Worked in its own git copy; it changed nothing.') : (m.error ?? 'Not merged.')
           files = m.files
         }
         const report = result.text || '(the subagent finished without a report)'
-        const outcome = parseOutcome(result.text)
-        const notes = [note, treeNote, merged].filter(Boolean)
+        const outcome = role === 'verifier' ? undefined : parseOutcome(result.text)
+        // A check counts only with its verdict and proof: a report without them is a gap, never a pass.
+        const check = role === 'verifier' ? parseCheckReport(result.text) : null
+        const notes = [note, treeNote, merged, check ? checkNote(check) : ''].filter(Boolean)
         const keep = tree ? [] : changes
+        const verdict = check ? { verdict: check.verdict, proven: check.findings.length } : {}
         return {
           content: [{ type: 'text', text: notes.length ? `${report}\n\n(${notes.join(' ')})` : report }],
-          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}), ...(outcome ? { outcome } : {}) }, ...(keep.length ? { changes: keep } : {}) } as unknown as ToolDetails
+          details: { subagent: { ...base, blocks: result.turn.blocks, running: false, usage: result.turn.usage, ...(files.length ? { files } : {}), ...(outcome ? { outcome } : {}), ...verdict }, ...(keep.length ? { changes: keep } : {}) } as unknown as ToolDetails
         }
       }
     }
@@ -1482,8 +1543,14 @@ export class ChatService {
     // New files nobody has committed yet don't show in `git diff`: they are listed too, marked as new.
     const changed = stage === 'review' && base ? [...(await names(['diff', '--name-only', base])), ...(await names(['ls-files', '--others', '--exclude-standard'])).map((f) => `${f} (new, uncommitted)`)] : undefined
     // The next stage starts from a handover instead of the whole conversation so far (still shown in the chat).
-    if (stage !== 'grill') this.handOver(id, handoverText({ route: w.route, slug: w.slug, gates: this.workflowGates(id), said: this.workflowSaid(id), ...(stage === 'review' && base ? { base, changed } : {}) }))
-    if (stage === 'done' && workspace && w.slug) await this.indexSpec(workspace, w.slug).catch((err) => this.ctx.log('chat', 'spec index failed', errorMessage(err)))
+    const gates = this.workflowGates(id)
+    const verifyGuide = workspace && (stage === 'build' || stage === 'review') ? existsSync(join(workspace, 'docs', 'verify', 'README.md')) : undefined
+    if (stage !== 'grill') this.handOver(id, handoverText({ route: w.route, slug: w.slug, gates, said: this.workflowSaid(id), ...(stage === 'review' && base ? { base, changed } : {}), ...(verifyGuide !== undefined ? { verifyGuide } : {}) }))
+    if (stage === 'done' && workspace && w.slug) {
+      await this.indexSpec(workspace, w.slug).catch((err) => this.ctx.log('chat', 'spec index failed', errorMessage(err)))
+      const findings = gates.find((g) => g.stage === 'review')?.findings ?? []
+      await this.logFindings(workspace, w.slug, findings).catch((err) => this.ctx.log('chat', 'findings log failed', errorMessage(err)))
+    }
     const session = this.update(id, { workflow: { ...w, stage, ...(base ? { base } : {}) } })
     if (stage === 'done') this.wrapping.add(id)
     await this.run(id, { role: 'user', content: [{ type: 'text', text: stageNote(stage, w.slug, w.route) }, { type: 'text', text: stageText(stage, w.route) }], timestamp: Date.now() }, '')
@@ -1539,6 +1606,24 @@ export class ChatService {
     if (!line) return
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'README.md'), readme === null ? `# Specs\n\n${line}\n` : `${readme.replace(/\s*$/, '')}\n${line}\n`)
+  }
+
+  /** Add a finished review's findings to docs/specs/FINDINGS.md, where repeats across specs show up. */
+  private async logFindings(workspace: string, slug: string, findings: ReviewFinding[]): Promise<void> {
+    const lines = findingsLogLines(slug, new Date().toISOString().slice(0, 10), findings)
+    if (!lines.length) return
+    const dir = join(workspace, 'docs', 'specs')
+    const file = join(dir, 'FINDINGS.md')
+    const cur = await readFile(file, 'utf8').catch(() => null)
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, `${(cur ?? FINDINGS_HEAD).replace(/\s*$/, '')}\n${lines.join('\n')}\n`)
+  }
+
+  /** Whether the spec waits for the person's OK before Build, when the workflow otherwise goes on by itself. */
+  setWorkflowApproveSpec(id: string, on: boolean): ChatSession {
+    const w = this.get(id).workflow
+    if (!w) throw new Error('This chat is not running Spec → Ship')
+    return this.update(id, { workflow: { ...w, approveSpec: on } })
   }
 
   /** Whether a finished Build goes straight on to the Review (on unless switched off). */
@@ -1732,10 +1817,11 @@ export class ChatService {
       }
       const finished = this.finished.get(id)
       this.finished.delete(id)
-      // Spec → Ship goes on by itself when nothing needs the person (unless they turned that off): a finished build
-      // starts the review, and a review that recommends no fixes finishes the workflow.
+      // Spec → Ship goes on by itself when nothing needs the person (unless they turned that off): the spec and tickets
+      // go straight into Build (unless the person wants to approve them), a finished build starts the review, and a
+      // review that leaves nothing to fix (it fixes what it proves itself) finishes the workflow.
       const flow = this.get(id).workflow
-      const onward = finished?.stage === 'build' || (finished?.stage === 'review' && !finished.findings?.some((f) => f.fix))
+      const onward = autoAdvances(finished, flow)
       if (!error && finished && onward && flow?.stage === finished.stage && flow.autoContinue !== false) {
         await this.advanceWorkflow(id)
           .then(() => this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
@@ -1744,11 +1830,15 @@ export class ChatService {
       // Spec → Ship reached Done: the wrap-up's edits and anything else the chat changed itself are committed too.
       // Checked against the stage this run ran in first: a clean review that just started the wrap-up above must leave
       // the mark for the wrap-up's own run.
-      if (flow?.stage === 'done' && this.wrapping.delete(id) && this.get(id).workspace) {
+      const wrapped = flow?.stage === 'done' && this.wrapping.delete(id)
+      if (wrapped && this.get(id).workspace) {
         await commitWorkflowFinish(this.get(id).workspace!, flow.slug, this.workflowFiles(id))
           .then((hash) => hash && this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
           .catch((err) => this.ctx.log('chat', 'final workflow commit failed', errorMessage(err)))
       }
+      // Spec → Ship runs on its own: tell the person when it finishes, stops for them, or fails.
+      const report = workflowReport({ error, finished, onward, wrapped: !!wrapped, slug: flow?.slug ?? null, reply: this.lastReply(id) })
+      if (report) this.ctx.emit('chat', { sessionId: id, type: 'report', ...report } satisfies ChatEvent)
       if (!error) await this.retitle(id).catch((err) => this.ctx.log('chat', 'title failed', errorMessage(err)))
     })
   }
@@ -1773,6 +1863,12 @@ export class ChatService {
     }
     for (const m of ui.slice(start)) walk(m.blocks)
     return [...out]
+  }
+
+  /** The text of the chat's latest assistant message ('' when there is none). */
+  private lastReply(id: string): string {
+    const m = this.rawMessages(id).findLast((x) => x.role === 'assistant') as AssistantMessage | undefined
+    return (m?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('\n')
   }
 
   private titling = new Set<string>()

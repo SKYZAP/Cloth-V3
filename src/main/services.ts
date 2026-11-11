@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { MCP_PRESETS } from './mcp/client'
-import { readEnvFile, serversToSeed } from './mcp/homelab'
+import { migrateOldPenpot, readEnvFile, serversToSeed } from './mcp/homelab'
+import { BUILTIN_SKILLS, seedBuiltinSkills } from './skills/builtin'
 import { openDb, Kv } from './core/db'
 import { newId, type Ctx, type EventChannel, type Secrets } from './core/context'
 import { SettingsService } from './core/settings'
@@ -173,6 +174,13 @@ export function createServices(opts: {
   // tokens are in ~/.homelab/env: each once, so one you remove stays removed.
   seedHomelabServers(ctx, settings)
 
+  // Skills Cloth ships with, each added once (penpot's once its server is set up). CLOTH_BUILTIN_SKILLS=off leaves
+  // them out, for tests that count skills.
+  if (process.env.CLOTH_BUILTIN_SKILLS !== 'off')
+    void seedBuiltinSkills(skills, ctx.kv, BUILTIN_SKILLS.filter((s) => s.name !== 'penpot' || settings.get().mcpClients.some((c) => c.name === 'penpot')))
+    .then((added) => added.length && ctx.log('skills', `Added built-in skill${added.length === 1 ? '' : 's'}: ${added.join(', ')}`))
+    .catch((err) => ctx.log('skills', 'could not add built-in skills', err))
+
   // Chats automations made before the Automation project existed move into it, once.
   const moved = projects.migrateAutomationChats(workflows.reportedChatIds())
   if (moved) ctx.log('automation', `Filed ${moved} automation chat${moved === 1 ? '' : 's'} under the Automation project`)
@@ -193,9 +201,16 @@ const SEEDED_KEY = 'mcp.homelabSeeded'
 
 /** Adds the homelab MCP servers whose tokens are on file and that haven't been added before. */
 function seedHomelabServers(ctx: Ctx, settings: SettingsService): void {
+  const env = readEnvFile()
+  // Penpot's plugin-based MCP was replaced by penpot-api-mcp: move a server still set up for it.
+  const migrated = migrateOldPenpot(settings.get().mcpClients, MCP_PRESETS, env)
+  if (migrated) {
+    settings.update({ mcpClients: migrated })
+    ctx.log('mcp', 'Moved the penpot server to penpot-api-mcp')
+  }
   const cur = settings.get().mcpClients
   const seeded = ctx.kv.get<string[]>(SEEDED_KEY, [])
-  const add = serversToSeed(MCP_PRESETS, readEnvFile(), cur.map((c) => c.name), seeded)
+  const add = serversToSeed(MCP_PRESETS, env, cur.map((c) => c.name), seeded)
   if (!add.length) return
   settings.update({ mcpClients: [...cur, ...add.map((c) => ({ ...c, id: newId('mcs_') }))] })
   ctx.kv.set(SEEDED_KEY, [...seeded, ...add.map((c) => c.name)])

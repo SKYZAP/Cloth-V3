@@ -253,6 +253,8 @@ export interface ClothApi {
     advanceWorkflow(sessionId: string): Promise<ChatSession>
     /** Whether a finished Build goes straight on to the Review without waiting for an OK. */
     setWorkflowAutoContinue(sessionId: string, on: boolean): Promise<ChatSession>
+    /** Whether the spec and tickets wait for an OK before Build when the workflow otherwise goes on by itself. */
+    setWorkflowApproveSpec(sessionId: string, on: boolean): Promise<ChatSession>
     /** Leave Spec → Ship; the chat carries on as a normal chat. */
     stopWorkflow(sessionId: string): Promise<ChatSession>
   }

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { git } from '../src/main/panel/git'
-import { commitWorkflowDocs, createWorkerTree, finishWorkerTree, parkWorkerTree } from '../src/main/agent/worktrees'
+import { commitWorkflowDocs, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree } from '../src/main/agent/worktrees'
 
 async function repo() {
   const root = mkdtempSync(join(tmpdir(), 'cloth-wt-'))
@@ -54,6 +54,22 @@ describe('worker worktrees', () => {
     expect(existsSync(a.dir)).toBe(false)
     expect(await branches(root)).toEqual(['main'])
     expect((await git(root, ['worktree', 'list'])).stdout.trim().split('\n')).toHaveLength(1)
+  }, 60_000)
+
+  it("gives a verifier the chat's uncommitted changes, and throws its copy away without touching the chat's folder", async () => {
+    const { root, trees } = await repo()
+    writeFileSync(join(root, 'app.txt'), 'one\nTWO\nthree\n')
+    writeFileSync(join(root, 'new.txt'), 'fresh\n')
+    const t = (await createWorkerTree(root, trees, { slug: 'feat', label: 'check spec', id: 'call_check0000001' }))!
+    expect(await copyWorkingChanges(t)).toBe(2)
+    expect(readFileSync(join(t.workspace, 'app.txt'), 'utf8')).toBe('one\nTWO\nthree\n')
+    expect(readFileSync(join(t.workspace, 'new.txt'), 'utf8')).toBe('fresh\n')
+    writeFileSync(join(t.workspace, 'probe.txt'), 'scratch\n')
+    await removeWorkerTree(t, true)
+    expect(existsSync(t.dir)).toBe(false)
+    expect(existsSync(join(root, 'probe.txt'))).toBe(false)
+    expect(readFileSync(join(root, 'app.txt'), 'utf8')).toBe('one\nTWO\nthree\n')
+    expect(await branches(root)).toEqual(['main'])
   }, 60_000)
 
   it('aborts a conflicting merge and keeps the branch', async () => {

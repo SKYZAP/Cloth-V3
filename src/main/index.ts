@@ -10,7 +10,7 @@ import { createApi } from './api'
 import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
 import type { UsageService } from './core/usage'
-import type { UsageSource, WorkflowEvent } from '@shared/types'
+import type { ChatEvent, UsageSource, WorkflowEvent } from '@shared/types'
 import { createComputer } from './computer/host'
 import { loadLoginShellPath } from './core/shell-env'
 import type { ComputerController } from './computer/tool'
@@ -146,6 +146,7 @@ else {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
         services?.remote.broadcast(channel, payload)
         if (channel === 'workflow') notifyAutomation(payload as WorkflowEvent)
+        if (channel === 'chat') notifyChatReport(payload as ChatEvent)
       }
     })
     // Computer use: the agent hands the screen back whenever a chat waits for the user.
@@ -202,6 +203,20 @@ else {
     services.panel.terminals.killAll()
     void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll()]).finally(() => app.quit())
   })
+}
+
+/** A desktop notification when Spec → Ship finishes, stops for the person or fails, unless Cloth is in front. */
+function notifyChatReport(e: ChatEvent): void {
+  if (e.type !== 'report' || !Notification.isSupported()) return
+  if (BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isFocused())) return
+  const n = new Notification({ title: e.title, body: e.body })
+  n.on('click', () => {
+    const w = BrowserWindow.getAllWindows()[0]
+    if (!w) return
+    if (w.isMinimized()) w.restore()
+    w.focus()
+  })
+  n.show()
 }
 
 /** A desktop notification when an automation's agent asks for one, or a run fails. */

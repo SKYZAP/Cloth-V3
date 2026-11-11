@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MCP_PRESETS } from '../src/main/mcp/client'
-import { presetsWithTokens, readEnvFile, serversToSeed, withToken } from '../src/main/mcp/homelab'
+import { migrateOldPenpot, presetsWithTokens, readEnvFile, serversToSeed, withToken } from '../src/main/mcp/homelab'
 
 const env = { MCP_AUTH_TOKEN: 'tok-homelab', OBSIDIAN_MCP_TOKEN: 'tok-vault', PENPOT_MCP_TOKEN: 'tok-penpot' }
 const preset = (name: string) => MCP_PRESETS.find((p) => p.name === name)!
@@ -19,10 +19,14 @@ describe('homelab MCP tokens', () => {
 
   it('puts each token where its server wants it', () => {
     expect(withToken(preset('homelab'), 't1')).toMatchObject({ url: 'http://mcp.example.internal/mcp', headers: { Authorization: 'Bearer t1' } })
-    const penpot = withToken(preset('penpot'), 'a.b-c')
-    expect(penpot.url).toBe('http://design.example.internal/mcp/stream?userToken=a.b-c')
-    expect(penpot.headers).toEqual({})
-    expect(penpot).not.toHaveProperty('tokenQuery')
+    expect(withToken(preset('penpot'), 'a.b-c')).toMatchObject({ url: 'http://penpot-mcp.example.internal/mcp', headers: { Authorization: 'Bearer a.b-c' } })
+    // Plane keeps its workspace header next to the token.
+    expect(withToken(preset('plane'), 'pat')).toMatchObject({ url: 'http://plane-mcp.example.internal/http/api-key/mcp', headers: { 'X-Workspace-slug': 'acme', Authorization: 'Bearer pat' } })
+    // A preset that takes its token in the address gets it there instead.
+    const inQuery = withToken({ ...preset('penpot'), url: 'http://x.test/mcp', tokenQuery: 'userToken' }, 'a.b-c')
+    expect(inQuery.url).toBe('http://x.test/mcp?userToken=a.b-c')
+    expect(inQuery.headers).toEqual({})
+    expect(inQuery).not.toHaveProperty('tokenQuery')
   })
 
   it('offers presets ready to add when their token is on file, and asks otherwise', () => {
@@ -39,5 +43,14 @@ describe('homelab MCP tokens', () => {
     expect(serversToSeed(MCP_PRESETS, {}, [], [])).toEqual([])
     // Servers that don't need a token are never added on their own.
     expect(serversToSeed(MCP_PRESETS, env, [], []).some((c) => c.name === 'playwright')).toBe(false)
+  })
+  it("moves a server still set up for Penpot's old MCP to the new one, keeping its id and choices", () => {
+    const old = { id: 'mcs_1', name: 'penpot', transport: 'http' as const, url: 'http://design.example.internal/mcp/stream?userToken=old', headers: {}, command: '', args: [], env: {}, enabled: false, defaultOn: true, approval: 'ask' as const }
+    const other = { ...old, id: 'mcs_2', name: 'obsidian', url: 'http://obsidian.example.internal/mcp' }
+    const moved = migrateOldPenpot([old, other], MCP_PRESETS, env)!
+    expect(moved[0]).toEqual({ ...old, url: 'http://penpot-mcp.example.internal/mcp', headers: { Authorization: 'Bearer tok-penpot' } })
+    expect(moved[1]).toBe(other)
+    expect(migrateOldPenpot([old], MCP_PRESETS, {})![0].headers).toEqual({})
+    expect(migrateOldPenpot(moved, MCP_PRESETS, env)).toBeNull()
   })
 })

@@ -640,22 +640,39 @@ export interface SpecWorkflow {
   slug: string | null
   /** Set when the grilling finishes; none means standard. */
   route?: WorkflowRoute
-  /** Go on without waiting for the person when nothing needs them: Build to Review, and a review with nothing to fix to Done (on unless switched off). */
+  /** Go on without waiting for the person when nothing needs them (on unless switched off): the spec straight into Build
+   * (unless approveSpec), Build to Review, and a review that leaves nothing to fix to Done. */
   autoContinue?: boolean
+  /** Stop for the person's OK on the spec and tickets before Build, even when going on by itself. */
+  approveSpec?: boolean
   /** The commit the Build stage started from (git folders only): the review diffs against it. */
   base?: string
 }
 
-/** One review finding, on one of the review's two axes. */
+/**
+ * Where a review finding came from: the repo's standards (a read-only judgement), the spec (a criterion missing or
+ * behaving wrongly), an adversary that broke the change, or the blast-radius check (what else the change could break).
+ */
+export type FindingAxis = 'standards' | 'spec' | 'break' | 'safety'
+export const FINDING_AXES: FindingAxis[] = ['spec', 'break', 'safety', 'standards']
+
+/** One review finding. */
 export interface ReviewFinding {
-  axis: 'standards' | 'spec'
+  axis: FindingAxis
   /** The reviewer recommends fixing it before this ships (otherwise it's optional). */
   fix: boolean
   /** What is wrong, in one or two sentences (quoting the criterion on the spec axis). */
   title: string
   /** Where: a file and line, or a criterion. */
   where?: string
+  /** How it was proven: the command that shows it, and what it printed against what was required. */
+  proof?: { command: string; observed: string; expected?: string }
+  /** fixed: the review amended it itself and the proof now passes. */
+  status?: 'open' | 'fixed'
 }
+
+/** A finding that still needs the person: one to fix before shipping that the review didn't fix itself. */
+export const openFix = (f: ReviewFinding): boolean => f.fix && f.status !== 'fixed'
 
 /** One grilling round: the decisions that can be settled now, each with a recommended answer. */
 export interface QuestionRound {
@@ -673,6 +690,10 @@ export interface StageGate {
   route?: WorkflowRoute
   /** The review's findings (Review only). */
   findings?: ReviewFinding[]
+  /** Review only: how many rounds of fixes the review made itself. */
+  rounds?: number
+  /** Review only: what a second reviewer (another model) flagged in the decisions and evidence, one line each. */
+  attention?: string[]
   /** Files this stage wrote, relative to the workspace. */
   files?: string[]
 }
@@ -782,7 +803,8 @@ export interface GeneratedImage {
 export type ImageSize = 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
 
 export interface SubagentRun {
-  role: 'scout' | 'worker'
+  /** scout: reads only; worker: changes files; verifier: runs the work to prove it (in a throwaway copy when it can). */
+  role: 'scout' | 'worker' | 'verifier'
   /** The saved agent that ran, when the main agent delegated to one by name. */
   agent?: string
   description: string
@@ -804,6 +826,10 @@ export interface SubagentRun {
   files?: string[]
   /** What its report says it achieved (its `Result:` line), once finished. */
   outcome?: 'done' | 'partial' | 'blocked'
+  /** A verifier's verdict; gap: its report was missing or didn't follow the format, so it proves nothing. */
+  verdict?: 'pass' | 'issues' | 'blocked' | 'gap'
+  /** A verifier's findings that came with a command and its output. */
+  proven?: number
 }
 
 /** What a running subagent is doing: e.g. { tool: 'read', summary: 'src/auth/refresh.ts' }. */
@@ -901,6 +927,8 @@ export type ChatEvent =
   | { sessionId: string; type: 'question-done'; id: string }
   | { sessionId: string; type: 'compacting' }
   | { sessionId: string; type: 'compacted'; error?: string }
+  /** Spec → Ship ended a run on its own: finished, waiting for the person, or stopped (shown as a desktop notification). */
+  | { sessionId: string; type: 'report'; title: string; body: string }
 
 // ─── Workflows ────────────────────────────────────────────────────────────────
 
@@ -1172,6 +1200,8 @@ export interface SubagentSettings {
   maxParallel: number
   /** Allow the "worker" role, which can edit files (still subject to the chat's approvals). */
   allowWorkers: boolean
+  /** The model verifiers (Spec → Ship's checks) run on; ideally another family than the one that built. null = as other subagents. */
+  reviewModel?: ModelRef | null
   /** Extra instructions every subagent gets. */
   instructions: string
 }
@@ -1539,7 +1569,7 @@ export type McpPreset = Omit<McpClientConfig, 'id'> & {
   about?: string
   /** It needs an access token (sent as Authorization: Bearer …): adding it opens the form to paste one. */
   needsToken?: boolean
-  /** The token goes in this query parameter of the address instead of a header (Penpot's `userToken`). */
+  /** The token goes in this query parameter of the address instead of a header (e.g. `userToken`). */
   tokenQuery?: string
 }
 

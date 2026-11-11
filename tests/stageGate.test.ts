@@ -12,12 +12,12 @@ describe('Spec → Ship stage stops', () => {
   })
 
   it('sends exactly the ticked findings back to be fixed', () => {
-    expect(fixMessage([{ axis: 'spec', fix: true, title: 'AC-3: entities stay literal', where: 'src/cli.ts:195' }])).toBe('Fix this review finding, then run the tests and review again:\n- [Spec] AC-3: entities stay literal (src/cli.ts:195)')
+    expect(fixMessage([{ axis: 'spec', fix: true, title: 'AC-3: entities stay literal', where: 'src/cli.ts:195' }])).toBe('Fix this review finding, then run the tests and check them again:\n- [Spec] AC-3: entities stay literal (src/cli.ts:195)')
     expect(
       fixMessage([
         { axis: 'standards', fix: true, title: 'Uncaught RangeError' },
         { axis: 'spec', fix: false, title: 'Slow import' }
       ])
-    ).toBe('Fix these 2 review findings, then run the tests and review again:\n- [Standards] Uncaught RangeError\n- [Spec] Slow import')
+    ).toBe('Fix these 2 review findings, then run the tests and check them again:\n- [Standards] Uncaught RangeError\n- [Spec] Slow import')
   })
 })
