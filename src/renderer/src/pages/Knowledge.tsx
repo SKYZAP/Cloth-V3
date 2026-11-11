@@ -656,12 +656,12 @@ function SearchPanel({ collections, placeholder, suggest, names }: { collections
       )}
       {how === 'ask' && !hasModel && <p className="text-caption text-warn">Set a default model under Models to get answers; until then Ask shows passages only.</p>}
       <div aria-live="polite" className="min-h-[18px] text-caption text-dim">
-        {loading && <Spinner size={12} className="mr-1.5 inline text-crimson" />}
+        {loading && <Spinner size={12} className="mr-1.5 inline text-muted" />}
         {status}
       </div>
 
       {error && (
-        <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3.5 py-2.5 text-ui text-crimson-hi">
+        <div role="alert" className="rounded-[10px] border border-danger-line bg-danger-soft px-3.5 py-2.5 text-ui text-danger-hi">
           {error}
         </div>
       )}
@@ -895,7 +895,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
       <div className="space-y-4">
         <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-1 flex items-center gap-2 text-ui font-semibold">
-            <FolderPlus size={14} className="text-crimson-hi" /> Files & folders
+            <FolderPlus size={14} className="text-muted" /> Files & folders
           </div>
           <div className="mb-3 text-caption text-dim">Markdown, text, code, PDF, DOCX and HTML.</div>
           <div className="flex gap-2">
@@ -910,7 +910,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
 
         <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-1 flex items-center gap-2 text-ui font-semibold">
-            <Globe size={14} className="text-crimson-hi" /> Web page / docs site
+            <Globe size={14} className="text-muted" /> Web page / docs site
           </div>
           <div className="mb-3 text-caption text-dim">
             Readability extraction to Markdown. JavaScript-rendered sites (React/Angular docs) are rendered with the bundled Obscura browser automatically. Crawl follows links under the same path prefix.
@@ -956,7 +956,7 @@ function AddSources({ collection, log }: { collection: Collection; log: IngestPr
 
         <section className="rounded-[12px] border border-line bg-elev p-4">
           <div className="mb-3 flex items-center gap-2 text-ui font-semibold">
-            <TypeIcon size={14} className="text-crimson-hi" /> Paste text
+            <TypeIcon size={14} className="text-muted" /> Paste text
           </div>
           <Input className="mb-2" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
           <Textarea rows={6} placeholder="Markdown or plain text…" value={text} onChange={(e) => setText(e.target.value)} className="font-mono text-caption" />

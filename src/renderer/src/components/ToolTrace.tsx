@@ -144,7 +144,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
           {refs.length > 0 && <span>{refs.length} refs</span>}
           {trace.durationMs !== null && <span>{duration(trace.durationMs)}</span>}
           {trace.status === 'running' ? (
-            <CircleNotch size={14} className="animate-spin text-crimson" />
+            <CircleNotch size={14} className="animate-spin text-muted" />
           ) : trace.status === 'ok' ? (
             <motion.span key="ok" initial={{ scale: 0.6 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 600, damping: 14 }}>
               <CheckCircle size={15} weight="fill" className="text-ok" />
@@ -309,11 +309,11 @@ function SubagentBody({ trace }: { trace: Trace }) {
                 <span className="shrink-0 font-mono text-muted">{s.name}</span>
                 <span className="min-w-0 flex-1 truncate text-dim">{summarize(s)}</span>
                 {s.status === 'running' ? (
-                  <CircleNotch size={12} className="shrink-0 animate-spin text-crimson" />
+                  <CircleNotch size={12} className="shrink-0 animate-spin text-muted" />
                 ) : s.status === 'ok' ? (
                   <CheckCircle size={12} weight="fill" className="shrink-0 text-ok/80" />
                 ) : (
-                  <WarningCircle size={12} weight="fill" className="shrink-0 text-crimson-hi" />
+                  <WarningCircle size={12} weight="fill" className="shrink-0 text-danger-hi" />
                 )}
               </motion.div>
             )
@@ -368,7 +368,7 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
   return (
     <div className="rounded-[10px] border border-line bg-bg px-3 py-2.5">
       <div className="flex items-start gap-2">
-        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-crimson-soft px-1 text-micro font-semibold text-crimson-text">{n}</span>}
+        {n !== undefined && <span className="mt-px flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-elev-2 px-1 text-micro font-semibold text-muted">{n}</span>}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {isUrl ? <GlobeHemisphereWest size={12} className="shrink-0 text-dim" /> : <FileText size={12} className="shrink-0 text-dim" />}
@@ -386,7 +386,7 @@ export function ReferenceCard({ hit, n }: { hit: RagHit; n?: number }) {
         {hit.text}
       </div>
       {isUrl ? (
-        <button className="mt-1 block max-w-full truncate text-left font-mono text-micro text-dim hover:text-crimson-hi" title={hit.source} onClick={() => void api.app.openExternal(hit.source)}>
+        <button className="mt-1 block max-w-full truncate text-left font-mono text-micro text-dim hover:text-fg" title={hit.source} onClick={() => void api.app.openExternal(hit.source)}>
           {hit.source}
         </button>
       ) : (

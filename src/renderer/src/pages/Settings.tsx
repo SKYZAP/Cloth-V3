@@ -137,7 +137,7 @@ export function SettingsPage() {
               )}
             >
               {on && <motion.span layoutId="settings-nav" transition={{ type: 'spring', stiffness: 500, damping: 40 }} className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-crimson" />}
-              <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', on ? 'bg-crimson-soft text-crimson-hi' : 'bg-elev text-dim')}>
+              <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', on ? 'bg-elev-2 text-fg' : 'bg-elev text-dim')}>
                 <s.icon size={15} weight={on ? 'fill' : 'regular'} />
               </span>
               <span className="min-w-0 flex-1">

@@ -157,8 +157,8 @@ function AddProvider({ open, onClose, onAdded }: { open: boolean; onClose(): voi
       {!preset ? (
         <div className="grid grid-cols-2 gap-2">
           {presets.map((p) => (
-            <button key={p.id} onClick={() => choose(p)} className="flex items-start gap-2.5 rounded-lg border border-line p-3 text-left hover:border-crimson-line hover:bg-crimson-soft">
-              {isLocal(p.baseUrl) ? <HardDrive size={15} className="mt-0.5 text-crimson-hi" /> : <Cloud size={15} className="mt-0.5 text-crimson-hi" />}
+            <button key={p.id} onClick={() => choose(p)} className="flex items-start gap-2.5 rounded-lg border border-line p-3 text-left hover:border-line-strong hover:bg-elev">
+              {isLocal(p.baseUrl) ? <HardDrive size={15} className="mt-0.5 text-muted" /> : <Cloud size={15} className="mt-0.5 text-muted" />}
               <div>
                 <div className="text-ui font-semibold">{p.label}</div>
                 <div className="text-caption text-dim">{p.hint}</div>
@@ -268,7 +268,7 @@ function ProviderView({ provider }: { provider: Provider }) {
         }
       />
       {test && (
-        <div className={clsx('mx-5 mt-4 rounded-md border px-3 py-2 text-caption', test.ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-crimson-line bg-crimson-soft text-crimson-hi')}>
+        <div className={clsx('mx-5 mt-4 rounded-md border px-3 py-2 text-caption', test.ok ? 'border-ok/30 bg-ok/10 text-ok' : 'border-danger-line bg-danger-soft text-danger-hi')}>
           {test.ok ? '✓' : '✗'} {test.message} <span className="text-dim">({test.latencyMs}ms)</span>
         </div>
       )}
@@ -361,13 +361,13 @@ function ProviderView({ provider }: { provider: Provider }) {
                     <tr key={m.id} className="group border-t border-line hover:bg-elev">
                       <td className="max-w-0 px-3 py-1.5">
                         <div className="flex items-center gap-1.5">
-                          {isDefault && <Star size={11} className="shrink-0 fill-crimson text-crimson" />}
+                          {isDefault && <Star size={11} className="shrink-0 fill-warn text-warn" />}
                           <span className="truncate font-mono text-caption" title={m.id}>
                             {m.id}
                           </span>
                         </div>
                         {ping && ping !== 'busy' && (
-                          <div className={clsx('truncate text-micro', ping.ok ? 'text-ok' : 'text-crimson-hi')} title={ping.text}>
+                          <div className={clsx('truncate text-micro', ping.ok ? 'text-ok' : 'text-danger-hi')} title={ping.text}>
                             {ping.ok ? `✓ “${ping.text.slice(0, 40)}” in ${ping.latencyMs}ms` : `✗ ${ping.text}`}
                           </div>
                         )}
@@ -446,7 +446,7 @@ function PriceCell({ value, onChange }: { value: { input: number; output: number
   }
   if (!editing) {
     return (
-      <button onClick={open} className="font-mono text-caption text-muted hover:text-crimson-hi" title="Set price (USD per 1M tokens)">
+      <button onClick={open} className="font-mono text-caption text-muted hover:text-fg" title="Set price (USD per 1M tokens)">
         {value ? `${value.input} · ${value.output}` : <span className="text-dim">auto</span>}
       </button>
     )

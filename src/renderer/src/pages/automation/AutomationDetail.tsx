@@ -324,7 +324,7 @@ export function AutomationDetail({
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => setWatch(pressed ? null : newWatch(kind, configs, watch && watch.kind !== 'files' ? watch.everyMinutes : 15))}
-                  className={clsx('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-ui transition-colors motion-reduce:transition-none', FOCUS, pressed ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line-strong text-muted hover:text-fg')}
+                  className={clsx('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-ui transition-colors motion-reduce:transition-none', FOCUS, pressed ? 'border-crimson-line bg-elev-2 text-fg' : 'border-line-strong text-muted hover:text-fg')}
                 >
                   <Icon size={13} aria-hidden="true" />
                   {label}

@@ -61,7 +61,7 @@ export function RoundCard({ round, actionable, onAnswer }: { round: QuestionRoun
   return (
     <div className={CARD}>
       <h4 className="mb-0.5 flex items-center gap-2 text-body font-semibold">
-        <ListBullets size={15} weight="bold" className="shrink-0 text-crimson-hi" aria-hidden="true" />
+        <ListBullets size={15} weight="bold" className="shrink-0 text-muted" aria-hidden="true" />
         Questions · round {round.round}
       </h4>
       <p className="mb-1 text-ui text-dim">Each has my recommendation; “Yes” accepts it.</p>
@@ -175,7 +175,7 @@ export function StageGateCard({
   return (
     <div className={CARD}>
       <h4 className="mb-2 flex items-center gap-2 text-body font-semibold">
-        <ListChecks size={15} weight="fill" className="shrink-0 text-crimson-hi" aria-hidden="true" />
+        <ListChecks size={15} weight="fill" className="shrink-0 text-muted" aria-hidden="true" />
         {gate.stage === 'grill' && quick ? 'Grilling and spec done' : (actionable ? GATE_TITLE : PAST_TITLE)[gate.stage]}
         {gate.stage === 'grill' && route && <RouteBadge route={route} />}
       </h4>

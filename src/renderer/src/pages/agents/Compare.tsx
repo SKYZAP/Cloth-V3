@@ -51,7 +51,7 @@ export function CompareTable({ agents, activity, selected, onOpen }: { agents: A
               Can it…
             </th>
             {agents.map((a, c) => (
-              <th key={a.id} scope="col" onMouseEnter={() => setCol(c)} className={clsx('border-b border-line bg-panel px-3 py-2.5 align-bottom', col === c && 'bg-crimson-soft')}>
+              <th key={a.id} scope="col" onMouseEnter={() => setCol(c)} className={clsx('border-b border-line bg-panel px-3 py-2.5 align-bottom', col === c && 'bg-elev')}>
                 <button
                   type="button"
                   data-focus-key={a.id}
@@ -79,7 +79,7 @@ export function CompareTable({ agents, activity, selected, onOpen }: { agents: A
                   <td
                     key={a.id}
                     onMouseEnter={() => setCol(c)}
-                    className={clsx('border-b border-line px-3 py-2 text-center group-last:border-b-0 group-hover:bg-fg/[0.02]', col === c && 'bg-crimson-soft/40')}
+                    className={clsx('border-b border-line px-3 py-2 text-center group-last:border-b-0 group-hover:bg-fg/[0.02]', col === c && 'bg-elev/60')}
                   >
                     <motion.span
                       className="inline-flex items-center justify-center"
@@ -88,7 +88,7 @@ export function CompareTable({ agents, activity, selected, onOpen }: { agents: A
                       transition={{ duration: 0.26, delay: 0.32 + c * 0.06 + ri * 0.018, ease: EASE_OUT }}
                     >
                       {v === true ? (
-                        <span className="h-2.5 w-2.5 rounded-full bg-crimson-hi" role="img" aria-label="Yes" />
+                        <span className="h-2.5 w-2.5 rounded-full bg-muted" role="img" aria-label="Yes" />
                       ) : v === false ? (
                         <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-line-strong" role="img" aria-label="No" />
                       ) : (
@@ -121,7 +121,7 @@ export function WeekStrip({ days, max }: { days: number[]; max: number }) {
           <motion.span
             key={i}
             title={`${DAY.format(d)}: ${n} job${n === 1 ? '' : 's'}`}
-            className={clsx('min-h-[2px] flex-1 origin-bottom rounded-[1.5px]', i === 6 ? (n ? 'bg-crimson-hi' : 'bg-crimson-line') : n ? 'bg-muted/50' : 'bg-line-strong')}
+            className={clsx('min-h-[2px] flex-1 origin-bottom rounded-[1.5px]', i === 6 ? (n ? 'bg-fg' : 'bg-line-strong') : n ? 'bg-muted/50' : 'bg-line-strong')}
             style={{ height: n ? `${Math.max(18 * (n / Math.max(max, 1)), 4)}px` : '2px' }}
             initial={{ scaleY: 0 }}
             animate={{ scaleY: 1 }}

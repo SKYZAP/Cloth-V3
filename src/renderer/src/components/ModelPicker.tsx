@@ -388,7 +388,7 @@ function PickerList({
                 }}
                 className={clsx(
                   'flex h-[26px] items-center gap-1.5 rounded-full border px-2.5 text-caption transition-colors',
-                  on ? 'border-crimson-line bg-crimson-soft text-crimson-hi' : 'border-line-strong text-muted hover:text-fg'
+                  on ? 'border-crimson-line bg-elev-2 text-fg' : 'border-line-strong text-muted hover:text-fg'
                 )}
               >
                 {f.icon}
@@ -427,7 +427,7 @@ function PickerList({
             // Dim text is under 4.5:1 on the hover highlight, so the highlighted row lifts it to muted.
             className={clsx('relative flex min-h-[38px] cursor-default items-center gap-2.5 rounded-[10px] px-2 py-1.5 mobile:min-h-[48px]', i === active && '[&_.text-dim]:text-muted')}
           >
-            <span className="w-3.5 shrink-0 text-crimson-hi">{i === selectedIndex && <Check size={13} weight="bold" />}</span>
+            <span className="w-3.5 shrink-0 text-fg">{i === selectedIndex && <Check size={13} weight="bold" />}</span>
             {r.kind === 'none' ? (
               <span className="flex-1 text-ui text-muted">{none}</span>
             ) : r.kind === 'unavailable' ? (
@@ -505,7 +505,7 @@ function Highlight({ text, hits }: { text: string; hits: number[] }) {
     <>
       {[...text].map((c, i) =>
         set.has(i) ? (
-          <span key={i} className="font-semibold text-crimson-hi">
+          <span key={i} className="font-semibold text-fg">
             {c}
           </span>
         ) : (

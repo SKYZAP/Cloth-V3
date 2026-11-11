@@ -49,7 +49,7 @@ export function IconButton({ className, active, ...rest }: ButtonHTMLAttributes<
       {...rest}
       className={clsx(
         'inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:opacity-40',
-        active ? 'bg-crimson-soft text-crimson-text' : 'text-dim hover:text-fg hover:bg-elev-2',
+        active ? 'bg-elev-2 text-fg' : 'text-dim hover:text-fg hover:bg-elev-2',
         className
       )}
     />
@@ -222,7 +222,7 @@ export function Modal({ open, onClose, title, children, footer, width = 520 }: {
 export function Empty({ icon, title, children, action }: { icon?: ReactNode; title: ReactNode; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      {icon && <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-line bg-elev text-crimson">{icon}</div>}
+      {icon && <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-line bg-elev text-muted">{icon}</div>}
       <div className="text-body font-semibold">{title}</div>
       {children && <div className="max-w-sm text-ui text-dim">{children}</div>}
       {action}

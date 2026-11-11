@@ -225,7 +225,7 @@ function ListRow({ flow, active, selected, status, onSelect }: { flow: Workflow;
           {when}
         </span>
       </span>
-      <span className={clsx('whitespace-nowrap text-caption font-semibold', running ? 'font-normal text-muted' : status === 'ok' ? 'text-ok' : 'text-crimson-hi')}>
+      <span className={clsx('whitespace-nowrap text-caption font-semibold', running ? 'font-normal text-muted' : status === 'ok' ? 'text-ok' : 'text-danger-hi')}>
         {running ? 'Running' : status === 'ok' ? 'Done' : status === 'error' ? 'Failed' : ''}
       </span>
     </button>

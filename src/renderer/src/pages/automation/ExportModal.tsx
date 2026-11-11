@@ -69,7 +69,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
       width={680}
       title={
         <span className="flex items-center gap-2">
-          <Package size={15} className="text-crimson-hi" /> Export as an app
+          <Package size={15} className="text-muted" /> Export as an app
         </span>
       }
       footer={
@@ -139,7 +139,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
                   className="flex h-8 w-full items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-left text-caption text-muted hover:border-line-strong hover:text-fg"
                   title={outputDir}
                 >
-                  <FolderOpen size={13} className="shrink-0 text-crimson-hi" />
+                  <FolderOpen size={13} className="shrink-0 text-muted" />
                   <span className="min-w-0 flex-1 truncate">{outputDir}</span>
                 </button>
               </Field>
@@ -185,7 +185,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
             {mine.map((e, i) =>
               e.type === 'step' ? (
                 <div key={i} className="mt-1.5 text-fg first:mt-0">
-                  <span className="text-crimson-hi">{e.step}/{e.steps}</span> {e.title}
+                  <span className="tabular-nums text-muted">{e.step}/{e.steps}</span> {e.title}
                 </div>
               ) : e.type === 'log' ? (
                 <div key={i} className={clsx('whitespace-pre-wrap break-words pl-4', e.level === 'error' ? 'text-danger-hi' : e.level === 'warn' ? 'text-warn' : 'text-dim')}>
@@ -196,7 +196,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
                   Done in {(e.durationMs / 1000).toFixed(1)}s · {(e.bytes / 1024 / 1024).toFixed(1)} MB
                 </div>
               ) : (
-                <div key={i} className="mt-1.5 text-crimson-hi">
+                <div key={i} className="mt-1.5 text-danger-hi">
                   {e.message}
                 </div>
               )
@@ -218,7 +218,7 @@ export function ExportModal({ open, workflow, onClose, beforeExport }: { open: b
 function Chip({ icon, label, title }: { icon: React.ReactNode; label: string; title?: string }) {
   return (
     <span title={title || undefined} className="flex items-center gap-1.5 rounded-md border border-line bg-bg px-2 py-1 text-caption text-muted">
-      <span className="text-crimson-hi">{icon}</span>
+      <span className="text-muted">{icon}</span>
       {label}
     </span>
   )

@@ -471,7 +471,7 @@ function RegistryBrowser({ onInstalled }: { onInstalled(name: string): void }) {
                 <div className="min-w-0 flex-1">
                   <div className="font-mono text-body font-semibold">{preview.name}</div>
                   <div className="mt-0.5 line-clamp-3 text-caption text-muted">{preview.description || 'No description'}</div>
-                  <button onClick={() => void api.app.openExternal(preview.url)} className="mt-1 flex max-w-full items-center gap-1 font-mono text-caption text-dim hover:text-crimson-hi" title={preview.url}>
+                  <button onClick={() => void api.app.openExternal(preview.url)} className="mt-1 flex max-w-full items-center gap-1 font-mono text-caption text-dim hover:text-fg" title={preview.url}>
                     <ExternalLink size={11} className="shrink-0" />
                     <span className="truncate">{preview.id}</span>
                   </button>
@@ -664,7 +664,7 @@ function SkillView({ skill, onChanged, onClose }: { skill: Skill; onChanged(name
         subtitle={
           linked ? (
             <span className="flex items-center gap-1">
-              <button onClick={() => void api.app.openExternal(linked.url)} className="flex items-center gap-1 text-dim hover:text-crimson-hi" title={linked.url}>
+              <button onClick={() => void api.app.openExternal(linked.url)} className="flex items-center gap-1 text-dim hover:text-fg" title={linked.url}>
                 <Store size={11} /> {linked.id.split('/').slice(0, 2).join('/')} on skills.sh
               </button>
               {` · updated ${timeAgo(skill.updatedAt)}`}

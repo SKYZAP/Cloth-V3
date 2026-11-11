@@ -55,7 +55,7 @@ export function QuestionCard({ question, onAnswer }: { question: PendingQuestion
                   onClick={() => (question.multiple ? setPicked((p) => (on ? p.filter((x) => x !== o) : [...p, o])) : void send(o))}
                   className={clsx(
                     'flex min-h-9 items-center gap-2.5 rounded-lg border px-3 py-1.5 text-left text-ui transition-colors disabled:opacity-50',
-                    on ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-bg text-muted hover:border-line-strong hover:text-fg'
+                    on ? 'border-crimson-line bg-elev-2 text-fg' : 'border-line bg-bg text-muted hover:border-line-strong hover:text-fg'
                   )}
                 >
                   {question.multiple ? (

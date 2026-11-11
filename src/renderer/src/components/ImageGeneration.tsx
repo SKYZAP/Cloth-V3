@@ -76,7 +76,7 @@ function DitherMark({ status, reduce }: { status: ImageGenerationStatus; reduce:
       aria-hidden="true"
       animate={reduce ? undefined : { rotate: 360 }}
       transition={{ duration: 2.4, ease: EASE_IN_OUT, repeat: Number.POSITIVE_INFINITY }}
-      className="grid size-3.5 grid-cols-2 place-items-center gap-0.5 text-crimson-hi"
+      className="grid size-3.5 grid-cols-2 place-items-center gap-0.5 text-muted"
     >
       <span className="size-1 rounded-[1px] bg-current" />
       <span className="size-1 rounded-[1px] bg-current opacity-55" />
@@ -186,7 +186,7 @@ function DitherField({ interactive, reduce, status }: { interactive: boolean; re
       className="absolute inset-0 overflow-hidden bg-elev-2"
     >
       {/* Crimson dots on the dark field, in Cloth's accent. */}
-      <canvas ref={canvasRef} className="absolute inset-0 size-full text-crimson-hi" />
+      <canvas ref={canvasRef} className="absolute inset-0 size-full text-muted" />
     </motion.div>
   )
 }

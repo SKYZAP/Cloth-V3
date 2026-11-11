@@ -24,10 +24,10 @@ const MODE_TONE: Record<ChatMode, string> = {
 }
 const MODE_ICON_TONE: Record<ChatMode, string> = { chat: 'text-muted', plan: 'text-info', spec: 'text-mode' }
 export const ACCESS_ICON: Record<Access, Icon> = { auto: Lightning, manual: Hand }
-const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-crimson-hi', manual: 'text-warn' }
+const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-fg', manual: 'text-warn' }
 /** The access chip: outlined and tinted in its own colour (crimson for Auto, amber for Manual). */
 const ACCESS_TONE: Record<Access, string> = {
-  auto: 'border-crimson-line bg-crimson-soft text-crimson-text hover:bg-crimson/20',
+  auto: 'border-line-strong bg-elev-2 text-fg hover:bg-hover',
   manual: 'border-warn/35 bg-warn/[0.08] text-warn hover:bg-warn/15'
 }
 
@@ -129,7 +129,7 @@ export function ComposerBar({
                 aria-label={`Folder: ${folder ?? 'none chosen'}`}
                 className={clsx('flex h-8 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[10px] px-2 text-ui transition-colors', open ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev-2 hover:text-fg')}
               >
-                <FolderSimple size={17} weight={session.workspace ? 'fill' : 'regular'} className="shrink-0 text-crimson-hi" />
+                <FolderSimple size={17} weight={session.workspace ? 'fill' : 'regular'} className="shrink-0 text-muted" />
                 <span className="hidden max-w-[140px] truncate @[800px]:inline">{folder ?? 'Folder'}</span>
               </button>
             </Tooltip>
@@ -250,14 +250,14 @@ function RowIcon({ icon: I, bold, label, state, on, count, open, haspopup, onCli
         aria-label={label}
         aria-haspopup={haspopup}
         aria-expanded={haspopup ? !!open : undefined}
-        className={clsx('relative flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] text-crimson-hi transition-colors duration-200 hover:bg-crimson-soft', open && 'bg-crimson-soft')}
+        className={clsx('relative flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 hover:bg-elev-2 hover:text-fg', open && 'bg-elev-2 text-fg')}
       >
         <I size={18} weight={bold ? 'bold' : on ? 'fill' : 'regular'} />
         <motion.span
           initial={false}
           animate={{ scale: on && count === undefined ? 1 : 0 }}
           transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-          className="absolute bottom-[1px] left-1/2 -ml-0.5 h-1 w-1 rounded-full bg-crimson-hi"
+          className="absolute bottom-[1px] left-1/2 -ml-0.5 h-1 w-1 rounded-full bg-fg"
         />
         <AnimatePresence>
           {count !== undefined && (
@@ -298,7 +298,7 @@ function MenuList({ children }: { children: ReactNode }) {
 /** One option: an icon, a name, an optional line under it, and a check (choices) or a state (links). */
 function MenuRow({
   icon: I,
-  iconTone = 'text-crimson-hi',
+  iconTone = 'text-muted',
   iconWeight,
   name,
   sub,
@@ -333,9 +333,9 @@ function MenuRow({
       <I size={16} weight={iconWeight ?? (on === false ? 'regular' : 'fill')} className={clsx('mt-0.5', iconTone)} />
       <b className="text-ui font-semibold">{name}</b>
       {checked !== undefined ? (
-        <Check size={14} weight="bold" className={clsx('mt-0.5 text-crimson-hi', !checked && 'invisible')} />
+        <Check size={14} weight="bold" className={clsx('mt-0.5 text-fg', !checked && 'invisible')} />
       ) : (
-        <span className={clsx('self-center text-caption', on ? 'text-crimson-hi' : 'text-dim')}>{state}</span>
+        <span className={clsx('self-center text-caption', on ? 'text-fg' : 'text-dim')}>{state}</span>
       )}
       {sub && <span className="col-start-2 text-caption text-dim">{sub}</span>}
     </button>

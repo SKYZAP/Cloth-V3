@@ -46,7 +46,7 @@ export function SkillShelf({
             <span className="text-ui font-normal tabular-nums text-dim">{shelf.skills.length}</span>
           </h2>
           {shelf.url && (
-            <button onClick={() => void api.app.openExternal(shelf.url!)} className="truncate font-mono text-caption text-dim hover:text-crimson-hi" title={shelf.url} translate="no">
+            <button onClick={() => void api.app.openExternal(shelf.url!)} className="truncate font-mono text-caption text-dim hover:text-fg" title={shelf.url} translate="no">
               {shelf.repo}
             </button>
           )}

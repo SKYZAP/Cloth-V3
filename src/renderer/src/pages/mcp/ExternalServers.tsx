@@ -124,7 +124,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
           </Button>
         </div>
         {st?.state === 'error' && st.error && (
-          <div role="alert" className="rounded-[10px] border border-crimson-line bg-crimson-soft px-3 py-2 text-caption">
+          <div role="alert" className="rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-caption">
             <div className="selectable font-mono text-caption text-danger-hi">{st.error}</div>
             <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and token under Connection, then try again.' : 'Check the program and its arguments under Connection, then try again.'}</div>
           </div>

@@ -34,9 +34,9 @@ export function ContainerPill({ session, running }: { session: ChatSession; runn
       <button
         onClick={() => setOpen(true)}
         title={`Runs in a Linux container (${image}) on a copy of the folder${servers ? ` · ${servers} server${servers === 1 ? '' : 's'} running` : ''}`}
-        className={clsx('flex h-[30px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-caption transition-colors', count ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line text-muted hover:border-line-strong')}
+        className={clsx('flex h-[30px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-caption transition-colors', count ? 'border-line-strong bg-elev-2 text-fg' : 'border-line text-muted hover:border-line-strong')}
       >
-        <Cube size={14} weight={count ? 'fill' : 'regular'} className={count ? 'text-crimson-hi' : undefined} />
+        <Cube size={14} weight={count ? 'fill' : 'regular'} className={count ? 'text-fg' : undefined} />
         <span className="mobile:hidden">{count ? `${count} change${count === 1 ? '' : 's'}` : 'Container'}</span>
         {!!count && <span className="hidden font-mono mobile:inline">{count}</span>}
         {!!servers && (

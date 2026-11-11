@@ -71,7 +71,7 @@ export function PhoneSettings() {
         <div className="divide-y divide-line rounded-lg border border-line">
           {devices.map((d) => (
             <div key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-              <DeviceMobile size={18} className={d.connected ? 'text-crimson-hi' : 'text-dim'} weight={d.connected ? 'fill' : 'regular'} />
+              <DeviceMobile size={18} className={d.connected ? 'text-ok' : 'text-dim'} weight={d.connected ? 'fill' : 'regular'} />
               <div className="min-w-0 flex-1">
                 {editing === d.id ? (
                   <Input
@@ -173,7 +173,7 @@ function PairModal({ pairing, status, onClose }: { pairing: RemotePairing | null
               {pairing?.hosts.length ? reachable(pairing.hosts).map((h) => `${h.address} (${h.label})`).join(' · ') : 'No network address found — connect this PC to Wi-Fi or Ethernet.'}
             </div>
             {expired ? (
-              <div className="text-crimson-hi">This code expired.</div>
+              <div className="text-danger-hi">This code expired.</div>
             ) : (
               <div className="flex items-center gap-2 text-caption text-dim">
                 <span className="pulse-crimson h-1.5 w-1.5 rounded-full bg-crimson" /> Waiting for your phone · code valid for {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}

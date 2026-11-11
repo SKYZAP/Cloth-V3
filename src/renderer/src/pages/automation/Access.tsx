@@ -25,7 +25,7 @@ export interface AccessItem {
 }
 
 export const KIND: Record<Kind, { label: string; one: string; tile: string; dot: string; on: string }> = {
-  tools: { label: 'Tools', one: 'Tool', tile: 'bg-crimson-soft text-crimson-hi', dot: 'bg-crimson', on: 'border-transparent bg-crimson-soft text-crimson-hi' },
+  tools: { label: 'Tools', one: 'Tool', tile: 'bg-elev-2 text-fg', dot: 'bg-muted', on: 'border-transparent bg-elev-2 text-fg' },
   mcp: { label: 'MCP servers', one: 'MCP server', tile: 'bg-info/15 text-info', dot: 'bg-info', on: 'border-transparent bg-info/15 text-info' },
   knowledge: { label: 'Knowledge', one: 'Knowledge', tile: 'bg-ok/15 text-ok', dot: 'bg-ok', on: 'border-transparent bg-ok/15 text-ok' },
   skills: { label: 'Skills', one: 'Skill', tile: 'bg-skill-soft text-skill', dot: 'bg-skill-dot', on: 'border-transparent bg-skill-soft text-skill' }

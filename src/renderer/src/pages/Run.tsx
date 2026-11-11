@@ -231,7 +231,7 @@ function FirstRun({
       <ol className="grid gap-3 sm:grid-cols-2">
         <li className="grid content-start gap-2 rounded-[10px] border border-line bg-panel px-4 py-3">
           <div className="flex items-baseline gap-2 text-ui font-semibold">
-            <span className="tabular-nums text-crimson-hi">1</span> Install llama.cpp
+            <span className="tabular-nums text-dim">1</span> Install llama.cpp
           </div>
           <p className="text-caption text-dim">
             {FLAVOUR.prism.name}'s build, {BACKEND[backend]} for {hardware?.gpus[0] ? `your ${hardware.gpus[0].name}` : 'this PC'}.
@@ -251,7 +251,7 @@ function FirstRun({
         </li>
         <li className="grid content-start gap-2 rounded-[10px] border border-line bg-panel px-4 py-3">
           <div className="flex items-baseline gap-2 text-ui font-semibold">
-            <span className="tabular-nums text-crimson-hi">2</span> Add a model
+            <span className="tabular-nums text-dim">2</span> Add a model
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button icon={<Plus size={13} />} onClick={onAdd}>

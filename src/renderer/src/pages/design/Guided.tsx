@@ -201,7 +201,7 @@ export function GuidedSetup({ start, askDefault, onCancel, onCreated, onBlank }:
         <div className="flex w-[400px] shrink-0 flex-col border-r border-line mobile:max-h-[58%] mobile:w-full mobile:border-b mobile:border-r-0">
           <div className="flex gap-1 px-5 pt-4" aria-hidden="true">
             {STEPS.map((s, i) => (
-              <span key={s.id} className={clsx('h-1 flex-1 rounded-full', i < step ? 'bg-crimson' : i === step ? 'bg-crimson-hi' : 'bg-line-strong')} />
+              <span key={s.id} className={clsx('h-1 flex-1 rounded-full', i < step ? 'bg-muted' : i === step ? 'bg-fg' : 'bg-line-strong')} />
             ))}
           </div>
           <div className="px-5 pt-2 text-caption text-dim">
@@ -258,7 +258,7 @@ function Option({ on, onClick, children, suggested }: { on: boolean; onClick(): 
     <button
       onClick={onClick}
       aria-pressed={on}
-      className={clsx('grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[11px] border px-3 py-2.5 text-left transition-colors', on ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-hover')}
+      className={clsx('grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[11px] border px-3 py-2.5 text-left transition-colors', on ? 'border-crimson-line bg-elev-2' : 'border-line bg-elev hover:bg-hover')}
     >
       {children}
       {suggested ? <span className="whitespace-nowrap rounded-full border border-ok/35 px-2 py-px text-caption text-ok">Suggested</span> : <span />}
@@ -311,7 +311,7 @@ function StepChoices({
               key={c.color}
               onClick={() => set({ ...input, brand: c.color })}
               aria-pressed={input.brand.toLowerCase() === c.color.toLowerCase()}
-              className={clsx('grid gap-1.5 rounded-[11px] border p-2 text-left text-caption', input.brand.toLowerCase() === c.color.toLowerCase() ? 'border-crimson-line bg-crimson-soft text-fg' : 'border-line bg-elev text-muted hover:bg-hover')}
+              className={clsx('grid gap-1.5 rounded-[11px] border p-2 text-left text-caption', input.brand.toLowerCase() === c.color.toLowerCase() ? 'border-crimson-line bg-elev-2 text-fg' : 'border-line bg-elev text-muted hover:bg-hover')}
             >
               <span className="h-8 rounded-[7px]" style={{ background: c.color }} />
               {c.name}

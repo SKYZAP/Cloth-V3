@@ -177,7 +177,7 @@ export function GuidedServerForm({
       </Field>
 
       <div aria-live="polite" className="min-h-4 text-caption">
-        {problem && touched ? <span className="text-crimson-hi">{problem}</span> : touched && !problem ? <span className="break-all font-mono text-dim">{kind === 'http' ? (entry.url ?? '').replace(/([?&](?:userToken|token|key|api_key)=)[^&]+/i, '$1…') : [entry.command, ...entry.args].join(' ')}</span> : null}
+        {problem && touched ? <span className="text-danger-hi">{problem}</span> : touched && !problem ? <span className="break-all font-mono text-dim">{kind === 'http' ? (entry.url ?? '').replace(/([?&](?:userToken|token|key|api_key)=)[^&]+/i, '$1…') : [entry.command, ...entry.args].join(' ')}</span> : null}
       </div>
 
       {dirty && (

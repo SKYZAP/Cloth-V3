@@ -37,7 +37,7 @@ const RANGES: { value: UsageRange; label: string }[] = [
 ]
 
 const SOURCE: Record<UsageSource, { label: string; color: string }> = {
-  chat: { label: 'Chat', color: '#cf2845' },
+  chat: { label: 'Chat', color: '#bdbdc5' },
   workflow: { label: 'Flows', color: '#fb923c' },
   skills: { label: 'Skill tests', color: '#e0a43a' },
   knowledge: { label: 'Knowledge', color: '#6cb2ec' },
@@ -55,7 +55,7 @@ const VIA: Record<string, { label: string; color: string }> = {
 }
 
 const INPUT = '#4b4b56'
-const OUTPUT = '#cf2845'
+const OUTPUT = '#bdbdc5'
 
 export function DashboardPage() {
   const [range, setRangeState] = useState<UsageRange>(() => {
@@ -131,8 +131,8 @@ export function DashboardPage() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1480px] space-y-4 p-5 mobile:space-y-3 mobile:p-3">
             {empty && (
-              <Panel className="flex items-center gap-3 border-crimson-line bg-crimson-soft px-4 py-3" delay={0}>
-                <Lightning size={18} weight="fill" className="shrink-0 text-crimson-hi" />
+              <Panel className="flex items-center gap-3 border-line-strong bg-elev px-4 py-3" delay={0}>
+                <Lightning size={18} weight="fill" className="shrink-0 text-warn" />
                 <div className="text-ui text-muted">
                   Nothing recorded {range === 'all' ? 'yet' : 'in this period'}. Usage is logged as you chat, run flows, test skills, index knowledge or call Cloth over MCP.
                 </div>
@@ -204,7 +204,7 @@ function Panel({ children, className, delay = 0 }: { children: ReactNode; classN
 function Heading({ icon: I, title, right }: { icon: Icon; title: string; right?: ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-4 pt-3.5 pb-2.5">
-      <I size={15} className="text-crimson-hi" />
+      <I size={15} className="text-dim" />
       <span className="text-ui font-semibold tracking-tight">{title}</span>
       <div className="flex-1" />
       {right}
@@ -335,7 +335,6 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
       {cards.map((c, i) => (
         <Panel key={c.label} delay={0.04 * i} className={clsx('group relative overflow-hidden p-4', i === cards.length - 1 && cards.length % 2 === 1 && 'col-span-2 md:col-span-1')}>
-          <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-crimson/5 blur-2xl transition-opacity group-hover:bg-crimson/10" />
           <div className="flex items-center gap-2 text-caption font-medium text-dim">
             <c.icon size={14} className="text-muted" />
             {c.label}
@@ -604,7 +603,7 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
                       {m.priced ? (
                         money(m.cost)
                       ) : (
-                        <button onClick={onPricing} className="text-caption text-dim hover:text-crimson-hi" title="No price known — set one on the Models page">
+                        <button onClick={onPricing} className="text-caption text-dim hover:text-fg" title="No price known — set one on the Models page">
                           set price
                         </button>
                       )}
@@ -628,7 +627,7 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
 function Ranked({ rank, name, sub, right, children }: { rank: number; name: ReactNode; sub?: ReactNode; right: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2">
-      <span className={clsx('w-4 shrink-0 text-right font-mono text-caption', rank === 1 ? 'text-crimson-hi' : 'text-dim')}>{rank}</span>
+      <span className={clsx('w-4 shrink-0 text-right font-mono text-caption', rank === 1 ? 'text-fg' : 'text-dim')}>{rank}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate font-mono text-caption text-fg">{name}</span>
@@ -848,7 +847,7 @@ function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 
 
 function LinkButton({ onClick, children }: { onClick(): void; children: ReactNode }) {
   return (
-    <button onClick={onClick} className="text-caption text-dim hover:text-crimson-hi">
+    <button onClick={onClick} className="text-caption text-dim hover:text-fg">
       {children} →
     </button>
   )

@@ -199,7 +199,7 @@ export function CommandsPicker({ value, onChange, folder, docker }: { value: Aut
             role="radio"
             aria-checked={mode === o.v}
             onClick={() => onChange(o.v === 'off' ? null : o.v === 'container' ? { mode: 'container', image: 'node:22', network: true } : { mode: 'allowlist', allow: allowText.split('\n').map((x) => x.trim()).filter(Boolean) })}
-            className={clsx('grid content-start gap-0.5 rounded-[11px] border p-3 text-left', mode === o.v ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+            className={clsx('grid content-start gap-0.5 rounded-[11px] border p-3 text-left', mode === o.v ? 'border-crimson-line bg-elev-2' : 'border-line hover:border-line-strong')}
           >
             <span className="flex items-center gap-1.5 text-ui font-semibold">
               {o.icon && <o.icon size={14} aria-hidden="true" />}

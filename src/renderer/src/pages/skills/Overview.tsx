@@ -234,7 +234,7 @@ function SkillMdCard({ skill, onEdit }: { skill: Skill; onEdit(): void }) {
     <Card
       title="SKILL.md"
       meta={
-        <button onClick={onEdit} className="text-dim hover:text-crimson-hi">
+        <button onClick={onEdit} className="text-dim hover:text-fg">
           Edit
         </button>
       }
@@ -309,7 +309,7 @@ function AuditsCard({ skill, linked, info, onChanged }: { skill: Skill; linked: 
               const st = AUDIT[a.status] ?? AUDIT.unknown
               return (
                 <div key={a.provider} className="flex items-center justify-between gap-2 py-1.5 text-ui">
-                  <button onClick={() => void api.app.openExternal(a.reportUrl)} className="min-w-0 truncate text-left text-fg hover:text-crimson-hi" title="Open the report on skills.sh">
+                  <button onClick={() => void api.app.openExternal(a.reportUrl)} className="min-w-0 truncate text-left text-fg hover:text-fg" title="Open the report on skills.sh">
                     {a.provider}
                   </button>
                   <span className={clsx('shrink-0 rounded px-1.5 py-0.5 text-caption font-medium', st.cls)}>{st.label}</span>
@@ -408,7 +408,7 @@ function SourceCard({
       <Card title="Source">
         <div className="grid gap-0.5 text-ui">
           <span className="text-fg">skills.sh</span>
-          <button onClick={() => void api.app.openExternal(linked.url)} className="min-w-0 truncate text-left font-mono text-caption text-dim hover:text-crimson-hi" title={linked.url}>
+          <button onClick={() => void api.app.openExternal(linked.url)} className="min-w-0 truncate text-left font-mono text-caption text-dim hover:text-fg" title={linked.url}>
             {linked.id}
           </button>
           <span className="text-caption text-muted">{LINKED_BY[linked.linkedBy ?? 'install']}</span>
@@ -482,7 +482,7 @@ function LocalScan({ skill, info, onChanged }: { skill: Skill; info: SkillInsigh
           {groups.map(({ k, items }) => (
             <details key={k} className="rounded-[10px] border border-line bg-bg">
               <summary className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-caption">
-                <Warning size={13} className={k === 'injection' ? 'text-crimson-hi' : 'text-warn'} />
+                <Warning size={13} className={k === 'injection' ? 'text-danger-hi' : 'text-warn'} />
                 <span className="flex-1">{KIND[k]}</span>
                 <span className="font-mono text-caption text-dim">{items.length}</span>
               </summary>

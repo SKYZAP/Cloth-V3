@@ -209,7 +209,7 @@ function stateLine(c: McpClientConfig, servers: ExternalServers): { text: string
   }
 }
 
-const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-crimson-hi', dim: 'text-dim' }
+const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-danger-hi', dim: 'text-dim' }
 
 function Servers({ servers, onOpen, onAdd, onPreset }: { servers: ExternalServers; onOpen(id: string): void; onAdd(): void; onPreset(p: McpPreset): void }) {
   return (
@@ -515,7 +515,7 @@ function Activity({ calls }: { calls: McpCallLog[] }) {
               {c.tool} <span className="text-dim">{c.error ?? preview(c.args, 140)}</span>
             </span>
             <span className="text-right tabular-nums text-dim max-[760px]:hidden">{duration(c.durationMs)}</span>
-            <span className={clsx('flex items-center justify-end gap-1.5', c.ok ? 'text-dim' : 'text-crimson-hi')}>
+            <span className={clsx('flex items-center justify-end gap-1.5', c.ok ? 'text-dim' : 'text-danger-hi')}>
               <span className={clsx('h-1.5 w-1.5 rounded-full', c.ok ? 'bg-ok' : 'bg-crimson')} aria-hidden="true" />
               {c.ok ? 'Done' : 'Failed'}
             </span>

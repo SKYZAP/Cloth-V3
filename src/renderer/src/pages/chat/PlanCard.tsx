@@ -18,7 +18,7 @@ export function PlanCard({ plan, actionable, onApprove, onRevise }: { plan: Plan
   return (
     <div className="mb-2 rounded-[14px] border border-crimson-line bg-[linear-gradient(var(--color-crimson-soft),transparent_60%)] px-4 py-3.5">
       <h4 className="mb-2 flex items-center gap-2 text-body font-semibold">
-        <ListChecks size={15} weight="fill" className="shrink-0 text-crimson-hi" />
+        <ListChecks size={15} weight="fill" className="shrink-0 text-muted" />
         <span className="min-w-0">Plan: {plan.title}</span>
       </h4>
       <ol className="mb-3 list-decimal space-y-0.5 pl-[18px] text-ui leading-relaxed text-muted marker:text-dim">

@@ -178,7 +178,7 @@ export function Toasts() {
                   t.action!.run()
                   dismiss(t.id)
                 }}
-                className="mt-1.5 block font-medium text-crimson-hi hover:text-fg"
+                className="mt-1.5 block font-medium text-fg underline decoration-line-strong underline-offset-2 hover:decoration-fg"
               >
                 {t.action.label}
               </button>

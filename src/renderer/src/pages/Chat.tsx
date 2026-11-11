@@ -215,7 +215,7 @@ export function ChatPage() {
           on && side ? 'bg-elev-2 text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg'
         )}
       >
-        {running.has(s.id) && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" title="Working" />}
+        {running.has(s.id) && <span className="animate-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-info" title="Working" />}
         <span className={clsx('min-w-0 flex-1 truncate text-ui mobile:text-body', on && side && 'font-medium')}>{s.title}</span>
         <button
           onClick={(e) => {
@@ -224,7 +224,7 @@ export function ChatPage() {
           }}
           title="Delete chat"
           className={clsx(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover hover:text-crimson-hi',
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover hover:text-fg',
             isMobile ? 'opacity-100' : 'hidden group-focus-within:flex group-hover:flex'
           )}
         >
@@ -859,7 +859,7 @@ function ChatView({
             transition={{ duration: 0.15 }}
             className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-crimson-line bg-bg/85 text-body text-fg backdrop-blur-sm"
           >
-            <Paperclip size={26} className="text-crimson-hi" />
+            <Paperclip size={26} className="text-muted" />
             Drop files or images to attach
           </motion.div>
         )}
@@ -905,9 +905,9 @@ function ChatView({
               }}
               disabled={titling}
               aria-label="Write a new title with AI"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-crimson-hi disabled:opacity-60 mobile:hidden"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg disabled:opacity-60 mobile:hidden"
             >
-              <Sparkle size={14} className={titling ? 'animate-pulse text-crimson-hi' : undefined} />
+              <Sparkle size={14} className={titling ? 'animate-pulse text-fg' : undefined} />
             </button>
           </Tooltip>
         )}
@@ -919,7 +919,7 @@ function ChatView({
             onClick={() => setPanel({ open: !panel.open })}
             aria-pressed={panel.open}
             aria-label="Toggle side panel"
-            className={clsx('flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-elev-2', panel.open ? 'text-crimson-hi' : 'text-dim hover:text-fg')}
+            className={clsx('flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-elev-2', panel.open ? 'bg-elev-2 text-fg' : 'text-dim hover:text-fg')}
           >
             <SidebarSimple size={17} weight={panel.open ? 'fill' : 'regular'} className="-scale-x-100" />
           </motion.button>
@@ -1310,7 +1310,7 @@ function QueuedList({ items, running, onSendNow, onEdit, onRemove }: { items: Qu
             type="button"
             onClick={() => onSendNow(m)}
             title={running ? 'Stop the current reply and send this now' : 'Send this now'}
-            className="flex h-7 shrink-0 items-center gap-1 rounded-[8px] px-2 font-medium text-crimson-hi hover:bg-crimson-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+            className="flex h-7 shrink-0 items-center gap-1 rounded-[8px] px-2 font-medium text-fg hover:bg-elev-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
           >
             <ArrowUp size={13} weight="bold" aria-hidden="true" />
             Send now
@@ -1576,7 +1576,7 @@ function SummaryDivider({ summary }: { summary: string }) {
       <div className="flex items-center gap-3">
         <div className="h-px flex-1 bg-gradient-to-r from-transparent to-line-strong" />
         <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg">
-          <NotePencil size={12} className="text-crimson-hi" />
+          <NotePencil size={12} className="text-muted" />
           Earlier conversation summarised
           <CaretRight size={11} className={clsx('text-dim transition-transform', open && 'rotate-90')} />
         </button>

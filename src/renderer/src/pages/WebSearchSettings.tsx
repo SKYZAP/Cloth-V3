@@ -159,7 +159,7 @@ export function WebSearchSettings() {
             </div>
             {result.results.map((r) => (
               <div key={r.url} className="rounded-md border border-line bg-bg px-3 py-2">
-                <button className="text-left text-ui font-medium hover:text-crimson-hi" onClick={() => void api.app.openExternal(r.url)}>
+                <button className="text-left text-ui font-medium hover:text-fg" onClick={() => void api.app.openExternal(r.url)}>
                   {r.title}
                 </button>
                 <div className="truncate font-mono text-micro text-dim">{r.url}</div>
@@ -195,7 +195,7 @@ function EngineCard({
       <div className="flex items-center gap-2">
         <Dot tone={ok ? 'ok' : 'dim'} pulse={busy} />
         <span className="text-ui font-semibold">{name}</span>
-        {active && <Badge tone="crimson">active</Badge>}
+        {active && <Badge tone="ok">active</Badge>}
         <div className="flex-1" />
         {actions}
       </div>

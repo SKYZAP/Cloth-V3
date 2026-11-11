@@ -108,7 +108,7 @@ export function AgentsPage() {
               <TeamOrbit agents={agents} activity={activity} team={team} match={match} selected={openId} onOpen={setOpenId} />
             </div>
           )}
-          <div className="hidden max-[760px]:flex items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3">
+          <div className="hidden max-[760px]:flex items-center gap-3 rounded-[14px] border border-line bg-elev px-4 py-3">
             <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-ui font-semibold text-white">
               C
             </span>
@@ -246,7 +246,7 @@ function AgentCard({
             {a.name}
           </span>
         </span>
-        {working && <span className="pulse-crimson h-2 w-2 shrink-0 rounded-full bg-crimson-hi" aria-hidden="true" />}
+        {working && <span className="animate-pulse h-2 w-2 shrink-0 rounded-full bg-info" aria-hidden="true" />}
         {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-caption text-muted">built in</span>}
       </span>
       <span className="line-clamp-2 text-ui text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
@@ -267,7 +267,7 @@ function AgentCard({
         <span className="flex items-center justify-between gap-2 text-caption text-dim">
           <span className={clsx('min-w-0 truncate', working && 'max-w-[40%] shrink-0')}>{a.model ? a.model.modelId : "Chat's model"}</span>
           {working ? (
-            <span className="min-w-0 truncate text-crimson-text" title={live.text}>
+            <span className="min-w-0 truncate text-info" title={live.text}>
               Working{live.text ? `: ${live.text}` : ''}
             </span>
           ) : live?.state === 'done' ? (

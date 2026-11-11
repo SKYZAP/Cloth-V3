@@ -29,7 +29,7 @@ export function TodoList({ todos, dense }: { todos: TodoItem[]; dense?: boolean 
                   <CheckCircle size={15} weight="fill" className="text-ok" />
                 </motion.span>
               ) : t.status === 'in_progress' ? (
-                <CircleNotch size={15} className="animate-spin text-crimson-hi" />
+                <CircleNotch size={15} className="animate-spin text-muted" />
               ) : (
                 <Circle size={15} className="text-dim" />
               )}
@@ -165,7 +165,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
         aria-expanded={open}
         className={clsx('flex h-7 items-center gap-2 rounded-lg px-2 transition-colors', open ? 'bg-elev-2' : 'hover:bg-elev')}
       >
-        {busy ? <CircleNotch size={12} className="animate-spin text-crimson-hi" /> : <Bar className="h-2.5 w-12 @[560px]:w-20 mobile:hidden" />}
+        {busy ? <CircleNotch size={12} className="animate-spin text-muted" /> : <Bar className="h-2.5 w-12 @[560px]:w-20 mobile:hidden" />}
         <span className={clsx('font-mono text-caption tabular-nums', busy ? 'text-dim' : tone)}>{busy ? 'summarising' : pctOf(usage.tokens, window_)}</span>
       </button>
     </div>

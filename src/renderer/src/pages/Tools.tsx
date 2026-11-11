@@ -69,7 +69,7 @@ interface Item {
 
 const SOURCE_TILE: Record<Source, string> = {
   builtin: 'bg-elev-2 text-muted',
-  mine: 'bg-crimson-soft text-crimson-hi',
+  mine: 'bg-elev-2 text-fg',
   mcp: 'bg-info/15 text-info'
 }
 
@@ -503,7 +503,7 @@ function ToolDetails({
                 <span className="min-w-0 break-words font-mono text-caption" translate="no">
                   {p.name}
                   {p.required && (
-                    <span className="text-crimson-hi" title="Required">
+                    <span className="text-muted" title="Required">
                       {' *'}
                     </span>
                   )}
@@ -754,7 +754,7 @@ function ToolMaker({ tool, taken, onBack, onSaved, onDeleted }: { tool: CustomTo
                       role="radio"
                       aria-checked={on}
                       onClick={() => !on && setDraft((d) => ({ ...d, kind: k, config: { ...STARTER[k] } }))}
-                      className={clsx('flex min-h-[78px] gap-3 rounded-[12px] border p-3 text-left', on ? 'border-crimson-line bg-crimson-soft' : 'border-line hover:border-line-strong')}
+                      className={clsx('flex min-h-[78px] gap-3 rounded-[12px] border p-3 text-left', on ? 'border-crimson-line bg-elev-2' : 'border-line hover:border-line-strong')}
                     >
                       <span aria-hidden="true" className={clsx('flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]', on ? 'bg-crimson text-white' : 'bg-elev-2 text-muted')}>
                         <K.icon size={16} />

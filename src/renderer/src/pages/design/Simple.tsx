@@ -46,7 +46,7 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
       <Group title="Text">
         <div className="grid gap-1.5">
           {!feel && (
-            <div aria-pressed="true" className="flex min-w-0 items-center gap-2.5 rounded-[9px] border border-crimson-line bg-crimson-soft px-2.5 py-1.5 text-ui">
+            <div aria-pressed="true" className="flex min-w-0 items-center gap-2.5 rounded-[9px] border border-crimson-line bg-elev-2 px-2.5 py-1.5 text-ui">
               <b className="w-7 shrink-0 text-section" style={{ fontFamily: `'${input.fontHeading}', sans-serif` }}>
                 Aa
               </b>
@@ -61,7 +61,7 @@ export function SimpleControls({ input, set }: { input: DesignInput; set(next: D
               key={t}
               onClick={() => set(withTextFeel(input, t))}
               aria-pressed={feel === t}
-              className={clsx('flex w-full min-w-0 items-center gap-2.5 rounded-[9px] border px-2.5 py-1.5 text-left text-ui', feel === t ? 'border-crimson-line bg-crimson-soft' : 'border-line bg-elev hover:bg-hover')}
+              className={clsx('flex w-full min-w-0 items-center gap-2.5 rounded-[9px] border px-2.5 py-1.5 text-left text-ui', feel === t ? 'border-crimson-line bg-elev-2' : 'border-line bg-elev hover:bg-hover')}
             >
               <b className="w-7 shrink-0 text-section" style={{ fontFamily: `'${TEXT_FEELS[t].fontHeading}', sans-serif` }}>
                 Aa

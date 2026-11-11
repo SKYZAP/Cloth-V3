@@ -207,7 +207,7 @@ export function TeamOrbit({
                 <span
                   className={clsx(
                     '-mt-1 max-w-full truncate text-caption',
-                    l?.state === 'working' ? 'text-crimson-text' : l?.state === 'done' ? 'text-ok' : l?.state === 'failed' ? 'text-danger-hi' : 'text-dim'
+                    l?.state === 'working' ? 'text-info' : l?.state === 'done' ? 'text-ok' : l?.state === 'failed' ? 'text-danger-hi' : 'text-dim'
                   )}
                   title={l?.text || undefined}
                 >

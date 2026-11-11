@@ -184,8 +184,8 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
               aria-label="Commit message"
               className="w-full resize-none rounded-[10px] border border-line bg-panel py-2 pl-2.5 pr-9 text-ui outline-none placeholder:text-dim focus:border-crimson-line"
             />
-            <button disabled={!!busy || !status.files.length} onClick={() => void suggest()} className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-crimson-hi disabled:opacity-40" title="Write the message with AI (the chat's model)" aria-label="Write commit message with AI">
-              <Sparkle size={14} className={busy === 'message' ? 'animate-pulse text-crimson-hi' : undefined} />
+            <button disabled={!!busy || !status.files.length} onClick={() => void suggest()} className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-fg disabled:opacity-40" title="Write the message with AI (the chat's model)" aria-label="Write commit message with AI">
+              <Sparkle size={14} className={busy === 'message' ? 'animate-pulse text-fg' : undefined} />
             </button>
           </div>
           <Button variant="primary" size="sm" className="w-full" icon={<CommitIcon size={13} />} loading={busy === 'commit'} disabled={!message.trim() || !status.files.length || !!busy} onClick={() => void commit()}>

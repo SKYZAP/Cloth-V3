@@ -265,7 +265,7 @@ function GroupHeader({
       <span className="min-w-0 flex-1 truncate text-ui font-semibold mobile:text-body" title={title}>
         {name}
       </span>
-      {running && <span className="pulse-crimson h-1.5 w-1.5 shrink-0 rounded-full bg-crimson" />}
+      {running && <span className="animate-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-info" />}
       <span className="font-mono text-micro text-dim group-focus-within:hidden group-hover:hidden mobile:hidden">{count}</span>
       <div className="hidden items-center group-focus-within:flex group-hover:flex mobile:flex" onClick={(e) => e.stopPropagation()}>
         {onEdit && (

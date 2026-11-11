@@ -31,7 +31,7 @@ export function Tile({ name, builtin, size = 'sm', layoutId, className }: { name
     <motion.span
       layoutId={layoutId}
       aria-hidden="true"
-      className={clsx('relative flex shrink-0 items-center justify-center font-semibold tracking-tight', SIZE[size], (builtin && TILE[builtin]) || 'bg-crimson-soft text-crimson-hi', className)}
+      className={clsx('relative flex shrink-0 items-center justify-center font-semibold tracking-tight', SIZE[size], (builtin && TILE[builtin]) || 'bg-elev-2 text-fg', className)}
     >
       {initials(name)}
     </motion.span>

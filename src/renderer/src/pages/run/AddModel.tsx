@@ -291,7 +291,7 @@ function ModelDetail({ model, hardware, onBack, onAdded }: { model: HubModel; ha
                     <span className="font-mono text-ui font-medium" translate="no">
                       {g.quant}
                     </span>
-                    {g.recommended && <span className="rounded border border-crimson-line px-1.5 py-px text-micro font-medium text-crimson-text">Recommended</span>}
+                    {g.recommended && <span className="rounded border border-ok/40 px-1.5 py-px text-micro font-medium text-ok">Recommended</span>}
                   </span>
                   <span className="block text-caption tabular-nums text-dim">
                     {fileSize(g.size)} download{g.files.length > 1 ? ` in ${g.files.length} parts` : ''}, needs about {g.needGB} GB
