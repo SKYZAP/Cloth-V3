@@ -6,6 +6,7 @@ import { fauxAssistantMessage, fauxToolCall, type TranscriptContext } from '@ear
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ToolTrace } from '../src/shared/types'
 import { makeServices } from './helpers'
+import { weekDayStarts } from '../src/main/agent/agents'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 let faux: ReturnType<typeof registerFauxProvider> | null = null
@@ -180,7 +181,41 @@ describe('agents', () => {
       .find((t) => t.id === 't1')!
     expect(task.subagent).toMatchObject({ agent: 'Designer', role: 'worker' })
     // The job counts toward Designer's activity on the Agents page.
-    expect(services.agents.activity()[designer.id]).toMatchObject({ jobs: 1, failed: 0 })
+    expect(services.agents.activity()[designer.id]).toMatchObject({ jobs: 1, failed: 0, days: [0, 0, 0, 0, 0, 0, 1], running: 0 })
+  })
+
+  it("counts each agent's jobs per day over the last week and knows what runs now", () => {
+    const { services, events } = makeServices()
+    const ctx = services.ctx
+    const [a] = services.agents.list()
+    const usage = services.providers.usage
+    const now = Date.now()
+    usage.agentRun(a.id, 'scout', 10, true)
+    usage.agentRun(a.id, 'scout', 10, false)
+    // Two days ago, and one from before the week that no longer counts.
+    const starts = weekDayStarts(now)
+    ctx.db.prepare("UPDATE usage_events SET at = ? WHERE rowid = (SELECT MIN(rowid) FROM usage_events WHERE kind = 'agent')").run(starts[4] + 1000)
+    usage.agentRun(a.id, 'scout', 10, true)
+    ctx.db.prepare("UPDATE usage_events SET at = ? WHERE rowid = (SELECT MAX(rowid) FROM usage_events WHERE kind = 'agent')").run(starts[0] - 1000)
+    expect(services.agents.activity(now)[a.id]).toMatchObject({ jobs: 2, failed: 1, days: [0, 0, 0, 0, 1, 0, 1], running: 0 })
+
+    services.agents.jobStarted(a.id, 'Review the diff')
+    expect(services.agents.activity(now)[a.id]).toMatchObject({ running: 1, current: 'Review the diff' })
+    services.agents.jobEnded(a.id, 'Review the diff', true)
+    expect(events.filter((e) => e.channel === 'agents').map((e) => e.payload)).toEqual([
+      { type: 'job', agentId: a.id, state: 'start', description: 'Review the diff' },
+      { type: 'job', agentId: a.id, state: 'done', description: 'Review the diff' }
+    ])
+    expect(services.agents.activity(now)[a.id].running).toBe(0)
+    expect(services.agents.activity(now)[a.id].current).toBeUndefined()
+  })
+
+  it('starts the week at local midnight six days ago', () => {
+    const now = new Date(2026, 10, 11, 15, 30).getTime()
+    const s = weekDayStarts(now)
+    expect(s).toHaveLength(7)
+    expect(new Date(s[0])).toEqual(new Date(2026, 10, 5))
+    expect(new Date(s[6])).toEqual(new Date(2026, 10, 11))
   })
 
   it('refuses to delegate to an agent that does not exist', async () => {

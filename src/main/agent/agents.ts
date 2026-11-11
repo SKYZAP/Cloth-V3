@@ -1,4 +1,4 @@
-import { AGENT_TEMPLATES, DEFAULT_AGENT_SETUP, DESIGNER_SKILLS, type Agent, type AgentBuiltin, type AgentInput, type ModelRef, type ThinkingLevel } from '@shared/types'
+import { AGENT_TEMPLATES, DEFAULT_AGENT_SETUP, DESIGNER_SKILLS, type Agent, type AgentActivity, type AgentBuiltin, type AgentJobEvent, type AgentInput, type ModelRef, type ThinkingLevel } from '@shared/types'
 import { normalizeEffortOrNull } from '@shared/effort'
 import { json } from '../core/db'
 import { newId, type Ctx } from '../core/context'
@@ -236,12 +236,49 @@ export class AgentService {
     for (let i = 2; ; i++) if (!taken.has(`${name} ${i}`.toLowerCase())) return `${name} ${i}`
   }
 
-  /** Jobs each agent was handed by another agent since `since` (default: the last 7 days), by agent id. */
-  activity(since = Date.now() - 7 * 86_400_000): Record<string, { jobs: number; failed: number; lastAt: number }> {
-    const rows = this.ctx.db
-      .prepare("SELECT name, COUNT(*) AS jobs, SUM(1 - ok) AS failed, MAX(at) AS last FROM usage_events WHERE kind = 'agent' AND at >= ? GROUP BY name")
-      .all(since) as { name: string; jobs: number; failed: number; last: number }[]
-    return Object.fromEntries(rows.map((r) => [r.name, { jobs: r.jobs, failed: r.failed, lastAt: r.last }]))
+  /** Jobs each agent was handed by another agent today and the six days before, by agent id, with what runs now. */
+  activity(now = Date.now()): Record<string, AgentActivity> {
+    const dayStarts = weekDayStarts(now)
+    const rows = this.ctx.db.prepare("SELECT name, at, ok FROM usage_events WHERE kind = 'agent' AND at >= ?").all(dayStarts[0]) as { name: string; at: number; ok: number }[]
+    const out: Record<string, AgentActivity> = {}
+    const entry = (id: string) => (out[id] ??= { jobs: 0, failed: 0, lastAt: 0, days: [0, 0, 0, 0, 0, 0, 0], running: 0 })
+    for (const r of rows) {
+      const e = entry(r.name)
+      e.jobs++
+      if (!r.ok) e.failed++
+      e.lastAt = Math.max(e.lastAt, r.at)
+      let d = dayStarts.length - 1
+      while (d > 0 && r.at < dayStarts[d]) d--
+      e.days[d]++
+    }
+    for (const [id, l] of this.live) {
+      const e = entry(id)
+      e.running = l.descriptions.length
+      e.current = l.descriptions.at(-1)
+    }
+    return out
+  }
+
+  /** Jobs running now, by agent id, so the Agents page can show them as it opens. */
+  private live = new Map<string, { descriptions: string[] }>()
+
+  /** Cloth handed `agentId` a job; the Agents page shows it travel out. */
+  jobStarted(agentId: string, description: string): void {
+    const l = this.live.get(agentId) ?? { descriptions: [] }
+    l.descriptions.push(description)
+    this.live.set(agentId, l)
+    this.ctx.emit('agents', { type: 'job', agentId, state: 'start', description } satisfies AgentJobEvent)
+  }
+
+  /** The job ended; its result goes back to Cloth. */
+  jobEnded(agentId: string, description: string, ok: boolean): void {
+    const l = this.live.get(agentId)
+    if (l) {
+      const i = l.descriptions.lastIndexOf(description)
+      l.descriptions.splice(i < 0 ? 0 : i, 1)
+      if (!l.descriptions.length) this.live.delete(agentId)
+    }
+    this.ctx.emit('agents', { type: 'job', agentId, state: ok ? 'done' : 'failed', description } satisfies AgentJobEvent)
   }
 
   /** The built-ins exist as editable agents from the start. */
@@ -288,6 +325,19 @@ export class AgentService {
 }
 
 const KEYS: (keyof AgentConfig)[] = ['purpose', 'instructions', 'model', 'thinking', 'tier', ...(Object.keys(DEFAULT_AGENT_SETUP) as (keyof AgentConfig)[])]
+/** Midnight (local) of today and each of the six days before, oldest first. */
+export function weekDayStarts(now: number): number[] {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  const out: number[] = []
+  for (let i = 6; i >= 0; i--) {
+    const day = new Date(d)
+    day.setDate(d.getDate() - i)
+    out.push(day.getTime())
+  }
+  return out
+}
+
 function pickConfig(input: AgentInput): Partial<AgentConfig> {
   const out: Partial<AgentConfig> = {}
   for (const k of KEYS) if (input[k as keyof AgentInput] !== undefined) (out as Record<string, unknown>)[k] = input[k as keyof AgentInput]

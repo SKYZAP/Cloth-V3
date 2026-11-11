@@ -134,7 +134,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
   useEffect(loadAgents, [])
   // Computer use runs on Windows and macOS only.
   const computerSupported = window.cloth.platform === 'win32' || window.cloth.platform === 'darwin'
-  useEvent('agents', loadAgents)
+  useEvent('agents', (e) => e.type === 'changed' && loadAgents())
 
   // openSetupSection(): show the section afresh and focus its Filter box (the instructions' text on that page).
   const pending = useSetupNav((s) => s.pending)

@@ -114,7 +114,7 @@ export function ToolsPage() {
   }, [])
   // Tools made by a model (chat or MCP) appear without a reload.
   useEvent('tools', () => void load())
-  useEvent('agents', () => void api.tools.usedBy().then(setUsedBy, () => undefined))
+  useEvent('agents', (e) => e.type === 'changed' && void api.tools.usedBy().then(setUsedBy, () => undefined))
   useEvent('mcpClients', () => void api.mcp.clients().then(setServers, () => undefined))
   useEffect(() => {
     try {
