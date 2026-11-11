@@ -259,8 +259,8 @@ export interface ClothApi {
     stopWorkflow(sessionId: string): Promise<ChatSession>
   }
   agents: {
-    /** Jobs each agent ran as a subagent in the last 7 days, by agent id. */
-    activity(): Promise<Record<string, { jobs: number; failed: number; lastAt: number }>>
+    /** Jobs each agent ran as a subagent in the last 7 days (today and the six days before), by agent id. */
+    activity(): Promise<Record<string, import('./types').AgentActivity>>
     list(): Promise<Agent[]>
     create(input?: AgentInput & { template?: string }): Promise<Agent>
     update(id: string, patch: AgentInput): Promise<Agent>
@@ -452,7 +452,7 @@ export type EventMap = {
   remote: RemoteStatus
   terminal: import('./types').TerminalEvent
   mcpClients: { type: 'changed' }
-  agents: { type: 'changed' }
+  agents: { type: 'changed' } | import('./types').AgentJobEvent
   mcpCalls: import('./types').McpCallLog
   containers: { sessionId: string; ports: import('./types').ContainerPort[] }
   runs: import('./types').RunEvent

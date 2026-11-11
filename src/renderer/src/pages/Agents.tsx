@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
+import { LayoutGroup } from 'motion/react'
 import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
-import { AGENT_TEMPLATES, type Agent, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
+import { AGENT_TEMPLATES, type Agent, type AgentActivity, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
 import { EFFORT_OPTIONS, normalizeEffortOrNull, type Effort } from '@shared/effort'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -10,24 +11,21 @@ import { Button, Input, Modal, PageHeader, Select, Spinner, Textarea, confirmAct
 import { ModelPicker } from '@/components/ModelPicker'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
+import { Tile } from './agents/Tile'
+import { TeamOrbit, useTeamLive, type Live } from './agents/Orbit'
+import { CompareTable, WeekStrip, alwaysSkills } from './agents/Compare'
 
-/** Two letters for an agent's tile. */
-export const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase() || '?'
+export { initials } from './agents/Tile'
 
-type Activity = Record<string, { jobs: number; failed: number; lastAt: number }>
+type Activity = Record<string, AgentActivity>
+type View = 'cards' | 'compare'
+const VIEW_KEY = 'cloth.agents.view'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /**
- * The team: Cloth on top and every agent below. Any agent can run a chat or take work Cloth hands it.
- * Each card says what the agent may touch; the editor opens beside the team rather than replacing it.
+ * The team: Cloth in the middle with every agent around it, and the agents below as cards or side by side.
+ * Jobs Cloth hands out show live on the map and the cards; the editor opens beside the team rather than replacing it.
  */
 export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -37,6 +35,21 @@ export function AgentsPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
+  const [view, setView] = useState<View>(() => {
+    try {
+      return localStorage.getItem(VIEW_KEY) === 'compare' ? 'compare' : 'cards'
+    } catch {
+      return 'cards'
+    }
+  })
+  const changeView = (v: View) => {
+    setView(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   const load = async () => {
     const [list, act, chats] = await Promise.all([api.agents.list(), api.agents.activity().catch(() => ({})), api.chat.list().catch(() => [])])
@@ -51,10 +64,13 @@ export function AgentsPage() {
   useEffect(() => {
     void load()
   }, [])
-  useEvent('agents', () => void load())
+  // A finished job changes this week's counts; a started one only moves things on the map.
+  useEvent('agents', (e) => (e.type === 'changed' || e.state !== 'start') && void load())
+  const team = useTeamLive(activity)
 
   const q = filter.trim().toLowerCase()
-  const shown = agents.filter((a) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q))
+  const match = (a: Agent) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q)
+  const shown = agents.filter(match)
   const open = agents.find((a) => a.id === openId) ?? null
   const close = () => {
     const id = openId
@@ -62,6 +78,8 @@ export function AgentsPage() {
     // Focus goes back to the card that opened the editor.
     refocus(id)
   }
+  // One scale for every card's week strip, so a busy week looks busier than a quiet one.
+  const busiest = Math.max(1, ...Object.values(activity).flatMap((a) => a.days ?? []))
 
   // Cloth counts as one of the team.
   const counts = plural(agents.length + 1, 'agent')
@@ -69,7 +87,7 @@ export function AgentsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
               <h1 className="text-[18px] font-semibold tracking-tight">Agents</h1>
@@ -84,35 +102,59 @@ export function AgentsPage() {
             </Button>
           </div>
 
-          <div className="grid justify-items-center gap-0">
-            <div className="flex max-w-[640px] items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3">
-              <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-[13px] font-semibold text-white">
-                C
-              </span>
-              <div className="min-w-0">
-                <div className="text-[13.5px] font-semibold">Cloth</div>
-                <div className="text-[12px] text-muted">The main agent in every chat.</div>
-              </div>
+          {/* The map needs room to breathe; on a narrow window Cloth sits above the cards instead. */}
+          {loaded && (
+            <div className="max-[760px]:hidden">
+              <TeamOrbit agents={agents} activity={activity} team={team} match={match} selected={openId} onOpen={setOpenId} />
             </div>
-            <svg aria-hidden="true" className="h-6 w-full mobile:hidden max-[760px]:hidden" viewBox="0 0 900 24" preserveAspectRatio="none">
-              <path d="M450 0 V10 M112.5 24 V10 H787.5 V24 M337.5 10 V24 M562.5 10 V24" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-            </svg>
+          )}
+          <div className="hidden max-[760px]:flex items-center gap-3 rounded-[14px] border border-crimson-line bg-crimson-soft px-4 py-3">
+            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-[13px] font-semibold text-white">
+              C
+            </span>
+            <div className="min-w-0">
+              <div className="text-[13.5px] font-semibold">Cloth</div>
+              <div className="text-[12px] text-muted">The main agent in every chat. It hands work to the team below.</div>
+            </div>
           </div>
 
-          <Lane title="Team">
-            {shown.map((a) => (
-              <AgentCard key={a.id} agent={a} activity={activity[a.id]} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
-            ))}
-            {!q && (
-              <div className="grid content-start gap-1.5 rounded-[12px] border border-dashed border-line-strong p-3.5">
-                <span className="text-[13px] font-semibold">Describe your own</span>
-                <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
-                  Describe an agent
-                </Button>
-              </div>
-            )}
-            {q && !shown.length && <LaneEmpty>No agent matches “{filter.trim()}”.</LaneEmpty>}
-          </Lane>
+          <LayoutGroup>
+            <Lane
+              title="Team"
+              action={
+                <div className="w-[176px]">
+                  <Segmented
+                    size="sm"
+                    label="Show the team as"
+                    value={view}
+                    onChange={changeView}
+                    options={[
+                      { value: 'cards', label: 'Cards' },
+                      { value: 'compare', label: 'Compare' }
+                    ]}
+                  />
+                </div>
+              }
+            >
+              {view === 'compare' && shown.length > 0 ? (
+                <CompareTable agents={shown} activity={activity} selected={openId} onOpen={setOpenId} />
+              ) : (
+                shown.map((a) => (
+                  <AgentCard key={a.id} agent={a} activity={activity[a.id]} live={team.live[a.id]} busiest={busiest} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
+                ))
+              )}
+              {!q && view === 'cards' && (
+                <div className="grid content-start gap-2 rounded-[12px] border border-dashed border-line-strong p-3.5">
+                  <span className="text-[13px] font-semibold">Describe your own</span>
+                  <span className="text-[12.5px] text-muted">Say what it's for in a sentence, like "Writes vitest suites for changed files and runs them". Cloth drafts the name and instructions.</span>
+                  <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
+                    Describe an agent
+                  </Button>
+                </div>
+              )}
+              {q && !shown.length && <LaneEmpty>No agent matches “{filter.trim()}”.</LaneEmpty>}
+            </Lane>
+          </LayoutGroup>
         </div>
       </div>
 
@@ -141,12 +183,13 @@ export function AgentsPage() {
   )
 }
 
-function Lane({ title, children }: { title: string; children: ReactNode }) {
+function Lane({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="grid gap-2.5" aria-label={title}>
-      <h2 className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] font-semibold">
-        {title}
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[13.5px] font-semibold">{title}</h2>
+        {action}
+      </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">{children}</div>
     </section>
   )
@@ -156,38 +199,34 @@ function LaneEmpty({ children }: { children: ReactNode }) {
   return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-[12.5px] text-dim">{children}</p>
 }
 
-const TILE: Record<string, string> = {
-  designer: 'bg-skill-soft text-skill',
-  researcher: 'bg-ok/15 text-ok',
-  reviewer: 'bg-fg/10 text-fg'
-}
-
-function Tile({ name, builtin, size = 'sm' }: { name: string; builtin?: string | null; size?: 'sm' | 'lg' }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={clsx(
-        'flex shrink-0 items-center justify-center font-semibold tracking-tight',
-        size === 'lg' ? 'h-10 w-10 rounded-[10px] text-[14px]' : 'h-9 w-9 rounded-[9px] text-[12px]',
-        (builtin && TILE[builtin]) || 'bg-crimson-soft text-crimson-hi'
-      )}
-    >
-      {initials(name)}
-    </span>
-  )
-}
-
 /** What the agent may touch, in words. */
 function access(a: Agent): string {
   if (a.fileAccess !== 'write') return 'Reads files'
   return a.shell ? 'Edits files, runs commands' : 'Edits files'
 }
 
-function AgentCard({ agent: a, activity, chats, selected, onOpen }: { agent: Agent; activity?: { jobs: number; failed: number }; chats: number; selected: boolean; onOpen(): void }) {
-  const always = a.skillsEnabled || a.skillsAlways.length ? a.skillsAlways : []
+function AgentCard({
+  agent: a,
+  activity,
+  live,
+  busiest,
+  chats,
+  selected,
+  onOpen
+}: {
+  agent: Agent
+  activity?: AgentActivity
+  live?: Live
+  busiest: number
+  chats: number
+  selected: boolean
+  onOpen(): void
+}) {
+  const always = alwaysSkills(a)
   // Chats it runs and jobs other agents handed it, together.
   const parts = [chats ? plural(chats, 'chat') : '', activity?.jobs ? `${plural(activity.jobs, 'job')} this week${activity.failed ? ` (${activity.failed} failed)` : ''}` : ''].filter(Boolean)
   const use = parts.length ? parts.join(', ') : 'Not used yet'
+  const working = live?.state === 'working'
   return (
     <button
       data-agent={a.id}
@@ -195,15 +234,19 @@ function AgentCard({ agent: a, activity, chats, selected, onOpen }: { agent: Age
       onClick={onOpen}
       aria-haspopup="dialog"
       aria-expanded={selected}
-      className={clsx('grid content-start gap-2.5 rounded-[12px] border bg-elev p-3.5 text-left transition-colors hover:border-line-strong hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line', selected ? 'border-crimson-line' : 'border-line')}
+      className={clsx(
+        'grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-2.5 rounded-[12px] border bg-elev p-3.5 text-left transition-colors hover:border-line-strong hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line',
+        selected || working ? 'border-crimson-line' : 'border-line'
+      )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
-        <Tile name={a.name} builtin={a.builtin} />
+        <Tile name={a.name} builtin={a.builtin} layoutId={`agent-tile-${a.id}`} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-semibold" title={a.name}>
             {a.name}
           </span>
         </span>
+        {working && <span className="pulse-crimson h-2 w-2 shrink-0 rounded-full bg-crimson-hi" aria-hidden="true" />}
         {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-[11.5px] text-muted">built in</span>}
       </span>
       <span className="line-clamp-2 text-[12.5px] text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
@@ -219,9 +262,22 @@ function AgentCard({ agent: a, activity, chats, selected, onOpen }: { agent: Age
         ))}
         {always.length > 3 && <Cap>+{always.length - 3} skills</Cap>}
       </span>
-      <span className="flex items-center justify-between gap-2 border-t border-line pt-2 text-[11.5px] text-dim">
-        <span className="min-w-0 truncate">{a.model ? a.model.modelId : "Chat's model"}</span>
-        <span className="shrink-0 tabular-nums">{use}</span>
+      <span className="grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-line pt-2">
+        <WeekStrip days={activity?.days ?? [0, 0, 0, 0, 0, 0, 0]} max={busiest} />
+        <span className="flex items-center justify-between gap-2 text-[11.5px] text-dim">
+          <span className={clsx('min-w-0 truncate', working && 'max-w-[40%] shrink-0')}>{a.model ? a.model.modelId : "Chat's model"}</span>
+          {working ? (
+            <span className="min-w-0 truncate text-crimson-text" title={live.text}>
+              Working{live.text ? `: ${live.text}` : ''}
+            </span>
+          ) : live?.state === 'done' ? (
+            <span className="shrink-0 text-ok">Done just now</span>
+          ) : live?.state === 'failed' ? (
+            <span className="shrink-0 text-danger-hi">Failed just now</span>
+          ) : (
+            <span className="shrink-0 tabular-nums">{use}</span>
+          )}
+        </span>
       </span>
     </button>
   )

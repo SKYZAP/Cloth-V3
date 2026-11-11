@@ -443,7 +443,7 @@ function ChatView({
   // Saved agents the message can tag with @name.
   const loadAgents = () => void api.agents.list().then(setSavedAgents, () => undefined)
   useEffect(loadAgents, [])
-  useEvent('agents', loadAgents)
+  useEvent('agents', (e) => e.type === 'changed' && loadAgents())
 
   useEffect(() => {
     void api.chat.messages(session.id).then((ms) => {

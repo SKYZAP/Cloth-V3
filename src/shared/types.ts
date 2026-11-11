@@ -466,6 +466,22 @@ export interface Agent extends AgentSetup {
 
 export type AgentInput = Partial<Omit<Agent, 'id' | 'builtin' | 'createdAt' | 'updatedAt'>>
 
+/** What one agent did over the last seven days, and what it is doing now. */
+export interface AgentActivity {
+  jobs: number
+  failed: number
+  lastAt: number
+  /** Jobs per local day, oldest first; the last entry is today. */
+  days: number[]
+  /** Jobs running right now. */
+  running: number
+  /** The latest running job's description, while one runs. */
+  current?: string
+}
+
+/** A job Cloth handed an agent started or ended. */
+export type AgentJobEvent = { type: 'job'; agentId: string; state: 'start' | 'done' | 'failed'; description: string }
+
 /** Starting points for a new agent. */
 export const AGENT_TEMPLATES: { id: string; name: string; summary: string; agent: AgentInput }[] = [
   {

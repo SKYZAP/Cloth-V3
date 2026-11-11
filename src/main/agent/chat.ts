@@ -805,6 +805,8 @@ export class AgentRuntime {
           onUpdate?.({ content: [{ type: 'text', text: 'Queued…' }], details: { subagent: { ...base, blocks: [], running: true } } as unknown as ToolDetails })
         )
         const started = Date.now()
+        const job = p.description || named?.name || 'Subagent'
+        if (named) this.ws.agents?.jobStarted(named.id, job)
         let files: string[] = []
         // Spec → Ship builds tickets in parallel: a worker gets its own git checkout, merged back when it ends (in Review
         // too, where workers fix what the checks proved). A verifier gets a throwaway checkout with the change as it
@@ -865,6 +867,7 @@ export class AgentRuntime {
           .catch(async (err) => {
             this.providers.usage.tool('task', 'builtin', Date.now() - started, false)
             if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, false)
+            if (named) this.ws.agents?.jobEnded(named.id, job, false)
             if (tree && role === 'verifier') await removeWorkerTree(tree, true).catch(() => undefined)
             else if (tree) {
               const kept = await parkWorkerTree(tree, p.description || 'ticket').catch(() => null)
@@ -878,6 +881,7 @@ export class AgentRuntime {
           })
         this.providers.usage.tool('task', 'builtin', Date.now() - started, true)
         if (named) this.providers.usage.agentRun(named.id, role, Date.now() - started, true)
+        if (named) this.ws.agents?.jobEnded(named.id, job, true)
         for (const c of changes) if (!files.includes(c.path)) files = [...files, c.path]
         // Its own checkout: commit and merge back. Its changes are commits now, so they aren't offered for undo.
         let merged = ''
