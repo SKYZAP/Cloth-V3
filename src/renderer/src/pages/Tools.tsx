@@ -248,7 +248,7 @@ export function ToolsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="grid gap-4 px-8 py-6 mobile:px-3 mobile:py-4">
+        <div className="grid gap-4 px-8 pt-10 pb-6 mobile:px-3 mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-title font-semibold tracking-tight">Tools</h1>

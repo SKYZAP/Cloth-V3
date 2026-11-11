@@ -152,7 +152,7 @@ export function SettingsPage() {
 
       <SplitDetail>
         <div className="h-full overflow-y-auto">
-          <div className="mx-auto max-w-[760px] px-6 pb-10 pt-6 mobile:px-4 mobile:pt-3">
+          <div className="mx-auto max-w-[760px] px-6 pb-10 pt-10 mobile:px-4 mobile:pt-3">
             <div className="mb-5 flex items-start gap-2">
               <SplitBack className="mt-0.5" />
               <div>

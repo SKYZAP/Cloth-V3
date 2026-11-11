@@ -272,7 +272,8 @@ function ProviderView({ provider }: { provider: Provider }) {
           {test.ok ? '✓' : '✗'} {test.message} <span className="text-dim">({test.latencyMs}ms)</span>
         </div>
       )}
-      <div className="grid gap-4 p-5 xl:grid-cols-[360px_1fr]">
+      <div className="@container p-5">
+        <div className="grid gap-4 @[1180px]:grid-cols-[320px_1fr]">
         <Card className="h-fit space-y-3 p-4">
           <Field label="Name">
             <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -420,6 +421,7 @@ function ProviderView({ provider }: { provider: Provider }) {
             </table>
           )}
         </Card>
+        </div>
       </div>
       <ImagePlayground model={playground ? { providerId: provider.id, modelId: playground } : null} onClose={() => setPlayground(null)} />
     </div>

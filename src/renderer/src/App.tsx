@@ -92,6 +92,10 @@ function DesktopApp() {
   })
 
   const isMac = window.cloth.platform === 'darwin'
+  // Windows and Linux draw the window controls over the top right of the page; pages leave --wco clear there.
+  useEffect(() => {
+    document.documentElement.classList.toggle('wco', !isMac)
+  }, [isMac])
 
   return (
     <MotionConfig reducedMotion="user">
@@ -125,9 +129,10 @@ function DesktopApp() {
         </div>
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Drag strip: room for the window controls, which draw over the top right on Windows and Linux. */}
-        <div className="drag h-9 shrink-0 bg-bg" />
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        {/* Pages run to the top of the window. This band drags the window; buttons and fields inside it opt out
+            (styles.css), and pages keep their top-right corner clear of the window controls (--wco). */}
+        <div aria-hidden="true" className="drag pointer-events-none absolute inset-x-0 top-0 h-9" />
         <main className="min-h-0 min-w-0 flex-1 bg-bg">
           <PageContent page={page} />
         </main>

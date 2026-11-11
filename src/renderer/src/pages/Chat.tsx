@@ -865,7 +865,7 @@ function ChatView({
         )}
       </AnimatePresence>
       {/* Header floats over the conversation and fades into it */}
-      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
+      <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent pl-5 pr-[calc(var(--wco)+20px)] mobile:gap-1.5 mobile:px-3">
         <SplitBack />
         {side && (
           <Tooltip content={listHidden ? 'Show the chat list (Ctrl+B)' : 'Hide the chat list (Ctrl+B)'}>

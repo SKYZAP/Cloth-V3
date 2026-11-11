@@ -252,7 +252,7 @@ export function AutomationDetail({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-[760px] px-8 pb-16 pt-[22px] max-[700px]:px-4 mobile:px-4">
+      <div className="mx-auto max-w-[760px] px-8 pb-16 pt-10 max-[700px]:px-4 mobile:px-4">
         <div className="flex flex-wrap items-center gap-3">
           <SplitBack />
           <input
