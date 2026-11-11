@@ -28,7 +28,14 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 // Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
 const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
-const RAIL = NAV.filter((n) => n.page !== 'settings')
+const item = (page: Page) => NAV.find((n) => n.page === page)!
+/** Desktop sidebar: Dashboard on its own, then the pages grouped by what you do there. */
+const SECTIONS: { label?: string; items: (typeof NAV)[number][] }[] = [
+  { items: [item('dashboard')] },
+  { label: 'Work', items: [item('chat'), item('workflows')] },
+  { label: 'Build', items: [item('agents'), item('skills'), item('tools'), item('knowledge')] },
+  { label: 'Connect', items: [item('providers'), item('run'), { ...item('mcp'), label: 'MCP servers' }] }
+]
 
 export function App() {
   return isMobile ? (
@@ -88,37 +95,40 @@ function DesktopApp() {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="flex h-full flex-col">
-      {/* Title bar */}
-      <div className={clsx('drag flex h-9 shrink-0 items-center gap-2 border-b border-line bg-bg', isMac ? 'pl-20' : 'pl-3', 'pr-[150px]')}>
-        <Logo size={16} />
-        <span className="text-[12.5px] font-semibold tracking-tight">Cloth</span>
-        <div className="flex-1" />
-        <button
-          onClick={() => setPage('mcp')}
-          className="no-drag flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] text-dim hover:bg-elev hover:text-muted"
-          title={mcp?.url}
-        >
-          <span className={clsx('h-1.5 w-1.5 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
-          MCP {mcp?.running ? `:${mcp.port}` : 'offline'}
-        </button>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        {/* Nav rail */}
-        <nav className="flex w-[68px] shrink-0 flex-col items-center gap-1 border-r border-line bg-bg py-2">
-          {RAIL.map(({ page: p, label, icon: Icon }) => (
-            <NavButton key={p} active={page === p} onClick={() => setPage(p)} label={label}>
-              <Icon size={19} weight={page === p ? 'fill' : 'regular'} />
-            </NavButton>
+    <div className="flex h-full">
+      {/* Sidebar */}
+      <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col border-r border-line bg-panel">
+        <div className={clsx('drag flex shrink-0 items-center gap-2 px-4', isMac ? 'h-[52px] items-end pb-2' : 'h-12')}>
+          <Logo size={18} />
+          <span className="text-body font-semibold tracking-tight">Cloth</span>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-2 pt-1 pb-2">
+          {SECTIONS.map((sec, i) => (
+            <div key={i} className="flex flex-col gap-0.5">
+              {sec.label && <div className="px-2.5 pb-1 text-caption font-medium text-dim">{sec.label}</div>}
+              {sec.items.map(({ page: p, label, icon: Icon }) => (
+                <NavItem key={p} active={page === p} onClick={() => setPage(p)} label={label} icon={<Icon size={18} weight={page === p ? 'fill' : 'regular'} />} />
+              ))}
+            </div>
           ))}
-          <div className="flex-1" />
-          <NavButton active={page === 'settings'} onClick={() => setPage('settings')} label="Settings">
-            <GearSix size={19} weight={page === 'settings' ? 'fill' : 'regular'} />
-          </NavButton>
-        </nav>
+        </div>
+        <div className="shrink-0 px-2 pb-2">
+          <NavItem active={page === 'settings'} onClick={() => setPage('settings')} label="Settings" icon={<GearSix size={18} weight={page === 'settings' ? 'fill' : 'regular'} />} />
+          <button
+            onClick={() => setPage('mcp')}
+            className="mt-2 flex w-full items-center gap-2 border-t border-line px-2.5 pt-3 pb-1 text-left text-caption text-dim hover:text-muted"
+            title={mcp?.url}
+          >
+            <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
+            <span className="truncate">{mcp ? (mcp.running ? `Connected · port ${mcp.port}` : 'MCP server offline') : 'Starting…'}</span>
+          </button>
+        </div>
+      </nav>
 
-        <main className="min-w-0 flex-1 bg-bg">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Drag strip: room for the window controls, which draw over the top right on Windows and Linux. */}
+        <div className="drag h-9 shrink-0 bg-bg" />
+        <main className="min-h-0 min-w-0 flex-1 bg-bg">
           <PageContent page={page} />
         </main>
       </div>
@@ -129,18 +139,19 @@ function DesktopApp() {
   )
 }
 
-function NavButton({ active, onClick, label, children }: { active: boolean; onClick(): void; label: string; children: React.ReactNode }) {
+function NavItem({ active, onClick, label, icon }: { active: boolean; onClick(): void; label: string; icon: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
       className={clsx(
-        'relative flex w-14 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors',
-        active ? 'bg-elev-2 text-fg' : 'text-dim hover:bg-elev hover:text-muted'
+        'relative flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-ui transition-colors',
+        active ? 'bg-elev-2 font-semibold text-fg' : 'font-medium text-muted hover:bg-elev hover:text-fg'
       )}
     >
-      {active && <span className="absolute -left-1.5 top-2.5 bottom-2.5 w-[3px] rounded-r bg-crimson" />}
-      <span className={active ? 'text-crimson-hi' : ''}>{children}</span>
-      {label}
+      {active && <span className="absolute -left-2 top-[7px] bottom-[7px] w-0.5 rounded-r bg-crimson" />}
+      <span className="shrink-0">{icon}</span>
+      <span className="truncate">{label}</span>
     </button>
   )
 }
@@ -154,7 +165,7 @@ export function Toasts() {
         <div
           key={t.id}
           className={clsx(
-            'pointer-events-auto flex items-start gap-2 rounded-lg border bg-elev px-3 py-2.5 text-[12.5px] shadow-xl shadow-black/50',
+            'pointer-events-auto flex items-start gap-2 rounded-lg border bg-elev px-3 py-2.5 text-ui shadow-xl shadow-black/50',
             t.kind === 'error' ? 'border-danger-line' : t.kind === 'ok' ? 'border-ok/30' : 'border-line-strong'
           )}
         >
