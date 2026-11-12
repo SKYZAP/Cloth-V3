@@ -29,12 +29,12 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
 const item = (page: Page) => NAV.find((n) => n.page === page)!
-/** Desktop sidebar: Dashboard on its own, then the pages grouped by what you do there. */
-const SECTIONS: { label?: string; items: (typeof NAV)[number][] }[] = [
-  { items: [item('dashboard')] },
-  { label: 'Work', items: [item('chat'), item('workflows')] },
-  { label: 'Build', items: [item('agents'), item('skills'), item('tools'), item('knowledge')] },
-  { label: 'Connect', items: [item('providers'), item('run'), { ...item('mcp'), label: 'MCP servers' }] }
+/** Desktop sidebar: Dashboard on its own, then the pages grouped by what you do there (work, build, connect). */
+const SECTIONS: (typeof NAV)[number][][] = [
+  [item('dashboard')],
+  [item('chat'), item('workflows')],
+  [item('agents'), item('skills'), item('tools'), item('knowledge')],
+  [item('providers'), item('run'), { ...item('mcp'), label: 'MCP servers' }]
 ]
 
 export function App() {
@@ -107,10 +107,9 @@ function DesktopApp() {
           <span className="text-body font-semibold tracking-tight">Cloth</span>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-2 pt-1 pb-2">
-          {SECTIONS.map((sec, i) => (
+          {SECTIONS.map((items, i) => (
             <div key={i} className="flex flex-col gap-0.5">
-              {sec.label && <div className="px-2.5 pb-1 text-caption font-medium text-dim">{sec.label}</div>}
-              {sec.items.map(({ page: p, label, icon: Icon }) => (
+              {items.map(({ page: p, label, icon: Icon }) => (
                 <NavItem key={p} active={page === p} onClick={() => setPage(p)} label={label} icon={<Icon size={18} weight={page === p ? 'fill' : 'regular'} />} />
               ))}
             </div>
