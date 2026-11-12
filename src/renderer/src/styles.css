@@ -79,11 +79,6 @@
     color-scheme: dark;
     /* The chat column (messages and message box): wider as the window grows, still capped by the space beside the panels. */
     --chat-col: 740px;
-    /* Width of the window controls at the top right (Windows and Linux; html.wco). */
-    --wco: 0px;
-  }
-  html.wco {
-    --wco: 140px;
   }
   @media (min-width: 1440px) {
     :root {

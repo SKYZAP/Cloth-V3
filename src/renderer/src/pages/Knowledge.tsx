@@ -152,7 +152,7 @@ export function KnowledgePage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 pt-10 pb-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           {active ? (
             <CollectionPage
               key={active.id}

@@ -114,7 +114,7 @@ export function DesignPage() {
     )
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-5 pt-10 pb-6 mobile:py-4">
+      <div className="mx-auto grid w-[min(1120px,calc(100%-40px))] gap-5 py-6 mobile:py-4">
         <div className="grid gap-1">
           <BackLink label={back.label} onClick={goBack} />
           <div className="flex items-end justify-between gap-4">

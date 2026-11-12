@@ -95,7 +95,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-4 border-b border-line py-3.5 pl-5 pr-[calc(var(--wco)+20px)] mobile:flex-wrap mobile:gap-2 mobile:px-4 mobile:py-3">
+      <div className="flex items-center gap-4 border-b border-line py-3.5 px-5 mobile:flex-wrap mobile:gap-2 mobile:px-4 mobile:py-3">
         <div className="min-w-0 flex-1 mobile:basis-full">
           <div className="text-section font-semibold tracking-tight">Dashboard</div>
           <div className="truncate text-caption text-dim mobile:hidden">

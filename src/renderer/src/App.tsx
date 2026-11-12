@@ -92,16 +92,11 @@ function DesktopApp() {
   })
 
   const isMac = window.cloth.platform === 'darwin'
-  // Windows and Linux draw the window controls over the top right of the page; pages leave --wco clear there.
-  useEffect(() => {
-    document.documentElement.classList.toggle('wco', !isMac)
-  }, [isMac])
-
   return (
     <MotionConfig reducedMotion="user">
-    <div className="flex h-full">
-      {/* Sidebar */}
-      <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col border-r border-line bg-panel">
+    <div className="flex h-full bg-panel">
+      {/* Sidebar: the same grey as the strip above the page, so the two read as one frame around it. */}
+      <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col">
         <div className={clsx('drag flex shrink-0 items-center gap-2 px-4', isMac ? 'h-[52px] items-end pb-2' : 'h-12')}>
           <Logo size={18} />
           <span className="text-body font-semibold tracking-tight">Cloth</span>
@@ -128,11 +123,11 @@ function DesktopApp() {
         </div>
       </nav>
 
-      <div className="relative flex min-w-0 flex-1 flex-col">
-        {/* Pages run to the top of the window. This band drags the window; buttons and fields inside it opt out
-            (styles.css), and pages keep their top-right corner clear of the window controls (--wco). */}
-        <div aria-hidden="true" className="drag pointer-events-none absolute inset-x-0 top-0 h-9" />
-        <main className="min-h-0 min-w-0 flex-1 bg-bg">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Grey strip continuing the sidebar: drags the window and holds the window controls (Windows and Linux).
+            The page sits below it on a black canvas with a rounded top-left corner. */}
+        <div aria-hidden="true" className="drag h-9 shrink-0" />
+        <main className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-xl border-t border-l border-line bg-bg">
           <PageContent page={page} />
         </main>
       </div>

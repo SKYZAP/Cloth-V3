@@ -20,6 +20,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'skills') return await probeSkills(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'pages') return await probePages(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'subagents') return await probeSubagents(win, s, outDir, note)
@@ -518,6 +519,24 @@ async function typeSearch(win: BrowserWindow) {
     setTimeout(() => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Search')?.click(), 100)
   })()`)
   await wait(800)
+}
+
+/** One screenshot per sidebar page (layout check across the whole app). */
+async function probePages(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1' })
+  await s.providers.refreshModels(provider.id).catch(() => undefined)
+  s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'mock-chat' } })
+  const col = await s.examples.load()
+  for (let i = 0; i < 80 && col && s.rag.listDocuments(col.id).some((d) => d.status !== 'ready'); i++) await wait(100)
+  win.webContents.reload()
+  await wait(2500)
+  const labels: string[] = await win.webContents.executeJavaScript(`[...document.querySelectorAll('nav button')].map(b => b.textContent.trim()).filter(t => t && !t.includes('port') && !t.includes('MCP server offline') && t !== 'Starting…')`)
+  for (const [i, label] of labels.entries()) {
+    await clickNav(win, label)
+    await wait(1500)
+    writeFileSync(join(outDir, `page-${String(i + 1).padStart(2, '0')}-${label.toLowerCase().replace(/\s+/g, '-')}.png`), await screenshot(win))
+    note(`captured ${label}`)
+  }
 }
 
 /** Real mouse/keyboard input on the Knowledge search playground, plus layout diagnostics. */

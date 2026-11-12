@@ -87,7 +87,7 @@ export function AgentsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 pt-10 pb-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
               <h1 className="text-title font-semibold tracking-tight">Agents</h1>
@@ -378,7 +378,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-[min(760px,calc(100%-40px))] grid-cols-[minmax(0,1fr)] gap-6 pt-10 pb-6">
+        <div className="mx-auto grid w-[min(760px,calc(100%-40px))] grid-cols-[minmax(0,1fr)] gap-6 py-6">
           {!agent.builtin && (
             <Section title="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== agent.name && void save({ name })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} aria-label="Name" />

@@ -70,7 +70,7 @@ export function McpPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 pt-10 pb-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
               <h1 className="text-title font-semibold tracking-tight">MCP</h1>

@@ -87,7 +87,7 @@ export function SkillsPage() {
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 pt-10 pb-6 mobile:w-[calc(100%-24px)] mobile:py-4">
+        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="min-w-[120px] flex-1 text-title font-semibold tracking-tight">Skills</h1>
             <div className="relative w-[300px] mobile:w-full">
