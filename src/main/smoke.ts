@@ -525,7 +525,8 @@ async function typeSearch(win: BrowserWindow) {
 async function probePages(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
   const provider = s.providers.create({ name: 'Mock (local)', kind: 'openai-compatible', baseUrl: process.env.MOCK_LLM_URL ?? 'http://127.0.0.1:5055/v1' })
   await s.providers.refreshModels(provider.id).catch(() => undefined)
-  s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'mock-chat' } })
+  // A couple of settings off their defaults, so Settings shows its changed markers.
+  s.settings.update({ defaultModel: { providerId: provider.id, modelId: 'mock-chat' }, autoCompact: false, chunkSize: 1200 })
   const col = await s.examples.load()
   for (let i = 0; i < 80 && col && s.rag.listDocuments(col.id).some((d) => d.status !== 'ready'); i++) await wait(100)
   win.webContents.reload()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
 import {
@@ -32,6 +32,7 @@ import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
+import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 
 type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
@@ -47,16 +48,16 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'models', title: 'Models', icon: Cpu, blurb: 'Default chat, embedding and image models', keywords: 'default model embedding image llm provider' },
-  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'Summarising long conversations and naming chats', keywords: 'compact summarise summarize context window title name rename ai titles' },
-  { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
-  { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Delegation with the task tool', keywords: 'task delegate scout worker parallel turns agent' },
-  { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Search engine and page fetching', keywords: 'searxng obscura web_fetch internet results' },
-  { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split for search', keywords: 'chunk chunking overlap rag index' },
-  { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
-  { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Use Cloth from the Android app', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
-  { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Expose skills and knowledge to other tools', keywords: 'mcp port server claude cursor' },
-  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and version', keywords: 'data folder version database about update updates github release' }
+  { id: 'models', title: 'Models', icon: Cpu, blurb: 'Which model does each job. Add or edit providers on the Models page.', keywords: 'default model embedding image llm provider' },
+  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, and how long ones stay within the model’s limit.', keywords: 'compact summarise summarize context window title name rename ai titles' },
+  { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
+  { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, and the tiers they run at.', keywords: 'task delegate scout worker parallel turns agent' },
+  { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Where chats look things up when web search is on.', keywords: 'searxng obscura web_fetch internet results' },
+  { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split before they’re indexed. Changes apply to documents added afterwards.', keywords: 'chunk chunking overlap rag index' },
+  { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow.', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
+  { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Chat with Cloth from the Android app.', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
+  { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Lets other apps, like your editor, use Cloth’s skills and knowledge.', keywords: 'mcp port server claude cursor' },
+  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and which version you have.', keywords: 'data folder version database about update updates github release' }
 ]
 
 const LAST_SECTION = 'cloth.settingsSection'
@@ -72,38 +73,213 @@ export function openSettingsSection(id: SectionId): void {
 }
 
 export function SettingsPage() {
+  const side = useSideBySide()
   const settings = useApp((s) => s.settings)
+  if (!settings) return null
+  return side ? <SettingsDocument settings={settings} /> : <SettingsSplit settings={settings} />
+}
+
+const savedSection = (): SectionId => {
+  try {
+    return (localStorage.getItem(LAST_SECTION) as SectionId) || 'models'
+  } catch {
+    return 'models'
+  }
+}
+const saveSection = (id: SectionId) => {
+  try {
+    localStorage.setItem(LAST_SECTION, id)
+  } catch {
+    /* storage unavailable */
+  }
+}
+const matches = (s: SectionDef, q: string) => !q || `${s.title} ${s.blurb} ${s.keywords}`.toLowerCase().includes(q)
+
+/** Settings changed from their defaults: a blue edge and Reset on the row, a count in the index. */
+interface Tracked {
+  section: SectionId
+  changed(s: Settings): boolean
+  reset(s: Settings): Partial<Settings>
+}
+const D = DEFAULT_SETTINGS
+const top = <K extends keyof Settings>(key: K, section: SectionId): [string, Tracked] => [
+  key,
+  { section, changed: (s) => s[key] !== D[key], reset: () => ({ [key]: D[key] }) as Partial<Settings> }
+]
+const sub = <K extends keyof SubagentSettings>(key: K): [string, Tracked] => [
+  `subagents.${key}`,
+  { section: 'subagents', changed: (s) => s.subagents[key] !== D.subagents[key], reset: (s) => ({ subagents: { ...s.subagents, [key]: D.subagents[key] } }) }
+]
+const TRACKED = new Map<string, Tracked>([
+  top('autoCompact', 'chat'),
+  top('aiTitles', 'chat'),
+  top('chunkSize', 'knowledge'),
+  top('chunkOverlap', 'knowledge'),
+  top('mcpPort', 'mcp'),
+  sub('enabledByDefault'),
+  sub('thinking'),
+  sub('maxTurns'),
+  sub('maxParallel'),
+  sub('allowWorkers')
+])
+const changedKeys = (s: Settings) => [...TRACKED].filter(([, t]) => t.changed(s)).map(([k]) => k)
+
+/** Desktop: every section on one scrolling page, with an index that follows the scroll. */
+function SettingsDocument({ settings }: { settings: Settings }) {
+  const update = useApp((s) => s.updateSettings)
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState<SectionId>(() => {
-    try {
-      return (localStorage.getItem(LAST_SECTION) as SectionId) || 'models'
-    } catch {
-      return 'models'
+  const [active, setActive] = useState<SectionId>(savedSection)
+  const scroller = useRef<HTMLDivElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const q = query.trim().toLowerCase()
+  const sections = useMemo(() => SECTIONS.filter((s) => !(s.desktopOnly && isMobile)), [])
+  const shown = sections.filter((s) => matches(s, q))
+  const changed = changedKeys(settings)
+  const countIn = (id: SectionId) => changed.filter((k) => TRACKED.get(k)!.section === id).length
+
+  const jump = (id: SectionId, behavior?: ScrollBehavior) => {
+    setActive(id)
+    saveSection(id)
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: behavior ?? (reduce ? 'auto' : 'smooth'), block: 'start' })
+  }
+  // Open where the user left off (or where openSettingsSection pointed).
+  useEffect(() => {
+    const id = savedSection()
+    if (id !== 'models') requestAnimationFrame(() => jump(id, 'auto'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // Ctrl+F finds a setting.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        search.current?.focus()
+        search.current?.select()
+      }
     }
-  })
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  const onScroll = () => {
+    const box = scroller.current
+    if (!box) return
+    const line = box.getBoundingClientRect().top + 56
+    let current = shown[0]?.id
+    for (const s of shown) {
+      const el = document.getElementById(`settings-${s.id}`)
+      if (el && el.getBoundingClientRect().top <= line) current = s.id
+    }
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 4) current = shown.at(-1)?.id ?? current
+    if (current && current !== active) {
+      setActive(current)
+      saveSection(current)
+    }
+  }
+  const resetAll = async () => {
+    const n = changed.length
+    if (!(await confirmAction(`${n} ${n === 1 ? 'setting goes' : 'settings go'} back to the default. Models, instructions and tiers stay as they are.`, { title: 'Reset changed settings?', confirmLabel: 'Reset' }))) return
+    let patch: Partial<Settings> = {}
+    for (const k of changed) patch = { ...patch, ...TRACKED.get(k)!.reset({ ...settings, ...patch }) }
+    void update(patch)
+  }
+
+  return (
+    <div className="flex h-full">
+      <aside className="flex w-[240px] shrink-0 flex-col gap-4 border-r border-line/60 px-3 pb-4 pt-6">
+        <h1 className="px-2 text-title font-semibold tracking-tight">Settings</h1>
+        <div className="relative">
+          <MagnifyingGlass size={14} className="pointer-events-none absolute left-2.5 top-[9px] text-dim" />
+          <Input ref={search} className="pl-8 pr-14" placeholder="Find a setting" aria-label="Find a setting" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setQuery('')} />
+          {query ? (
+            <button onClick={() => setQuery('')} className="absolute right-2 top-[9px] text-dim hover:text-fg" aria-label="Clear search">
+              <X size={14} />
+            </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-2 top-[7px] rounded border border-line px-1.5 font-mono text-micro text-dim">Ctrl F</kbd>
+          )}
+        </div>
+        <nav aria-label="Settings sections" className="-mx-0.5 flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
+          {sections.map((s) => {
+            const hit = matches(s, q)
+            const on = hit && s.id === active
+            const n = countIn(s.id)
+            return (
+              <button
+                key={s.id}
+                onClick={() => jump(s.id)}
+                disabled={!hit}
+                aria-current={on ? 'true' : undefined}
+                className={clsx(
+                  'flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2 text-left text-ui font-medium transition-colors',
+                  on ? 'bg-elev text-fg' : 'text-dim hover:bg-elev hover:text-fg',
+                  !hit && 'pointer-events-none opacity-35'
+                )}
+              >
+                <s.icon size={16} weight={on ? 'fill' : 'regular'} />
+                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                {n > 0 && (
+                  <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-elev-2 px-1.5 text-micro font-semibold text-muted" title={`${n} changed from the default`}>
+                    {n}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </nav>
+        {changed.length > 0 && (
+          <div className="flex items-center justify-between border-t border-line/60 px-2 pt-3 text-caption text-dim">
+            <span>
+              {changed.length} {changed.length === 1 ? 'setting' : 'settings'} changed
+            </span>
+            <button className="rounded px-1.5 py-0.5 hover:bg-elev hover:text-fg" onClick={() => void resetAll()}>
+              Reset all
+            </button>
+          </div>
+        )}
+      </aside>
+
+      <div ref={scroller} onScroll={onScroll} className="min-w-0 flex-1 overflow-y-auto">
+        <div className="max-w-[860px] px-12 pb-[40vh] pt-7">
+          {shown.map((s) => (
+            <section key={s.id} id={`settings-${s.id}`} aria-labelledby={`settings-${s.id}-title`} className="scroll-mt-4 pb-6 pt-3">
+              <h2 id={`settings-${s.id}-title`} className="text-section font-semibold">
+                {s.title}
+              </h2>
+              <p className="mb-4 mt-0.5 max-w-[60ch] text-ui text-dim">{s.blurb}</p>
+              <SectionBody id={s.id} settings={settings} />
+            </section>
+          ))}
+          {!shown.length && (
+            <p className="py-10 text-ui text-dim">
+              Nothing matches <span className="text-fg">“{query}”</span>. Try a word like “model”, “port” or “summarise”.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Phone: a list of sections, each opening on its own screen. */
+function SettingsSplit({ settings }: { settings: Settings }) {
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState<SectionId>(savedSection)
   const [open, setOpen] = useState(false)
   const side = useSideBySide()
 
   const sections = useMemo(() => SECTIONS.filter((s) => !(s.desktopOnly && isMobile)), [])
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return q ? sections.filter((s) => `${s.title} ${s.blurb} ${s.keywords}`.toLowerCase().includes(q)) : sections
-  }, [sections, query])
-  // Searching jumps to the first matching section (desktop shows it straight away).
+  const shown = useMemo(() => sections.filter((s) => matches(s, query.trim().toLowerCase())), [sections, query])
+  // Searching jumps to the first matching section.
   useEffect(() => {
     if (shown.length && !shown.some((s) => s.id === active)) setActive(shown[0].id)
   }, [shown, active])
   const pick = (id: SectionId) => {
     setActive(id)
     setOpen(true)
-    try {
-      localStorage.setItem(LAST_SECTION, id)
-    } catch {
-      /* storage unavailable */
-    }
+    saveSection(id)
   }
 
-  if (!settings) return null
   const current = sections.find((s) => s.id === active) ?? sections[0]
 
   return (
@@ -187,10 +363,10 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'chat':
       return (
         <Group>
-          <Row label="Summarise long conversations">
+          <Row label="Summarise long conversations" track="autoCompact" hint="When a chat nears the model's limit, older turns are replaced by a summary.">
             <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} />
           </Row>
-          <Row label="Name chats with AI">
+          <Row label="Name chats with AI" track="aiTitles" hint="Give each chat a short title after the first answer.">
             <Switch checked={settings.aiTitles} onChange={(aiTitles) => void update({ aiTitles })} />
           </Row>
           {settings.aiTitles && (
@@ -213,11 +389,11 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       return <WebSearchSettings />
     case 'knowledge':
       return (
-        <Group title="Chunking" note="Applies to newly indexed documents.">
-          <Row label="Chunk size" hint="Characters">
+        <Group>
+          <Row label="Chunk size" track="chunkSize" hint="Smaller chunks give sharper matches with less context around them.">
             <NumberInput value={settings.chunkSize} min={300} max={8000} step={100} suffix="chars" onCommit={(chunkSize) => void update({ chunkSize })} />
           </Row>
-          <Row label="Overlap" hint="Characters">
+          <Row label="Overlap" track="chunkOverlap" hint="Text repeated between neighbouring chunks so sentences aren’t cut in half.">
             <NumberInput value={settings.chunkOverlap} min={0} max={2000} step={50} suffix="chars" onCommit={(chunkOverlap) => void update({ chunkOverlap })} />
           </Row>
         </Group>
@@ -242,7 +418,7 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'mcp':
       return (
         <Group>
-          <Row label="Port">
+          <Row label="Port" track="mcpPort" hint="Change it if another app already uses this port.">
             <NumberInput value={settings.mcpPort} min={1024} max={65535} onCommit={(mcpPort) => void update({ mcpPort })} />
           </Row>
         </Group>
@@ -260,7 +436,7 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
   return (
     <>
       <Group title="Defaults">
-        <Row label="On for new chats">
+        <Row label="On for new chats" track="subagents.enabledByDefault">
           <Switch checked={value.enabledByDefault} onChange={(enabledByDefault) => set({ enabledByDefault })} />
         </Row>
         <Row label="Model">
@@ -269,7 +445,7 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         <Row label="Checks" hint="The model verifiers run on, such as Spec → Ship's review checks. Another model family than the one that builds catches more.">
           <ModelPicker className="w-72 mobile:w-full" value={value.reviewModel ?? null} onChange={(reviewModel) => set({ reviewModel })} allowNone noneLabel="Same as other subagents" />
         </Row>
-        <Row label="Thinking">
+        <Row label="Thinking" track="subagents.thinking">
           <select
             value={value.thinking === 'inherit' ? 'inherit' : normalizeEffort(value.thinking)}
             onChange={(e) => set({ thinking: e.target.value as SubagentSettings['thinking'] })}
@@ -285,15 +461,15 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Limits">
-        <Row label="Steps per subagent">
+        <Row label="Steps per subagent" track="subagents.maxTurns" hint="A subagent stops and reports back after this many steps.">
           <NumberInput value={value.maxTurns} min={1} max={100} onCommit={(maxTurns) => set({ maxTurns })} />
         </Row>
-        <Row label="Running at once">
+        <Row label="Running at once" track="subagents.maxParallel" hint="More run sooner but share your model’s rate limit.">
           <NumberInput value={value.maxParallel} min={1} max={16} onCommit={(maxParallel) => set({ maxParallel })} />
         </Row>
       </Group>
       <Group title="Permissions">
-        <Row label="Allow workers" hint="Off: subagents are read-only.">
+        <Row label="Allow workers" track="subagents.allowWorkers" hint="Off: subagents are read-only.">
           <Switch checked={value.allowWorkers} onChange={(allowWorkers) => set({ allowWorkers })} />
         </Row>
       </Group>
@@ -537,7 +713,7 @@ function UpdatesGroup() {
               {st.error && <span className="mt-1 block text-danger-hi">{st.error}</span>}
               {st.state === 'downloading' && (
                 <span className="mt-2 block h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-line-strong" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Download progress">
-                  <span className="block h-full rounded-full bg-crimson transition-[width]" style={{ width: `${pct}%` }} />
+                  <span className="block h-full rounded-full bg-info transition-[width]" style={{ width: `${pct}%` }} />
                 </span>
               )}
             </>
@@ -636,11 +812,23 @@ function Group({ title, note, children }: { title?: string; note?: ReactNode; ch
 }
 
 /** One setting: what it does on the left, its control on the right (or below when `stacked`). */
-function Row({ label, hint, children, stacked }: { label: string; hint?: ReactNode; children: ReactNode; stacked?: boolean }) {
+function Row({ label, hint, children, stacked, track }: { label: string; hint?: ReactNode; children: ReactNode; stacked?: boolean; /** A TRACKED key: marks the row when it differs from the default. */ track?: string }) {
+  const settings = useApp((s) => s.settings)
+  const update = useApp((s) => s.updateSettings)
+  const t = track ? TRACKED.get(track) : undefined
+  const changed = !!(t && settings && t.changed(settings))
   return (
-    <div className={clsx('gap-x-6 gap-y-2.5 px-4 py-3.5', stacked ? 'space-y-2.5' : 'flex items-center mobile:flex-col mobile:items-stretch')}>
+    <div className={clsx('relative gap-x-6 gap-y-2.5 px-4 py-3.5', stacked ? 'space-y-2.5' : 'flex items-center mobile:flex-col mobile:items-stretch')}>
+      {changed && <span aria-hidden="true" className="absolute inset-y-3 left-0 w-0.5 rounded-r bg-info" />}
       <div className="min-w-0 flex-1">
-        <div className="text-ui font-medium">{label}</div>
+        <div className="flex items-center gap-2 text-ui font-medium">
+          {label}
+          {changed && (
+            <button type="button" className="rounded px-1.5 text-caption font-normal text-dim hover:bg-elev-2 hover:text-fg" onClick={() => void update(t!.reset(settings!))} aria-label={`Reset ${label} to the default`} title="Changed from the default">
+              Reset
+            </button>
+          )}
+        </div>
         {hint && <div className="mt-0.5 text-caption leading-snug text-dim">{hint}</div>}
       </div>
       <div className={clsx(!stacked && 'shrink-0')}>{children}</div>
