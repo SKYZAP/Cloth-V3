@@ -1,4 +1,5 @@
 // Shared helpers for the sidecar staging scripts (download + verify + extract).
+import './system-ca.mjs'
 import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'

@@ -1,5 +1,6 @@
 // Builds the Android APK: phone web bundle → Capacitor sync → Gradle.
 // Usage: node scripts/mobile-apk.mjs [debug|release] [version]
+import './system-ca.mjs'
 import { spawnSync } from 'node:child_process'
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

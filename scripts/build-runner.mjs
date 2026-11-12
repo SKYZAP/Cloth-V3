@@ -7,6 +7,7 @@
 // Output:
 //   build/runner-dist/win-unpacked   the packaged runner (FlowRunner.exe + resources/app.asar)
 //   build/nsis                       makensis and its includes
+import './system-ca.mjs'
 import { spawnSync } from 'node:child_process'
 import * as fsp from 'node:fs/promises'
 import { createRequire } from 'node:module'

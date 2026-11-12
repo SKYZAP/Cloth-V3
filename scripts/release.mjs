@@ -1,5 +1,6 @@
 // Builds the installer and uploads it, its blockmap and latest.yml to a draft GitHub release of the private repo.
 // GH_TOKEN (Contents: read and write on SKYZAP/Cloth-V3) comes from the environment or ~/.homelab/env; it is never printed.
+import './system-ca.mjs'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
