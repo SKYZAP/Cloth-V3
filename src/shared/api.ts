@@ -198,6 +198,8 @@ export interface ClothApi {
     resizeTerminal(id: string, cols: number, rows: number): Promise<void>
     closeTerminal(id: string): Promise<void>
     gitStatus(sessionId: string): Promise<GitStatus>
+    /** OpenSpec in the chat's folder: whether it is set up, its changes and its specs (`openspec list --json`). */
+    openspec(sessionId: string): Promise<{ initialised: boolean; changes: unknown; specs: unknown; error: string | null }>
     /** `git init` in the chat's folder (default branch main where supported); nothing is committed. */
     gitInit(sessionId: string): Promise<GitStatus>
     gitDiff(sessionId: string, path: string, staged: boolean): Promise<string>

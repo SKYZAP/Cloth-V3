@@ -1,7 +1,7 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
-import { Books, CaretDown, ChatCircle, Check, FolderSimple, Hand, Lightning, ListBullets, ListChecks, Paperclip, Plus, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
+import { Books, CaretDown, ChatCircle, Check, FileText, FolderSimple, Hand, Lightning, ListBullets, ListChecks, Paperclip, Plus, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
 import type { ChatSession, ContextUsage, WorkflowRoute, WorkflowStage } from '@shared/types'
 import { useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
@@ -16,18 +16,19 @@ import { routeStages } from '@shared/types'
 
 type Update = (p: Partial<ChatSession>) => Promise<void>
 
-export const MODE_ICON: Record<ChatMode, Icon> = { chat: ChatCircle, plan: ListBullets, spec: ListChecks }
+export const MODE_ICON: Record<ChatMode, Icon> = { chat: ChatCircle, plan: ListBullets, spec: ListChecks, openspec: FileText }
 const MODE_TONE: Record<ChatMode, string> = {
+  openspec: 'border-ospec-line bg-ospec-soft text-ospec hover:bg-ospec/15',
   chat: 'border-line-strong text-muted hover:bg-elev-2 hover:text-fg',
   plan: 'border-info/35 bg-info/[0.08] text-info hover:bg-info/15',
   spec: 'border-mode-line bg-mode-soft text-mode hover:bg-mode/15'
 }
-const MODE_ICON_TONE: Record<ChatMode, string> = { chat: 'text-muted', plan: 'text-info', spec: 'text-mode' }
+const MODE_ICON_TONE: Record<ChatMode, string> = { chat: 'text-muted', plan: 'text-info', spec: 'text-mode', openspec: 'text-ospec' }
 export const ACCESS_ICON: Record<Access, Icon> = { auto: Lightning, manual: Hand }
-const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-fg', manual: 'text-warn' }
-/** The access chip: outlined and tinted in its own colour (crimson for Auto, amber for Manual). */
+const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-ok', manual: 'text-warn' }
+/** The access chip: outlined and tinted in its own colour (green for Auto, amber for Manual). */
 const ACCESS_TONE: Record<Access, string> = {
-  auto: 'border-line-strong bg-elev-2 text-fg hover:bg-hover',
+  auto: 'border-ok/35 bg-ok/[0.08] text-ok hover:bg-ok/15',
   manual: 'border-warn/35 bg-warn/[0.08] text-warn hover:bg-warn/15'
 }
 
@@ -74,6 +75,13 @@ export function ComposerBar({
 
   const pickMode = async (next: ChatMode) => {
     if (next === mode) return
+    // OpenSpec runs on its own: it works in Auto, and starts with the next message.
+    if (next === 'openspec') {
+      if (specArmed) await onWorkflow?.('disarm')
+      else if (mode === 'spec') await onWorkflow?.('stop')
+      return void (await update({ openspec: { step: 'setup', change: null, waitAfterPropose: false, tasks: null, pr: null, startedAt: Date.now() }, permissions: 'auto' }))
+    }
+    if (mode === 'openspec') await update({ openspec: null })
     if (next === 'spec') return void (await onWorkflow?.('arm'))
     if (specArmed) await onWorkflow?.('disarm')
     else if (mode === 'spec') await onWorkflow?.('stop')
@@ -354,7 +362,7 @@ function ModeMenu({ value, hasFolder, canSpec, flow, waiting, onPick }: { value:
         </div>
       )}
       {CHAT_MODES.filter((m) => m.id !== 'spec' || canSpec).map((m) => {
-        const noFolder = m.id === 'spec' && !hasFolder && value !== 'spec'
+        const noFolder = (m.id === 'spec' || m.id === 'openspec') && !hasFolder && value !== m.id
         return (
           <MenuRow
             key={m.id}

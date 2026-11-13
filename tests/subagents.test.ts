@@ -48,6 +48,49 @@ const isChild = (ctx: TranscriptContext) => JSON.stringify(ctx.messages[0] ?? ''
 const toolNames = (ctx: TranscriptContext) =>
   (ctx.messages as unknown as { role: string; toolsAdded?: { name: string }[] }[]).filter((m) => m.role === 'system').flatMap((m) => (m.toolsAdded ?? []).map((t) => t.name))
 
+describe('subagent access levels', () => {
+  const shellTools = ['bash', 'powershell']
+  async function childToolsFor(env: ReturnType<typeof setup>, args: Record<string, unknown>) {
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    let tools: string[] = []
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('task', { description: 'Job', prompt: 'Do it.', ...args }, { id: 't' })], { stopReason: 'toolUse' }),
+      (ctx) => {
+        tools = toolNames(ctx)
+        return fauxAssistantMessage('Done.')
+      },
+      fauxAssistantMessage('ok')
+    ])
+    const traces = await send(env, 'go')
+    faux.unregister()
+    faux = null
+    return { tools, run: traces.find((t) => t.id === 't')?.subagent }
+  }
+
+  it('a writer edits but runs no commands; an operator also runs commands', async () => {
+    const env = setup({ fileAccess: 'write' })
+    const writer = await childToolsFor(env, { access: 'writer' })
+    expect(writer.run).toMatchObject({ role: 'worker', access: 'writer' })
+    expect(writer.tools).toContain('write')
+    expect(writer.tools.some((t) => shellTools.includes(t))).toBe(false)
+    const operator = await childToolsFor(env, { access: 'operator' })
+    expect(operator.run).toMatchObject({ role: 'worker', access: 'operator' })
+    expect(operator.tools.some((t) => shellTools.includes(t))).toBe(true)
+    const reader = await childToolsFor(env, {})
+    expect(reader.run).toMatchObject({ role: 'scout', access: 'reader' })
+    expect(reader.tools).not.toContain('write')
+  })
+
+  it('Settings → Subagents caps what a job may do', async () => {
+    const env = setup({ fileAccess: 'write' })
+    env.services.settings.update({ subagents: { ...env.services.settings.get().subagents, maxAccess: 'writer' } })
+    expect(env.services.settings.get().subagents.allowWorkers).toBe(true)
+    const capped = await childToolsFor(env, { access: 'operator' })
+    expect(capped.run).toMatchObject({ access: 'writer' })
+    expect(capped.tools.some((t) => shellTools.includes(t))).toBe(false)
+  })
+})
+
 describe('subagents', () => {
   it('a scout reads in its own context, cannot write, and reports back', async () => {
     const env = setup({ fileAccess: 'write' })

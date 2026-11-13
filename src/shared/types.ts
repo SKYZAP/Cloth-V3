@@ -342,6 +342,8 @@ export interface ChatSession {
   access?: 'auto' | 'manual'
   /** The Spec → Ship workflow this chat is running, or null for a plain chat. */
   workflow?: SpecWorkflow | null
+  /** OpenSpec mode: the change it takes from proposal to pull request (null = not in OpenSpec mode). */
+  openspec?: OpenSpecRun | null
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
   fileAccess: FileAccess
   /** Derived from `permissions`: a shell tool (bash, or PowerShell on Windows) in the workspace. */
@@ -386,6 +388,8 @@ export interface ChatSession {
   contextLimit: number | null
   /** What made this chat when it wasn't the user (an automation's report). */
   origin?: ChatOrigin
+  /** When the chat was archived: hidden from its project in the list, every message kept (null = not archived). */
+  archivedAt?: number | null
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
   preview?: string
   createdAt: number
@@ -648,6 +652,38 @@ export function routeStages(route?: WorkflowRoute | null): Exclude<WorkflowStage
   return route === 'quick' ? ['grill', 'build', 'review'] : WORKFLOW_STAGES
 }
 
+/** OpenSpec mode's steps, in order: the openspec CLI takes a change from proposal to pull request on its own. */
+export type OpenSpecStep = 'setup' | 'propose' | 'validate' | 'apply' | 'verify' | 'archive' | 'ship' | 'done'
+export const OPENSPEC_STEPS: Exclude<OpenSpecStep, 'done'>[] = ['setup', 'propose', 'validate', 'apply', 'verify', 'archive', 'ship']
+export const OPENSPEC_STEP_LABEL: Record<OpenSpecStep, string> = { setup: 'Set up', propose: 'Propose', validate: 'Validate', apply: 'Apply', verify: 'Verify', archive: 'Archive', ship: 'Ship', done: 'Done' }
+
+/** A chat in OpenSpec mode: where it is, the change it works on, and whether it waits for the person after the proposal. */
+export interface OpenSpecRun {
+  step: OpenSpecStep
+  /** The change's folder name under openspec/changes (null until Propose names it). */
+  change: string | null
+  /** Stop after Propose and Validate for the person to read the proposal. */
+  waitAfterPropose: boolean
+  /** Waiting for the person to read the proposal (only with waitAfterPropose). */
+  awaitingReview?: boolean
+  /** The person has read the proposal; Apply may start. */
+  proposalApproved?: boolean
+  /** tasks.md progress, as last reported. */
+  tasks?: { done: number; total: number } | null
+  /** The pull request it opened. */
+  pr?: string | null
+  startedAt: number
+}
+
+/** What one `openspec_step` call reported, for its card in the chat. */
+export interface OpenSpecStepReport {
+  step: OpenSpecStep
+  change: string | null
+  summary: string
+  tasks?: { done: number; total: number } | null
+  pr?: string | null
+}
+
 /** A chat running Spec → Ship: grill, write the spec, cut tickets, build them, review against the spec. */
 export interface SpecWorkflow {
   kind: 'spec-ship'
@@ -769,6 +805,8 @@ export interface PendingQuestion {
 export interface ToolTrace {
   id: string
   name: string
+  /** An OpenSpec step it reported (openspec_step). */
+  openspecStep?: OpenSpecStepReport
   args: unknown
   status: 'running' | 'ok' | 'error'
   result: string
@@ -821,6 +859,8 @@ export type ImageSize = 'auto' | '1024x1024' | '1536x1024' | '1024x1536'
 export interface SubagentRun {
   /** scout: reads only; worker: changes files; verifier: runs the work to prove it (in a throwaway copy when it can). */
   role: 'scout' | 'worker' | 'verifier'
+  /** What the job could do (Reader, Writer, Operator); older runs have only the role. */
+  access?: import('./access').AgentAccess
   /** The saved agent that ran, when the main agent delegated to one by name. */
   agent?: string
   description: string
@@ -1214,8 +1254,10 @@ export interface SubagentSettings {
   maxTurns: number
   /** Subagents running at once across all chats; extra tasks wait their turn. */
   maxParallel: number
-  /** Allow the "worker" role, which can edit files (still subject to the chat's approvals). */
+  /** @deprecated Read through maxDelegatedAccess: false = delegated jobs are Readers. Kept in step with maxAccess. */
   allowWorkers: boolean
+  /** The most a delegated job may do: read, also edit files, or also run commands (the chat's own access still caps it). */
+  maxAccess?: import('./access').AgentAccess
   /** The model verifiers (Spec → Ship's checks) run on; ideally another family than the one that built. null = as other subagents. */
   reviewModel?: ModelRef | null
   /** Extra instructions every subagent gets. */
@@ -1320,7 +1362,7 @@ export interface BuiltinToolInfo {
   name: string
   label: string
   description: string
-  group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning' | 'tools'
+  group: 'knowledge' | 'skills' | 'web' | 'workspace' | 'planning' | 'tools' | 'hub'
   availability: string
   /** Where an agent can call it: chats, subagents, flow Agent steps, and apps connected to Cloth over MCP. */
   where: ToolWhere

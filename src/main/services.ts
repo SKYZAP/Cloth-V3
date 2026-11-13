@@ -11,6 +11,7 @@ import { ExamplesService } from './rag/examples'
 import { SkillService } from './skills/skills'
 import { SkillRegistry } from './skills/registry'
 import { AgentRuntime, ChatService } from './agent/chat'
+import { buildHubAdmin } from './agent/admin'
 import { ProjectService } from './agent/projects'
 import { AgentService } from './agent/agents'
 import { SkillInsights } from './skills/insights'
@@ -131,6 +132,8 @@ export function createServices(opts: {
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const panel = new PanelService(chat, providers, new TerminalService(ctx, containers, opts.pty), containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents, containers })
+  // The chat agent's hub tools (session_read, agent_create, …) act on the app through these.
+  runtime.attachHub(buildHubAdmin({ chat, projects, agents, workflows, settings, providers }))
   const mcp = new McpHost(ctx, settings, { rag, skills, web, custom, usage: providers.usage })
   const remote = new RemoteHost(ctx, settings)
   const tc = opts.exportToolchain ?? {}

@@ -1,5 +1,6 @@
 // Dev-only smoke run (CLOTH_SMOKE=<dir>): seeds data against scripts/mock-llm.mjs,
 // sends a chat message, runs a workflow and screenshots every page, then quits.
+import { newOpenSpecRun } from './agent/openspec'
 import { app, type BrowserWindow } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -445,6 +446,27 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     writeFileSync(join(outDir, 'chat-panel-stacked.png'), await screenshot(win))
     await win.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true })); window.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true }))`)
     await wait(800)
+    // The chat's ··· menu, a chat row's Archive button on hover, and OpenSpec's progress strip.
+    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Chat actions"]')?.click()`)
+    await wait(500)
+    writeFileSync(join(outDir, 'chat-menu.png'), await screenshot(win))
+    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Chat actions"]')?.click()`)
+    await wait(300)
+    const row = (await win.webContents.executeJavaScript(`(() => { const r = document.querySelector('[role=button][title]')?.getBoundingClientRect(); return r ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null })()`)) as { x: number; y: number } | null
+    if (row) {
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: row.x, y: row.y })
+      await wait(400)
+      writeFileSync(join(outDir, 'chat-row-hover.png'), await screenshot(win))
+    }
+    const shown = String(await win.webContents.executeJavaScript(`localStorage.getItem('cloth.chat')`))
+    s.chat.update(shown, { openspec: { ...newOpenSpecRun(), step: 'apply', change: 'add-rate-limit', tasks: { done: 2, total: 5 } } })
+    s.ctx.emit('chat', { sessionId: shown, type: 'setup' })
+    await wait(1200)
+    writeFileSync(join(outDir, 'chat-openspec.png'), await screenshot(win))
+    note('openspec mode: ' + (await win.webContents.executeJavaScript(`!!document.querySelector('[aria-label="OpenSpec progress"]')`)))
+    s.chat.update(shown, { openspec: null })
+    s.ctx.emit('chat', { sessionId: shown, type: 'setup' })
+    await wait(600)
     await win.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('web_search'))?.click()`)
     await wait(700)
     writeFileSync(join(outDir, 'chat-trace.png'), await screenshot(win))

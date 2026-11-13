@@ -20,7 +20,8 @@ export class SettingsService {
     return {
       ...DEFAULT_SETTINGS,
       ...stored,
-      subagents: withEffort({ ...DEFAULT_SETTINGS.subagents, ...stored.subagents }),
+      // Settings saved before access levels had only "Allow workers": off means delegated jobs stay Readers.
+      subagents: withEffort({ ...DEFAULT_SETTINGS.subagents, ...stored.subagents, ...(stored.subagents && !stored.subagents.maxAccess ? { maxAccess: stored.subagents.allowWorkers === false ? 'reader' : 'operator' } : {}) }),
       ...(stored.agentTiers ? { agentTiers: stored.agentTiers.map(withInstructions) } : {})
     }
   }
@@ -29,6 +30,13 @@ export class SettingsService {
     const prev = this.get()
     const next = { ...prev, ...patch }
     if (patch.agentTiers) next.agentTiers = cleanTiers(patch.agentTiers)
+    if (patch.subagents) {
+      // "Allow workers" and the access level say the same thing: whichever this change moved decides the other.
+      const sub = { ...next.subagents }
+      if (sub.maxAccess !== prev.subagents.maxAccess) sub.allowWorkers = sub.maxAccess !== 'reader'
+      else if (sub.allowWorkers !== prev.subagents.allowWorkers) sub.maxAccess = sub.allowWorkers ? 'operator' : 'reader'
+      next.subagents = sub
+    }
     this.ctx.kv.set('settings', next)
     for (const l of this.listeners) l(next, prev)
     return next
@@ -53,8 +61,12 @@ function cleanTiers(tiers: AgentTier[]): AgentTier[] {
 /** Tiers saved before they had instructions get their default's (an explicit '' stays empty). Old efforts ('off', 'minimal') read as Light. */
 function withInstructions(t: AgentTier): AgentTier {
   const raw: unknown = t.instructions
-  return { ...t, thinking: normalizeEffortOrNull(t.thinking), instructions: typeof raw === 'string' ? raw.trim() : (DEFAULT_TIER_INSTRUCTIONS[t.id] ?? '') }
+  const name = RENAMED_TIERS[t.id]?.[0] === t.name ? RENAMED_TIERS[t.id][1] : t.name
+  return { ...t, name, thinking: normalizeEffortOrNull(t.thinking), instructions: typeof raw === 'string' ? raw.trim() : (DEFAULT_TIER_INSTRUCTIONS[t.id] ?? '') }
 }
+
+/** The default tiers are named after their reasoning level now; a default still under its old name takes the new one. */
+const RENAMED_TIERS: Record<string, [string, string]> = { light: ['Light', 'Low'], careful: ['Careful', 'High'], heavy: ['Heavy', 'Max'] }
 
 /** Subagent effort saved before the four levels ('off', 'minimal') reads as Light; 'inherit' stays. */
 function withEffort(s: SubagentSettings): SubagentSettings {

@@ -34,6 +34,7 @@ import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
+import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
 type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
 
@@ -51,7 +52,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Which model does each job. Add or edit providers on the Models page.', keywords: 'default model embedding image llm provider' },
   { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, and how long ones stay within the model’s limit.', keywords: 'compact summarise summarize context window title name rename ai titles' },
   { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
-  { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, and the tiers they run at.', keywords: 'task delegate scout worker parallel turns agent' },
+  { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, what they may do, and the reasoning levels they run at.', keywords: 'task delegate reader writer operator access reasoning tier parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Where chats look things up when web search is on.', keywords: 'searxng obscura web_fetch internet results' },
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split before they’re indexed. Changes apply to documents added afterwards.', keywords: 'chunk chunking overlap rag index' },
   { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow.', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
@@ -120,7 +121,7 @@ const TRACKED = new Map<string, Tracked>([
   sub('thinking'),
   sub('maxTurns'),
   sub('maxParallel'),
-  sub('allowWorkers')
+  sub('maxAccess')
 ])
 const changedKeys = (s: Settings) => [...TRACKED].filter(([, t]) => t.changed(s)).map(([k]) => k)
 
@@ -178,7 +179,7 @@ function SettingsDocument({ settings }: { settings: Settings }) {
   }
   const resetAll = async () => {
     const n = changed.length
-    if (!(await confirmAction(`${n} ${n === 1 ? 'setting goes' : 'settings go'} back to the default. Models, instructions and tiers stay as they are.`, { title: 'Reset changed settings?', confirmLabel: 'Reset' }))) return
+    if (!(await confirmAction(`${n} ${n === 1 ? 'setting goes' : 'settings go'} back to the default. Models, instructions and reasoning levels stay as they are.`, { title: 'Reset changed settings?', confirmLabel: 'Reset' }))) return
     let patch: Partial<Settings> = {}
     for (const k of changed) patch = { ...patch, ...TRACKED.get(k)!.reset({ ...settings, ...patch }) }
     void update(patch)
@@ -469,8 +470,22 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
         </Row>
       </Group>
       <Group title="Permissions">
-        <Row label="Allow workers" track="subagents.allowWorkers" hint="Off: subagents are read-only.">
-          <Switch checked={value.allowWorkers} onChange={(allowWorkers) => set({ allowWorkers })} />
+        <Row label="Delegated jobs may" track="subagents.maxAccess" hint="The most a subagent may do. The chat’s own access still caps it: in Plan mode every subagent is a Reader.">
+          <select
+            aria-label="Delegated jobs may"
+            value={maxDelegatedAccess(value)}
+            onChange={(e) => {
+              const maxAccess = e.target.value as AgentAccess
+              set({ maxAccess, allowWorkers: maxAccess !== 'reader' })
+            }}
+            className="h-8 rounded-lg border border-line bg-bg px-2 text-ui text-fg outline-none focus:border-line-strong"
+          >
+            {ACCESS_LEVELS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}: {l.sub.charAt(0).toLowerCase() + l.sub.slice(1)}
+              </option>
+            ))}
+          </select>
         </Row>
       </Group>
       <Group title="Instructions">
@@ -479,7 +494,7 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
             rows={4}
             value={instructions}
             aria-label="Instructions for plain jobs"
-            placeholder="Rules every plain job follows (on top of its tier's)…"
+            placeholder="Rules every plain job follows (on top of its reasoning level's)…"
             onChange={(e) => setInstructions(e.target.value)}
             onBlur={() => instructions !== value.instructions && set({ instructions })}
           />
@@ -539,20 +554,20 @@ function TierSection({ tiers }: { tiers: AgentTier[] }) {
   const update = useApp((s) => s.updateSettings)
   const save = (next: AgentTier[]) => void update({ agentTiers: next })
   const patch = (id: string, p: Partial<AgentTier>) => save(tiers.map((t) => (t.id === id ? { ...t, ...p } : t)))
-  const add = () => save([...tiers, { id: `tier_${Math.random().toString(36).slice(2, 10)}`, name: 'New tier', model: null, thinking: 'medium', purpose: '', instructions: '' }])
+  const add = () => save([...tiers, { id: `tier_${Math.random().toString(36).slice(2, 10)}`, name: 'New level', model: null, thinking: 'medium', purpose: '', instructions: '' }])
   const remove = async (t: AgentTier) => {
     if (tiers.length <= 1) return
     if (!(await confirmAction('Agents set to it fall back to the subagent defaults.', { title: `Remove ${t.name}?`, confirmLabel: 'Remove', danger: true }))) return
     save(tiers.filter((x) => x.id !== t.id))
   }
   return (
-    <Group title="Tiers">
+    <Group title="Reasoning levels">
       {tiers.map((t) => (
         <TierRow key={t.id} tier={t} canRemove={tiers.length > 1} onChange={(p) => patch(t.id, p)} onRemove={() => void remove(t)} />
       ))}
       <div className="px-4 py-3">
         <Button size="sm" icon={<Plus size={13} />} onClick={add}>
-          Add tier
+          Add level
         </Button>
       </div>
     </Group>
@@ -573,7 +588,7 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
         <Input
           className="w-40 mobile:w-full"
           value={name}
-          aria-label="Tier name"
+          aria-label="Reasoning level name"
           onChange={(e) => setName(e.target.value)}
           onBlur={() => (name.trim() && name !== tier.name ? onChange({ name: name.trim() }) : setName(tier.name))}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
@@ -600,7 +615,7 @@ function TierRow({ tier, canRemove, onChange, onRemove }: { tier: AgentTier; can
         rows={5}
         value={instructions}
         aria-label="Instructions"
-        placeholder="Rules every job at this tier follows…"
+        placeholder="Rules every job at this level follows…"
         onChange={(e) => setInstructions(e.target.value)}
         onBlur={() => instructions !== tier.instructions && onChange({ instructions })}
       />

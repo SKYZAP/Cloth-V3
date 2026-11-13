@@ -7,10 +7,10 @@ import type { ThinkingLevel } from './types'
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh'
 
 export const EFFORT_OPTIONS: { value: Effort; label: string }[] = [
-  { value: 'low', label: 'Light' },
+  { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'Extra High' }
+  { value: 'xhigh', label: 'Max' }
 ]
 
 const EFFORTS = new Set<string>(EFFORT_OPTIONS.map((e) => e.value))
@@ -26,7 +26,7 @@ export function normalizeEffortOrNull(t: unknown): Effort | null {
   return t === null || t === undefined ? null : normalizeEffort(t)
 }
 
-/** "Light" | "Medium" | "High" | "Extra High" for any saved level (old off/minimal read as Light). */
+/** "Low" | "Medium" | "High" | "Max" for any saved level (old off/minimal read as Low). */
 export function effortLabel(t: ThinkingLevel | null | undefined): string {
   const v = normalizeEffort(t)
   return EFFORT_OPTIONS.find((e) => e.value === v)!.label

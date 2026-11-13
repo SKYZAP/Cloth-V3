@@ -12,6 +12,11 @@ export function toolSummary(name: string, args: unknown): string {
   if (name === 'find') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
   if (name === 'bash' || name === 'powershell') return clip(`$ ${String(a.command ?? '').split('\n')[0]}`)
   if (name === 'task') return String(a.description ?? '')
+  if (name === 'openspec') return clip(`$ openspec ${Array.isArray(a.args) ? a.args.join(' ') : ''}`)
+  if (name === 'session_read') return String(a.id ?? '')
+  if (name === 'session_list') return a.query ? `“${clip(String(a.query))}”` : 'all chats'
+  if (['agent_create', 'mcp_server_add', 'provider_add'].includes(name)) return String(a.name ?? '')
+  if (name === 'automation_create') return clip(String(a.name ?? a.description ?? ''))
   if (name === 'generate_image') return clip(String(a.prompt ?? ''))
   if (name === 'computer') return String(a.action ?? '').replace(/_/g, ' ')
   if (name === 'ask_user') return clip(String(a.question ?? ''))

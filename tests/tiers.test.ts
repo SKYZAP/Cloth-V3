@@ -65,10 +65,10 @@ describe('agent tiers', () => {
     const env = setup()
     const tiers = env.services.settings.get().agentTiers
     expect(tiers.map((t) => [t.id, t.name, t.model, t.thinking])).toEqual([
-      ['light', 'Light', null, 'low'],
+      ['light', 'Low', null, 'low'],
       ['medium', 'Medium', null, 'medium'],
-      ['careful', 'Careful', null, 'high'],
-      ['heavy', 'Heavy', null, 'xhigh']
+      ['careful', 'High', null, 'high'],
+      ['heavy', 'Max', null, 'xhigh']
     ])
     expect(tiers.every((t) => t.purpose.length > 10)).toBe(true)
     const next = env.services.settings.update({ agentTiers: [{ ...tiers[0], name: 'Quick' }, { id: '', name: 'Mine', model: null, thinking: 'minimal', purpose: 'x', instructions: '' }] }).agentTiers
@@ -244,10 +244,10 @@ describe('agent tiers', () => {
     ])
     const all = await send(env, 'go')
     const t1 = all.find((t) => t.id === 't1')!
-    expect(t1.subagent).toMatchObject({ tier: 'heavy', tierName: 'Heavy', model: 'faux-big', step: 2, stepText: 'Check the config' })
+    expect(t1.subagent).toMatchObject({ tier: 'heavy', tierName: 'Max', model: 'faux-big', step: 2, stepText: 'Check the config' })
     expect(childModel).toBe('faux-big')
     const t2 = all.find((t) => t.id === 't2')!
-    expect(t2.subagent).toMatchObject({ tier: 'light', tierName: 'Light', model: 'faux-1' })
+    expect(t2.subagent).toMatchObject({ tier: 'light', tierName: 'Low', model: 'faux-1' })
     expect(t2.subagent?.step).toBeUndefined()
     expect(t2.subagent?.stepText).toBeUndefined()
   })
@@ -276,7 +276,7 @@ describe('agent tiers', () => {
       fauxAssistantMessage('Done.')
     ])
     const all = await send(env, 'go')
-    expect(prompts.a).toContain('Rules for this job (Careful tier):')
+    expect(prompts.a).toContain('Rules for this job (High tier):')
     expect(prompts.a).toContain('list the invariants')
     expect(prompts.a.indexOf('Result: done')).toBeLessThan(prompts.a.indexOf('Rules for this job'))
     expect(prompts.b).not.toContain('Rules for this job')

@@ -1,8 +1,11 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import {
+  Archive,
   ArrowClockwise,
+  ArrowCounterClockwise,
+  DotsThree,
   ArrowDown,
   ArrowUp,
   Books,
@@ -28,7 +31,7 @@ import {
 import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, SpecWorkflow, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Button, Empty, Input, ListPane, confirmAction } from '@/components/ui'
+import { Button, Empty, Input, ListPane, chooseAction, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
 import { ActivityGroup, ChangedFiles } from '@/components/Activity'
@@ -51,6 +54,7 @@ import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, 
 import { PanelDock, SidePanel, usePanelState } from './chat/SidePanel'
 import { showTab, shownTabs } from '@shared/panel-stack'
 import { ComposerBar } from './chat/ComposerBar'
+import { OpenSpecBar, OpenSpecStepCard } from './chat/OpenSpec'
 import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
 import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
@@ -61,11 +65,35 @@ import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillT
 import { initials } from './Agents'
 
 const SPRING_PRESS = { type: 'spring', stiffness: 700, damping: 14 } as const
+/** A citation in a reply: [n], not a Markdown link [n](…). The same pattern Markdown turns into chips. */
+const CITATION = /\[(\d{1,2})\](?!\()/g
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
 const COLLAPSED_KEY = 'cloth.projects.collapsed'
 /** The collapse key for the chats that belong to no project. */
 const LOOSE = 'chats'
 const LIST_HIDDEN_KEY = 'cloth.chat.listHidden'
+const ARCHIVED_OPEN_KEY = 'cloth.chat.archivedOpen'
+
+/** A chat row's hover action (on phones always shown). */
+function RowAction({ label, danger, onClick, children }: { label: string; danger?: boolean; onClick(): void; children: ReactNode }) {
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      title={label}
+      aria-label={label}
+      className={clsx(
+        'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover',
+        danger ? 'hover:text-danger' : 'hover:text-fg',
+        isMobile ? 'opacity-100' : 'hidden group-focus-within:flex group-hover:flex'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -145,12 +173,32 @@ export function ChatPage() {
   }
 
   const remove = async (id: string) => {
-    const title = sessions.find((s) => s.id === id)?.title ?? 'this chat'
-    if (!(await confirmAction(`“${title}” and its messages are deleted. This can’t be undone.`, { title: 'Delete chat?', confirmLabel: 'Delete chat', danger: true }))) return
+    const chat = sessions.find((s) => s.id === id)
+    const title = chat?.title ?? 'this chat'
+    const choice = await chooseAction(`“${title}” and its messages are deleted. This can’t be undone.${chat?.archivedAt ? '' : ' Archive it instead to hide it and keep it.'}`, {
+      title: 'Delete chat?',
+      confirmLabel: 'Delete chat',
+      danger: true,
+      ...(chat?.archivedAt ? {} : { alternative: 'Archive instead' })
+    })
+    if (choice === 'alternative') return archive(id, true)
+    if (choice !== 'confirm') return
     await attempt(() => api.chat.remove(id))
     const rest = sessions.filter((s) => s.id !== id)
     setSessions(rest)
-    if (activeId === id) setActiveId(rest[0]?.id ?? null)
+    if (activeId === id) setActiveId(rest.find((s) => !s.archivedAt)?.id ?? rest[0]?.id ?? null)
+  }
+
+  /** Archive a chat (hidden from its project, every message kept) or bring it back; archiving offers Undo. */
+  const archive = async (id: string, on: boolean) => {
+    const s = await attempt(() => api.chat.update(id, { archivedAt: on ? Date.now() : null }))
+    if (!s) return
+    setSessions((ss) => ss.map((x) => (x.id === id ? s : x)))
+    if (on) {
+      // The open chat steps aside to the next one still in the list.
+      if (activeId === id && side) setActiveId(sessions.find((x) => x.id !== id && !x.archivedAt)?.id ?? id)
+      useApp.getState().toast(`“${s.title}” archived`, 'info', { label: 'Undo', run: () => void archive(id, false).then(() => setActiveId(id)) })
+    }
   }
 
   // Projects: collapsible groups of chats, remembered per device.
@@ -190,16 +238,26 @@ export function ChatPage() {
       } else if (k === 'b' && side) {
         e.preventDefault()
         setListHidden((h) => !h)
+      } else if (k === 'e' && active) {
+        e.preventDefault()
+        void archive(active.id, !active.archivedAt)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
   const known = new Set(projects.map((p) => p.id))
-  const loose = shown.filter((s) => !s.projectId || !known.has(s.projectId))
+  const live = shown.filter((s) => !s.archivedAt)
+  const archivedChats = shown.filter((s) => !!s.archivedAt)
+  const loose = live.filter((s) => !s.projectId || !known.has(s.projectId))
+  // The Archived section: closed by default; a search opens it on its matches.
+  const [archivedOpen, setArchivedOpen] = useState(() => readJson<boolean>(ARCHIVED_OPEN_KEY, false))
+  useEffect(() => writeJson(ARCHIVED_OPEN_KEY, archivedOpen), [archivedOpen])
 
   const row = (s: ChatSession, nested: boolean) => {
     const on = s.id === activeId
+    const archived = !!s.archivedAt
+    const project = archived && s.projectId ? projects.find((p) => p.id === s.projectId) : undefined
     return (
       <div
         key={s.id}
@@ -216,20 +274,24 @@ export function ChatPage() {
         )}
       >
         {running.has(s.id) && <span className="animate-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-info" title="Working" />}
-        <span className={clsx('min-w-0 flex-1 truncate text-ui mobile:text-body', on && side && 'font-medium')}>{s.title}</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            void remove(s.id)
-          }}
-          title="Delete chat"
-          className={clsx(
-            'flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-hover hover:text-fg',
-            isMobile ? 'opacity-100' : 'hidden group-focus-within:flex group-hover:flex'
-          )}
-        >
-          <Trash size={14} />
-        </button>
+        <span className={clsx('min-w-0 flex-1 truncate text-ui mobile:text-body', on && side && 'font-medium', archived && !on && 'text-dim')}>
+          {s.title}
+          {project && <span className="text-dim"> · {project.name}</span>}
+        </span>
+        {archived ? (
+          <>
+            <RowAction label="Unarchive" onClick={() => void archive(s.id, false)}>
+              <ArrowCounterClockwise size={14} />
+            </RowAction>
+            <RowAction label="Delete chat" danger onClick={() => void remove(s.id)}>
+              <Trash size={14} />
+            </RowAction>
+          </>
+        ) : (
+          <RowAction label={isMobile ? 'Archive chat' : 'Archive chat (Ctrl+E)'} onClick={() => void archive(s.id, true)}>
+            <Archive size={14} />
+          </RowAction>
+        )}
       </div>
     )
   }
@@ -270,7 +332,7 @@ export function ChatPage() {
         }
       >
         {projects.map((p) => {
-          const chats = shown.filter((s) => s.projectId === p.id)
+          const chats = live.filter((s) => s.projectId === p.id)
           // While searching, only projects with matches show, opened up.
           if (filter && !chats.length) return null
           // An empty project is just its header (its + starts a chat), with nothing to fold.
@@ -316,6 +378,27 @@ export function ChatPage() {
         ) : (
           loose.map((s) => row(s, false))
         )}
+        {archivedChats.length > 0 && (
+          <div className="mt-1.5 border-t border-line pt-1.5">
+            <button
+              onClick={() => setArchivedOpen((o) => !o)}
+              aria-expanded={!!filter || archivedOpen}
+              className="flex h-8 w-full items-center gap-1.5 rounded-[8px] px-2 text-left text-ui font-medium text-dim transition-colors hover:bg-elev hover:text-muted"
+            >
+              <CaretRight size={11} className={clsx('shrink-0 transition-transform', (filter || archivedOpen) && 'rotate-90')} />
+              <Archive size={14} className="shrink-0" />
+              <span className="flex-1">Archived</span>
+              <span className="text-micro tabular-nums">{archivedChats.length}</span>
+            </button>
+            <AnimatePresence initial={false}>
+              {(!!filter || archivedOpen) && (
+                <motion.div key="archived" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
+                  {archivedChats.map((s) => row(s, false))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
         {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-caption text-dim">No chats yet</div>}
       </ListPane>
       )}
@@ -349,6 +432,9 @@ export function ChatPage() {
             listHidden={side && listHidden}
             onToggleList={() => setListHidden((h) => !h)}
             onChange={(s) => setSessions((ss) => ss.map((x) => (x.id === s.id ? s : x)))}
+            projects={projects}
+            onArchive={(on) => void archive(active.id, on)}
+            onDelete={() => void remove(active.id)}
           />
         ) : (
           <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={() => void create()}>New chat</Button>}>
@@ -369,7 +455,10 @@ function ChatView({
   running,
   listHidden,
   onToggleList,
-  onChange
+  onChange,
+  projects,
+  onArchive,
+  onDelete
 }: {
   session: ChatSession
   project: Project | null
@@ -377,7 +466,11 @@ function ChatView({
   listHidden: boolean
   onToggleList(): void
   onChange(s: ChatSession): void
+  projects: Project[]
+  onArchive(on: boolean): void
+  onDelete(): void
 }) {
+  const titleInput = useRef<HTMLInputElement>(null)
   const side = useSideBySide()
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -801,7 +894,8 @@ function ChatView({
   const tix = useMemo(() => ticketProgress(messages), [messages])
   const docsAt = useMemo(() => docsVersion(messages), [messages])
   const specDocs = useMemo(() => (session.workflow ? { sessionId: session.id, slug: session.workflow.slug, version: docsAt, active: tix.active, finished: tix.finished } : undefined), [session.id, session.workflow, docsAt, tix])
-  const showBar = !!workBar || flowBar
+  const openspecRun = session.openspec && session.openspec.step !== 'done' ? session.openspec : null
+  const showBar = !!workBar || flowBar || !!openspecRun
   const awaiting = useMemo(() => new Set([...approvals, ...questions].map((a) => a.toolCallId).filter((x): x is string => !!x)), [approvals, questions])
 
   const regenerate = async (assistantId: string) => {
@@ -897,6 +991,8 @@ function ChatView({
           </span>
         )}
         <input
+          ref={titleInput}
+          aria-label="Chat title"
           key={session.title}
           className="min-w-0 flex-1 truncate bg-transparent text-body font-semibold tracking-tight outline-none focus-visible:outline-none"
           defaultValue={session.title}
@@ -919,7 +1015,28 @@ function ChatView({
             </button>
           </Tooltip>
         )}
+        {session.archivedAt && (
+          <button
+            onClick={() => onArchive(false)}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-line px-2.5 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg"
+            title="Bring this chat back to its project"
+          >
+            <Archive size={13} /> Archived · Unarchive
+          </button>
+        )}
         {session.container && <ContainerPill session={session} running={running} />}
+        <ChatMenu
+          archived={!!session.archivedAt}
+          projects={projects}
+          projectId={session.projectId}
+          onRename={() => {
+            titleInput.current?.focus()
+            titleInput.current?.select()
+          }}
+          onMove={(p) => void update({ projectId: p?.id ?? null, ...(p?.folder && !session.workspace ? { workspace: p.folder } : {}) })}
+          onArchive={onArchive}
+          onDelete={onDelete}
+        />
         {/* The desktop opens the panel from its dock; phones keep the header button. */}
         {isMobile && (
         <Tooltip content={panel.open ? 'Hide the side panel' : 'Setup, files, terminal, git and agents'}>
@@ -1036,7 +1153,20 @@ function ChatView({
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 has-[[role=menu]]:z-40 has-[[role=dialog]]:z-40 bg-gradient-to-b from-transparent via-bg/90 via-40% to-bg pb-[22px] pt-12 mobile:pb-2.5 mobile:pt-8">
         {/* The current turn's plan and agents, just above the message box. Opening it grows upward. */}
         <AnimatePresence>
-          {showBar && (
+          {openspecRun && (
+            <div key="openspec" className="pointer-events-auto mx-auto mb-2 w-[min(calc(var(--chat-col)-16px),calc(100%-80px))] mobile:w-[calc(100%-36px)]">
+              <OpenSpecBar
+                run={openspecRun}
+                running={running}
+                onWait={(on) => void update({ openspec: { ...openspecRun, waitAfterPropose: on, ...(on ? {} : { awaitingReview: false }) } })}
+                onStop={() => {
+                  if (running) void api.chat.abort(session.id)
+                  void update({ openspec: null })
+                }}
+              />
+            </div>
+          )}
+          {(!!workBar || flowBar) && (
             <div key="workbar" className="pointer-events-auto mx-auto mb-2 w-[min(calc(var(--chat-col)-16px),calc(100%-80px))] mobile:w-[calc(100%-36px)]">
               <WorkBar bar={workBar} flow={session.workflow} stages={stages} onAutoContinue={(on) => void setAutoContinue(on)} />
             </div>
@@ -1170,6 +1300,86 @@ function ChatView({
     </div>
     {panel.open && <SidePanel session={session} messages={messages} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
     {!isMobile && <PanelDock session={session} messages={messages} state={panel} set={setPanel} />}
+    </div>
+  )
+}
+
+/** The chat header's ··· menu: rename, move to a project, archive, and delete (kept here, away from the list's hover buttons). */
+function ChatMenu({ archived, projects, projectId, onRename, onMove, onArchive, onDelete }: { archived: boolean; projects: Project[]; projectId: string | null; onRename(): void; onMove(p: Project | null): void; onArchive(on: boolean): void; onDelete(): void }) {
+  const [open, setOpen] = useState<'menu' | 'move' | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    ref.current?.querySelector<HTMLElement>('[role=menuitem], [role=menuitemradio]')?.focus()
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(null)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null)
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  const item = 'flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-ui text-fg transition-colors hover:bg-elev-2 focus-visible:bg-elev-2 focus-visible:outline-none'
+  const run = (fn: () => void) => () => {
+    setOpen(null)
+    fn()
+  }
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <Tooltip content="More">
+        <button
+          onClick={() => setOpen((o) => (o ? null : 'menu'))}
+          aria-haspopup="menu"
+          aria-expanded={!!open}
+          aria-label="Chat actions"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+        >
+          <DotsThree size={18} weight="bold" />
+        </button>
+      </Tooltip>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-40 mt-1 w-60 rounded-xl border border-line-strong bg-panel p-1 shadow-[0_20px_50px_-10px_rgb(0_0_0/0.8)]">
+          {open === 'menu' ? (
+            <>
+              <button role="menuitem" className={item} onClick={run(onRename)}>
+                <PencilSimple size={15} className="text-muted" /> Rename
+              </button>
+              <button role="menuitem" className={item} onClick={() => setOpen('move')}>
+                <FolderSimple size={15} className="text-muted" /> <span className="flex-1">Move to project</span> <CaretRight size={11} className="text-dim" />
+              </button>
+              <button role="menuitem" className={item} onClick={run(() => onArchive(!archived))}>
+                {archived ? <ArrowCounterClockwise size={15} className="text-muted" /> : <Archive size={15} className="text-muted" />}
+                <span className="flex-1">{archived ? 'Unarchive' : 'Archive'}</span>
+                {!isMobile && <span className="font-mono text-micro text-dim">Ctrl+E</span>}
+              </button>
+              <div className="mx-1.5 my-1 border-t border-line" />
+              <button role="menuitem" className={clsx(item, 'text-danger')} onClick={run(onDelete)}>
+                <Trash size={15} /> Delete…
+              </button>
+            </>
+          ) : (
+            <>
+              <button role="menuitem" className={clsx(item, 'text-muted')} onClick={() => setOpen('menu')}>
+                <CaretRight size={11} className="rotate-180" /> Move to project
+              </button>
+              <div className="mx-1.5 my-1 border-t border-line" />
+              <div className="max-h-64 overflow-y-auto">
+                {[null, ...projects].map((p) => {
+                  const on = (p?.id ?? null) === projectId
+                  return (
+                    <button key={p?.id ?? 'none'} role="menuitemradio" aria-checked={on} className={item} onClick={run(() => onMove(p))}>
+                      {p ? <FolderSimple size={15} weight="fill" style={{ color: p.color }} /> : <X size={13} className="text-dim" />}
+                      <span className="flex-1 truncate">{p?.name ?? 'No project'}</span>
+                      {on && <Check size={13} className="text-crimson-hi" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -1471,11 +1681,19 @@ function AssistantTurnView({
       return { block: b, refs }
     })
   }, [all])
-  const allRefs = useMemo(() => {
-    const seen = new Map<string, RagHit>()
-    for (const b of message.blocks) if (b.type === 'tool') for (const r of b.trace.references) if (!seen.has(r.chunkId)) seen.set(r.chunkId, r)
+  // Sources: only the results the reply cites as [n] (each [n] means the nth hit of the search before that text), in citation order.
+  const cited = useMemo(() => {
+    const seen = new Map<string, { hit: RagHit; n: number }>()
+    for (const { block, refs } of blocks) {
+      if (block.type !== 'text' || !refs.length) continue
+      for (const m of block.text.matchAll(CITATION)) {
+        const n = Number(m[1])
+        const hit = refs[n - 1]
+        if (hit && !seen.has(hit.chunkId)) seen.set(hit.chunkId, { hit, n })
+      }
+    }
     return [...seen.values()]
-  }, [message.blocks])
+  }, [blocks])
   const text = message.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n\n')
   const lastTextIdx = all.map((b) => b.type).lastIndexOf('text')
   const lastTodoIdx = all.map((b) => (b.type === 'tool' && b.trace.name === 'todo_write' ? 't' : '')).lastIndexOf('t')
@@ -1511,6 +1729,7 @@ function AssistantTurnView({
             return <RoundCard key={block.trace.id} round={block.trace.questions} actionable={!!workflow?.actionable && i === lastFlowIdx} onAnswer={(t) => workflow?.onAnswer(t) ?? Promise.resolve()} />
           if (block.type === 'tool' && block.trace.stageGate)
             return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} onFix={workflow?.onFix} flow={workflow?.flow} onAutoContinue={workflow?.onAutoContinue} onApproveSpec={workflow?.onApproveSpec} docs={workflow?.docs} />
+          if (block.type === 'tool' && block.trace.openspecStep) return <OpenSpecStepCard key={block.trace.id} trace={block.trace} fresh={fresh} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />
@@ -1524,9 +1743,9 @@ function AssistantTurnView({
             {own + agents > 0 && (
               <span title={agents > 0 ? `This reply ${formatCost(own)}, plus ${formatCost(agents)} for agents it handed work to` : 'Cost of this reply'}>{formatCost(own + agents)}</span>
             )}
-            {allRefs.length > 0 && (
+            {cited.length > 0 && (
               <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-1 text-muted transition-colors hover:text-fg">
-                <Books size={13} /> {allRefs.length} sources
+                <Books size={13} /> {cited.length} source{cited.length === 1 ? '' : 's'}
                 <motion.span animate={{ rotate: showSources ? 90 : 0 }} className="flex">
                   <CaretRight size={11} />
                 </motion.span>
@@ -1557,8 +1776,8 @@ function AssistantTurnView({
           {showSources && (
             <motion.div key="sources" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} className="overflow-hidden">
               <div className="grid gap-1.5 pt-2">
-                {allRefs.map((r, i) => (
-                  <ReferenceCard key={r.chunkId} hit={r} n={i + 1} />
+                {cited.map(({ hit, n }) => (
+                  <ReferenceCard key={hit.chunkId} hit={hit} n={n} />
                 ))}
               </div>
             </motion.div>

@@ -10,12 +10,16 @@ export interface ConfirmOptions {
   cancelLabel?: string
   /** Destructive action: red confirm button, Cancel focused by default. */
   danger?: boolean
+  /** A third, gentler way out (e.g. "Archive instead"), between Cancel and the confirm button. */
+  alternative?: string
 }
+
+export type ConfirmChoice = 'confirm' | 'alternative' | 'cancel'
 
 interface Request extends ConfirmOptions {
   id: number
   message: string
-  resolve(ok: boolean): void
+  resolve(choice: ConfirmChoice): void
 }
 
 let seq = 0
@@ -24,6 +28,11 @@ const pending: Request[] = []
 
 /** In-app replacement for window.confirm: resolves true when the user confirms. */
 export function confirmAction(message: string, opts: ConfirmOptions = {}): Promise<boolean> {
+  return chooseAction(message, opts).then((c) => c === 'confirm')
+}
+
+/** Like confirmAction, with the dialog's alternative button: which of the three the user picked. */
+export function chooseAction(message: string, opts: ConfirmOptions = {}): Promise<ConfirmChoice> {
   return new Promise((resolve) => {
     const req: Request = { ...opts, id: ++seq, message, resolve }
     if (push) push(req)
@@ -42,24 +51,24 @@ export function ConfirmHost() {
     }
   }, [])
   const current = queue[0]
-  const close = (ok: boolean) => {
+  const close = (choice: ConfirmChoice) => {
     if (!current) return
-    current.resolve(ok)
+    current.resolve(choice)
     setQueue((q) => q.slice(1))
   }
   return <AnimatePresence>{current && <Dialog key={current.id} req={current} onClose={close} />}</AnimatePresence>
 }
 
-function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) {
+function Dialog({ req, onClose }: { req: Request; onClose(choice: ConfirmChoice): void }) {
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const done = useRef(false)
-  const finish = (ok: boolean) => {
+  const finish = (choice: ConfirmChoice) => {
     if (done.current) return
     done.current = true
-    onClose(ok)
+    onClose(choice)
   }
-  useBackHandler(true, () => finish(false))
+  useBackHandler(true, () => finish('cancel'))
   useEffect(() => {
     // Destructive: default to the safe choice so Enter doesn't delete by accident.
     ;(req.danger ? cancelRef : confirmRef).current?.focus()
@@ -68,7 +77,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
         // Capture phase + stop: Escape answers this dialog only, not a modal underneath it.
         e.preventDefault()
         e.stopPropagation()
-        finish(false)
+        finish('cancel')
       }
     }
     window.addEventListener('keydown', onKey, true)
@@ -83,7 +92,7 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { duration: 0.15 } }}
-      onMouseDown={() => finish(false)}
+      onMouseDown={() => finish('cancel')}
     >
       <motion.div
         role="alertdialog"
@@ -117,14 +126,22 @@ function Dialog({ req, onClose }: { req: Request; onClose(ok: boolean): void }) 
         <div className="mt-5 flex justify-end gap-2 border-t border-line bg-bg/40 px-5 py-3.5">
           <button
             ref={cancelRef}
-            onClick={() => finish(false)}
+            onClick={() => finish('cancel')}
             className="h-8 rounded-lg border border-line-strong px-3.5 text-ui font-medium text-muted transition-colors hover:border-line-strong hover:bg-elev-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
           >
             {req.cancelLabel ?? 'Cancel'}
           </button>
+          {req.alternative && (
+            <button
+              onClick={() => finish('alternative')}
+              className="h-8 rounded-lg border border-line-strong px-3.5 text-ui font-medium text-fg transition-colors hover:bg-elev-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line"
+            >
+              {req.alternative}
+            </button>
+          )}
           <button
             ref={confirmRef}
-            onClick={() => finish(true)}
+            onClick={() => finish('confirm')}
             className={clsx(
               'h-8 rounded-lg px-3.5 text-ui font-semibold text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
               req.danger ? 'bg-danger hover:bg-danger-hi focus-visible:ring-danger' : 'bg-crimson hover:bg-crimson-hi focus-visible:ring-crimson-line'

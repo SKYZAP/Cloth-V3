@@ -43,7 +43,8 @@ const GROUPS: { id: BuiltinToolInfo['group']; label: string; icon: Icon }[] = [
   { id: 'knowledge', label: 'Knowledge', icon: BookOpen },
   { id: 'planning', label: 'Planning', icon: ListChecks },
   { id: 'skills', label: 'Skills', icon: Sparkles },
-  { id: 'tools', label: 'Making tools', icon: Wrench }
+  { id: 'tools', label: 'Making tools', icon: Wrench },
+  { id: 'hub', label: 'Cloth', icon: Plug }
 ]
 
 type Source = 'builtin' | 'mine' | 'mcp'

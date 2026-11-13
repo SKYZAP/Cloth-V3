@@ -2,10 +2,10 @@ import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type Settings } from './type
 
 /** The tiers a chat agent picks from when it delegates; model null = the chat's own model. */
 export const DEFAULT_AGENT_TIERS: AgentTier[] = [
-  { id: 'light', name: 'Light', model: null, thinking: 'low', purpose: 'Mechanical edits, renames, running builds or tests, small isolated fixes.', instructions: DEFAULT_TIER_INSTRUCTIONS.light },
+  { id: 'light', name: 'Low', model: null, thinking: 'low', purpose: 'Mechanical edits, renames, running builds or tests, small isolated fixes.', instructions: DEFAULT_TIER_INSTRUCTIONS.light },
   { id: 'medium', name: 'Medium', model: null, thinking: 'medium', purpose: 'Standard features and bug fixes with a known cause, a few files.', instructions: DEFAULT_TIER_INSTRUCTIONS.medium },
-  { id: 'careful', name: 'Careful', model: null, thinking: 'high', purpose: 'Delicate changes where the approach is clear: multi-file refactors, edge cases, keeping invariants.', instructions: DEFAULT_TIER_INSTRUCTIONS.careful },
-  { id: 'heavy', name: 'Heavy', model: null, thinking: 'xhigh', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.', instructions: DEFAULT_TIER_INSTRUCTIONS.heavy }
+  { id: 'careful', name: 'High', model: null, thinking: 'high', purpose: 'Delicate changes where the approach is clear: multi-file refactors, edge cases, keeping invariants.', instructions: DEFAULT_TIER_INSTRUCTIONS.careful },
+  { id: 'heavy', name: 'Max', model: null, thinking: 'xhigh', purpose: 'Unclear causes, unfamiliar or messy code, where a wrong first approach is expensive.', instructions: DEFAULT_TIER_INSTRUCTIONS.heavy }
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxTurns: 30,
     maxParallel: 4,
     allowWorkers: true,
+    maxAccess: 'operator',
     reviewModel: null,
     instructions: ''
   },

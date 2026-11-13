@@ -293,4 +293,4 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
   )
 }
 
-export { confirmAction, type ConfirmOptions } from './ConfirmDialog'
+export { chooseAction, confirmAction, type ConfirmChoice, type ConfirmOptions } from './ConfirmDialog'

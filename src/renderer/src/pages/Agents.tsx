@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { LayoutGroup } from 'motion/react'
 import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
-import { AGENT_TEMPLATES, type Agent, type AgentActivity, type AgentTier, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
-import { EFFORT_OPTIONS, normalizeEffortOrNull, type Effort } from '@shared/effort'
+import { AGENT_TEMPLATES, type Agent, type AgentActivity, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
+import { EFFORT_OPTIONS, effortLabel, normalizeEffortOrNull, type Effort } from '@shared/effort'
+import { ACCESS_LEVELS, accessCaps, accessLabel, accessOf } from '@shared/access'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Inspector, refocus } from '@/components/Inspector'
-import { Button, Input, Modal, PageHeader, Select, Spinner, Textarea, confirmAction } from '@/components/ui'
+import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
@@ -199,10 +200,16 @@ function LaneEmpty({ children }: { children: ReactNode }) {
   return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-ui text-dim">{children}</p>
 }
 
-/** What the agent may touch, in words. */
-function access(a: Agent): string {
-  if (a.fileAccess !== 'write') return 'Reads files'
-  return a.shell ? 'Edits files, runs commands' : 'Edits files'
+const ACCESS_TONE = { reader: 'border-info/35 bg-info/10 text-info', writer: 'border-warn/35 bg-warn/[0.08] text-warn', operator: 'border-danger-line bg-danger-soft text-danger' } as const
+
+/** The agent's access level as a coloured chip: Reader, Writer or Operator. */
+function AccessChip({ agent }: { agent: Agent }) {
+  const level = accessOf(agent)
+  return (
+    <span className={clsx('rounded-full border px-2 py-px text-caption font-semibold', ACCESS_TONE[level])} title={ACCESS_LEVELS.find((l) => l.value === level)!.sub}>
+      {accessLabel(level)}
+    </span>
+  )
 }
 
 function AgentCard({
@@ -251,7 +258,8 @@ function AgentCard({
       </span>
       <span className="line-clamp-2 text-ui text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
       <span className="flex flex-wrap gap-1.5">
-        <Cap>{access(a)}</Cap>
+        <AccessChip agent={a} />
+        <Cap>{a.thinking ? `${effortLabel(a.thinking)} reasoning` : a.tier ? 'Tier reasoning' : 'Chat’s reasoning'}</Cap>
         {a.webEnabled && <Cap>Web</Cap>}
         {a.knowledgeEnabled && <Cap>Knowledge</Cap>}
         {!!a.mcpServers?.length && <Cap>{plural(a.mcpServers.length, 'server')}</Cap>}
@@ -287,14 +295,7 @@ function Cap({ children }: { children: ReactNode }) {
   return <span className="rounded-full border border-line-strong px-2 py-px text-caption text-muted">{children}</span>
 }
 
-const EFFORT: { value: Effort | 'chat'; label: string }[] = [{ value: 'chat', label: "Chat's" }, ...EFFORT_OPTIONS]
-
-/** "Light — Mechanical edits…": a tier's name and the start of its purpose, for a select option. */
-const tierLabel = (t: AgentTier) => {
-  const p = t.purpose.trim().replace(/\s+/g, ' ')
-  if (!p) return t.name
-  return `${t.name} — ${p.length > 56 ? `${p.slice(0, 55).trimEnd()}…` : p}`
-}
+const EFFORT: { value: Effort | 'chat'; label: string }[] = [...EFFORT_OPTIONS, { value: 'chat', label: 'Same as chat' }]
 
 function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { agent: Agent; onClose(): void; onSaved(a: Agent): void; onRemoved(): void; onDuplicated(a: Agent): void }) {
   const [name, setName] = useState(agent.name)
@@ -304,6 +305,10 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
   const [servers, setServers] = useState<McpClientStatus[]>([])
   const setPage = useApp((s) => s.setPage)
   const tiers = useApp((s) => s.settings?.agentTiers) ?? []
+  // Agents set to a tier before Access and Reasoning: it shows as their own level until they are changed here.
+  const tier = agent.tier ? (tiers.find((t) => t.id === agent.tier) ?? null) : null
+  // Researcher and Code reviewer are Readers by design.
+  const fixedRead = agent.builtin === 'researcher' || agent.builtin === 'reviewer'
   const settingsLoaded = useApp((s) => !!s.settings)
   useEffect(() => {
     if (!settingsLoaded) void useApp.getState().loadSettings()
@@ -387,42 +392,29 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
           <Section title="Purpose">
             <Textarea rows={2} value={purpose} onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== agent.purpose && void save({ purpose })} aria-label="Purpose" placeholder="e.g. Reviews and fixes interfaces against the project's design system." />
           </Section>
-          <Section title="Model">
-            <div className="w-[240px] mobile:w-full">
+          <Section title="Access">
+            <div className="w-[360px] mobile:w-full">
               <Segmented
                 size="sm"
-                label="Model"
-                value={agent.tier ? 'tier' : 'own'}
-                onChange={(v) => {
-                  if (v === 'own') void save({ tier: null })
-                  else if (tiers.length) void save({ tier: (tiers.find((t) => t.id === 'medium') ?? tiers[0]).id, model: null, thinking: null })
-                }}
-                disabled={tiers.length ? [] : ['tier']}
-                options={[
-                  { value: 'own', label: 'Own model' },
-                  { value: 'tier', label: 'Tier' }
-                ]}
+                label="Access"
+                value={accessOf(agent)}
+                onChange={(v) => void save(accessCaps(v))}
+                disabled={fixedRead ? ['writer', 'operator'] : []}
+                options={ACCESS_LEVELS.map((l) => ({ value: l.value, label: l.label }))}
               />
             </div>
-            {agent.tier ? (
-              <>
-                <Select aria-label="Tier" value={agent.tier} onChange={(e) => void save({ tier: e.target.value, model: null, thinking: null })}>
-                  {!tiers.some((t) => t.id === agent.tier) && <option value={agent.tier}>Removed tier</option>}
-                  {tiers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {tierLabel(t)}
-                    </option>
-                  ))}
-                </Select>
-              </>
-            ) : (
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 mobile:grid-cols-1">
-                <ModelPicker value={agent.model} onChange={(model) => void save({ model })} allowNone noneLabel="The chat's model" />
-                <div className="w-[300px] mobile:w-full">
-                  <Segmented size="sm" label="Reasoning effort" value={normalizeEffortOrNull(agent.thinking) ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v })} options={EFFORT} />
-                </div>
-              </div>
-            )}
+            <p className="text-caption text-dim">
+              {fixedRead ? 'Built in as a Reader: it never changes anything.' : ACCESS_LEVELS.find((l) => l.value === accessOf(agent))!.sub}. The chat it works for can only lower this: in Plan mode it is a Reader.
+            </p>
+          </Section>
+          <Section title="Reasoning">
+            <div className="w-[360px] mobile:w-full">
+              <Segmented size="sm" label="Reasoning" value={normalizeEffortOrNull(agent.thinking ?? tier?.thinking) ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v, tier: null, ...(tier?.model && !agent.model ? { model: tier.model } : {}) })} options={EFFORT} />
+            </div>
+            <div className="grid gap-1.5">
+              <span className="text-caption text-dim">Model</span>
+              <ModelPicker value={agent.model ?? tier?.model ?? null} onChange={(model) => void save({ model, tier: null, ...(tier && agent.thinking === null ? { thinking: tier.thinking } : {}) })} allowNone noneLabel="The chat's model" />
+            </div>
           </Section>
           <InstructionsEditor agent={agent} value={instructions} onChange={setInstructions} onSave={(text) => void save({ instructions: text })} />
 
@@ -438,30 +430,7 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
               <ServersView target={agent} update={update} m={m} status={servers} />
             </Collapsible>
             <Collapsible title="Built-in tools" meta={`${m.builtin.filter((t) => m.isOn(t.name)).length} · +${k(m.parts.builtin)}`}>
-              <ToolsView
-                target={agent}
-                update={update}
-                m={m}
-                access={
-                  agent.builtin ? (
-                    <span className="text-caption text-dim">{agent.fileAccess === 'read' ? 'Read-only: it never changes files.' : 'Makes changes: it can change files when the chat it works for can.'}</span>
-                  ) : (
-                    <div className="grid gap-1.5">
-                      <Segmented
-                        size="sm"
-                        label="Folder access"
-                        value={agent.fileAccess === 'write' ? (agent.shell ? 'shell' : 'edit') : 'read'}
-                        onChange={(v) => void save({ fileAccess: v === 'read' ? 'read' : 'write', shell: v === 'shell' })}
-                        options={[
-                          { value: 'read', label: 'Read' },
-                          { value: 'edit', label: 'Edit' },
-                          { value: 'shell', label: 'Edit + shell' }
-                        ]}
-                      />
-                    </div>
-                  )
-                }
-              />
+              <ToolsView target={agent} update={update} m={m} />
             </Collapsible>
             <Collapsible title="Knowledge" meta={`${m.selected.length} · +${k(m.parts.knowledge)}`}>
               <KnowledgeView target={agent} update={update} total={m.parts.knowledge} />

@@ -241,7 +241,7 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
           <SetupRow icon={Wrench} label="Tools" sub={`${builtinOn} of ${builtin.length} on`} meta={cost(parts.builtin)} on={builtinOn > 0} onOpen={() => setView('tools')} />
           <SetupRow icon={PlugsConnected} label="MCP" sub={mcpSub} meta={cost(parts.servers)} on={serversOn > 0} onOpen={() => setView('mcp')} />
           {computerSupported && <SetupToggle icon={Monitor} label="Computer Use" sub="Screen, mouse and keyboard" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
-          <SetupToggle icon={Robot} label="Automatic agent tiers" sub="Subagents run on the tier their task needs" on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
+          <SetupToggle icon={Robot} label="Automatic reasoning levels" sub="Each subagent job gets the reasoning level it needs" on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
         </Group>
 
         <div className="grid gap-2" role="group" aria-label="Added to each request">

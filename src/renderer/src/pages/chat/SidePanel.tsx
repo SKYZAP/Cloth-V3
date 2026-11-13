@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
-import { FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
+import { FileText, FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
+import { OpenSpecPanel } from './OpenSpec'
 import type { ChatSession, TerminalInfo, UiMessage, WorkspaceFile } from '@shared/types'
 import { terminalsAfter } from '@shared/terminal-tabs'
 import { api, useEvent } from '@/lib/api'
@@ -66,7 +67,8 @@ const TABS: { id: PanelTab; label: string; icon: typeof TerminalWindow }[] = [
   { id: 'terminal', label: 'Terminal', icon: TerminalWindow },
   { id: 'git', label: 'Git', icon: GitBranch },
   { id: 'agents', label: 'Agents', icon: Robot },
-  { id: 'spec', label: 'Spec', icon: ListChecks }
+  { id: 'spec', label: 'Spec', icon: ListChecks },
+  { id: 'openspec', label: 'OpenSpec', icon: FileText }
 ]
 
 const HEADER = 28
@@ -297,6 +299,13 @@ export function SidePanel({
             </div>
           </div>
         )}
+        {visible('openspec') && (
+          <div className="relative min-h-0" style={place('openspec')} {...sectionEvents('openspec')}>
+            <div className="absolute inset-0">
+              <OpenSpecPanel sessionId={session.id} visible={visible('openspec')} />
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -398,6 +407,7 @@ export function PanelDock({ session, messages, state, set }: { session: ChatSess
     if (tab === 'git' && badges.changes) return `${badges.changes} change${badges.changes === 1 ? '' : 's'}`
     if (tab === 'agents' && badges.agents) return `${badges.agents} running`
     if (tab === 'spec' && session.workflow && session.workflow.stage !== 'done') return 'In progress'
+    if (tab === 'openspec' && session.openspec && session.openspec.step !== 'done') return session.openspec.awaitingReview ? 'Waiting for you' : 'In progress'
     return null
   }
 
@@ -450,6 +460,7 @@ export function PanelDock({ session, messages, state, set }: { session: ChatSess
               {t.id === 'terminal' && badges.terminals > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ok ring-2 ring-panel" />}
               {t.id === 'agents' && badges.agents > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-info ring-2 ring-panel" />}
               {t.id === 'spec' && note && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-mode ring-2 ring-panel" />}
+              {t.id === 'openspec' && note && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ospec ring-2 ring-panel" />}
             </button>
           </Tooltip>
         )

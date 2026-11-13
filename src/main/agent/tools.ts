@@ -15,6 +15,9 @@ import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from './hub'
 import { docsOnly, openTickets } from './workflow'
+import type { HubAdmin } from './admin'
+import { pausesBeforeApply, runOpenSpec } from './openspec'
+import { OPENSPEC_STEP_LABEL, type OpenSpecRun, type OpenSpecStepReport } from '@shared/types'
 
 export interface ToolDetails {
   durationMs?: number
@@ -36,6 +39,8 @@ export interface ToolDeps {
   lsp?: LspManager
   /** The global coding rules folder (rules.ts). */
   rulesDir?: string
+  /** Cloth itself: other chats, and setting up agents, automations, MCP servers and providers (admin.ts). */
+  hub?: HubAdmin
 }
 
 export interface ToolScope {
@@ -106,6 +111,16 @@ export interface ToolScope {
   setWorkflowRoute?: (route: WorkflowRoute) => void
   /** A stage of the workflow was just finished with `finish_stage` (the chat may move on by itself). */
   stageFinished?: (gate: StageGate) => void
+  /** The chat's OpenSpec run, live (none outside OpenSpec mode). */
+  openspec?: () => OpenSpecRun | null
+  /** Record where the OpenSpec run is. */
+  setOpenSpec?: (patch: Partial<OpenSpecRun>) => void
+}
+
+/** The chat is in OpenSpec mode and isn't finished. */
+export function inOpenSpec(scope: ToolScope): boolean {
+  const r = scope.openspec?.()
+  return !!r && r.step !== 'done'
 }
 
 /** The chat is running Spec → Ship and isn't finished. */
@@ -163,6 +178,16 @@ export function webToHits(results: WebResult[]): RagHit[] {
     bm25Rank: null,
     vectorRank: null
   }))
+}
+
+/**
+ * A change to Cloth's own setup (an agent, an automation, a server, a provider) runs at once in Auto and
+ * after the user's OK otherwise; declined, the tool fails with that reason.
+ */
+async function confirmHub(ctx: Ctx, signal: AbortSignal | undefined, toolCallId: string, what: string, detail: string): Promise<void> {
+  if (ctx.scope.permissions?.() === 'auto' || !ctx.deps.approvals || !ctx.scope.sessionId) return
+  const decision = await ctx.deps.approvals.request({ sessionId: ctx.scope.sessionId, toolCallId, kind: 'tool', tool: { server: 'Cloth', name: what }, command: detail.length > 4000 ? `${detail.slice(0, 4000)}…` : detail, risk: "Changes Cloth's setup for every chat" }, signal)
+  if (decision === 'deny') throw new Error(`The user declined: ${what}`)
 }
 
 export const BUILTINS: BuiltinSpec[] = [
@@ -304,7 +329,7 @@ export const BUILTINS: BuiltinSpec[] = [
       // Build is done by workers: one that used none has to say what it built itself and why.
       if (w.stage === 'build' && ctx.scope.subagents && ctx.scope.stageWorkers && ctx.scope.stageWorkers() === 0 && !summary.some((l) => /^built here:/i.test(l)))
         throw new Error(
-          'Build hands its work to worker agents (`task`, role worker): one per ticket, or on the Quick route one for the whole change, while you brief, check, merge and tick. Start them now. If something really was too small to hand over, add a summary line "Built here: <what>, because <why>" and call finish_stage again.'
+          'Build hands its work to worker agents (`task`, access operator): one per ticket, or on the Quick route one for the whole change, while you brief, check, merge and tick. Start them now. If something really was too small to hand over, add a summary line "Built here: <what>, because <why>" and call finish_stage again.'
         )
       // A built ticket is ticked off in its file, which is what the board shows; one left partly done is named.
       if (w.stage === 'build' && w.slug && ctx.scope.workspace) {
@@ -551,6 +576,163 @@ export const BUILTINS: BuiltinSpec[] = [
     }
   }),
   spec({
+    name: 'openspec',
+    label: 'OpenSpec',
+    group: 'planning',
+    availability: 'Chats in OpenSpec mode with a folder on this PC',
+    parameters: Type.Object({
+      args: Type.Array(Type.String(), { description: 'The CLI arguments, e.g. ["validate", "add-rate-limit", "--strict", "--json"]' })
+    }),
+    description: () => 'Run the openspec CLI (@fission-ai/openspec) in the chat’s folder and return its output and exit code. Use --json where the command supports it.',
+    when: (ctx) => inOpenSpec(ctx.scope) && !!ctx.scope.workspace && !ctx.scope.container,
+    async run(p, ctx, signal) {
+      if (!p.args.length) throw new Error('Pass the command, e.g. ["list", "--json"]')
+      const out = await runOpenSpec(ctx.scope.workspace!, p.args, signal)
+      const text = [`$ openspec ${p.args.join(' ')}`, `exit ${out.code}`, out.stdout.trim(), out.stderr.trim() ? `[stderr]\n${out.stderr.trim()}` : ''].filter(Boolean).join('\n')
+      return { text, details: { exitCode: out.code } }
+    }
+  }),
+  spec({
+    name: 'openspec_step',
+    label: 'OpenSpec step',
+    group: 'planning',
+    availability: 'Chats in OpenSpec mode',
+    parameters: Type.Object({
+      step: Type.Union(['setup', 'propose', 'validate', 'apply', 'verify', 'archive', 'ship', 'done'].map((s) => Type.Literal(s)), { description: 'The step you are starting (done at the very end)' }),
+      summary: Type.String({ description: 'One or two plain sentences: what this step did or will do, with the commands that matter' }),
+      change: Type.Optional(Type.String({ description: 'The change name, once chosen' })),
+      tasks: Type.Optional(Type.Object({ done: Type.Integer(), total: Type.Integer() }, { description: 'tasks.md progress' })),
+      pr: Type.Optional(Type.String({ description: 'The pull request URL, once opened' }))
+    }),
+    description: () => 'Report where the OpenSpec run is: the step you are starting, with a short summary. The person sees each report as a card and a progress strip.',
+    when: (ctx) => inOpenSpec(ctx.scope) && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx) {
+      const run = ctx.scope.openspec!()!
+      const change = p.change?.trim() || run.change
+      const report: OpenSpecStepReport = { step: p.step as OpenSpecStepReport['step'], change, summary: p.summary, ...(p.tasks ? { tasks: p.tasks } : {}), ...(p.pr ? { pr: p.pr } : {}) }
+      if (p.step === 'apply' && pausesBeforeApply(run)) {
+        ctx.scope.setOpenSpec?.({ step: 'validate', change, awaitingReview: true })
+        return {
+          text: 'Paused before Apply: the person reads the proposal first. End your reply now with a short summary of the proposal and where its files are. Carry on with Apply when they answer.',
+          details: { openspecStep: { ...report, step: 'validate', summary: p.summary } as unknown as ToolDetails[string] },
+          terminate: true
+        }
+      }
+      ctx.scope.setOpenSpec?.({ step: report.step, change, ...(p.tasks ? { tasks: p.tasks } : {}), ...(p.pr ? { pr: p.pr } : {}) })
+      return { text: `${OPENSPEC_STEP_LABEL[report.step]} recorded.`, details: { openspecStep: report as unknown as ToolDetails[string] } }
+    }
+  }),
+  spec({
+    name: 'session_list',
+    label: 'List chats',
+    group: 'hub',
+    availability: 'Chats and their subagents',
+    parameters: Type.Object({
+      query: Type.Optional(Type.String({ description: 'Words to match in the title, the last line or the project name; empty lists every chat' })),
+      limit: Type.Optional(Type.Number({ description: 'At most this many, newest first (default 30)' }))
+    }),
+    description: () => "List the user's other Cloth chats (id, title, project, last activity, last line), newest first. Use it when the user refers to another conversation, or earlier work may already be in one; then read it with session_read.",
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId,
+    async run(p, ctx) {
+      return { text: ctx.deps.hub!.listChats(p.query ?? '', p.limit ?? 30, ctx.scope.sessionId ?? null) }
+    }
+  }),
+  spec({
+    name: 'session_read',
+    label: 'Read a chat',
+    group: 'hub',
+    availability: 'Chats and their subagents',
+    parameters: Type.Object({
+      id: Type.String({ description: 'The chat id from session_list' }),
+      from: Type.Optional(Type.Number({ description: 'First message to read, 0-based (default 0)' })),
+      limit: Type.Optional(Type.Number({ description: 'How many messages (default 40)' })),
+      tools: Type.Optional(Type.Boolean({ description: 'Also list the tool calls made (default false)' }))
+    }),
+    description: () => 'Read another Cloth chat: its messages as text, oldest first, a page at a time. Read-only; nothing in that chat changes.',
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId,
+    async run(p, ctx) {
+      return { text: ctx.deps.hub!.readChat(p.id, p.from ?? 0, p.limit ?? 40, !!p.tools), details: { session: p.id } }
+    }
+  }),
+  spec({
+    name: 'agent_create',
+    label: 'Create agent',
+    group: 'hub',
+    availability: 'Chats (not flows or subagents)',
+    parameters: Type.Object({
+      name: Type.String({ description: 'Short name; other agents and @mentions use it' }),
+      purpose: Type.String({ description: 'One line: what jobs it takes. Other agents read this to decide when to hand it work' }),
+      instructions: Type.String({ description: 'Its system prompt in Markdown: how it works, what it must and must not do' }),
+      tier: Type.Optional(Type.String({ description: 'An agent tier id from Settings (its model and effort); omit to use the chat’s model' })),
+      thinking: Type.Optional(Type.Union([Type.Literal('off'), Type.Literal('minimal'), Type.Literal('low'), Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh')], { description: 'Reasoning effort; omit to follow the chat' }))
+    }),
+    description: () => 'Save a new agent in Cloth (the Agents page): a name, a purpose and instructions. It can then be picked in any chat, tagged with @name, and handed work with task.',
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx, signal, id) {
+      await confirmHub(ctx, signal, id, `create the agent ${p.name}`, `${p.purpose}\n\n${p.instructions}`)
+      return { text: ctx.deps.hub!.createAgent({ name: p.name, purpose: p.purpose, instructions: p.instructions, ...(p.tier ? { tier: p.tier } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) }) }
+    }
+  }),
+  spec({
+    name: 'automation_create',
+    label: 'Create automation',
+    group: 'hub',
+    availability: 'Chats (not flows or subagents)',
+    parameters: Type.Object({
+      description: Type.String({ description: 'What it should do and when, in plain words (e.g. "every weekday at 8:30 summarise new issues in the cloth repo")' }),
+      name: Type.Optional(Type.String({ description: '2 to 5 words; omit to have one written' })),
+      cron: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: '5-field cron in local time; null for by hand only; omit to take it from the description' })),
+      workspace: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: 'Folder it works in; omit to take it from the description' }))
+    }),
+    description: () => 'Create an automation (the Automations page) from a plain description: Cloth writes its prompt, picks the tools and skills it needs, and sets its schedule.',
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx, signal, id) {
+      await confirmHub(ctx, signal, id, 'create an automation', [p.name, p.description, p.cron ? `Schedule: ${p.cron}` : null, p.workspace ? `Folder: ${p.workspace}` : null].filter(Boolean).join('\n'))
+      return { text: await ctx.deps.hub!.createAutomation(p) }
+    }
+  }),
+  spec({
+    name: 'mcp_server_add',
+    label: 'Add MCP server',
+    group: 'hub',
+    availability: 'Chats (not flows or subagents)',
+    parameters: Type.Object({
+      name: Type.String({ description: 'Short name of letters, digits, - or _; its tools are named mcp__<name>__<tool>' }),
+      transport: Type.Union([Type.Literal('stdio'), Type.Literal('http')], { description: 'stdio: a program Cloth starts (e.g. npx …); http: a server at a web address' }),
+      command: Type.Optional(Type.String({ description: 'stdio: the program, e.g. npx' })),
+      args: Type.Optional(Type.Array(Type.String(), { description: 'stdio: its arguments, e.g. ["-y", "@playwright/mcp@latest"]' })),
+      env: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'stdio: environment variables' })),
+      url: Type.Optional(Type.String({ description: 'http: the server address' })),
+      headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'http: headers sent with every request' })),
+      approval: Type.Optional(Type.Union([Type.Literal('ask'), Type.Literal('auto')], { description: 'Ask before each call (default) or let calls run' })),
+      defaultOn: Type.Optional(Type.Boolean({ description: 'On in chats that haven’t picked their servers (default false)' }))
+    }),
+    description: () => 'Add an external MCP server to Cloth (Settings → MCP): a program it starts over stdio, or a server at a web address. Do not put secrets in args or env unless the user gave them for this.',
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx, signal, id) {
+      await confirmHub(ctx, signal, id, `add the MCP server ${p.name}`, p.transport === 'http' ? `http ${p.url ?? ''}` : [p.command, ...(p.args ?? [])].join(' '))
+      return { text: ctx.deps.hub!.addMcpServer(p) }
+    }
+  }),
+  spec({
+    name: 'provider_add',
+    label: 'Add provider',
+    group: 'hub',
+    availability: 'Chats (not flows or subagents)',
+    parameters: Type.Object({
+      name: Type.String({ description: 'How it shows in model pickers, e.g. "LM Studio"' }),
+      kind: Type.Union([Type.Literal('openai'), Type.Literal('anthropic'), Type.Literal('openai-compatible')], { description: 'openai-compatible for LM Studio, Ollama, OpenRouter, vLLM and the like' }),
+      baseUrl: Type.String({ description: 'e.g. http://localhost:1234/v1' }),
+      apiKey: Type.Optional(Type.String({ description: 'Only when the user gave it for this; otherwise leave it out and tell them to add it on the Models page' }))
+    }),
+    description: () => 'Add a model provider to Cloth (the Models page) and list its models.',
+    when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId && !ctx.scope.depth,
+    async run(p, ctx, signal, id) {
+      await confirmHub(ctx, signal, id, `add the provider ${p.name}`, `${p.kind} at ${p.baseUrl}${p.apiKey ? ' (with an API key)' : ''}`)
+      return { text: await ctx.deps.hub!.addProvider(p) }
+    }
+  }),
+  spec({
     name: 'grep',
     label: 'Search files',
     group: 'workspace',
@@ -610,6 +792,14 @@ const WHERE: Record<string, ToolWhere> = {
   skill_use: W(true, true, true, true),
   skill_create: W(true, false, false, true),
   tool_create: W(true, false, false, true),
+  openspec: W(true, true, false, false),
+  openspec_step: W(true, false, false, false),
+  session_list: W(true, true, false, false),
+  session_read: W(true, true, false, false),
+  agent_create: W(true, false, false, false),
+  automation_create: W(true, false, false, false),
+  mcp_server_add: W(true, false, false, false),
+  provider_add: W(true, false, false, false),
   read: W(true, true, true, false),
   ls: W(true, true, true, false),
   find: W(true, true, true, false),

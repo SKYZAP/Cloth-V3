@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { UiMessage } from '@shared/types'
 import { formatCost, formatTokens } from '@/lib/format'
-import { chatAgents, shortfall, type RunInfo } from '@/lib/workbar'
+import { chatAgents, runAbout, shortfall, type RunInfo } from '@/lib/workbar'
 import { scrollToRun } from '@/components/WorkBar'
 import { takeAgentRun, useSetupNav } from './setupNav'
 
@@ -23,7 +23,7 @@ function RunRow({ run, focused }: { run: RunInfo; focused?: boolean }) {
           )}
           aria-label={run.status === 'running' ? 'Running' : (short ?? (run.status === 'done' ? 'Done' : 'Failed'))}
         />
-        <span className="min-w-0 truncate text-fg" title={run.role === 'worker' ? 'Makes changes to files' : 'Reads only; it can’t change files'}>
+        <span className="min-w-0 truncate text-fg" title={runAbout(run)}>
           {run.name}
         </span>
         {short && <span className={clsx('shrink-0 text-micro', run.outcome === 'partial' ? 'text-warn' : 'text-danger-hi')}>{short}</span>}

@@ -42,6 +42,11 @@ import { computerOffered, type ComputerController } from '../computer/tool'
 import { pruneScreenshots } from '../computer/prune'
 import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import type { UsageService } from '../core/usage'
+import type { HubAdmin } from './admin'
+import { OPENSPEC_SECTION, openspecSection } from './openspec'
+import type { OpenSpecStepReport } from '@shared/types'
+import { accessOf, capAccess, maxDelegatedAccess, type AgentAccess } from '@shared/access'
+import { UNSLOP } from './unslop'
 
 const SUBAGENT_INSTRUCTIONS = (role: SubagentRun['role']) =>
   role === 'verifier'
@@ -353,7 +358,7 @@ export function throttle<T>(fn: (v: T) => void, ms: number): ((v: T) => void) & 
 }
 
 /** The todo list as the latest successful todo_write left it. */
-/** Worker agents (`task`, role worker) handed work since the current Spec → Ship stage started (ones that failed count too). */
+/** Worker agents (`task`, access operator) handed work since the current Spec → Ship stage started (ones that failed count too). */
 export function stageWorkerRuns(messages: AgentMessage[]): number {
   const isStart = (m: AgentMessage) => m.role === 'user' && typeof m.content !== 'string' && m.content.some((c) => c.type === 'text' && c.text.startsWith(STAGE_OPEN))
   const start = Math.max(0, messages.findLastIndex(isStart))
@@ -381,8 +386,13 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin } = {}
   ) {}
+
+  /** Cloth itself for the agent's hub tools: other chats, agents, automations, MCP servers, providers (set once the services exist). */
+  attachHub(hub: HubAdmin): void {
+    this.ws.hub = hub
+  }
 
   /** Computer use on this machine (set by the app; absent in tests and on unsupported systems). */
   attachComputer(computer: ComputerController | null): void {
@@ -457,7 +467,9 @@ export class AgentRuntime {
       'You are Cloth, a local developer assistant running inside an offline developer hub.',
       `Today is ${new Date().toISOString().slice(0, 10)}.`,
       'Be precise and concise. Use Markdown. Prefer showing code over describing it.',
-      'For a diagram (a flow, a sequence of calls, states, an architecture, a data model, a timeline), write a ```mermaid code block: it is drawn as a diagram. Use one when a picture shows structure or flow more clearly than text, not by default.'
+      'For a diagram (a flow, a sequence of calls, states, an architecture, a data model, a timeline), write a ```mermaid code block: it is drawn as a diagram. Use one when a picture shows structure or flow more clearly than text, not by default.',
+      '',
+      UNSLOP
     ]
     const collections = scope.knowledgeEnabled === false ? [] : this.rag.listCollections().filter((c) => !scope.collectionIds.length || scope.collectionIds.includes(c.id))
     if (collections.length) {
@@ -485,7 +497,7 @@ export class AgentRuntime {
       lines.push(
         '',
         '## Subagents',
-        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). role "scout" is read-only; role "worker" can also edit files; role "verifier" checks work by running it (tests, probe scripts, the real app) and reports only findings it proved with a command and its output. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
+        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). access "reader" only reads and searches; "writer" can also edit files; "operator" can also run commands. verify makes it a check that runs the work (tests, probe scripts, the real app) and reports only findings it proved with a command and its output. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
       const named = this.delegates(scope.agentId)
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
@@ -727,20 +739,22 @@ export class AgentRuntime {
     return {
       name: 'task',
       label: 'Subagent',
-      description: this.subagentSettings().allowWorkers
-        ? 'Run a subagent on a self-contained job with its own fresh context and return its report. role sets what a plain job may do: "scout" (default) is read-only — it can read and search but not change anything; "worker" can also edit files in the workspace; "verifier" checks work by running it (tests, probe scripts, the real app) and reports only findings it proved with a command and its output — in Spec → Ship it works in a throwaway copy of the project. The subagent cannot see this conversation — put everything it needs in prompt.'
-        : 'Run a read-only subagent on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation — put everything it needs in prompt.',
+      description:
+        maxDelegatedAccess(this.subagentSettings()) !== 'reader'
+          ? 'Run a subagent on a self-contained job with its own fresh context and return its report. access sets what a plain job may do: "reader" (default) reads and searches but changes nothing; "writer" can also edit files in the workspace; "operator" can also run commands. Set verify to have it check work by running it (tests, probe scripts, the real app) and report only findings it proved with a command and its output; in Spec → Ship it works in a throwaway copy of the project. The chat’s own access caps all of these. The subagent cannot see this conversation, so put everything it needs in prompt.'
+          : 'Run a read-only subagent (a reader) on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation, so put everything it needs in prompt.',
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
-        role: Type.Optional(Type.Union([Type.Literal('scout'), Type.Literal('worker'), Type.Literal('verifier')])),
+        access: Type.Optional(Type.Union([Type.Literal('reader'), Type.Literal('writer'), Type.Literal('operator')], { description: 'What the job may do (default reader)' })),
+        verify: Type.Optional(Type.Boolean({ description: 'A check: run the work and report only proven findings' })),
         ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain job: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
         ...(tiers.length
           ? {
               tier: Type.Optional(
                 Type.Union(
                   tiers.map((t) => Type.Literal(t.id)),
-                  { description: `The model and effort the job runs with. Pick the cheapest tier that gets it right the first time; when unsure between two, pick the higher. ${tiers.map((t) => `${t.id} (${t.name}): ${t.purpose || 'no purpose given'}`).join(' ')}` }
+                  { description: `The reasoning level (model and effort) the job runs with. Pick the cheapest that gets it right the first time; when unsure between two, pick the higher. ${tiers.map((t) => `${t.id} (${t.name}): ${t.purpose || 'no purpose given'}`).join(' ')}` }
                 )
               )
             }
@@ -751,19 +765,23 @@ export class AgentRuntime {
           : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        const p = params as { description: string; prompt: string; role?: SubagentRun['role']; agent?: string; tier?: string; step?: number; continueFrom?: string }
+        // `role` is what older turns sent (scout, worker, verifier); it maps onto access and verify.
+        const p = params as { description: string; prompt: string; access?: AgentAccess; verify?: boolean; role?: SubagentRun['role']; agent?: string; tier?: string; step?: number; continueFrom?: string }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
-        if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Use role scout or worker instead.`)
-        const wantsWrite = named ? named.fileAccess === 'write' : p.role === 'worker'
-        // A verifier runs things, so it needs a chat that may run commands; without that it is a scout.
-        const role: SubagentRun['role'] =
-          !named && p.role === 'verifier' && parent.scope.shell && !!parent.scope.workspace ? 'verifier' : wantsWrite && cfg.allowWorkers && parent.scope.fileAccess === 'write' ? 'worker' : 'scout'
+        if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Run a plain job with an access level instead.`)
+        // What was asked (a saved agent's own level, else the job's), capped by Settings → Subagents and by what the chat itself may do.
+        const asked: AgentAccess = named ? accessOf(named) : (p.access ?? (p.role === 'worker' ? 'operator' : 'reader'))
+        const chatAccess: AgentAccess = parent.scope.fileAccess !== 'write' ? 'reader' : parent.scope.shell ? 'operator' : 'writer'
+        const access = capAccess(capAccess(asked, maxDelegatedAccess(cfg)), chatAccess)
+        // A check runs things, so it needs a chat that may run commands; without that it is a reader.
+        const verify = !named && (p.verify === true || p.role === 'verifier') && !!parent.scope.shell && !!parent.scope.workspace
+        const role: SubagentRun['role'] = verify ? 'verifier' : access === 'reader' ? 'scout' : 'worker'
         let scope: ToolScope = {
           ...parent.scope,
           depth: 1,
           subagents: false,
-          ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : role === 'verifier' ? { fileAccess: 'read' as const, shell: true } : {})
+          ...(role === 'scout' ? { fileAccess: 'read' as const, shell: false } : role === 'verifier' ? { fileAccess: 'read' as const, shell: true } : { fileAccess: 'write' as const, shell: access === 'operator' && !!parent.scope.shell })
         }
         if (named) {
           scope = { ...agentScope(named, scope), depth: 1, subagents: false }
@@ -795,6 +813,7 @@ export class AgentRuntime {
         const step = p.step !== undefined && p.step >= 1 && p.step <= todos.length ? { step: p.step, stepText: todos[p.step - 1].content } : {}
         const base = {
           role,
+          access: role === 'verifier' ? ('operator' as const) : access,
           ...(named ? { agent: named.name } : {}),
           description: p.description || named?.name || 'Subagent',
           model: model.modelId,
@@ -1071,6 +1090,8 @@ export class ChatService {
       contextLimit: cur.contextLimit,
       origin: cur.origin,
       workflow: cur.workflow ?? null,
+      archivedAt: cur.archivedAt ?? null,
+      openspec: cur.openspec ?? null,
       ...config
     }
     // Screens that still set the old switches: they become the matching permission mode.
@@ -1460,7 +1481,7 @@ export class ChatService {
       shell: caps.shell,
       sessionId: id,
       // Spec → Ship works through agents (scouts map the code, workers build), whatever the chat's own setting.
-      subagents: session.subagents || (!!session.workflow && session.workflow.stage !== 'done'),
+      subagents: session.subagents || (!!session.workflow && session.workflow.stage !== 'done') || (!!session.openspec && session.openspec.step !== 'done'),
       stageWorkers: () => stageWorkerRuns(this.active.get(id)?.state.messages ?? this.rawMessages(id)),
       codeIntel: session.codeIntel,
       images: session.imagesEnabled,
@@ -1487,6 +1508,13 @@ export class ChatService {
       setWorkflowRoute: (route) => {
         const w = this.get(id).workflow
         if (w && w.route !== route) this.update(id, { workflow: { ...w, route } })
+      },
+      openspec: () => this.get(id).openspec ?? null,
+      setOpenSpec: (patch) => {
+        const r = this.get(id).openspec
+        if (!r) return
+        this.update(id, { openspec: { ...r, ...patch } })
+        this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent)
       },
       autoApprove: () => permissionCaps(this.get(id).permissions).autoApprove,
       // "Switch to Auto" on an approval card: the chat switches to Auto (and stops asking).
@@ -1643,6 +1671,11 @@ export class ChatService {
   }
 
   async send(id: string, text: string, skillNames: string[] = [], attachments: ChatAttachment[] = [], agentNames: string[] = []): Promise<void> {
+    // Writing in an archived chat brings it back to its project.
+    if (this.get(id).archivedAt) this.update(id, { archivedAt: null })
+    // An OpenSpec run paused for the person to read the proposal: their reply lets Apply start.
+    const paused = this.get(id).openspec
+    if (paused?.awaitingReview) this.update(id, { openspec: { ...paused, awaitingReview: false, proposalApproved: true } })
     if (this.busy(id)) throw new Error('This chat is already running')
     // Tagged agents that are gone (or can't take work from this chat) are dropped; the text stays as written.
     const delegates = this.runtime.delegates(this.get(id).agentId)
@@ -1731,6 +1764,13 @@ export class ChatService {
     const toldStage = getCurrentSystemMessage(agent.state.messages)?.sections?.[WORKFLOW_SECTION] ?? null
     if (stage !== toldStage) {
       const update: SystemMessage = { role: 'system', content: '', sections: { [WORKFLOW_SECTION]: stage }, timestamp: Date.now() }
+      agent.state.messages = [...agent.state.messages, update]
+    }
+    // And OpenSpec mode's step, the same way.
+    const spec = openspecSection(session.openspec, session.workspace)
+    const toldSpec = getCurrentSystemMessage(agent.state.messages)?.sections?.[OPENSPEC_SECTION] ?? null
+    if (spec !== toldSpec) {
+      const update: SystemMessage = { role: 'system', content: '', sections: { [OPENSPEC_SECTION]: spec }, timestamp: Date.now() }
       agent.state.messages = [...agent.state.messages, update]
     }
     this.active.set(id, agent)
@@ -2038,7 +2078,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {}),
           ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {}),
           ...(block.name === 'ask_questions' && r?.details?.questions ? { questions: r.details.questions as unknown as QuestionRound } : {}),
-          ...(block.name === 'finish_stage' && r?.details?.stageGate ? { stageGate: r.details.stageGate as unknown as StageGate } : {})
+          ...(block.name === 'finish_stage' && r?.details?.stageGate ? { stageGate: r.details.stageGate as unknown as StageGate } : {}),
+          ...(block.name === 'openspec_step' && r?.details?.openspecStep ? { openspecStep: r.details.openspecStep as unknown as OpenSpecStepReport } : {})
         }
         if (!r && a.stopReason !== 'toolUse' && !pending?.has(block.id)) trace.result = 'Interrupted before the tool ran'
         turn.blocks.push({ type: 'tool', trace })

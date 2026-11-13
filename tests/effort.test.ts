@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { EFFORT_OPTIONS, effortLabel, normalizeEffort, normalizeEffortOrNull } from '../src/shared/effort'
 
 describe('reasoning effort', () => {
-  it('offers four levels in order: Light, Medium, High, Extra High', () => {
+  it('offers four levels in order: Low, Medium, High, Max', () => {
     expect(EFFORT_OPTIONS).toEqual([
-      { value: 'low', label: 'Light' },
+      { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },
-      { value: 'xhigh', label: 'Extra High' }
+      { value: 'xhigh', label: 'Max' }
     ])
   })
 
@@ -28,11 +28,11 @@ describe('reasoning effort', () => {
   })
 
   it('labels every saved level', () => {
-    expect(effortLabel('off')).toBe('Light')
-    expect(effortLabel('minimal')).toBe('Light')
-    expect(effortLabel('low')).toBe('Light')
+    expect(effortLabel('off')).toBe('Low')
+    expect(effortLabel('minimal')).toBe('Low')
+    expect(effortLabel('low')).toBe('Low')
     expect(effortLabel('medium')).toBe('Medium')
     expect(effortLabel('high')).toBe('High')
-    expect(effortLabel('xhigh')).toBe('Extra High')
+    expect(effortLabel('xhigh')).toBe('Max')
   })
 })

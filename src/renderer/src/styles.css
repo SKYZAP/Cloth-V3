@@ -72,6 +72,10 @@
   --color-mode: #dac1f8;
   --color-mode-soft: rgb(218 193 248 / 0.10);
   --color-mode-line: rgb(218 193 248 / 0.35);
+  /* OpenSpec mode: its mode chip, progress strip and step cards. */
+  --color-ospec: #7dd3c0;
+  --color-ospec-soft: rgb(125 211 192 / 0.10);
+  --color-ospec-line: rgb(125 211 192 / 0.35);
 }
 
 /* Base rules live in the base layer so Tailwind utilities (outline-none, [scrollbar-width:none], …)

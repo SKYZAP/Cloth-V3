@@ -1,3 +1,6 @@
+import { runOpenSpec } from './agent/openspec'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, dialog, shell, BrowserWindow } from 'electron'
 import { MCP_PRESETS, mcpToolName } from './mcp/client'
 import { presetsWithTokens, readEnvFile } from './mcp/homelab'
@@ -160,6 +163,21 @@ export function createApi(s: Services): ClothApi {
       resizeTerminal: async (id, cols, rows) => s.panel.terminals.resize(id, cols, rows),
       closeTerminal: async (id) => s.panel.terminals.kill(id),
       gitStatus: (id) => s.panel.gitStatus(id),
+      openspec: async (id) => {
+        const folder = s.chat.get(id).workspace
+        if (!folder) return { initialised: false, changes: null, specs: null, error: 'This chat has no folder.' }
+        if (!existsSync(join(folder, 'openspec'))) return { initialised: false, changes: null, specs: null, error: null }
+        const [changes, specs] = await Promise.all([runOpenSpec(folder, ['list', '--json'], undefined, 30_000), runOpenSpec(folder, ['list', '--specs', '--json'], undefined, 30_000)])
+        const parse = (r: { code: number | null; stdout: string }) => {
+          try {
+            return r.code === 0 ? JSON.parse(r.stdout) : null
+          } catch {
+            return null
+          }
+        }
+        const failed = [changes, specs].find((r) => r.code !== 0)
+        return { initialised: true, changes: parse(changes), specs: parse(specs), error: failed ? (failed.stderr || failed.stdout).trim().slice(0, 400) || 'openspec failed' : null }
+      },
       gitInit: (id) => s.panel.gitInit(id),
       gitDiff: (id, path, staged) => s.panel.gitDiff(id, path, staged),
       gitStage: (id, paths) => s.panel.gitStage(id, paths),

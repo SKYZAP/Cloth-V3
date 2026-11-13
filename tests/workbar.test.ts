@@ -30,7 +30,7 @@ describe('collectRuns', () => {
       ['c', 'b', 'done']
     ])
     expect(runs[0]).toMatchObject({ name: 'Reviewer', named: true, tierName: 'Fast', cost: 0.5, tokensIn: 150, tokensOut: 20 })
-    expect(runs[1]).toMatchObject({ name: 'Builder', named: false })
+    expect(runs[1]).toMatchObject({ name: 'Operator', named: false })
   })
 
   it("carries a finished run's outcome, not a running or failed one's", () => {
@@ -47,16 +47,21 @@ describe('collectRuns', () => {
 })
 
 describe('runName', () => {
-  it("is the saved agent's name, else Explorer or Builder for a plain job", () => {
+  it("is the saved agent's name, else Verifier for a check, else the job's access level", () => {
     expect(runName({ role: 'scout', agent: 'Code reviewer' })).toBe('Code reviewer')
     expect(runName({ role: 'worker', agent: 'Designer' })).toBe('Designer')
-    expect(runName({ role: 'scout' })).toBe('Explorer')
-    expect(runName({ role: 'worker' })).toBe('Builder')
+    expect(runName({ role: 'scout' })).toBe('Reader')
+    expect(runName({ role: 'worker', access: 'writer' })).toBe('Writer')
+    expect(runName({ role: 'worker', access: 'operator' })).toBe('Operator')
+    // Runs from before access levels: a worker could edit and run commands.
+    expect(runName({ role: 'worker' })).toBe('Operator')
+    expect(runName({ role: 'verifier', access: 'operator' })).toBe('Verifier')
   })
 
-  it('says what a run may do with files', () => {
-    expect(runAbout({ role: 'scout' })).toBe('Reads the project and the web to find things out; it can’t change files.')
-    expect(runAbout({ role: 'worker', tierName: 'Careful' })).toMatch(/^Makes changes to files .* Effort: Careful\.$/)
+  it('says what a run may do', () => {
+    expect(runAbout({ role: 'scout' })).toBe('Reads the project and the web to find things out; it can’t change anything.')
+    expect(runAbout({ role: 'worker', access: 'writer' })).toMatch(/^Edits files .*can’t run commands\.$/)
+    expect(runAbout({ role: 'worker', tierName: 'High' })).toMatch(/^Edits files and runs commands .* Reasoning: High\.$/)
   })
 })
 

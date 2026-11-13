@@ -1,5 +1,6 @@
 // Pure helpers behind the chat's work bar and the side panel's Agents tab: which agent runs a chat has,
 // how they line up with the todo list, and what they cost.
+import { accessLabel, type AgentAccess } from '@shared/access'
 import type { SubagentActivity, SubagentRun, TodoItem, ToolTrace, UiBlock, UiMessage } from '@shared/types'
 import { agentCost } from './agentCost'
 
@@ -11,11 +12,12 @@ export interface RunInfo {
   id: string
   /** The id of the top-level trace whose card shows this run (itself, or the run it is nested in). */
   cardId: string
-  /** The saved agent's name, else "Explorer" or "Builder" for a plain job (see runName). */
+  /** The saved agent's name, else its access level ("Reader", "Writer", "Operator") or "Verifier" for a plain job (see runName). */
   name: string
   /** Whether a saved agent ran (vs a plain job). */
   named: boolean
   role: SubagentRun['role']
+  access?: SubagentRun['access']
   tierName?: string
   model?: string
   description: string
@@ -34,15 +36,21 @@ export interface RunInfo {
 
 export const runCardId = (traceId: string) => `run-${traceId}`
 
-/** What a run is called: the saved agent that ran, else "Explorer" (reads only) or "Builder" (makes changes) for a plain job. */
-export const runName = (run: Pick<SubagentRun, 'agent' | 'role'>): string => run.agent ?? (run.role === 'worker' ? 'Builder' : 'Explorer')
+/** A run's access level; runs from before levels carry only their role (a worker could edit and run commands). */
+export const runAccess = (run: Pick<SubagentRun, 'role' | 'access'>): AgentAccess => run.access ?? (run.role === 'scout' ? 'reader' : 'operator')
 
-/** What a run is for, in plain words, with the effort it was given: the tooltip on its name (the line shows only the name and the job). */
-export const runAbout = (run: Pick<SubagentRun, 'agent' | 'role' | 'tierName'>): string =>
-  [
-    run.role === 'worker' ? 'Makes changes to files (in its own copy of the project when it is a git repository, merged back when it finishes).' : 'Reads the project and the web to find things out; it can’t change files.',
-    run.tierName ? `Effort: ${run.tierName}.` : ''
-  ]
+/** What a run is called: the saved agent that ran, else "Verifier" for a check, else its access level. */
+export const runName = (run: Pick<SubagentRun, 'agent' | 'role' | 'access'>): string => run.agent ?? (run.role === 'verifier' ? 'Verifier' : accessLabel(runAccess(run)))
+
+const ABOUT: Record<AgentAccess, string> = {
+  reader: 'Reads the project and the web to find things out; it can’t change anything.',
+  writer: 'Edits files (in its own copy of the project when it is a git repository, merged back when it finishes); it can’t run commands.',
+  operator: 'Edits files and runs commands (in its own copy of the project when it is a git repository, merged back when it finishes).'
+}
+
+/** What a run is for, in plain words, with the reasoning it was given: the tooltip on its name (the line shows only the name and the job). */
+export const runAbout = (run: Pick<SubagentRun, 'agent' | 'role' | 'access' | 'tierName'>): string =>
+  [run.role === 'verifier' ? 'Checks the work by running it, in a throwaway copy, and reports only what it proved.' : ABOUT[runAccess(run)], run.tierName ? `Reasoning: ${run.tierName}.` : '']
     .filter(Boolean)
     .join(' ')
 
@@ -57,6 +65,7 @@ function runInfo(trace: ToolTrace, run: SubagentRun, cardId: string): RunInfo {
     name: runName(run),
     named: !!run.agent,
     role: run.role,
+    access: run.access,
     tierName: run.tierName,
     model: run.model,
     description: run.description,
