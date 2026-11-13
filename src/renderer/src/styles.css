@@ -23,6 +23,8 @@
 
   --color-bg: #09090c;
   --color-panel: #141518;
+  /* The chat's side panel: a card on the frame, a step above the conversation's black. */
+  --color-card: #0f0f12;
   --color-elev: #1e1e22;
   --color-elev-2: #26262b;
   --color-hover: #2d2d33;

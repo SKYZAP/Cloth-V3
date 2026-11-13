@@ -248,12 +248,14 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
 }
 
 /** Left-hand list column used by several pages. */
-export function ListPane({ header, children, width = 272 }: { header: ReactNode; children: ReactNode; width?: number }) {
+/** A list beside its detail. `frame`: the list sits on the window frame (no surface or divider of its own), beside a detail drawn as its own card. */
+export function ListPane({ header, children, width = 272, frame = false }: { header: ReactNode; children: ReactNode; width?: number; frame?: boolean }) {
   const side = useSideBySide()
+  const onFrame = frame && side
   return (
-    <div className={clsx('flex h-full shrink-0 flex-col', side ? 'border-r border-line bg-panel' : 'w-full bg-bg')} style={side ? { width } : undefined}>
-      <div className="border-b border-line p-3">{header}</div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
+    <div className={clsx('flex h-full shrink-0 flex-col', onFrame ? 'pr-2' : side ? 'border-r border-line bg-panel' : 'w-full bg-bg')} style={side ? { width } : undefined}>
+      <div className={onFrame ? 'px-1 pb-2.5' : 'border-b border-line p-3'}>{header}</div>
+      <div className={clsx('min-h-0 flex-1 overflow-y-auto', onFrame ? 'pb-2' : 'p-1.5')}>{children}</div>
     </div>
   )
 }

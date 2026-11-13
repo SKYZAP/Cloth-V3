@@ -429,11 +429,16 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     await win.webContents.executeJavaScript(`document.querySelector('textarea').focus()`)
     await wait(500)
     writeFileSync(join(outDir, 'chat-focus.png'), await screenshot(win))
-    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Knowledge"]').click()`)
+    // Side panel from its dock: Setup, then Terminal stacked below it, then closed again.
+    const dock = (label: string) => `[...document.querySelectorAll('nav[aria-label="Side panel tabs"] button')].find(b => b.getAttribute('aria-label').startsWith(${JSON.stringify(label)}))`
+    await win.webContents.executeJavaScript(`${dock('Setup')}?.click()`)
     await wait(900)
-    writeFileSync(join(outDir, 'chat-sheet.png'), await screenshot(win))
-    note('sheet: ' + (await win.webContents.executeJavaScript(`document.querySelector('[role=dialog]')?.getBoundingClientRect().top`)))
-    await win.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+    writeFileSync(join(outDir, 'chat-panel.png'), await screenshot(win))
+    note('panel: ' + (await win.webContents.executeJavaScript(`Math.round(document.querySelector('aside[aria-label="Side panel"]')?.getBoundingClientRect().width ?? 0)`)))
+    await win.webContents.executeJavaScript(`${dock('Terminal')}?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }))`)
+    await wait(1200)
+    writeFileSync(join(outDir, 'chat-panel-stacked.png'), await screenshot(win))
+    await win.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true })); window.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true }))`)
     await wait(800)
     await win.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('web_search'))?.click()`)
     await wait(700)
@@ -501,7 +506,8 @@ async function screenshot(win: BrowserWindow): Promise<Buffer> {
 }
 
 function clickNav(win: BrowserWindow, label: string) {
-  return win.webContents.executeJavaScript(`[...document.querySelectorAll('nav button')].find(b => b.textContent.trim() === ${JSON.stringify(label)})?.click()`)
+  // The full sidebar labels its pages in text; the icon rail on Chat names them with aria-label.
+  return win.webContents.executeJavaScript(`[...document.querySelectorAll('nav[aria-label="Pages"] button')].find(b => b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)})?.click()`)
 }
 
 function clickText(win: BrowserWindow, text: string) {

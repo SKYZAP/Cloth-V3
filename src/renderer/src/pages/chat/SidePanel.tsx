@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
 import { FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
-import type { ChatSession, UiMessage, WorkspaceFile } from '@shared/types'
+import type { ChatSession, TerminalInfo, UiMessage, WorkspaceFile } from '@shared/types'
+import { terminalsAfter } from '@shared/terminal-tabs'
+import { api, useEvent } from '@/lib/api'
+import { chatAgents } from '@/lib/workbar'
+import { Tooltip } from '@/components/Tooltip'
 import { canStack, focusOrReplace, focusSection, migrate, resize, shownTabs, stackBelow, unstack, type PanelStack, type PanelTab } from '@shared/panel-stack'
 import { isMobile } from '@/lib/platform'
 import { IconButton } from '@/components/ui'
@@ -118,37 +122,9 @@ export function SidePanel({
     if (tab === 'setup' && shown[focus] === 'setup') setSetupKey((n) => n + 1)
     else apply(focusOrReplace(stack, tab))
   }
-  const stackTab = (tab: PanelTab) => {
-    if (!isMobile && canStack(stack)) apply(stackBelow(stack, tab))
-  }
   const focusAt = (i: number) => {
     if (!isMobile && i !== state.focus) apply(focusSection(stack, i))
   }
-
-  // Right-click a tab for "Stack below".
-  const [menu, setMenu] = useState<{ tab: PanelTab; x: number; y: number; from: HTMLElement } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!menu) return
-    menuRef.current?.querySelector('button')?.focus()
-    const away = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(null)
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setMenu(null)
-      menu.from.focus()
-    }
-    const close = () => setMenu(null)
-    window.addEventListener('pointerdown', away, true)
-    window.addEventListener('keydown', esc)
-    window.addEventListener('blur', close)
-    window.addEventListener('resize', close)
-    return () => {
-      window.removeEventListener('pointerdown', away, true)
-      window.removeEventListener('keydown', esc)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('resize', close)
-    }
-  }, [menu])
 
   // Drag the left edge to resize.
   const drag = useRef<{ x: number; w: number } | null>(null)
@@ -174,7 +150,14 @@ export function SidePanel({
 
   return (
     <aside
-      className="relative flex h-full shrink-0 flex-col border-l border-line bg-bg mobile:fixed mobile:inset-0 mobile:z-50 mobile:w-full mobile:border-l-0 mobile:pt-[env(safe-area-inset-top)]"
+      aria-label="Side panel"
+      className={clsx(
+        'relative flex h-full shrink-0 flex-col',
+        isMobile
+          ? 'fixed inset-0 z-50 w-full bg-bg pt-[env(safe-area-inset-top)]'
+          : // Below 1180px it floats over the conversation (beside the dock) so the message column keeps its width.
+            'overflow-hidden rounded-xl border border-line bg-card max-[1180px]:absolute max-[1180px]:top-0 max-[1180px]:right-14 max-[1180px]:bottom-2 max-[1180px]:z-40 max-[1180px]:h-auto max-[1180px]:shadow-[-30px_0_60px_-20px_rgb(0_0_0/0.8)]'
+      )}
       style={isMobile ? undefined : { width: Math.min(state.width, max()) }}
     >
       {!isMobile && (
@@ -193,59 +176,47 @@ export function SidePanel({
           title="Drag to resize · double-click to reset"
         />
       )}
-      {/* Narrow panels: the tabs drop to icons (the open one keeps its name while there is room). */}
-      <div className="@container flex h-14 shrink-0 items-center gap-0.5 border-b border-line px-2 @[520px]:gap-1">
+      {isMobile ? (
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-2">
         {TABS.map((t) => {
           const on = shown.includes(t.id)
-          const focused = on && shown[focus] === t.id
           return (
-            <div key={t.id} className="group/tab relative">
-              <button
-                onClick={() => pick(t.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.shiftKey && !isMobile) {
-                    e.preventDefault()
-                    stackTab(t.id)
-                  }
-                }}
-                onContextMenu={(e) => {
-                  if (isMobile) return
-                  e.preventDefault()
-                  const r = e.currentTarget.getBoundingClientRect()
-                  const keyboard = e.clientX === 0 && e.clientY === 0
-                  setMenu({ tab: t.id, x: Math.min(keyboard ? r.left : e.clientX, window.innerWidth - 168), y: keyboard ? r.bottom + 4 : e.clientY, from: e.currentTarget })
-                }}
-                className={clsx(
-                  'flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-ui transition-colors',
-                  focused ? 'bg-elev-2 text-fg' : on ? 'bg-elev text-fg hover:bg-elev-2' : 'text-muted hover:bg-elev hover:text-fg'
-                )}
-                aria-pressed={on}
-                aria-label={t.label}
-                title={t.label}
-                aria-keyshortcuts={isMobile ? undefined : 'Shift+Enter'}
-              >
-                <t.icon size={14} weight={focused ? 'fill' : 'regular'} className="shrink-0" />
-                <span className={clsx('whitespace-nowrap', focused ? 'hidden @[380px]:inline' : 'hidden @[520px]:inline')}>{t.label}</span>
-              </button>
-              {!isMobile && (
-                <button
-                  onClick={() => stackTab(t.id)}
-                  aria-disabled={!canStack(stack)}
-                  aria-label={`Stack ${t.label} below`}
-                  title={canStack(stack) ? 'Stack below' : FULL}
-                  className="absolute -right-1 -top-1 z-10 flex h-5 w-5 items-center justify-center rounded-md border border-line bg-panel text-dim opacity-0 transition-opacity hover:text-fg focus-visible:opacity-100 group-hover/tab:opacity-100 aria-disabled:cursor-not-allowed aria-disabled:hover:text-dim"
-                >
-                  <Rows size={14} />
-                </button>
-              )}
-            </div>
+            <button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              className={clsx('flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-ui transition-colors', on ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev hover:text-fg')}
+              aria-pressed={on}
+              aria-label={t.label}
+              title={t.label}
+            >
+              <t.icon size={14} weight={on ? 'fill' : 'regular'} className="shrink-0" />
+              {on && <span className="whitespace-nowrap">{t.label}</span>}
+            </button>
           )
         })}
         <div className="flex-1" />
-        <button onClick={() => set({ open: false })} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg" aria-label="Close panel" title="Close (Ctrl+`)">
+        <button onClick={() => set({ open: false })} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg" aria-label="Close panel" title="Close">
           <X size={15} />
         </button>
       </div>
+      ) : (
+        !multi && (
+          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line pl-3.5 pr-1.5">
+            {(() => {
+              const t = TABS.find((x) => x.id === shown[0])!
+              return (
+                <>
+                  <t.icon size={15} weight="fill" className="shrink-0 text-muted" />
+                  <span className="min-w-0 flex-1 truncate text-ui font-semibold">{t.label}</span>
+                </>
+              )
+            })()}
+            <IconButton className="h-7 w-7" onClick={() => set({ open: false })} aria-label="Close panel" title="Close (Ctrl+.)">
+              <X size={14} />
+            </IconButton>
+          </div>
+        )
+      )}
       <div ref={body} className="relative grid min-h-0 flex-1" style={{ gridTemplateRows: rows, gridTemplateColumns: 'minmax(0, 1fr)' }}>
         {multi &&
           shown.map((tab, i) => {
@@ -327,14 +298,170 @@ export function SidePanel({
           </div>
         )}
       </div>
+    </aside>
+  )
+}
+
+/** What the dock shows on each tab while the panel is closed or showing something else: running shells, git changes, running agents. */
+function useDockBadges(session: ChatSession, messages: UiMessage[]) {
+  const agents = useMemo(() => chatAgents(messages).runs.filter((r) => r.status === 'running').length, [messages])
+  const [terminals, setTerminals] = useState<TerminalInfo[] | null>(null)
+  useEffect(() => {
+    let live = true
+    setTerminals(null)
+    void api.panel.terminals(session.id).then(
+      (ts) => live && setTerminals(ts),
+      () => undefined
+    )
+    return () => {
+      live = false
+    }
+  }, [session.id])
+  useEvent('terminal', (e) => {
+    if (e.type !== 'data') setTerminals((cur) => terminalsAfter(cur, session.id, e))
+  })
+  const [changes, setChanges] = useState<number | null>(null)
+  const hasFolder = !!session.workspace || !!session.container
+  const loadGit = useRef<() => void>(() => undefined)
+  useEffect(() => {
+    setChanges(null)
+    if (!hasFolder) return
+    let live = true
+    loadGit.current = () => {
+      if (document.hidden) return
+      void api.panel.gitStatus(session.id).then(
+        (s) => live && setChanges(s?.repo ? s.files.length : null),
+        () => live && setChanges(null)
+      )
+    }
+    loadGit.current()
+    const t = setInterval(() => loadGit.current(), 10_000)
+    return () => {
+      live = false
+      clearInterval(t)
+      loadGit.current = () => undefined
+    }
+  }, [session.id, session.workspace, hasFolder, session.container])
+  useEvent('chat', (e) => {
+    if (e.sessionId === session.id && e.type === 'end') loadGit.current()
+  })
+  return { agents, terminals: terminals?.filter((t) => t.running).length ?? 0, changes }
+}
+
+/**
+ * The side panel's tabs on the window frame, to the right of the panel: always visible, with what each tab has going on.
+ * Clicking a tab shows it (in the focused section); clicking the tab already in front closes the panel.
+ * Right-click or Shift+Enter stacks a tab below the others (up to three).
+ */
+export function PanelDock({ session, messages, state, set }: { session: ChatSession; messages: UiMessage[]; state: PanelState; set(p: Partial<PanelState>): void }) {
+  const shown = state.open ? shownTabs(state, false) : []
+  const focus = Math.min(state.focus, Math.max(0, shown.length - 1))
+  const stack: PanelStack = { stack: state.stack, sizes: state.sizes, focus: state.focus }
+  const badges = useDockBadges(session, messages)
+
+  const pick = (tab: PanelTab) => {
+    if (state.open && shown[focus] === tab) return set({ open: false })
+    set({ ...focusOrReplace(stack, tab), open: true })
+  }
+  const stackable = (tab: PanelTab) => stack.stack.includes(tab) || canStack(stack)
+  const stackTab = (tab: PanelTab) => {
+    // Closed: the panel comes back as it was, with this tab added below.
+    if (stackable(tab)) set({ ...stackBelow(stack, tab), open: true })
+  }
+
+  const [menu, setMenu] = useState<{ tab: PanelTab; x: number; y: number; from: HTMLElement } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    menuRef.current?.querySelector('button')?.focus()
+    const away = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(null)
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMenu(null)
+      menu.from.focus()
+    }
+    const close = () => setMenu(null)
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', esc)
+    window.addEventListener('blur', close)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', esc)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('resize', close)
+    }
+  }, [menu])
+
+  const status = (tab: PanelTab): string | null => {
+    if (tab === 'terminal' && badges.terminals) return `${badges.terminals} running`
+    if (tab === 'git' && badges.changes) return `${badges.changes} change${badges.changes === 1 ? '' : 's'}`
+    if (tab === 'agents' && badges.agents) return `${badges.agents} running`
+    if (tab === 'spec' && session.workflow && session.workflow.stage !== 'done') return 'In progress'
+    return null
+  }
+
+  return (
+    <nav aria-label="Side panel tabs" className="flex w-12 shrink-0 flex-col items-center gap-0.5">
+      {TABS.map((t) => {
+        const on = shown.includes(t.id)
+        const front = on && shown[focus] === t.id
+        const note = status(t.id)
+        const shortcut = t.id === 'terminal' ? ' (Ctrl+`)' : ''
+        return (
+          <Tooltip
+            key={t.id}
+            side="left"
+            content={
+              <>
+                {front ? `Hide ${t.label}` : t.label}
+                {note ? ` · ${note}` : ''}
+                {shortcut}
+                <span className="block text-dim">Right-click to stack below</span>
+              </>
+            }
+          >
+            <button
+              onClick={() => pick(t.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.shiftKey) {
+                  e.preventDefault()
+                  stackTab(t.id)
+                }
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                const r = e.currentTarget.getBoundingClientRect()
+                const keyboard = e.clientX === 0 && e.clientY === 0
+                setMenu({ tab: t.id, x: Math.min(keyboard ? r.left - 168 : e.clientX, window.innerWidth - 168), y: keyboard ? r.top : e.clientY, from: e.currentTarget })
+              }}
+              aria-pressed={on}
+              aria-label={note ? `${t.label}, ${note}` : t.label}
+              aria-keyshortcuts="Shift+Enter"
+              className={clsx('relative flex h-9 w-9 items-center justify-center rounded-[9px] transition-colors', on ? 'bg-elev-2 text-fg' : 'text-dim hover:bg-elev hover:text-fg')}
+            >
+              {front && <span className="absolute -right-1.5 top-[9px] bottom-[9px] w-0.5 rounded-l bg-crimson" />}
+              <t.icon size={18} weight={on ? 'fill' : 'regular'} />
+              {t.id === 'git' && !!badges.changes && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-panel bg-elev-2 px-1 text-[9.5px] font-semibold tabular-nums text-fg">
+                  {badges.changes > 99 ? '99+' : badges.changes}
+                </span>
+              )}
+              {t.id === 'terminal' && badges.terminals > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ok ring-2 ring-panel" />}
+              {t.id === 'agents' && badges.agents > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-info ring-2 ring-panel" />}
+              {t.id === 'spec' && note && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-mode ring-2 ring-panel" />}
+            </button>
+          </Tooltip>
+        )
+      })}
       {menu && (
         <div ref={menuRef} role="menu" className="fixed z-50 w-40 rounded-lg border border-line-strong bg-panel p-1 shadow-lg shadow-black/40" style={{ left: menu.x, top: menu.y }}>
           <button
             role="menuitem"
-            aria-disabled={!canStack(stack)}
-            title={canStack(stack) ? undefined : FULL}
+            aria-disabled={!stackable(menu.tab)}
+            title={stackable(menu.tab) ? undefined : FULL}
             onClick={() => {
-              if (!canStack(stack)) return
+              if (!stackable(menu.tab)) return
               stackTab(menu.tab)
               setMenu(null)
               menu.from.focus()
@@ -346,7 +473,6 @@ export function SidePanel({
           </button>
         </div>
       )}
-    </aside>
+    </nav>
   )
 }
-

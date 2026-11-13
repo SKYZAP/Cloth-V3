@@ -48,7 +48,7 @@ import { agentCost } from '@/lib/agentCost'
 import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
-import { SidePanel, usePanelState } from './chat/SidePanel'
+import { PanelDock, SidePanel, usePanelState } from './chat/SidePanel'
 import { showTab, shownTabs } from '@shared/panel-stack'
 import { ComposerBar } from './chat/ComposerBar'
 import { PlanApprovalLine, PlanCard } from './chat/PlanCard'
@@ -238,6 +238,8 @@ export function ChatPage() {
     <SplitRoot open={open} onBack={() => setOpen(false)}>
       {!(side && listHidden) && (
       <ListPane
+        frame={!isMobile}
+        width={280}
         header={
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -580,8 +582,13 @@ function ChatView({
   // ─── Side panel (terminal, files, git) ──────────────────────────────────────
   const [panel, setPanel] = usePanelState()
   useEffect(() => {
-    // Ctrl+` opens the terminal (or closes the panel when it's already showing it).
+    // Ctrl+` opens the terminal (or closes the panel when it's already showing it); Ctrl+. shows or hides the panel.
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === '.' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !isMobile) {
+        e.preventDefault()
+        setPanel({ open: !panel.open })
+        return
+      }
       if (e.key !== '`' || !(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       setPanel(panel.open && shownTabs(panel, isMobile).includes('terminal') ? { open: false } : { open: true, ...showTab(panel, 'terminal', isMobile) })
@@ -830,9 +837,10 @@ function ChatView({
   const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
 
   return (
-    <div className="flex h-full min-w-0">
+    // Desktop: the conversation is a rounded canvas on the window frame; the side panel is a card beside it and its dock sits on the frame.
+    <div className={clsx('relative flex h-full min-w-0', !isMobile && 'gap-2 pb-2')}>
     <div
-      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden"
+      className={clsx('relative flex h-full min-w-0 flex-1 flex-col overflow-hidden', !isMobile && 'rounded-xl border border-line bg-bg')}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
@@ -881,7 +889,7 @@ function ChatView({
             </motion.button>
           </Tooltip>
         )}
-        {listHidden && project && (
+        {project && (listHidden || !isMobile) && (
           <span className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-ui text-dim" title={project.folder ?? undefined}>
             <FolderSimple size={14} weight="fill" className="shrink-0" style={{ color: project.color }} />
             <span className="truncate">{project.name}</span>
@@ -912,6 +920,8 @@ function ChatView({
           </Tooltip>
         )}
         {session.container && <ContainerPill session={session} running={running} />}
+        {/* The desktop opens the panel from its dock; phones keep the header button. */}
+        {isMobile && (
         <Tooltip content={panel.open ? 'Hide the side panel' : 'Setup, files, terminal, git and agents'}>
           <motion.button
             whileTap={{ scale: 0.88 }}
@@ -924,6 +934,7 @@ function ChatView({
             <SidebarSimple size={17} weight={panel.open ? 'fill' : 'regular'} className="-scale-x-100" />
           </motion.button>
         </Tooltip>
+        )}
       </header>
 
       <div
@@ -1158,6 +1169,7 @@ function ChatView({
       </div>
     </div>
     {panel.open && <SidePanel session={session} messages={messages} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
+    {!isMobile && <PanelDock session={session} messages={messages} state={panel} set={setPanel} />}
     </div>
   )
 }
