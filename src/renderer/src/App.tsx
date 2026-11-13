@@ -105,9 +105,7 @@ function DesktopApp() {
     <MotionConfig reducedMotion="user">
     <div className="flex h-full bg-panel">
       {/* Sidebar: the same grey as the strip above the page, so the two read as one frame around it. */}
-      <nav aria-label="Pages" className="relative flex w-[216px] shrink-0 flex-col">
-        {/* On Chat the chat list sits on the same grey: a hairline drawn over the sidebar's own edge, so nothing moves. */}
-        {ownCanvas && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-px bg-line" />}
+      <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col">
         <div className={clsx('drag flex shrink-0 items-center gap-2 px-4', isMac ? 'h-[52px] items-end pb-2' : 'h-12')}>
           <Logo size={18} />
           <span className="text-body font-semibold tracking-tight">Cloth</span>
