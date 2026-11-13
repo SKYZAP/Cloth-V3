@@ -96,7 +96,7 @@ const saveSection = (id: SectionId) => {
 }
 const matches = (s: SectionDef, q: string) => !q || `${s.title} ${s.blurb} ${s.keywords}`.toLowerCase().includes(q)
 
-/** Settings changed from their defaults: a blue edge and Reset on the row, a count in the index. */
+/** Settings changed from their defaults: a blue outline, wash and Reset on the row, a count in the index. */
 interface Tracked {
   section: SectionId
   changed(s: Settings): boolean
@@ -820,7 +820,7 @@ function Group({ title, note, children }: { title?: string; note?: ReactNode; ch
   return (
     <section className="mb-6">
       {title && <div className="mb-2 px-1 text-caption font-medium text-dim">{title}</div>}
-      <div className="divide-y divide-line overflow-hidden rounded-[10px] border border-line bg-panel">{children}</div>
+      <div className="divide-y divide-line overflow-hidden rounded-[10px] border border-line bg-panel p-1">{children}</div>
       {note && <div className="mt-1.5 px-1 text-caption text-dim">{note}</div>}
     </section>
   )
@@ -833,13 +833,14 @@ function Row({ label, hint, children, stacked, track }: { label: string; hint?: 
   const t = track ? TRACKED.get(track) : undefined
   const changed = !!(t && settings && t.changed(settings))
   return (
-    <div className={clsx('relative gap-x-6 gap-y-2.5 px-4 py-3.5', stacked ? 'space-y-2.5' : 'flex items-center mobile:flex-col mobile:items-stretch')}>
-      {changed && <span aria-hidden="true" className="absolute inset-y-3 left-0 w-0.5 rounded-r bg-info" />}
+    <div className={clsx('relative gap-x-6 gap-y-2.5 rounded-[7px] px-3 py-3.5', changed && 'bg-info/[0.07]', stacked ? 'space-y-2.5' : 'flex items-center mobile:flex-col mobile:items-stretch')}>
+      {/* The ring sits above the dividers on either side, so a changed row reads as one outlined block. */}
+      {changed && <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 -inset-y-px z-[1] rounded-[7px] ring-1 ring-inset ring-info/45" />}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-ui font-medium">
           {label}
           {changed && (
-            <button type="button" className="rounded px-1.5 text-caption font-normal text-dim hover:bg-elev-2 hover:text-fg" onClick={() => void update(t!.reset(settings!))} aria-label={`Reset ${label} to the default`} title="Changed from the default">
+            <button type="button" className="rounded px-1.5 text-caption font-normal text-info hover:bg-info/15" onClick={() => void update(t!.reset(settings!))} aria-label={`Reset ${label} to the default`} title="Changed from the default">
               Reset
             </button>
           )}
