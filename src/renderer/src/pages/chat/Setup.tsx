@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ArrowSquareOut, CaretLeft, CaretRight, FolderSimple, MagnifyingGlass, X } from '@phosphor-icons/react'
+import { ArrowSquareOut, Books, CaretLeft, CaretRight, FolderSimple, Gauge, MagnifyingGlass, Monitor, NotePencil, PlugsConnected, Robot, Sparkle, Wrench, X, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { contextIsGuess, type Agent, type AgentSetup, type ChatSession, type ChatSetup, type McpClientStatus, type Project, type SkillMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -195,51 +195,127 @@ export function SetupPanel({ session, update }: { session: ChatSession; update: 
   const builtinOn = builtin.filter((t) => isOn(t.name)).length
   const externalOn = external.filter((t) => isOn(t.name)).length
   const serversOn = configs.filter((c) => chosen.includes(c.id)).length
+  const cost = (n: number) => (n ? `+${k(n)}` : undefined)
+  const mcpSub = !configs.length
+    ? 'None set up'
+    : !serversOn
+      ? 'None on'
+      : !external.some((t) => isOn(t.name))
+        ? `${serversOn} start${serversOn === 1 ? 's' : ''} when the chat runs`
+        : `${externalOn} tool${externalOn === 1 ? '' : 's'} from ${serversOn} server${serversOn === 1 ? '' : 's'}`
+  const instructions = session.systemPrompt.trim().split('\n')[0]
+  const contextValue = session.contextLimit ? `${tokensLabel(session.contextLimit)}, set for all chats` : modelWindow ? `${tokensLabel(modelWindow)}, the model’s` : 'The model’s'
   return (
     <div ref={root} className="h-full overflow-y-auto">
-      <div className="mx-2.5 mt-3 grid gap-2 rounded-[14px] border border-line bg-panel px-3 pb-3 pt-2.5" role="group" aria-label="Added to each request">
-        <div className="flex items-baseline justify-between text-caption text-muted">
-          <span>Added to each request</span>
-          <b className="font-mono text-caption font-medium tabular-nums text-fg">{setup ? `${k(total)} tokens` : '…'}</b>
+      <div className="grid gap-3 p-3">
+        <button
+          onClick={() => setView('agent')}
+          aria-label={`Agent: ${agent ? agent.name : 'Default'}${changed ? ', changed in this chat' : ''}`}
+          className="flex items-center gap-2.5 rounded-xl border border-line p-2.5 text-left transition-colors hover:border-line-strong hover:bg-elev"
+        >
+          {agent ? (
+            <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-agent-soft text-caption font-semibold text-agent">
+              {agentInitials(agent.name)}
+            </span>
+          ) : (
+            <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-crimson-soft text-crimson-text">
+              <Robot size={16} weight="fill" />
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-ui font-semibold text-fg">{agent ? agent.name : 'Default'}</span>
+            <span className="block truncate text-caption text-dim">{agent ? (changed ? 'Changed in this chat' : agent.purpose || 'Saved agent') : 'Cloth’s assistant with this chat’s own setup'}</span>
+          </span>
+          <CaretRight size={12} className="shrink-0 text-dim" />
+        </button>
+
+        <Group>
+          <SetupRow icon={NotePencil} label="Instructions" sub={instructions || 'None'} onOpen={() => setView('instructions')} />
+          <SetupRow icon={Gauge} label="Context window" sub={contextValue} onOpen={() => setView('context')} />
+        </Group>
+
+        <Caption>What the chat can use</Caption>
+        <Group>
+          <SetupRow icon={Books} label="Knowledge" sub={selected.length ? `${selected.length} collection${selected.length === 1 ? '' : 's'} on` : 'Off'} meta={cost(parts.knowledge)} on={selected.length > 0} onOpen={() => setView('knowledge')} />
+          <SetupRow icon={Sparkle} label="Skills" sub={`${skillsOn.length} on · ${session.skillsEnabled ? 'the agent picks Auto skills' : 'picked by you only'}`} meta={cost(parts.skills)} on={skillsOn.length > 0} onOpen={() => setView('skills')} />
+          <SetupRow icon={Wrench} label="Tools" sub={`${builtinOn} of ${builtin.length} on`} meta={cost(parts.builtin)} on={builtinOn > 0} onOpen={() => setView('tools')} />
+          <SetupRow icon={PlugsConnected} label="MCP" sub={mcpSub} meta={cost(parts.servers)} on={serversOn > 0} onOpen={() => setView('mcp')} />
+          {computerSupported && <SetupToggle icon={Monitor} label="Computer Use" sub="Screen, mouse and keyboard" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
+          <SetupToggle icon={Robot} label="Automatic agent tiers" sub="Subagents run on the tier their task needs" on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
+        </Group>
+
+        <div className="grid gap-2" role="group" aria-label="Added to each request">
+          <Caption aside={setup ? `${k(total)} tokens` : '…'}>Added to each request</Caption>
+          <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-elev-2" aria-hidden="true">
+            {(Object.keys(PART) as (keyof typeof PART)[]).map((p) => (total ? <span key={p} style={{ width: `${(parts[p] / total) * 100}%`, background: PART[p] }} className="h-full transition-[width] duration-300" /> : null))}
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-x-3 gap-y-1 text-caption text-muted">
+            {(
+              [
+                ['servers', 'MCP servers'],
+                ['builtin', 'Built-in tools'],
+                ['skills', 'Skills'],
+                ['knowledge', 'Knowledge']
+              ] as const
+            ).map(([p, label]) => (
+              <Legend key={p} color={PART[p]} label={label} value={k(parts[p])} />
+            ))}
+          </div>
         </div>
-        <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-elev-2" aria-hidden="true">
-          {(Object.keys(PART) as (keyof typeof PART)[]).map((p) => (total ? <span key={p} style={{ width: `${(parts[p] / total) * 100}%`, background: PART[p] }} className="h-full transition-[width] duration-300" /> : null))}
-        </div>
-        <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-x-2 gap-y-1 text-caption text-muted">
-          {(
-            [
-              ['servers', 'Servers'],
-              ['builtin', 'Built-in'],
-              ['skills', 'Skills'],
-              ['knowledge', 'Knowledge']
-            ] as const
-          ).map(([p, label]) => (
-            <Legend key={p} color={PART[p]} label={label} value={k(parts[p])} />
-          ))}
-        </div>
+        <p className="text-caption leading-relaxed text-dim">{session.agentId ? 'Set up from an agent: changes stay in this chat.' : 'Shared by all chats, except Instructions.'}</p>
       </div>
-      <div className="grid gap-0.5 p-2">
-        <SummaryLine label="Agent" onOpen={() => setView('agent')} value={agent ? `${agent.name}${changed ? ' (changed)' : ''}` : 'Default'} />
-        <ToggleLine label="Automatic agent tiers" on={session.autoTiers} onChange={() => void update({ autoTiers: !session.autoTiers })} />
-        <SummaryLine label="Skills" count={skillsOn.length} tokens={parts.skills} onOpen={() => setView('skills')} hint={!session.skillsEnabled ? 'picked by you only' : undefined} />
-        {!configs.length ? (
-          <SummaryLine label="MCP" onOpen={() => setView('mcp')} hint="none set up" />
-        ) : !serversOn ? (
-          <SummaryLine label="MCP" onOpen={() => setView('mcp')} hint="none on" />
-        ) : !external.some((t) => isOn(t.name)) ? (
-          <SummaryLine label="MCP" onOpen={() => setView('mcp')} hint={`${serversOn} start${serversOn === 1 ? 's' : ''} when the chat runs`} />
-        ) : (
-          <SummaryLine label="MCP" count={externalOn} tokens={parts.servers} onOpen={() => setView('mcp')} />
-        )}
-        <SummaryLine label="Tools" count={builtinOn} tokens={parts.builtin} onOpen={() => setView('tools')} />
-        <SummaryLine label="Knowledge" count={selected.length} tokens={parts.knowledge} onOpen={() => setView('knowledge')} />
-        {computerSupported && <ToggleLine label="Computer Use" on={session.computerUse} onChange={() => void update({ computerUse: !session.computerUse })} />}
-        <SummaryLine label="Context window" onOpen={() => setView('context')} value={session.contextLimit ? `${tokensLabel(session.contextLimit)} (set)` : modelWindow ? `${tokensLabel(modelWindow)}, the model’s` : 'the model’s'} />
-        <SummaryLine label="Instructions" onOpen={() => setView('instructions')} hint={session.systemPrompt.trim() ? 'set' : 'none'} />
-      </div>
-      <p className="px-4 pb-4 text-caption leading-relaxed text-dim">
-        {session.agentId ? 'Set up from an agent: changes stay in this chat.' : 'Shared by all chats, except Instructions.'}
-      </p>
+    </div>
+  )
+}
+
+const agentInitials = (name: string) =>
+  name
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+
+/** A bordered list of setup rows, divided by hairlines. */
+function Group({ children }: { children: ReactNode }) {
+  return <div className="overflow-hidden rounded-xl border border-line [&>*+*]:border-t [&>*+*]:border-line">{children}</div>
+}
+
+function Caption({ children, aside }: { children: ReactNode; aside?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 px-0.5 text-micro font-semibold uppercase tracking-[0.07em] text-dim">
+      <span>{children}</span>
+      {aside && <b className="font-mono text-caption font-medium normal-case tracking-normal tabular-nums text-muted">{aside}</b>}
+    </div>
+  )
+}
+
+/** An overview row that opens its section: icon, name, what it's set to, and what it adds to each request. */
+function SetupRow({ icon: Icon, label, sub, meta, on, onOpen }: { icon: PhosphorIcon; label: string; sub: string; meta?: string; on?: boolean; onOpen(): void }) {
+  return (
+    <button onClick={onOpen} aria-label={`${label}: ${sub}${meta ? `, adds about ${meta.slice(1)} tokens` : ''}`} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-elev">
+      <Icon size={16} className={clsx('shrink-0', on ? 'text-muted' : 'text-dim')} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-ui font-medium text-fg">{label}</span>
+        <span className="block truncate text-caption text-dim">{sub}</span>
+      </span>
+      {meta && <span className="shrink-0 font-mono text-caption tabular-nums text-muted">{meta}</span>}
+      <CaretRight size={12} className="shrink-0 text-dim" />
+    </button>
+  )
+}
+
+/** An overview row with a switch instead of a section. */
+function SetupToggle({ icon: Icon, label, sub, on, onChange }: { icon: PhosphorIcon; label: string; sub: string; on: boolean; onChange(): void }) {
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5">
+      <Icon size={16} className={clsx('shrink-0', on ? 'text-muted' : 'text-dim')} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-ui font-medium text-fg">{label}</span>
+        <span className="block truncate text-caption text-dim">{sub}</span>
+      </span>
+      <Toggle on={on} onChange={onChange} label={label} />
     </div>
   )
 }
@@ -253,38 +329,6 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
       </span>
       <b className="text-right font-mono text-micro font-normal tabular-nums text-dim">{value}</b>
     </>
-  )
-}
-
-function SummaryLine({ label, count, tokens, hint, value, onOpen }: { label: string; count?: number; tokens?: number; hint?: string; value?: string; onOpen(): void }) {
-  return (
-    <button
-      onClick={onOpen}
-      aria-label={`${label}${count !== undefined ? `: ${count} on` : ''}${tokens ? `, adds about ${k(tokens)} tokens` : ''}${hint ? `: ${hint}` : ''}${value ? `: ${value}` : ''}`}
-      className="flex h-10 items-center gap-2 rounded-[10px] px-2.5 text-left transition-colors hover:bg-elev"
-    >
-      <span className="min-w-0 flex-1 truncate text-ui font-medium text-fg">{label}</span>
-      <span className="flex shrink-0 items-center gap-1.5 font-mono text-caption tabular-nums text-dim">
-        {hint && <span className="font-sans text-caption">{hint}</span>}
-        {value && <span className="max-w-[180px] truncate font-sans text-caption text-fg">{value}</span>}
-        {count !== undefined && <span className="text-fg">{count}</span>}
-        {count !== undefined && tokens !== undefined && <span>· +{k(tokens)}</span>}
-      </span>
-      <CaretRight size={12} className="shrink-0 text-dim" />
-    </button>
-  )
-}
-
-/** An overview line with a switch instead of a page. */
-function ToggleLine({ label, sub, on, onChange }: { label: string; sub?: string; on: boolean; onChange(): void }) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="text-ui font-medium text-fg">{label}</div>
-        {sub && <div className="text-caption leading-snug text-dim">{sub}</div>}
-      </div>
-      <Toggle on={on} onChange={onChange} label={label} />
-    </div>
   )
 }
 
@@ -326,9 +370,9 @@ function Drill({
     )
   return (
     <div className="flex h-full flex-col">
-      <div className="grid shrink-0 gap-2 border-b border-line px-2.5 pb-2.5 pt-2">
-        <div className="flex items-center gap-1">
-          <button onClick={back} className="flex h-7 items-center gap-1 rounded-lg pl-1 pr-2 text-caption text-dim hover:bg-elev hover:text-fg">
+      <div className="grid shrink-0 gap-2.5 px-3 pb-2.5 pt-3">
+        <div className="flex items-center gap-1.5">
+          <button onClick={back} className="-ml-1 flex h-7 items-center gap-1 rounded-lg pl-1 pr-2 text-caption text-muted hover:bg-elev-2 hover:text-fg">
             <CaretLeft size={12} /> {backLabel}
           </button>
           <span className={clsx('min-w-0 flex-1 truncate text-ui font-semibold', titleMono && 'font-mono text-ui font-medium')}>{title}</span>
@@ -338,7 +382,9 @@ function Drill({
         {box}
         {filters}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <div className="rounded-xl border border-line p-1">{children}</div>
+      </div>
     </div>
   )
 }

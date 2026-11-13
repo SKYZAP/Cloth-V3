@@ -25,7 +25,6 @@ import { Logo } from './components/Logo'
 import { ConfirmHost } from './components/ConfirmDialog'
 import { isMobile } from './lib/platform'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { Tooltip } from './components/Tooltip'
 // Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
 const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
@@ -99,32 +98,13 @@ function DesktopApp() {
   })
 
   const isMac = window.cloth.platform === 'darwin'
-  // Chat lays its own surfaces on the frame (chat list, conversation canvas, side panel), so the page nav shrinks to a rail there.
-  const rail = page === 'chat'
+  // Chat lays its own surfaces on the frame (chat list, conversation canvas, side panel card), so it gets no canvas from here.
+  const ownCanvas = page === 'chat'
   const mcpLabel = mcp ? (mcp.running ? `Connected · port ${mcp.port}` : 'MCP server offline') : 'Starting…'
   return (
     <MotionConfig reducedMotion="user">
     <div className="flex h-full bg-panel">
       {/* Sidebar: the same grey as the strip above the page, so the two read as one frame around it. */}
-      {rail ? (
-        <nav aria-label="Pages" className="flex w-14 shrink-0 flex-col items-center">
-          <div className={clsx('drag flex w-full shrink-0 items-center justify-center', isMac ? 'h-[52px]' : 'h-12')}>{!isMac && <Logo size={18} />}</div>
-          <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto pt-1 pb-2 [scrollbar-width:none]">
-            {SIDEBAR.map(({ page: p, label, icon: Icon }) => (
-              <RailItem key={p} active={page === p} onClick={() => setPage(p)} label={label} icon={<Icon size={18} weight={page === p ? 'fill' : 'regular'} />} />
-            ))}
-          </div>
-          <div className="flex shrink-0 flex-col items-center gap-2 pb-3">
-            {/* The rail shows only on Chat, so Settings is never the current page here. */}
-            <RailItem active={false} onClick={() => setPage('settings')} label="Settings" icon={<GearSix size={18} />} />
-            <Tooltip side="right" content={mcpLabel}>
-              <button onClick={() => setPage('mcp')} className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-elev">
-                <span className={clsx('h-1.5 w-1.5 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
-              </button>
-            </Tooltip>
-          </div>
-        </nav>
-      ) : (
       <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col">
         <div className={clsx('drag flex shrink-0 items-center gap-2 px-4', isMac ? 'h-[52px] items-end pb-2' : 'h-12')}>
           <Logo size={18} />
@@ -147,13 +127,12 @@ function DesktopApp() {
           </button>
         </div>
       </nav>
-      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Grey strip continuing the sidebar: drags the window and holds the window controls (Windows and Linux).
             The page sits below it on a black canvas with a rounded top-left corner; Chat draws its own canvas on the frame. */}
         <div aria-hidden="true" className="drag h-9 shrink-0" />
-        <main className={clsx('min-h-0 min-w-0 flex-1 overflow-hidden', !rail && 'rounded-tl-xl border-t border-l border-line bg-bg')}>
+        <main className={clsx('min-h-0 min-w-0 flex-1 overflow-hidden', !ownCanvas && 'rounded-tl-xl border-t border-l border-line bg-bg')}>
           <PageContent page={page} />
         </main>
       </div>
@@ -161,22 +140,6 @@ function DesktopApp() {
       <ConfirmHost />
     </div>
     </MotionConfig>
-  )
-}
-
-/** A page in the icon rail (Chat): the label shows as a tooltip. */
-function RailItem({ active, onClick, label, icon }: { active: boolean; onClick(): void; label: string; icon: React.ReactNode }) {
-  return (
-    <Tooltip side="right" content={label}>
-      <button
-        onClick={onClick}
-        aria-current={active ? 'page' : undefined}
-        className={clsx('relative flex h-9 w-10 items-center justify-center rounded-[9px] transition-colors', active ? 'bg-elev-2 text-fg' : 'text-dim hover:bg-elev hover:text-fg')}
-      >
-        {active && <span className="absolute -left-2 top-[9px] bottom-[9px] w-0.5 rounded-r bg-crimson" />}
-        {icon}
-      </button>
-    </Tooltip>
   )
 }
 
