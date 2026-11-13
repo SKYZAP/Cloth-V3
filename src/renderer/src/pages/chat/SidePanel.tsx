@@ -448,9 +448,11 @@ export function PanelDock({ session, messages, state, set }: { session: ChatSess
               aria-pressed={on}
               aria-label={note ? `${t.label}, ${note}` : t.label}
               aria-keyshortcuts="Shift+Enter"
-              className={clsx('relative flex h-9 w-9 items-center justify-center rounded-[9px] transition-colors', on ? 'bg-elev-2 text-fg' : 'text-dim hover:bg-elev hover:text-fg')}
+              className={clsx(
+                'relative flex h-9 w-9 items-center justify-center rounded-[9px] transition-colors',
+                front ? 'bg-crimson-soft text-crimson-hi' : on ? 'bg-elev-2 text-fg' : 'text-dim hover:bg-elev hover:text-fg'
+              )}
             >
-              {front && <span className="absolute -right-1.5 top-[9px] bottom-[9px] w-0.5 rounded-l bg-crimson" />}
               <t.icon size={18} weight={on ? 'fill' : 'regular'} />
               {t.id === 'git' && !!badges.changes && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-panel bg-elev-2 px-1 text-[9.5px] font-semibold tabular-nums text-fg">

@@ -25,6 +25,14 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
               </a>
             )
           },
+          // The wrapper draws the frame and scrolls sideways, so the table itself can fill the width.
+          table({ children }) {
+            return (
+              <div className="table-wrap">
+                <table>{children}</table>
+              </div>
+            )
+          },
           pre({ children }) {
             // ```mermaid blocks are drawn as diagrams.
             const mermaid = mermaidSource(children)
