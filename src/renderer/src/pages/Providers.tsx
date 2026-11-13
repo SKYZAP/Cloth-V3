@@ -327,7 +327,7 @@ function ProviderView({ provider, test, onTest }: { provider: Provider; test?: P
   const defaultLabel = (m: ModelInfo) => (m.image ? 'Use for images' : m.embedding ? 'Use for embeddings' : 'Use for chat')
 
   return (
-    <div className="max-w-[1240px] px-8 pb-16 pt-6 mobile:px-4 mobile:pt-3">
+    <div className="px-8 pb-16 pt-6 mobile:px-4 mobile:pt-3">
       <div className="flex items-center gap-3.5 mobile:flex-wrap">
         <SplitBack />
         <ProviderMark provider={provider} size={44} />

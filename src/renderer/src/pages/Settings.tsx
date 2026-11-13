@@ -241,7 +241,7 @@ function SettingsDocument({ settings }: { settings: Settings }) {
       </aside>
 
       <div ref={scroller} onScroll={onScroll} className="min-w-0 flex-1 overflow-y-auto">
-        <div className="max-w-[860px] px-12 pb-[40vh] pt-7">
+        <div className="px-12 pb-[40vh] pt-7">
           {shown.map((s) => (
             <section key={s.id} id={`settings-${s.id}`} aria-labelledby={`settings-${s.id}-title`} className="scroll-mt-4 pb-6 pt-3">
               <h2 id={`settings-${s.id}-title`} className="text-section font-semibold">
@@ -329,7 +329,7 @@ function SettingsSplit({ settings }: { settings: Settings }) {
 
       <SplitDetail>
         <div className="h-full overflow-y-auto">
-          <div className="mx-auto max-w-[760px] px-6 pb-10 pt-6 mobile:px-4 mobile:pt-3">
+          <div className="px-6 pb-10 pt-6 mobile:px-4 mobile:pt-3">
             <div className="mb-5 flex items-start gap-2">
               <SplitBack className="mt-0.5" />
               <div>
