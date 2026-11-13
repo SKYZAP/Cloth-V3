@@ -252,10 +252,21 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
 export function ListPane({ header, children, width = 272, frame = false }: { header: ReactNode; children: ReactNode; width?: number; frame?: boolean }) {
   const side = useSideBySide()
   const onFrame = frame && side
+  if (onFrame)
+    // On the grey frame: a raised card with a gap around it, so it doesn't merge with the sidebar.
+    // Inside, hover and selected shades step up one level so rows still show against the card.
+    return (
+      <div className="flex h-full shrink-0 flex-col pb-2 pr-2" style={{ width }}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden raised rounded-xl border border-line">
+          <div className="px-2 pb-2.5 pt-2">{header}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">{children}</div>
+        </div>
+      </div>
+    )
   return (
-    <div className={clsx('flex h-full shrink-0 flex-col', onFrame ? 'pr-2' : side ? 'border-r border-line bg-panel' : 'w-full bg-bg')} style={side ? { width } : undefined}>
-      <div className={onFrame ? 'px-1 pb-2.5' : 'border-b border-line p-3'}>{header}</div>
-      <div className={clsx('min-h-0 flex-1 overflow-y-auto', onFrame ? 'pb-2' : 'p-1.5')}>{children}</div>
+    <div className={clsx('flex h-full shrink-0 flex-col', side ? 'border-r border-line bg-panel' : 'w-full bg-bg')} style={side ? { width } : undefined}>
+      <div className="border-b border-line p-3">{header}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">{children}</div>
     </div>
   )
 }

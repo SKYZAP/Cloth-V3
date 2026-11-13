@@ -81,6 +81,17 @@
 /* Base rules live in the base layer so Tailwind utilities (outline-none, [scrollbar-width:none], …)
    can override them — unlayered CSS would beat every utility regardless of specificity. */
 @layer base {
+  /* A card raised on the grey frame (Chat's chat list). Its rows' hover and selected shades step up one level
+     (taken on the card, so the swap below doesn't refer to itself) so they still show against it. */
+  .raised {
+    background: var(--color-elev);
+    --raised-hover: var(--color-elev-2);
+    --raised-selected: var(--color-hover);
+  }
+  .raised > * {
+    --color-elev: var(--raised-hover);
+    --color-elev-2: var(--raised-selected);
+  }
   :root {
     color-scheme: dark;
     /* The chat column (messages and message box): wider as the window grows, still capped by the space beside the panels. */
