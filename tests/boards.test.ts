@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { git } from '../src/main/panel/git'
 import { makeServices } from './helpers'
-import { checksReport, describe as describeTicket, failedChecks, goalOf, parseJson } from '../src/main/boards/boards'
+import { checksReport, cleanLog, commitHeader, commitMessage, describe as describeTicket, failedChecks, goalOf, parseJson, prBody, prTitle } from '../src/main/boards/boards'
 import { adfToText, defaultStateMap, htmlToText, projectIdentifiers, textToAdf, textToHtml } from '../src/main/boards/trackers'
 import type { TrackerState } from '../src/shared/boards'
 
@@ -359,7 +359,7 @@ describe('the Cloth board', () => {
     await services.boards.createTicket({ title: 'Add notes', goal: 'Notes exist.', auto: true })
     const t = await settle(services, 'Add notes')
     expect(t.pipeline).toMatchObject({ status: 'needsYou', branch: 'boards/mb-1', local: { mode: 'commit', branch: 'boards/mb-1', base: 'main' } })
-    expect((await git(repo, ['log', '--format=%s', 'boards/mb-1', '-1'])).stdout.trim()).toBe('MB-1: Add notes')
+    expect((await git(repo, ['log', '--format=%s', 'boards/mb-1', '-1'])).stdout.trim()).toBe('feat: add notes')
     // The repository has no remote, so a push would have failed the step.
     expect((await git(repo, ['remote'])).stdout.trim()).toBe('')
     expect(existsSync(join(repo, 'notes.txt'))).toBe(false)
@@ -395,3 +395,35 @@ describe('failing checks', () => {
     expect(text).toContain('### ci/external\nBuild broke\n(No log available.)')
   })
 })
+
+describe('commits and pull requests', () => {
+  const t = { key: 'BB-2', title: 'Increase test coverage', url: 'http://plane.test/i/2' }
+
+  it('writes one conventional commit for the change', () => {
+    expect(commitMessage({ commit: { type: 'test', subject: 'Raise coverage to 80%' }, built: { summary: 'Added specs.', testing: [] } }, t)).toBe('test: raise coverage to 80%\n\nAdded specs.\n\nRefs: BB-2 http://plane.test/i/2')
+    // No planner type: a feature named after the ticket.
+    expect(commitMessage({}, t).split('\n')[0]).toBe('feat: increase test coverage')
+    expect(commitMessage({ commit: { type: 'oops', subject: 'x' } }, t).split('\n')[0]).toBe('feat: x')
+  })
+
+  it('accepts only conventional commit headers from the fixer', () => {
+    expect(commitHeader('fix(ci): generate the prisma client before tests')).toBe('fix(ci): generate the prisma client before tests')
+    expect(commitHeader('BB-2: fix failing checks')).toBeNull()
+    expect(commitHeader('whatever: x')).toBeNull()
+    expect(commitHeader(undefined)).toBeNull()
+  })
+
+  it('titles and describes the PR the same way every time', () => {
+    expect(prTitle(t)).toBe('[Cloth][BB-2] Increase test coverage')
+    const body = prBody(t, { goal: 'Get to 80%.', requirements: ['Coverage is 80%'], outOfScope: ['E2E'], built: { summary: 'Added specs.', testing: ['npm test: passed'] }, research: { notes: [], assumptions: ['Jest config stays'] } }, ['src/a.spec.ts'])
+    const headings = body.split('\n').filter((l) => l.startsWith('## '))
+    expect(headings).toEqual(['## Summary', '## Ticket', '## Goal', '## Acceptance criteria', '## Out of scope', '## Changes', '## Testing', '## Assumptions'])
+    expect(body).toContain('- [ ] Coverage is 80%')
+    expect(body).toContain('[BB-2](http://plane.test/i/2)')
+  })
+
+  it('cleans CI logs for the fixer', () => {
+    expect(cleanLog('Run-Test (22)\tUNKNOWN STEP\t2026-11-14T17:56:27.2827098Z     TypeError: \x1b[31mClass extends\x1b[39m')).toBe('    TypeError: Class extends')
+  })
+})
+

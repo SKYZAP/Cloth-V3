@@ -111,13 +111,64 @@ export function describe(goal: string, requirements: string[], outOfScope: strin
 
 export { goalOf } from '@shared/boards'
 
-const PLANNER = `You write requirements for a software ticket. Read the code in the workspace where it helps you be concrete.
-Write acceptance criteria someone can check, each one sentence, only what the goal asks for. Note what is out of scope.
-Reply with only a JSON object: {"requirements": ["..."], "outOfScope": ["..."]}.`
+const PLANNER = `You write requirements for a software ticket, so that an implementer can build it without coming back with questions.
+First gather what you need:
+- Read the code in the workspace: where the change goes, similar features, conventions, tests, config and dependencies (package.json and the like).
+- Look up everything outside the code the ticket depends on (libraries, packages, APIs, services, formats) with web search, and fetch
+  their docs, README or registry page. Check what the version the project uses (or would add) actually offers. Follow links in the ticket.
+Then write acceptance criteria someone can check, each one sentence, only what the goal asks for, and concrete where your research
+settled a detail (package and version, endpoint, names). Note what is out of scope. List the facts you relied on, each with its source,
+and anything you had to assume. Pick the conventional commit type for the change: feat, fix, test, refactor, perf, docs, build, ci or chore.
+Reply with only a JSON object: {"requirements": ["..."], "outOfScope": ["..."], "notes": ["fact (source link)"], "assumptions": ["..."],
+"type": "feat", "summary": "imperative summary of the change, lower case, under 60 characters"}.`
 
-const REVIEWER = `You review requirements written for a software ticket. Check each one against the goal: approve when they cover the goal
-and add nothing it doesn't ask for; otherwise send them back and say exactly which ones to change and why.
+const REVIEWER = `You review requirements written for a software ticket. Approve when they cover the goal, each one can be checked, and
+they add nothing the goal doesn't ask for. Details the implementer can settle from the code or a library's docs (exact call signatures,
+option names, template ids) are not a reason to send them back: the planner's notes and assumptions cover those. Send them back only for
+a missing or wrong requirement, scope the goal doesn't ask for, or a claim the facts contradict (you can check with web search), and
+say exactly which ones to change and why.
 Reply with only a JSON object: {"verdict": "approve" | "revise", "notes": "..."}.`
+
+const COMMIT_TYPES = ['feat', 'fix', 'test', 'refactor', 'perf', 'docs', 'build', 'ci', 'chore', 'style', 'revert']
+
+/** A conventional commit header (`feat(scope): add x`), or null when `line` isn't one. */
+export function commitHeader(line: unknown): string | null {
+  const s = String(line ?? '').trim().split('\n')[0].replace(/\.$/, '')
+  const m = /^(\w+)(\([\w./-]+\))?(!)?: (.+)$/.exec(s)
+  return m && COMMIT_TYPES.includes(m[1]) && m[4].length <= 100 ? s : null
+}
+
+/** The commit for a ticket's change: the planner's type and summary, else `feat` and the title. */
+export function commitMessage(pipe: Pick<TicketPipeline, 'commit' | 'built'>, t: { key: string; title: string; url?: string | null }): string {
+  const type = COMMIT_TYPES.includes(pipe.commit?.type ?? '') ? pipe.commit!.type : 'feat'
+  const subject = (pipe.commit?.subject || t.title).trim().replace(/\.$/, '')
+  const header = `${type}: ${subject.charAt(0).toLowerCase()}${subject.slice(1)}`
+  return [header, pipe.built?.summary, `Refs: ${t.key}${t.url ? ` ${t.url}` : ''}`].filter(Boolean).join('\n\n')
+}
+
+export const prTitle = (t: { key: string; title: string }) => `[Cloth][${t.key}] ${t.title.trim()}`
+
+/** The pull request description, in one shape for every ticket. */
+export function prBody(t: { key: string; title: string; url?: string | null }, pipe: Pick<TicketPipeline, 'goal' | 'requirements' | 'outOfScope' | 'built' | 'research'>, files: string[]): string {
+  const list = (xs: string[]) => xs.map((x) => `- ${x}`)
+  const parts = ['## Summary', pipe.built?.summary?.trim() || pipe.goal.trim(), '', '## Ticket', t.url ? `[${t.key}](${t.url}): ${t.title}` : `${t.key}: ${t.title}`, '', '## Goal', pipe.goal.trim()]
+  if (pipe.requirements.length) parts.push('', '## Acceptance criteria', ...pipe.requirements.map((r) => `- [ ] ${r}`))
+  if (pipe.outOfScope.length) parts.push('', '## Out of scope', ...list(pipe.outOfScope))
+  if (files.length) parts.push('', '## Changes', ...list(files.slice(0, 40).map((f) => `\`${f}\``)), ...(files.length > 40 ? [`- … and ${files.length - 40} more`] : []))
+  parts.push('', '## Testing', ...(pipe.built?.testing.length ? list(pipe.built.testing) : ['- Not reported by the implementer.']))
+  if (pipe.research?.assumptions.length) parts.push('', '## Assumptions', ...list(pipe.research.assumptions))
+  parts.push('', '---', '_Opened by Cloth Boards._')
+  return parts.join('\n')
+}
+
+/** A CI log without colour codes or GitHub's per-line job/step/timestamp prefix. */
+export function cleanLog(log: string): string {
+  return log
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+    .split('\n')
+    .map((l) => l.replace(/^[^\t]*\t[^\t]*\t\d{4}-\d\d-\d\dT[\d:.]+Z ?/, ''))
+    .join('\n')
+}
 
 const CODE_REVIEWER = `You review a pull request's diff against the ticket's requirements. Approve when the change meets them and has no
 obvious bugs; otherwise say what is wrong. Reply with only a JSON object: {"verdict": "approve" | "revise", "notes": "..."}.`
@@ -155,14 +206,24 @@ export function checksReport(checks: (FailedCheck & { log: string })[]): string 
 }
 
 const FIXER = `The pull request for this ticket failed its checks on GitHub. You are in a git worktree on the PR's branch.
-Read the failing checks and their logs below, find the cause in the code, and fix it. Reproduce the failure with the
-project's own commands first when you can, and run them again after the fix. Keep the change to what the checks need:
-don't rework the feature, and don't weaken, skip or delete tests or checks to make them pass.
-Don't commit or push: Cloth does that when you finish. End with a short summary of what was wrong and what you changed.`
+Find the root cause before you change anything:
+1. Read the failing checks' logs below, and the CI workflow that ran them (.github/workflows/ or the like): its exact commands,
+   versions, environment variables, services and setup steps.
+2. Work out why it fails there. A failure that doesn't happen on this PC usually comes from the difference: generated code
+   (Prisma, GraphQL or protobuf clients) that CI never generates, missing environment variables or secrets, a database or
+   service that isn't there, files git ignores, OS or version differences, test order or shared state. Reproduce it the way
+   CI runs it when you can.
+3. Fix the cause where it lives (the code, the test setup, config or the workflow), not the symptom in one test. Don't weaken,
+   skip or delete tests or checks, and don't rework the feature.
+4. Run the commands CI runs and make sure they pass.
+Earlier fix attempts, if any, are listed below: they didn't work, so don't repeat them.
+Don't commit or push: Cloth does that when you finish. End with only a fenced JSON block:
+{"rootCause": "one sentence", "fix": "what you changed", "commit": "fix(scope): imperative summary under 60 characters"}`
 
 const IMPLEMENTER = `You implement a software ticket in this workspace, a git worktree on its own branch. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
-Don't commit or push: Cloth does that when you finish. End with a short summary of what you changed.`
+Don't commit or push: Cloth does that when you finish. End with only a fenced JSON block:
+{"summary": "what you changed, in one to three sentences", "testing": ["each command you ran and its result"]}`
 
 const IMPLEMENTER_NO_GIT = `You implement a software ticket in this workspace, a separate git worktree. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
@@ -787,20 +848,21 @@ export class BoardService {
     return { model, system, saved }
   }
 
-  private readScope(repo: string | null, saved: ReturnType<AgentService['find']>): ToolScope {
-    const base: ToolScope = { collectionIds: [], skillsEnabled: false, webEnabled: false, customTools: false, workspace: repo && existsSync(repo) ? repo : null, fileAccess: 'read', permissions: () => 'manual', autoApprove: () => 'none', codeIntel: false }
-    return saved ? { ...agentScope(saved, base), fileAccess: 'read', shell: false, codeIntel: false, autoApprove: () => 'none' } : base
+  /** Reads the code; with `web`, also searches the web and fetches pages (docs, READMEs, registry pages). */
+  private readScope(repo: string | null, saved: ReturnType<AgentService['find']>, web = false): ToolScope {
+    const base: ToolScope = { collectionIds: [], skillsEnabled: false, webEnabled: web, customTools: false, workspace: repo && existsSync(repo) ? repo : null, fileAccess: 'read', permissions: () => 'manual', autoApprove: () => 'none', codeIntel: false }
+    return saved ? { ...agentScope(saved, base), fileAccess: 'read', shell: false, codeIntel: false, autoApprove: () => 'none', ...(web ? { webEnabled: true } : {}) } : base
   }
 
-  private async ask(agentId: string | null, role: string, prompt: string, repo: string | null, signal: AbortSignal, onActivity: (a: string) => void): Promise<string> {
+  private async ask(agentId: string | null, role: string, prompt: string, repo: string | null, signal: AbortSignal, onActivity: (a: string) => void, research = false): Promise<string> {
     const { model, system, saved } = this.model(agentId)
     const res = await this.deps.runtime.run({
       model,
       prompt,
       systemPrompt: [system, role].filter(Boolean).join('\n\n'),
-      scope: this.readScope(repo, saved),
+      scope: this.readScope(repo, saved, research),
       thinking: saved?.thinking ?? undefined,
-      maxTurns: 20,
+      maxTurns: research ? 40 : 20,
       signal,
       onEvent: (_turn, progress) => progress.current && onActivity(progress.current.summary || progress.current.tool)
     })
@@ -808,13 +870,20 @@ export class BoardService {
   }
 
   private async plan(p: BoardProject, t: RawTicket, s: BoardProjectSettings, pipe: StoredPipe, signal: AbortSignal): Promise<void> {
-    this.update(t.id, { activity: 'Writing criteria' })
-    const revise = pipe.review?.verdict === 'revise' ? `\n\nThe reviewer sent the last version back:\n${pipe.review.notes}\n\nThe last version:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}` : ''
-    const text = await this.ask(pipe.agents.planner, PLANNER, `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}${revise}`, s.repo, signal, (a) => this.update(t.id, { activity: a }))
-    const out = parseJson<{ requirements?: unknown; outOfScope?: unknown }>(text)
-    const requirements = Array.isArray(out?.requirements) ? out.requirements.map(String).filter(Boolean) : []
+    this.update(t.id, { activity: 'Researching the ticket' })
+    const revise = pipe.review?.verdict === 'revise' ? `\n\nThe reviewer sent the last version back:\n${pipe.review.notes}\n\nThe last version:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}${pipe.research?.notes.length ? `\n\nWhat you found last time:\n${pipe.research.notes.map((r) => `- ${r}`).join('\n')}` : ''}` : ''
+    // The full ticket, not just the goal: links, examples and notes people wrote in it are part of what to research.
+    const ticket = t.description.trim() && t.description.trim() !== pipe.goal.trim() ? `\n\nThe ticket as written in the tracker:\n${t.description.trim()}` : ''
+    const text = await this.ask(pipe.agents.planner, PLANNER, `Ticket ${t.key}: ${t.title}${t.url ? `\nLink: ${t.url}` : ''}\n\nGoal: ${pipe.goal}${ticket}${revise}`, s.repo, signal, (a) => this.update(t.id, { activity: a }), true)
+    const out = parseJson<{ requirements?: unknown; outOfScope?: unknown; notes?: unknown; assumptions?: unknown; type?: unknown; summary?: unknown }>(text)
+    const strings = (v: unknown) => (Array.isArray(v) ? v.map(String).map((x) => x.trim()).filter(Boolean) : [])
+    const requirements = strings(out?.requirements)
     if (!requirements.length) throw new Error('The planner didn\'t return any requirements. Resume to try again.')
-    const outOfScope = Array.isArray(out?.outOfScope) ? out.outOfScope.map(String).filter(Boolean) : []
+    const outOfScope = strings(out?.outOfScope)
+    const research = { notes: strings(out?.notes), assumptions: strings(out?.assumptions) }
+    const type = String(out?.type ?? '').trim().toLowerCase()
+    const commit = { type: COMMIT_TYPES.includes(type) ? type : 'feat', subject: String(out?.summary ?? '').trim().slice(0, 72) || t.title }
+    this.update(t.id, { research, commit })
     // With ticket updates off the requirements stay in Cloth (on the pipeline), and the ticket keeps its description.
     if (this.writes(s)) {
       await this.tracker!.setDescription(p, t, describe(pipe.goal, requirements, outOfScope))
@@ -827,7 +896,8 @@ export class BoardService {
   private async review(p: BoardProject, t: RawTicket, pipe: StoredPipe, signal: AbortSignal): Promise<boolean> {
     this.update(t.id, { activity: 'Reviewing' })
     const s = this.settingsFor(p.id)
-    const text = await this.ask(pipe.agents.reviewer, REVIEWER, `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}`, s.repo, signal, (a) => this.update(t.id, { activity: a }))
+    const facts = `\n\nThe planner's research:\n${pipe.research?.notes.map((r) => `- ${r}`).join('\n') || '(none)'}\n\nThe planner's assumptions:\n${pipe.research?.assumptions.map((r) => `- ${r}`).join('\n') || '(none)'}`
+    const text = await this.ask(pipe.agents.reviewer, REVIEWER, `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}${facts}`, s.repo, signal, (a) => this.update(t.id, { activity: a }), true)
     const out = parseJson<{ verdict?: string; notes?: string }>(text)
     const verdict = out?.verdict === 'approve' ? 'approve' : 'revise'
     const notes = String(out?.notes ?? (out ? '' : text)).trim()
@@ -866,9 +936,10 @@ export class BoardService {
     const { model, system, saved } = this.model(pipe.agents.implementer)
     const scope = this.writeScope(join(dir, relative(root, s.repo)), s, saved)
     this.update(t.id, { activity: 'Starting' })
-    await this.deps.runtime.run({
+    const research = pipe.research?.notes.length || pipe.research?.assumptions.length ? `\n\nWhat the planner found out:\n${[...(pipe.research?.notes ?? []), ...(pipe.research?.assumptions ?? []).map((a) => `Assumed: ${a}`)].map((r) => `- ${r}`).join('\n')}` : ''
+    const res = await this.deps.runtime.run({
       model,
-      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}`,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}${research}`,
       systemPrompt: [system, s.git === 'none' ? IMPLEMENTER_NO_GIT : IMPLEMENTER].filter(Boolean).join('\n\n'),
       scope,
       thinking: saved?.thinking ?? undefined,
@@ -877,6 +948,10 @@ export class BoardService {
       onEvent: (_turn, progress) => this.update(t.id, { files: progress.files.length, ...(progress.current ? { activity: progress.current.summary || progress.current.tool } : {}) })
     })
     if (signal.aborted) return
+    const report = parseJson<{ summary?: unknown; testing?: unknown }>(res.text)
+    const built = { summary: String(report?.summary ?? '').trim(), testing: Array.isArray(report?.testing) ? report.testing.map(String).filter(Boolean) : [] }
+    this.update(t.id, { built })
+    const done = { ...pipe, built }
     if (s.git === 'none') {
       const changed = (await gitRun(dir, ['status', '--porcelain'])).trim()
       if (!changed) throw new Error('The implementer finished without changing anything. Resume to try again.')
@@ -890,7 +965,13 @@ export class BoardService {
     await gitRun(dir, ['add', '-A'])
     const changed = (await gitRun(dir, ['status', '--porcelain'])).trim()
     if (!changed && !(await gitRun(dir, ['log', `${base}..HEAD`, '--oneline'])).trim()) throw new Error('The implementer finished without changing anything. Resume to try again.')
-    if (changed) await gitRun(dir, ['commit', '-m', `${t.key}: ${t.title}`])
+    // One commit for the feature: commits from earlier runs that never left this PC are folded into it.
+    const pushed = branch ? (await git(root, ['ls-remote', '--exit-code', '--heads', 'origin', branch])).code === 0 : false
+    if (!pushed) {
+      const fork = (await gitRun(dir, ['merge-base', base, 'HEAD'])).trim()
+      if (fork) await gitRun(dir, ['reset', '--soft', fork])
+    }
+    if ((await gitRun(dir, ['status', '--porcelain'])).trim()) await gitRun(dir, ['commit', '-m', commitMessage(done, t)])
     if (s.git === 'commit' || !branch) {
       // Nothing leaves this PC: the commit stays on the local branch, and the worktree goes (the branch keeps it).
       await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
@@ -902,12 +983,15 @@ export class BoardService {
     this.update(t.id, { activity: 'Pushing the branch' })
     await gitRun(dir, ['push', '-u', 'origin', branch])
     this.update(t.id, { activity: 'Opening the pull request' })
-    const body = `${t.url}\n\n${describe(pipe.goal, pipe.requirements, pipe.outOfScope)}`
+    const files = (await gitRun(dir, ['diff', '--name-only', `${base}...HEAD`])).split('\n').map((f) => f.trim()).filter(Boolean)
+    const body = prBody(t, done, files)
     let url = ''
     try {
       url = (await exec('gh', ['pr', 'view', branch, '--json', 'url', '-q', '.url'], dir)).trim()
+      // An open PR from an earlier run: bring its title and description up to date.
+      await exec('gh', ['pr', 'edit', branch, '--title', prTitle(t), '--body', body], dir).catch((err) => this.ctx.log('boards', `couldn't update the PR for ${t.key}: ${errorMessage(err)}`))
     } catch {
-      url = (await exec('gh', ['pr', 'create', '--base', base, '--head', branch, '--title', `${t.key}: ${t.title}`, '--body', body], dir)).trim().split('\n').pop() ?? ''
+      url = (await exec('gh', ['pr', 'create', '--base', base, '--head', branch, '--title', prTitle(t), '--body', body], dir)).trim().split('\n').pop() ?? ''
     }
     const number = Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0)
     if (!number) throw new Error(`GitHub didn't return a pull request link (${url || 'nothing'})`)
@@ -954,7 +1038,7 @@ export class BoardService {
       if (budget > 0 && (job || run)) {
         try {
           const full = await exec('gh', job ? ['run', 'view', '--job', job[2], '--log-failed'] : ['run', 'view', run![1], '--log-failed'], root, 90_000)
-          log = full.slice(-Math.min(12_000, budget)).trim()
+          log = cleanLog(full).slice(-Math.min(12_000, budget)).trim()
           budget -= log.length
         } catch (err) {
           log = `(Couldn't fetch the log: ${errorMessage(err)})`
@@ -996,7 +1080,7 @@ export class BoardService {
     this.update(t.id, { activity: 'Starting' })
     const res = await this.deps.runtime.run({
       model,
-      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nPull request: ${pr.url}\n\nFailing checks:\n\n${checksReport(logs)}`,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nPull request: ${pr.url}\n\nFailing checks:\n\n${checksReport(logs)}${pipe.fixLog?.length ? `\n\nEarlier fix attempts that didn't make the checks pass:\n${pipe.fixLog.map((f, i) => `${i + 1}. Thought the cause was: ${f.rootCause}\n   Changed: ${f.fix}`).join('\n')}` : ''}`,
       systemPrompt: [system, FIXER].filter(Boolean).join('\n\n'),
       scope: this.writeScope(join(dir, relative(root, s.repo)), s, saved),
       thinking: saved?.thinking ?? undefined,
@@ -1013,12 +1097,16 @@ export class BoardService {
       return
     }
     this.update(t.id, { activity: 'Committing the fix' })
-    await gitRun(dir, ['commit', '-m', `${t.key}: fix failing checks`])
+    const found = parseJson<{ rootCause?: unknown; fix?: unknown; commit?: unknown }>(res.text)
+    const rootCause = String(found?.rootCause ?? '').trim()
+    const header = commitHeader(found?.commit) ?? `fix: make the ${failed.map((c) => c.name).join(', ')} check${failed.length === 1 ? '' : 's'} pass`
+    await gitRun(dir, ['commit', '-m', [header, rootCause && `Root cause: ${rootCause}`, String(found?.fix ?? '').trim(), `Refs: ${t.key}`].filter(Boolean).join('\n\n')])
+    this.update(t.id, { fixLog: [...(pipe.fixLog ?? []), { rootCause: rootCause || '(not reported)', fix: String(found?.fix ?? '').trim() || header }].slice(-5) })
     this.update(t.id, { activity: 'Pushing the fix' })
     await gitRun(dir, ['push', 'origin', branch])
     await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
     const fixes = (pr.fixes ?? 0) + 1
-    await this.note(p, t, s, `Cloth pushed a fix for the failing checks (${failed.map((c) => c.name).join(', ')}) to ${pr.url}.`)
+    await this.note(p, t, s, `Cloth pushed a fix for the failing checks (${failed.map((c) => c.name).join(', ')}) to ${pr.url}.${rootCause ? `\nRoot cause: ${rootCause}` : ''}`)
     const latest = this.pipes()[this.pkey(t.id)]?.pr ?? pr
     this.update(t.id, { fixing: false, status: 'running', note: undefined, activity: undefined, pr: { ...latest, checks: 'pending', failing: [], fixes } })
   }

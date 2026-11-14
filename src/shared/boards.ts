@@ -171,6 +171,14 @@ export interface TicketPipeline {
   }
   /** An agent is fixing (or is queued to fix) the PR's failing checks. */
   fixing?: boolean
+  /** What the planner found out (each with its source) and what it had to assume. */
+  research?: { notes: string[]; assumptions: string[] }
+  /** The change as a conventional commit: `feat`, `fix`, `test` … and an imperative summary. */
+  commit?: { type: string; subject: string }
+  /** The implementer's account of the build, for the pull request. */
+  built?: { summary: string; testing: string[] }
+  /** Root causes found by earlier check fixes, so a later fix doesn't repeat one. */
+  fixLog?: { rootCause: string; fix: string }[]
   /** Built without a pull request: where the changes are. */
   local?: LocalResult
   updatedAt: number

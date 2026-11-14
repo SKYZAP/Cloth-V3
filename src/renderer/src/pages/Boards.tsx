@@ -589,6 +589,18 @@ function TicketPanel({ ticket: t, tracker, kind, settings, chatProjectId, agents
                       <ul className="list-disc pl-4">{p.outOfScope.map((r, i) => <li key={i}>{r}</li>)}</ul>
                     </div>
                   )}
+                  {!!(p.research?.notes.length || p.research?.assumptions.length) && (
+                    <details className="border-t border-line px-3 py-2 text-caption text-dim">
+                      <summary className="cursor-pointer font-medium select-none">Research: {p.research!.notes.length} fact{p.research!.notes.length === 1 ? '' : 's'}{p.research!.assumptions.length ? `, ${p.research!.assumptions.length} assumption${p.research!.assumptions.length === 1 ? '' : 's'}` : ''}</summary>
+                      {p.research!.notes.length > 0 && <ul className="mt-1.5 list-disc pl-4 leading-relaxed">{p.research!.notes.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+                      {p.research!.assumptions.length > 0 && (
+                        <>
+                          <div className="mt-2 mb-1 font-medium">Assumed</div>
+                          <ul className="list-disc pl-4 leading-relaxed">{p.research!.assumptions.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                        </>
+                      )}
+                    </details>
+                  )}
                   {!local && (
                     <div className="flex items-center gap-1.5 border-t border-line px-3 py-2 text-caption text-dim">
                       {writes ? <><CloudArrowUp size={13} className="text-ok" />Written to the {tracker} ticket</> : <><Desktop size={13} />Kept in Cloth: ticket updates are off for this project</>}
