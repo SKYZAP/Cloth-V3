@@ -325,7 +325,7 @@ function TicketCard({ ticket: t, active, onClick, autoMerge }: { ticket: BoardTi
         {t.key}
         {tag && <span title="Agent working" className={clsx('ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-[5px] px-1 font-sans text-[9px] font-semibold', tag.className)}>{tag.label}</span>}
       </div>
-      <div className="mt-1 mb-2 leading-snug font-medium text-fg">{t.title}</div>
+      <div className="mt-1 mb-2 leading-snug font-medium [overflow-wrap:anywhere] text-fg">{t.title}</div>
       <div className="flex flex-wrap items-center gap-1.5"><CardChip ticket={t} autoMerge={autoMerge} /></div>
     </div>
   )
@@ -367,7 +367,7 @@ function TicketPanel({ ticket: t, tracker, settings, agents, onClose, run }: { t
             <IconButton aria-label="Close" onClick={onClose}><X size={15} /></IconButton>
           </span>
         </div>
-        <div className="mt-1.5 mb-2 text-section leading-snug font-semibold tracking-tight">{t.title}</div>
+        <div className="mt-1.5 mb-2 text-section leading-snug font-semibold tracking-tight [overflow-wrap:anywhere]">{t.title}</div>
         {p && (
           <div className="flex flex-wrap gap-1.5">
             {p.status === 'running' || p.status === 'queued' ? (
@@ -380,7 +380,7 @@ function TicketPanel({ ticket: t, tracker, settings, agents, onClose, run }: { t
           </div>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-3.5 pb-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-3.5 pb-5 [overflow-wrap:anywhere]">
         {!p ? (
           <ManualTicket ticket={t} tracker={tracker} settings={settings} agents={agents} run={run} />
         ) : (
