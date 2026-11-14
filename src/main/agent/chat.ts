@@ -545,7 +545,7 @@ export class AgentRuntime {
           : planning
             ? 'Access is read-only in Plan mode: you cannot create or modify files or run commands. Put the changes in your plan instead.'
             : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
-        ...(scope.codeIntel !== false ? ['Use `lsp` for TypeScript/JavaScript/Python code intelligence: go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
+        ...(scope.codeIntel !== false ? ['Use `lsp` for code intelligence (TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed): go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
         ...(shell
           ? [
               scope.container
@@ -1047,6 +1047,8 @@ export class ChatService {
     // New chats start from the shared setup; a project's defaults and anything asked for win over it.
     const shared = this.ctx.kv.get<SharedSetup>(SHARED_KV, {})
     const full: SessionConfig = { ...DEFAULT_CONFIG, model: s.defaultModel, subagents: s.subagents.enabledByDefault, ...shared, ...withoutCaps(fromProject), ...withoutCaps(config) }
+    // No folder from the request or a project: the main working folder from setup, while it still exists.
+    if (!('workspace' in config) && !config.projectId && !config.container && s.defaultWorkspace && existsSync(s.defaultWorkspace)) full.workspace = s.defaultWorkspace
     // Its permission mode: asked for, else the project's, else the default for new chats.
     full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'manual')
     full.access = full.permissions === 'plan' ? (full.access ?? 'manual') : full.permissions

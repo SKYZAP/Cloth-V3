@@ -19,13 +19,16 @@ import {
   Timer,
   Trash,
   Wrench,
+  RocketLaunch,
+  X,
   type Icon
 } from '@phosphor-icons/react'
 import type { DashboardStats, DashboardTotals, UsageRange, UsageSource } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt, useApp, type Page } from '@/lib/store'
 import { compact, duration, timeAgo } from '@/lib/format'
-import { Badge, IconButton, Segmented, Spinner, confirmAction, PageTitle } from '@/components/ui'
+import { Badge, Button, IconButton, Segmented, Spinner, confirmAction, PageTitle } from '@/components/ui'
+import type { OnboardingStep } from '@shared/onboarding'
 import { Tooltip } from '@/components/Tooltip'
 
 const RANGES: { value: UsageRange; label: string }[] = [
@@ -126,6 +129,7 @@ export function DashboardPage() {
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1480px] space-y-4 p-5 mobile:space-y-3 mobile:p-3">
+            <SetupCard />
             {empty && (
               <Panel className="flex items-center gap-3 border-line-strong bg-elev px-4 py-3" delay={0}>
                 <Lightning size={18} weight="fill" className="shrink-0 text-warn" />
@@ -846,5 +850,36 @@ function LinkButton({ onClick, children }: { onClick(): void; children: ReactNod
     <button onClick={onClick} className="text-caption text-dim hover:text-fg">
       {children} →
     </button>
+  )
+}
+
+const SETUP_LABEL: Record<OnboardingStep, string> = { welcome: 'Welcome', model: 'model', folder: 'main folder', langs: 'languages', deps: 'tools check', import: 'import', modes: 'ways to work' }
+
+/** Steps of first-run setup still to do (or setup never opened, on an older install), until dismissed. */
+function SetupCard() {
+  const settings = useApp((s) => s.settings)
+  const open = useApp((s) => s.openOnboarding)
+  const updateSettings = useApp((s) => s.updateSettings)
+  if (isMobile || !settings) return null
+  const ob = settings.onboarding
+  if (ob?.cardDismissed) return null
+  const left = ob ? ob.skipped.filter((s) => s !== 'welcome') : []
+  if (ob && ob.completedAt && !left.length) return null
+  const resume = left[0] ?? ob?.step ?? 'welcome'
+  const text = !ob ? 'Pick your main folder and languages, check your tools, and bring over skills and MCP servers from other coding tools.' : left.length ? `Still to do: ${left.map((s) => SETUP_LABEL[s]).join(', ')}.` : 'Pick up where you left off.'
+  return (
+    <Panel className="flex items-center gap-3 border-line-strong bg-elev px-4 py-3" delay={0}>
+      <RocketLaunch size={18} className="shrink-0 text-crimson-text" />
+      <div className="min-w-0 flex-1">
+        <div className="text-ui font-semibold">{!ob ? 'Set up Cloth' : `Finish setup${left.length ? `: ${left.length} step${left.length > 1 ? 's' : ''} left` : ''}`}</div>
+        <div className="text-caption text-dim">{text}</div>
+      </div>
+      <Button size="sm" variant="primary" onClick={() => open(resume)}>
+        {!ob ? 'Start setup' : 'Continue setup'}
+      </Button>
+      <IconButton aria-label="Dismiss" onClick={() => void updateSettings({ onboarding: { ...(ob ?? { completedAt: null, skipped: [], step: 'welcome' }), cardDismissed: true } })}>
+        <X size={14} />
+      </IconButton>
+    </Panel>
   )
 }

@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { dirname, extname, join, relative, sep } from 'node:path'
+import { delimiter, dirname, extname, join, relative, sep } from 'node:path'
+import type { LanguageId } from '@shared/onboarding'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { StreamMessageReader, StreamMessageWriter, createMessageConnection, type MessageConnection } from 'vscode-jsonrpc/node'
 
@@ -51,7 +52,27 @@ interface DocumentSymbol {
   containerName?: string
 }
 
-type ServerId = 'typescript' | 'python'
+type ServerId = 'typescript' | 'python' | 'go' | 'rust' | 'cpp'
+
+/** Servers Cloth doesn't ship: run from PATH when found, and only for languages the user works in. */
+export const PATH_SERVERS: Record<'go' | 'rust' | 'cpp', { program: string; args: string[]; language: LanguageId; url: string }> = {
+  go: { program: 'gopls', args: [], language: 'go', url: 'https://pkg.go.dev/golang.org/x/tools/gopls' },
+  rust: { program: 'rust-analyzer', args: [], language: 'rust', url: 'https://rust-analyzer.github.io/book/installation.html' },
+  cpp: { program: 'clangd', args: [], language: 'cpp', url: 'https://clangd.llvm.org/installation' }
+}
+
+/** A program's full path when it's on PATH (with Windows' PATHEXT), else null. */
+export function findOnPath(program: string): string | null {
+  const dirs = (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean)
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').map((e) => e.toLowerCase()) : ['']
+  for (const dir of dirs) {
+    for (const ext of exts) {
+      const full = join(dir, program + ext)
+      if (existsSync(full)) return full
+    }
+  }
+  return null
+}
 
 const LANGUAGE_IDS: Record<string, { server: ServerId; languageId: string }> = {
   '.ts': { server: 'typescript', languageId: 'typescript' },
@@ -63,7 +84,15 @@ const LANGUAGE_IDS: Record<string, { server: ServerId; languageId: string }> = {
   '.cjs': { server: 'typescript', languageId: 'javascript' },
   '.jsx': { server: 'typescript', languageId: 'javascriptreact' },
   '.py': { server: 'python', languageId: 'python' },
-  '.pyi': { server: 'python', languageId: 'python' }
+  '.pyi': { server: 'python', languageId: 'python' },
+  '.go': { server: 'go', languageId: 'go' },
+  '.rs': { server: 'rust', languageId: 'rust' },
+  '.c': { server: 'cpp', languageId: 'c' },
+  '.h': { server: 'cpp', languageId: 'c' },
+  '.cc': { server: 'cpp', languageId: 'cpp' },
+  '.cpp': { server: 'cpp', languageId: 'cpp' },
+  '.cxx': { server: 'cpp', languageId: 'cpp' },
+  '.hpp': { server: 'cpp', languageId: 'cpp' }
 }
 
 export function lspLanguage(file: string): { server: ServerId; languageId: string } | null {
@@ -88,6 +117,13 @@ function command(id: ServerId): { cmd: string; args: string[]; env?: NodeJS.Proc
       throw new Error(`The bundled TypeScript language server isn't available for ${process.platform}-${process.arch}`)
     }
     return { cmd: unpacked(join(dir, 'lib', process.platform === 'win32' ? 'tsc.exe' : 'tsc')), args: ['--lsp', '--stdio'] }
+  }
+  if (id !== 'python') {
+    const { program, args } = PATH_SERVERS[id]
+    const cmd = findOnPath(program)
+    if (!cmd) throw new Error(`${program} isn't installed (install it to get code intelligence for this language)`)
+    // .cmd/.bat shims need a shell on Windows.
+    return { cmd, args }
   }
   // Pyright is JavaScript: run it on Electron's own Node.
   return { cmd: process.execPath, args: [unpacked(require.resolve('pyright/langserver.index.js')), '--stdio'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }
@@ -116,7 +152,8 @@ class LspServer {
 
   async start(): Promise<void> {
     const { cmd, args, env } = command(this.id)
-    this.proc = spawn(cmd, args, { cwd: this.root, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd)
+    this.proc = spawn(shell ? `"${cmd}"` : cmd, args, { cwd: this.root, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell })
     this.proc.on('exit', (code) => (this.dead = `language server exited (${code})`))
     this.proc.on('error', (err) => (this.dead = err.message))
     this.proc.stderr?.resume()
@@ -242,9 +279,17 @@ export class LspManager {
   private servers = new Map<string, Promise<LspServer>>()
   private timer: NodeJS.Timeout | null = null
 
+  /** languages: the ones the user works in (settings.languages); empty = any server found on PATH may run. */
+  constructor(private languages: () => LanguageId[] = () => []) {}
+
   server(root: string, file: string): Promise<LspServer> {
     const lang = lspLanguage(file)
-    if (!lang) throw new Error(`No language server for ${extname(file) || 'this file type'} (supported: TypeScript/JavaScript, Python)`)
+    if (!lang) throw new Error(`No language server for ${extname(file) || 'this file type'} (supported: TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed)`)
+    if (lang.server !== 'typescript' && lang.server !== 'python') {
+      const picked = this.languages()
+      const { language } = PATH_SERVERS[lang.server]
+      if (picked.length && !picked.includes(language)) throw new Error(`Code intelligence for ${extname(file)} files is off: add the language in Settings → General → Languages`)
+    }
     const key = `${lang.server}|${process.platform === 'win32' ? root.toLowerCase() : root}`
     let s = this.servers.get(key)
     if (!s) {

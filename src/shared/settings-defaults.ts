@@ -46,5 +46,8 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   agentTiers: DEFAULT_AGENT_TIERS,
   defaultPermissions: 'manual',
-  codingRules: ''
+  codingRules: '',
+  defaultWorkspace: null,
+  languages: [],
+  onboarding: null
 }

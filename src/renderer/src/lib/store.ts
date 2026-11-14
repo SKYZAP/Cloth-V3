@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Collection, ModelRef, Provider, Settings } from '@shared/types'
 import { api } from './api'
+import type { OnboardingStep } from '@shared/onboarding'
 
 export type Page = 'dashboard' | 'chat' | 'boards' | 'knowledge' | 'skills' | 'agents' | 'tools' | 'workflows' | 'providers' | 'run' | 'mcp' | 'design' | 'settings'
 
@@ -31,6 +32,13 @@ interface AppState {
   loadCollections(): Promise<void>
   loadSettings(): Promise<void>
   updateSettings(patch: Partial<Settings>): Promise<void>
+  /** First-run setup: open, and the step it shows (null = where it got to). */
+  onboarding: { open: boolean; step: OnboardingStep | null }
+  /** A chat another screen asked the Chat page to show (picked up even while the page is already open). */
+  chatToOpen: string | null
+  openChatById(id: string): void
+  openOnboarding(step?: OnboardingStep | null): void
+  closeOnboarding(): void
   toasts: Toast[]
   toast(text: string, kind?: Toast['kind'], action?: Toast['action']): void
   dismissToast(id: number): void
@@ -52,6 +60,19 @@ export const useApp = create<AppState>((set, get) => ({
   openDesign: (focus = null) => {
     set({ designFocus: focus })
     get().setPage('design')
+  },
+  onboarding: { open: false, step: null },
+  openOnboarding: (step = null) => set({ onboarding: { open: true, step } }),
+  closeOnboarding: () => set({ onboarding: { open: false, step: null } }),
+  chatToOpen: null,
+  openChatById: (id) => {
+    try {
+      localStorage.setItem('cloth.chat', id)
+    } catch {
+      /* storage unavailable */
+    }
+    set({ chatToOpen: id })
+    get().setPage('chat')
   },
   providers: [],
   collections: [],

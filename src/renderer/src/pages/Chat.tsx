@@ -137,6 +137,20 @@ export function ChatPage() {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Another screen (first-run setup) made a chat and asked for it: reload the list and show it.
+  const chatToOpen = useApp((s) => s.chatToOpen)
+  useEffect(() => {
+    if (!chatToOpen) return
+    void api.chat.list().then((list) => {
+      setSessions(list)
+      setLoaded(true)
+      if (list.some((s) => s.id === chatToOpen)) {
+        setActiveId(chatToOpen)
+        setOpen(true)
+      }
+      useApp.setState({ chatToOpen: null })
+    })
+  }, [chatToOpen])
   useEffect(() => {
     try {
       if (activeId) localStorage.setItem('cloth.chat', activeId)
@@ -449,6 +463,10 @@ export function ChatPage() {
 
 /** Chats switched to Spec → Ship that wait for their first message (kept while you look at other chats). */
 const specWaiting = new Set<string>()
+/** Opens a chat with Spec → Ship picked: its first message is the idea it starts from (first-run setup uses it). */
+export function armSpecShip(sessionId: string): void {
+  specWaiting.add(sessionId)
+}
 
 function ChatView({
   session,

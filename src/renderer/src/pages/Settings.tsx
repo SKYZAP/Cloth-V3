@@ -61,7 +61,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Chat with Cloth from the Android app.', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
   { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Lets other apps, like your editor, use Cloth’s skills and knowledge.', keywords: 'mcp port server claude cursor' },
   { id: 'deps', title: 'Dependencies', icon: Package, blurb: 'Programs Cloth ships with, the ones it uses from this PC, and what each one is for.', keywords: 'git github gh docker node python bash powershell obscura searxng openspec installed programs tools requirements', desktopOnly: true },
-  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and which version you have.', keywords: 'data folder version database about update updates github release' }
+  { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and which version you have.', keywords: 'data folder version database about update updates github release setup onboarding first run welcome languages import' }
 ]
 
 const LAST_SECTION = 'cloth.settingsSection'
@@ -655,6 +655,15 @@ function AboutSection() {
           </div>
         </Row>
       </Group>
+      {!isMobile && (
+        <Group title="Setup">
+          <Row label="First-run setup" hint="Model, main working folder, languages, tools check, importing from other coding tools and the ways to work.">
+            <Button size="sm" onClick={() => useApp.getState().openOnboarding('model')}>
+              Run setup again
+            </Button>
+          </Row>
+        </Group>
+      )}
       <Card className="flex items-center gap-3 p-4">
         <Logo size={32} />
         <div>

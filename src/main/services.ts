@@ -123,7 +123,7 @@ export function createServices(opts: {
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const approvals = new ApprovalService((e) => ctx.emit('chat', e))
   const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
-  const lsp = new LspManager()
+  const lsp = new LspManager(() => settings.get().languages ?? [])
   const rulesDir = globalRulesDir(opts.dataDir)
   mkdirSync(rulesDir, { recursive: true })
   const images = new ImageService(ctx, providers, settings)

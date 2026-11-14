@@ -24,6 +24,7 @@ import { useState } from 'react'
 import { api } from './lib/api'
 import { Logo } from './components/Logo'
 import { ConfirmHost } from './components/ConfirmDialog'
+import { Onboarding } from './components/Onboarding'
 import { isMobile } from './lib/platform'
 import { ErrorBoundary } from './components/ErrorBoundary'
 // Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
@@ -83,9 +84,12 @@ function DesktopApp() {
   const [mcp, setMcp] = useState<McpStatus | null>(null)
 
   useEffect(() => {
-    void loadProviders()
     void loadCollections()
-    void loadSettings()
+    void Promise.all([loadProviders(), loadSettings()]).then(() => {
+      // First launch: setup opens by itself. Installs that already have a provider get the Dashboard card instead.
+      const st = useApp.getState()
+      if (st.settings && !st.settings.onboarding && !st.providers.some((p) => !p.local)) st.openOnboarding('welcome')
+    })
     void api.mcp.status().then(setMcp)
   }, [loadProviders, loadCollections, loadSettings])
   useEvent('mcp', setMcp)
@@ -139,6 +143,7 @@ function DesktopApp() {
           <PageContent page={page} />
         </main>
       </div>
+      <Onboarding />
       <Toasts />
       <ConfirmHost />
     </div>

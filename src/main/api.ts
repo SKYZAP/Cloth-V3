@@ -14,6 +14,7 @@ import { describeBuiltins } from './agent/tools'
 import { TRYABLE } from './agent/chat'
 import { openPermissionPane } from './computer/host'
 import { globalRulesDir } from './agent/rules'
+import { languageServers, OnboardingService, scanFolder } from './onboarding'
 
 /*
  * Secrets in settings (MCP servers' tokens) and providers' headers never leave the main process: the app
@@ -31,6 +32,7 @@ function restoreSettings(s: Services, patch: Partial<Settings>): Partial<Setting
 }
 
 export function createApi(s: Services): ClothApi {
+  const onboarding = new OnboardingService(s)
   return {
     app: {
       info: async () => ({
@@ -266,6 +268,13 @@ export function createApi(s: Services): ClothApi {
     deps: {
       list: () => s.deps.list(),
       refresh: () => s.deps.refresh()
+    },
+    onboarding: {
+      scanFolder: (path) => scanFolder(path),
+      languageServers: async (ids) => languageServers(ids),
+      importSources: () => onboarding.sources(),
+      importItems: (sel) => onboarding.importItems(sel),
+      bestPractices: (input) => onboarding.bestPractices(input)
     },
     boards: {
       overview: async () => s.boards.overview(),

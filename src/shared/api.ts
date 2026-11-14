@@ -285,6 +285,17 @@ export interface ClothApi {
     /** Check again. */
     refresh(): Promise<import('./deps').DependencyReport>
   }
+  /** First-run setup: a look through the main folder, language servers, importing from other coding tools, the best-practice library. */
+  onboarding: {
+    scanFolder(path: string): Promise<import('./onboarding').FolderScan>
+    languageServers(ids: import('./onboarding').LanguageId[]): Promise<import('./onboarding').LanguageServerInfo[]>
+    /** Skills, agents and MCP servers other coding tools on this PC have (MCP secrets stay in the main process). */
+    importSources(): Promise<import('./onboarding').ImportSource[]>
+    /** Copies what was picked; MCP servers arrive switched off. */
+    importItems(sel: import('./onboarding').ImportSelection): Promise<import('./onboarding').ImportResult>
+    /** Creates or updates the best-practice collection and its automation, and runs it once. */
+    bestPractices(input: { languages: import('./onboarding').LanguageId[]; frameworks: string[]; cadence: import('./onboarding').BestPracticeCadence }): Promise<{ collectionId: string; workflowId: string }>
+  }
   /** Boards: tickets from Plane, Jira or a Cloth board on this PC, moved through Cloth's agent stages. Changes arrive on the 'boards' channel. */
   boards: {
     overview(): Promise<import('./boards').BoardOverview>
