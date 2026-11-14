@@ -8,7 +8,7 @@ import { ACCESS_LEVELS, accessCaps, accessLabel, accessOf } from '@shared/access
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Inspector, refocus } from '@/components/Inspector'
-import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction } from '@/components/ui'
+import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
@@ -82,17 +82,13 @@ export function AgentsPage() {
   // One scale for every card's week strip, so a busy week looks busier than a quiet one.
   const busiest = Math.max(1, ...Object.values(activity).flatMap((a) => a.days ?? []))
 
-  // Cloth counts as one of the team.
-  const counts = plural(agents.length + 1, 'agent')
-
   return (
     <div className="relative h-full">
       <div className="h-full overflow-y-auto">
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[200px] flex-1">
-              <h1 className="text-title font-semibold tracking-tight">Agents</h1>
-              <p className="mt-0.5 text-ui text-dim">{loaded ? counts : '…'}</p>
+              <PageTitle>Agents</PageTitle>
             </div>
             <div className="relative w-[220px] mobile:w-full mobile:flex-1">
               <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />

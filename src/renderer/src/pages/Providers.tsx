@@ -6,7 +6,7 @@ import type { GeneratedImage, ImageSize, ModelInfo, ModelRef, Provider, Provider
 import { api } from '@/lib/api'
 import { attempt, sameRef, useApp } from '@/lib/store'
 import { compact } from '@/lib/format'
-import { Button, Empty, Field, IconButton, Input, Modal, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Button, Empty, Field, IconButton, Input, Modal, Switch, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { useSideBySide } from '@/lib/platform'
 import { openSettingsSection } from './Settings'
@@ -35,7 +35,7 @@ export function ProvidersPage() {
     <SplitRoot open={open} onBack={() => setOpen(false)}>
       <aside className={clsx('flex h-full shrink-0 flex-col', side ? 'w-[264px] border-r border-line/60' : 'w-full')}>
         <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-6 mobile:pt-4">
-          <h1 className="pl-1 text-title font-semibold tracking-tight">Models</h1>
+          <PageTitle className="pl-1">Models</PageTitle>
           <Button size="sm" icon={<Plus size={13} />} onClick={() => setAdding(true)}>
             Add provider
           </Button>

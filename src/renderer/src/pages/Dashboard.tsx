@@ -25,7 +25,7 @@ import type { DashboardStats, DashboardTotals, UsageRange, UsageSource } from '@
 import { api } from '@/lib/api'
 import { attempt, useApp, type Page } from '@/lib/store'
 import { compact, duration, timeAgo } from '@/lib/format'
-import { Badge, IconButton, Segmented, Spinner, confirmAction } from '@/components/ui'
+import { Badge, IconButton, Segmented, Spinner, confirmAction, PageTitle } from '@/components/ui'
 import { Tooltip } from '@/components/Tooltip'
 
 const RANGES: { value: UsageRange; label: string }[] = [
@@ -97,11 +97,7 @@ export function DashboardPage() {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-4 border-b border-line py-3.5 px-5 mobile:flex-wrap mobile:gap-2 mobile:px-4 mobile:py-3">
         <div className="min-w-0 flex-1 mobile:basis-full">
-          <div className="text-section font-semibold tracking-tight">Dashboard</div>
-          <div className="truncate text-caption text-dim mobile:hidden">
-            Models, tokens, cost, tools and skills across chat, flows, skill tests and MCP
-            {stats && <> · updated {timeAgo(stats.generatedAt)}</>}
-          </div>
+          <PageTitle>Dashboard</PageTitle>
         </div>
         <Segmented value={range} onChange={setRange} items={RANGES} />
         <Tooltip content="Refresh">

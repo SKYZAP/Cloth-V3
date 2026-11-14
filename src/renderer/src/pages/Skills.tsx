@@ -6,7 +6,7 @@ import type { ExternalSkillInfo } from '@shared/api'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, compact, timeAgo } from '@/lib/format'
-import { Badge, Button, Empty, Field, IconButton, Input, ListItem, Modal, PageHeader, Spinner, Tabs, Textarea, confirmAction } from '@/components/ui'
+import { Badge, Button, Empty, Field, IconButton, Input, ListItem, Modal, PageHeader, Spinner, Tabs, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { Inspector, refocus } from '@/components/Inspector'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
@@ -89,7 +89,7 @@ export function SkillsPage() {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-4 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="min-w-[120px] flex-1 text-title font-semibold tracking-tight">Skills</h1>
+            <PageTitle className="min-w-[120px] flex-1">Skills</PageTitle>
             <div className="relative w-[300px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
               <Input className="pl-7" type="search" aria-label="Search skills" placeholder={`Search ${skills.length} skills…`} value={query} onChange={(e) => setQuery(e.target.value)} />

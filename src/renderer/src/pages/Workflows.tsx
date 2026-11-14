@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react'
 import type { Workflow, WorkflowOverview, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { useSideBySide } from '@/lib/platform'
-import { Button } from '@/components/ui'
+import { Button, PageTitle } from '@/components/ui'
 import { SplitDetail, SplitRoot } from '@/components/SplitView'
 import { AutomationDetail, FOCUS, useNow } from './automation/AutomationDetail'
 import { Compose } from './automation/Compose'
@@ -104,7 +104,7 @@ export function WorkflowsPage() {
     >
       <aside aria-label="Automations" className={clsx('flex h-full shrink-0 flex-col', side ? 'w-[340px] border-r border-line' : 'w-full')}>
         <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-[18px]">
-          <h1 className="flex-1 text-section font-semibold">Automations</h1>
+          <PageTitle className="flex-1">Automations</PageTitle>
           <Button variant="primary" className={FOCUS} icon={<Plus size={13} aria-hidden="true" />} onClick={startNew}>
             New
           </Button>

@@ -4,7 +4,7 @@ import { FolderOpen, Plus } from '@phosphor-icons/react'
 import type { EnginesState, Hardware, Runner, RunnerStatus } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Button } from '@/components/ui'
+import { Button, PageTitle } from '@/components/ui'
 import { Inspector, InspectorHead, refocus } from '@/components/Inspector'
 import { AddModelModal, hardwareLine } from './run/AddModel'
 import { BACKEND, EnginePanel, EngineStrip, FLAVOUR, PLATFORM_BACKENDS, engineProgress, installEngine, useEngineAutoCheck } from './run/Engine'
@@ -126,7 +126,7 @@ export function RunPage() {
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-title font-semibold tracking-tight">Run</h1>
+              <PageTitle>Run</PageTitle>
             </div>
             <Button icon={<FolderOpen size={13} />} onClick={() => void addFromDisk()}>
               From disk

@@ -6,7 +6,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Inspector, refocus } from '@/components/Inspector'
 import { duration, timeAgo } from '@/lib/format'
-import { Button, Field, IconButton, Input, Select, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, IconButton, Input, Select, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Editor } from '@/components/Editor'
 
@@ -252,7 +252,7 @@ export function ToolsPage() {
         <div className="grid gap-4 px-8 py-6 mobile:px-3 mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-title font-semibold tracking-tight">Tools</h1>
+              <PageTitle>Tools</PageTitle>
             </div>
             <div className="relative w-[260px] mobile:w-full">
               <Search size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />

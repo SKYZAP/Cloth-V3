@@ -5,7 +5,7 @@ import type { McpCallLog, McpClientConfig, McpPreset, McpStatus } from '@shared/
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { duration, preview, timeAgo } from '@/lib/format'
-import { Button, Segmented, Switch } from '@/components/ui'
+import { Button, Segmented, Switch, PageTitle } from '@/components/ui'
 import { Inspector, refocus } from '@/components/Inspector'
 import { STATE, ServerDetail, ServerForm, aboutOf, commandLine, useExternalServers, type ExternalServers } from './mcp/ExternalServers'
 import { GuidedServerForm } from './mcp/GuidedServerForm'
@@ -73,7 +73,7 @@ export function McpPage() {
         <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-6 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <h1 className="text-title font-semibold tracking-tight">MCP</h1>
+              <PageTitle>MCP</PageTitle>
             </div>
             <Button variant="primary" icon={<Plus size={13} />} onClick={() => setOpen({ kind: 'add' })} data-focus-key="add">
               Add server

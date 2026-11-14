@@ -5,7 +5,7 @@ import type { Collection, IngestProgress, ModelRef, RagAskResult, RagDocument, R
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { bytes, timeAgo } from '@/lib/format'
-import { Button, Field, IconButton, Input, Modal, Segmented, Spinner, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, IconButton, Input, Modal, Segmented, Spinner, Switch, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Markdown } from '@/components/Markdown'
 import { Inspector, InspectorHead, refocus } from '@/components/Inspector'
@@ -127,7 +127,6 @@ export function KnowledgePage() {
     setOpen(null)
     refocus(key)
   }
-  const totalDocs = collections.reduce((n, c) => n + c.docCount, 0)
   const names = useMemo(() => Object.fromEntries(collections.map((c) => [c.id, c.name])), [collections])
 
   if (loaded && !collections.length)
@@ -167,8 +166,7 @@ export function KnowledgePage() {
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-[220px] flex-1">
-                  <h1 className="text-title font-semibold tracking-tight">Knowledge</h1>
-                  <p className="mt-0.5 text-ui text-dim">{loaded ? `${plural(collections.length, 'collection')}, ${plural(totalDocs, 'document')}` : '…'}</p>
+                  <PageTitle>Knowledge</PageTitle>
                 </div>
                 {!hasExamples && (
                   <Button icon={<GraduationCap size={13} />} loading={loadingExamples} onClick={() => void loadExamples()}>

@@ -32,7 +32,7 @@ import { MAPPED_STAGES, STAGES, STAGE_LABELS, type BoardAgents, type BoardOvervi
 import type { Agent } from '@shared/types'
 import { api, useAsync, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
-import { Badge, Button, Empty, Field, IconButton, Input, Modal, PageHeader, Segmented, Select, Spinner, Switch, Textarea } from '@/components/ui'
+import { Badge, Button, Empty, Field, IconButton, Input, Modal, PageHeader, PageTitle, Segmented, Select, Spinner, Switch, Textarea } from '@/components/ui'
 
 /*
  * Boards: one tracker's project as columns of agent stages. Each stage moves the ticket to its mapped tracker
@@ -88,7 +88,7 @@ export function BoardsPage() {
   if (!data?.connection)
     return (
       <div className="flex h-full flex-col">
-        <PageHeader title="Boards" subtitle="Tickets from Plane or Jira, worked through by agents" />
+        <PageHeader title={<PageTitle>Boards</PageTitle>} />
         <ConnectForm onConnected={(o) => setData(o)} />
       </div>
     )
@@ -104,15 +104,12 @@ export function BoardsPage() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        title="Boards"
-        subtitle={project ? `${tracker} · ${project.name} · stages move tickets between ${tracker} states` : `${tracker} has no projects this token can see`}
+        title={<PageTitle>Boards</PageTitle>}
         actions={
           <>
             <TrackerMenu overview={o} onSwitch={() => setModal('connect')} onDisconnect={() => run(async () => (await api.boards.disconnect(), api.boards.overview()), `Disconnected ${tracker}`)} />
             {o.projects.length > 0 && (
-              <Select pill className="w-auto min-w-[140px]" value={o.projectId ?? ''} onChange={(e) => { setSelected(null); void run(() => api.boards.selectProject(e.target.value)) }} aria-label="Project">
-                {o.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </Select>
+              <ProjectMenu overview={o} tracker={tracker} onSelect={(id) => { setSelected(null); void run(() => api.boards.selectProject(id)) }} />
             )}
             <Button variant="outline" icon={<SlidersHorizontal size={15} />} onClick={() => setModal('settings')} disabled={!project}>Project settings</Button>
             <Button variant="primary" icon={<Plus size={15} weight="bold" />} onClick={() => setModal('new')} disabled={!project}>New ticket</Button>
@@ -175,28 +172,76 @@ function ago(at: number): string {
 
 // ---- Tracker connection ----
 
-function TrackerMenu({ overview, onSwitch, onDisconnect }: { overview: BoardOverview; onSwitch(): void; onDisconnect(): void }) {
+/** Open state for a header popover menu: closes on an outside click or Escape. */
+function usePopover() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const conn = overview.connection!
-  const other: TrackerKind = conn.kind === 'plane' ? 'jira' : 'plane'
   useEffect(() => {
     if (!open) return
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
+    const click = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('mousedown', click)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', click)
+      window.removeEventListener('keydown', key)
+    }
   }, [open])
+  return { open, setOpen, ref }
+}
+
+const MENU_PILL = 'flex h-[30px] items-center gap-1.5 rounded-full border border-line bg-panel pr-2.5 pl-3 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg'
+const MENU_PANEL = 'absolute top-9 right-0 z-40 w-72 rounded-[10px] border border-line bg-elev p-1.5 shadow-2xl shadow-black/50'
+const MENU_ITEM = 'flex w-full items-center gap-2.5 rounded-md p-2 text-left hover:bg-elev-2'
+const MENU_FOOTER = 'mt-1 flex items-center justify-between border-t border-line px-2 pt-2 pb-1 text-caption text-dim'
+
+function ProjectMenu({ overview: o, tracker, onSelect }: { overview: BoardOverview; tracker: string; onSelect(id: string): void }) {
+  const { open, setOpen, ref } = usePopover()
+  const current = o.projects.find((p) => p.id === o.projectId)
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} className="flex h-[30px] items-center gap-1.5 rounded-full border border-line bg-panel pr-2.5 pl-3 text-caption text-muted transition-colors hover:border-line-strong hover:text-fg">
+      <button onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label="Project" className={clsx(MENU_PILL, 'max-w-[220px]')}>
+        <span className="truncate">{current?.name ?? 'Pick a project'}</span>
+        <CaretDown size={12} className="shrink-0" />
+      </button>
+      {open && (
+        <div role="menu" className={MENU_PANEL}>
+          <div className="max-h-72 overflow-y-auto">
+            {o.projects.map((p) => (
+              <button key={p.id} role="menuitemradio" aria-checked={p.id === o.projectId} onClick={() => { setOpen(false); if (p.id !== o.projectId) onSelect(p.id) }} className={MENU_ITEM}>
+                <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-md bg-skill-soft px-1 text-micro font-semibold text-skill">{(p.key || p.name).slice(0, 4).toUpperCase()}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-fg">{p.name}</span>
+                  <span className="block truncate text-caption text-dim">{p.id === o.projectId ? `${o.tickets.length} ticket${o.tickets.length === 1 ? '' : 's'}` : p.key}</span>
+                </span>
+                {p.id === o.projectId && <Check size={14} className="shrink-0 text-ok" />}
+              </button>
+            ))}
+          </div>
+          <div className={MENU_FOOTER}>
+            <span>{o.projects.length} project{o.projects.length === 1 ? '' : 's'} in {tracker}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TrackerMenu({ overview, onSwitch, onDisconnect }: { overview: BoardOverview; onSwitch(): void; onDisconnect(): void }) {
+  const { open, setOpen, ref } = usePopover()
+  const conn = overview.connection!
+  const other: TrackerKind = conn.kind === 'plane' ? 'jira' : 'plane'
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} className={MENU_PILL}>
         <span className={clsx('h-1.5 w-1.5 rounded-full', overview.error ? 'bg-danger' : 'bg-ok')} />
         {TRACKER_NAME[conn.kind]}
         <CaretDown size={12} />
       </button>
       {open && (
-        <div role="menu" className="absolute top-9 right-0 z-40 w-72 rounded-[10px] border border-line bg-elev p-1.5 shadow-2xl shadow-black/50">
+        <div role="menu" className={MENU_PANEL}>
           {(['plane', 'jira'] as TrackerKind[]).map((k) => (
-            <button key={k} role="menuitemradio" aria-checked={k === conn.kind} onClick={() => { setOpen(false); if (k !== conn.kind) onSwitch() }} className="flex w-full items-center gap-2.5 rounded-md p-2 text-left hover:bg-elev-2">
+            <button key={k} role="menuitemradio" aria-checked={k === conn.kind} onClick={() => { setOpen(false); if (k !== conn.kind) onSwitch() }} className={MENU_ITEM}>
               <span className={clsx('flex h-[22px] w-[22px] items-center justify-center rounded-md text-micro font-semibold', k === 'plane' ? 'bg-info/15 text-info' : 'bg-agent/15 text-agent')}>{k === 'plane' ? 'P' : 'J'}</span>
               <span className="min-w-0 flex-1">
                 <span className="block font-medium text-fg">{TRACKER_NAME[k]}</span>
@@ -205,7 +250,7 @@ function TrackerMenu({ overview, onSwitch, onDisconnect }: { overview: BoardOver
               {k === conn.kind && <Check size={14} className="text-ok" />}
             </button>
           ))}
-          <div className="mt-1 flex items-center justify-between border-t border-line px-2 pt-2 pb-1 text-caption text-dim">
+          <div className={MENU_FOOTER}>
             <span>One tracker at a time.</span>
             <button className="hover:text-danger-hi" onClick={() => { setOpen(false); onDisconnect() }}>Disconnect</button>
           </div>

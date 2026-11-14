@@ -234,6 +234,11 @@ export function Spinner({ size = 14, className }: { size?: number; className?: s
   return <Loader2 size={size} className={clsx('animate-spin text-dim', className)} />
 }
 
+/** The one title style for top-level pages (Dashboard, Boards, Agents, …): no description under it. */
+export function PageTitle({ children, className }: { children: ReactNode; className?: string }) {
+  return <h1 className={clsx('truncate text-title font-semibold tracking-tight', className)}>{children}</h1>
+}
+
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-line py-3.5 px-5 mobile:flex-wrap mobile:gap-x-2 mobile:gap-y-2.5 mobile:px-3 mobile:py-3">
