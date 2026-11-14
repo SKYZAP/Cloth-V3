@@ -223,6 +223,13 @@
         ]
       },
       {
+        "from": "sidecars/openspec/node_modules",
+        "to": "openspec/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "resources/examples",
         "to": "examples",
         "filter": [

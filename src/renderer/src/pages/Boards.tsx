@@ -529,12 +529,14 @@ function TicketPanel({ ticket: t, tracker, kind, settings, chatProjectId, agents
   return (
     <aside aria-label={t.key} className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="border-b border-line px-4 pt-3.5 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-caption text-dim">{t.key}</span>
-          <Badge>{local ? t.stateName || '—' : `${tracker}: ${t.stateName || '—'}`}</Badge>
-          <span className="ml-auto flex items-center gap-0.5">
-            <Button size="sm" variant="ghost" icon={<ChatCircleDots size={14} />} onClick={() => void openInChat()} title={chatProjectId ? 'A new chat in the linked project, with this ticket in the message box' : 'A new chat in the code folder, with this ticket in the message box'}>Open in chat</Button>
-            {t.url && <Button size="sm" variant="ghost" icon={<ArrowSquareOut size={14} />} onClick={open}>Open in {tracker}</Button>}
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 font-mono text-caption whitespace-nowrap text-dim">{t.key}</span>
+          <span className="min-w-0 truncate">
+            <Badge>{local ? t.stateName || '—' : `${tracker}: ${t.stateName || '—'}`}</Badge>
+          </span>
+          <span className="ml-auto flex shrink-0 items-center gap-0.5">
+            <IconButton aria-label="Open in chat" title={chatProjectId ? 'Open in chat: a new chat in the linked project, with this ticket in the message box' : 'Open in chat: a new chat in the code folder, with this ticket in the message box'} onClick={() => void openInChat()}><ChatCircleDots size={15} /></IconButton>
+            {t.url && <IconButton aria-label={`Open in ${tracker}`} title={`Open in ${tracker}`} onClick={open}><ArrowSquareOut size={15} /></IconButton>}
             <IconButton aria-label="Close" onClick={onClose}><X size={15} /></IconButton>
           </span>
         </div>
