@@ -37,6 +37,8 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { RunService, type RunDeps } from './run/run'
 import { UpdateService, type UpdateDeps } from './updates'
 import { BoardService } from './boards/boards'
+import { DependencyService } from './deps'
+import { setOpenSpecHomes } from './agent/openspec'
 
 export interface Services {
   ctx: Ctx
@@ -69,6 +71,7 @@ export interface Services {
   updates: UpdateService
   approvals: ApprovalService
   boards: BoardService
+  deps: DependencyService
 }
 
 export function createServices(opts: {
@@ -106,6 +109,8 @@ export function createServices(opts: {
     emit: opts.emit ?? (() => {}),
     log: (scope, ...args) => console.log(`[${scope}]`, ...args)
   }
+  // OpenSpec mode runs the CLI Cloth ships (sidecars/openspec) on Electron's own Node.
+  setOpenSpecHomes([join(ctx.sidecarsDir, 'openspec')])
   const settings = new SettingsService(ctx)
   const providers = new ProviderService(ctx)
   const runs = new RunService(ctx, providers, opts.run)
@@ -203,7 +208,7 @@ export function createServices(opts: {
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates, boards }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
 }
 
 const SEEDED_KEY = 'mcp.homelabSeeded'

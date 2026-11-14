@@ -1,10 +1,20 @@
 /*
- * Boards: tickets from one connected tracker (Plane or Jira) moved through Cloth's agent stages.
- * A planner writes requirements from the title and goal, a reviewer checks them against the goal,
- * and an implementer builds the ticket in its own worktree and opens a pull request.
+ * Boards: tickets from one connected tracker (Plane or Jira) or a Cloth board kept on this PC, moved through
+ * Cloth's agent stages. A planner writes requirements from the title and goal, a reviewer checks them against
+ * the goal, and an implementer builds the ticket in its own worktree. What happens to its changes (left
+ * uncommitted, committed to a local branch, or pushed as a pull request) is a project setting.
  */
 
-export type TrackerKind = 'plane' | 'jira'
+/** `cloth`: an offline board whose projects and tickets live in Cloth's own storage. */
+export type TrackerKind = 'plane' | 'jira' | 'cloth'
+
+export const TRACKER_NAMES: Record<TrackerKind, string> = { plane: 'Plane', jira: 'Jira', cloth: 'Cloth' }
+
+/**
+ * What the implementer's finished work becomes. `none`: changes stay uncommitted in the ticket's worktree until
+ * you apply them; `commit`: committed to a local branch, nothing pushed; `pr`: committed, pushed and opened as a PR.
+ */
+export type GitMode = 'none' | 'commit' | 'pr'
 
 /** The agent stages, in order. `merged` is the last mapping row; merged tickets leave the board. */
 export const STAGES = ['new', 'req', 'rev', 'build', 'pr'] as const
@@ -21,16 +31,32 @@ export const STAGE_LABELS: Record<MappedStage, string> = {
   merged: 'Merged'
 }
 
+/** The goal inside a description Cloth wrote, or the whole description for one written by a person. */
+export function goalOf(description: string): string {
+  const m = /##\s*Goal\s*\n([\s\S]*?)(\n##\s|\nWritten by Cloth agents\.|$)/.exec(description)
+  return (m ? m[1] : description).trim()
+}
+
+/** A stage's name on this project's board: the last column is "Ready" when nothing opens a pull request. */
+export function stageLabel(stage: MappedStage, s: Pick<BoardProjectSettings, 'git'> | null | undefined): string {
+  if (s && s.git !== 'pr') {
+    if (stage === 'pr') return 'Ready'
+    if (stage === 'merged') return 'Done'
+  }
+  return STAGE_LABELS[stage]
+}
+
 /** What the user enters to connect. The token is write-only: it never comes back to the renderer. */
 export interface TrackerConnectInput {
   kind: TrackerKind
-  /** Plane: the instance (https://plane.example.com). Jira: the site (https://team.atlassian.net). */
-  baseUrl: string
+  /** Plane: the instance (https://plane.example.com). Jira: the site (https://team.atlassian.net). Not used by a Cloth board. */
+  baseUrl?: string
   /** Plane only: the workspace slug from its URLs. */
   workspace?: string
   /** Jira only: the account's email. */
   email?: string
-  token: string
+  /** Not used by a Cloth board. */
+  token?: string
 }
 
 export interface TrackerConnection {
@@ -70,11 +96,43 @@ export interface BoardProjectSettings {
   repo: string | null
   /** stage → tracker state id. */
   stateMap: Record<MappedStage, string | null>
-  /** Experimental: merge a PR on its own once checks pass and the code review approves. */
+  /** Allow PR creation and commits: what the implementer's work becomes (default `none`, nothing committed). */
+  git: GitMode
+  /**
+   * Allow ticket sync and updates: Cloth writes back to Plane or Jira (creates tickets, moves them between the
+   * mapped states, writes requirements, posts reviews). Off by default: the tracker is only read and progress
+   * stays in Cloth. A Cloth board always updates its own tickets.
+   */
+  trackerUpdates: boolean
+  /** Stop after the reviewer approves the requirements, so you check them before any code is written. */
+  approveRequirements: boolean
+  /** Times the reviewer may send requirements back before the ticket waits for you (1–5). */
+  reviewRounds: number
+  /** Fixes an agent pushes on its own for a PR's failing checks before it hands the PR to you (0–5). */
+  checkFixes: number
+  /** Experimental: merge a PR on its own once checks pass and the code review approves. Needs `git: 'pr'`. */
   autoMerge: boolean
   agents: BoardAgents
   /** Commands the implementer may run without asking (prefixes). */
   commands: string[]
+}
+
+/** Where the work of a ticket built without a pull request is. */
+export interface LocalResult {
+  mode: 'none' | 'commit'
+  /** The branch the worktree started from. */
+  base: string
+  /** `none`: the worktree holding the uncommitted changes. */
+  dir?: string
+  /** `commit`: the local branch with the commit. */
+  branch?: string
+  /** Changes were applied to the code folder. */
+  applied?: boolean
+}
+
+export interface TicketComment {
+  at: number
+  text: string
 }
 
 export type TicketPriority = 'urgent' | 'high' | 'medium' | 'low' | 'none'
@@ -113,6 +171,8 @@ export interface TicketPipeline {
   }
   /** An agent is fixing (or is queued to fix) the PR's failing checks. */
   fixing?: boolean
+  /** Built without a pull request: where the changes are. */
+  local?: LocalResult
   updatedAt: number
 }
 
@@ -126,10 +186,13 @@ export interface BoardTicket {
   stateName: string
   /** The column it shows in: the pipeline's stage, or the one its tracker state maps to. */
   stage: Stage
+  /** Empty on a Cloth board: there is nowhere else to open it. */
   url: string
   /** Plain text of the description (the goal for tickets made outside Cloth). */
   description: string
   pipeline: TicketPipeline | null
+  /** A Cloth board's comments (reviews, hand-offs), oldest first. Other trackers keep theirs. */
+  comments?: TicketComment[]
 }
 
 /** A chat project linked to a tracker project: its board. */

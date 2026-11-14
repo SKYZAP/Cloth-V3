@@ -22,7 +22,7 @@
     "mock-llm": "node scripts/mock-llm.mjs",
     "icon": "electron scripts/make-icon.mjs",
     "smoke": "electron-vite build && node scripts/smoke.mjs",
-    "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs",
+    "sidecars": "node scripts/stage-obscura.mjs && node scripts/stage-searxng.mjs && node scripts/stage-openspec.mjs",
     "mobile:dev": "vite --config vite.mobile.config.ts",
     "mobile:apk": "node scripts/mobile-apk.mjs debug",
     "mobile:release": "node scripts/mobile-apk.mjs release",
@@ -211,6 +211,13 @@
       {
         "from": "sidecars/searxng",
         "to": "searxng",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "sidecars/openspec",
+        "to": "openspec",
         "filter": [
           "**/*"
         ]

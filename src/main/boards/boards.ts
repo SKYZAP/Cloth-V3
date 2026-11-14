@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import {
   STAGES,
+  TRACKER_NAMES,
+  goalOf,
   type BoardAgents,
   type BoardLink,
   type BoardOverview,
@@ -26,6 +28,7 @@ import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { ToolScope } from '../agent/tools'
 import { git, repoRoot } from '../panel/git'
 import { defaultStateMap, makeTracker, type RawTicket, type Tracker, type TrackerConfig } from './trackers'
+import { LOCAL_STATE_MAP, localTracker, type LocalTracker } from './local'
 
 /*
  * Boards keeps one tracker connection, the chosen project, each project's settings, and a pipeline record
@@ -41,13 +44,17 @@ const K_PIPES = 'boards.pipelines'
 const K_LINKS = 'boards.links'
 const SYNC_MS = 60_000
 const MAX_RUNNING = 2
-const MAX_SEND_BACKS = 2
-/** Fixes an agent pushes for failing checks on its own before it hands the PR to you. */
-const MAX_FIXES = 2
+/** Send-backs from review before the ticket waits for you, unless the project sets its own. */
+const REVIEW_ROUNDS = 2
+/** Fixes an agent pushes for failing checks on its own before it hands the PR to you, unless the project sets its own. */
+const CHECK_FIXES = 2
 // Bare `node` isn't here: `node -e …` runs any code, and these run with nobody watching.
 const DEFAULT_COMMANDS = ['npm test', 'npm run', 'npx tsc', 'npx vitest', 'pnpm test', 'pnpm run', 'yarn test']
+const clamp = (n: unknown, lo: number, hi: number, fallback: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback)
 
-interface StoredConn extends Omit<TrackerConfig, 'token'> {
+interface StoredConn extends Omit<TrackerConfig, 'token' | 'kind'> {
+  kind: TrackerConfig['kind'] | 'cloth'
+  /** Encrypted, base64. Empty for a Cloth board. */
   token: string
 }
 type StoredPipe = TicketPipeline & { projectId: string; key: string; title: string }
@@ -102,11 +109,7 @@ export function describe(goal: string, requirements: string[], outOfScope: strin
   return parts.join('\n')
 }
 
-/** The goal inside a description Cloth wrote, or the whole description for one written by a person. */
-export function goalOf(description: string): string {
-  const m = /##\s*Goal\s*\n([\s\S]*?)(\n##\s|\nWritten by Cloth agents\.|$)/.exec(description)
-  return (m ? m[1] : description).trim()
-}
+export { goalOf } from '@shared/boards'
 
 const PLANNER = `You write requirements for a software ticket. Read the code in the workspace where it helps you be concrete.
 Write acceptance criteria someone can check, each one sentence, only what the goal asks for. Note what is out of scope.
@@ -161,7 +164,10 @@ const IMPLEMENTER = `You implement a software ticket in this workspace, a git wo
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
 Don't commit or push: Cloth does that when you finish. End with a short summary of what you changed.`
 
-const TRACKER_LABEL = { plane: 'Plane', jira: 'Jira' } as const
+const IMPLEMENTER_NO_GIT = `You implement a software ticket in this workspace, a separate git worktree. Meet every requirement,
+stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
+Don't commit, push or make branches: your changes are left as they are for the person to review and apply.
+End with a short summary of what you changed.`
 
 export class BoardService {
   private tracker: Tracker | null = null
@@ -180,7 +186,7 @@ export class BoardService {
     private deps: BoardDeps
   ) {
     const c = this.storedConn()
-    if (c) this.tracker = makeTracker(this.config(c))
+    if (c) this.tracker = this.trackerFor(c)
     // Steps cut off when Cloth closed wait for the user to resume them.
     const pipes = this.pipes()
     let changed = false
@@ -212,13 +218,35 @@ export class BoardService {
     return this.ctx.kv.get<StoredConn | null>(K_CONN, null)
   }
 
-  private config(c: StoredConn): TrackerConfig {
-    return { ...c, token: this.ctx.secrets.decrypt(Buffer.from(c.token, 'base64')) }
+  private trackerFor(c: StoredConn): Tracker {
+    if (c.kind === 'cloth') return localTracker(this.ctx.kv)
+    return makeTracker({ ...c, kind: c.kind, token: this.ctx.secrets.decrypt(Buffer.from(c.token, 'base64')) })
+  }
+
+  /** The connected board is a Cloth board (everything on this PC). */
+  private isLocal(): boolean {
+    return this.tracker?.kind === 'cloth'
+  }
+
+  private local(): LocalTracker | null {
+    return this.isLocal() ? (this.tracker as LocalTracker) : null
+  }
+
+  /** Cloth may change the tracker's tickets: always on a Cloth board, else when the project allows ticket updates. */
+  private writes(s: BoardProjectSettings): boolean {
+    return this.isLocal() || s.trackerUpdates
+  }
+
+  /** A comment on the ticket, when Cloth may write to it; failures are only logged. */
+  private async note(p: BoardProject, t: RawTicket, s: BoardProjectSettings, text: string): Promise<void> {
+    if (!this.tracker || !this.writes(s)) return
+    await this.tracker.comment(p, t, text).catch((err) => this.ctx.log('boards', `couldn't comment on ${t.key}: ${errorMessage(err)}`))
   }
 
   private connection(): TrackerConnection | null {
     const c = this.storedConn()
     if (!c) return null
+    if (c.kind === 'cloth') return { kind: 'cloth', baseUrl: '', label: `On this PC · ${this.projects.length} project${this.projects.length === 1 ? '' : 's'}` }
     let host = c.baseUrl
     try {
       host = new URL(c.baseUrl).host
@@ -229,19 +257,29 @@ export class BoardService {
   }
 
   async connect(input: TrackerConnectInput): Promise<BoardOverview> {
-    const baseUrl = input.baseUrl.trim()
-    if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Enter the full address, starting with https://')
-    if (!input.token.trim()) throw new Error('Enter the API token')
-    if (input.kind === 'plane' && !input.workspace?.trim()) throw new Error('Enter the workspace slug (the part after the address in Plane links)')
-    if (input.kind === 'jira' && !input.email?.trim()) throw new Error('Enter the email of the Jira account the token belongs to')
-    const config: TrackerConfig = { kind: input.kind, baseUrl, workspace: input.workspace?.trim(), email: input.email?.trim(), token: input.token.trim() }
-    const tracker = makeTracker(config)
+    let tracker: Tracker
+    let stored: StoredConn
+    if (input.kind === 'cloth') {
+      // Nothing to check: the board lives in Cloth's own storage. A first board gets a project to start in.
+      tracker = localTracker(this.ctx.kv)
+      if (!(await tracker.projects()).length) await tracker.createProject!('My board')
+      stored = { kind: 'cloth', baseUrl: '', token: '' }
+    } else {
+      const baseUrl = (input.baseUrl ?? '').trim()
+      if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Enter the full address, starting with https://')
+      if (!input.token?.trim()) throw new Error('Enter the API token')
+      if (input.kind === 'plane' && !input.workspace?.trim()) throw new Error('Enter the workspace slug (the part after the address in Plane links)')
+      if (input.kind === 'jira' && !input.email?.trim()) throw new Error('Enter the email of the Jira account the token belongs to')
+      const config: TrackerConfig = { kind: input.kind, baseUrl, workspace: input.workspace?.trim(), email: input.email?.trim(), token: input.token.trim() }
+      tracker = makeTracker(config)
+      stored = { ...config, token: Buffer.from(this.ctx.secrets.encrypt(config.token)).toString('base64') }
+    }
     const projects = await tracker.projects()
     // One tracker at a time: whatever was running on the old one stops.
     for (const a of this.running.values()) a.abort()
     this.running.clear()
     this.queue = []
-    this.ctx.kv.set(K_CONN, { ...config, token: Buffer.from(this.ctx.secrets.encrypt(config.token)).toString('base64') } satisfies StoredConn)
+    this.ctx.kv.set(K_CONN, stored)
     this.ctx.kv.set(K_PROJECT, projects[0]?.id ?? null)
     this.tracker = tracker
     this.projects = projects
@@ -281,15 +319,38 @@ export class BoardService {
 
   private settingsFor(projectId: string): BoardProjectSettings {
     const all = this.ctx.kv.get<Record<string, BoardProjectSettings>>(K_SETTINGS, {})
-    const saved = all[this.skey(projectId)]
-    const defaults = defaultStateMap(this.states.get(projectId) ?? []) as BoardProjectSettings['stateMap']
+    const saved = all[this.skey(projectId)] as Partial<BoardProjectSettings> | undefined
+    // A Cloth board's states are its stages, so its map is fixed.
+    const stateMap = this.isLocal()
+      ? { ...LOCAL_STATE_MAP }
+      : ({ ...defaultStateMap(this.states.get(projectId) ?? []), ...Object.fromEntries(Object.entries(saved?.stateMap ?? {}).filter(([, v]) => v)) } as BoardProjectSettings['stateMap'])
+    const git = saved?.git === 'commit' || saved?.git === 'pr' ? saved.git : 'none'
     return {
       repo: saved?.repo ?? null,
-      stateMap: { ...defaults, ...Object.fromEntries(Object.entries(saved?.stateMap ?? {}).filter(([, v]) => v)) } as BoardProjectSettings['stateMap'],
-      autoMerge: saved?.autoMerge ?? false,
+      stateMap,
+      git,
+      trackerUpdates: saved?.trackerUpdates === true,
+      approveRequirements: saved?.approveRequirements === true,
+      reviewRounds: clamp(saved?.reviewRounds, 1, 5, REVIEW_ROUNDS),
+      checkFixes: clamp(saved?.checkFixes, 0, 5, CHECK_FIXES),
+      // Auto-merge needs a pull request to merge.
+      autoMerge: git === 'pr' && saved?.autoMerge === true,
       agents: saved?.agents ?? { planner: null, reviewer: null, implementer: null },
       commands: saved?.commands ?? DEFAULT_COMMANDS
     }
+  }
+
+  /** A new project on a Cloth board, shown at once. */
+  async createProject(name: string): Promise<BoardOverview> {
+    const local = this.local()
+    if (!local) throw new Error('Make projects in Plane or Jira itself; Cloth makes projects only on a Cloth board')
+    if (!name.trim()) throw new Error('Enter a name for the project')
+    if (this.projects.some((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase())) throw new Error(`There is already a project called “${name.trim()}”`)
+    const p = await local.createProject!(name.trim())
+    this.projects = [...this.projects, p]
+    this.ctx.kv.set(K_PROJECT, p.id)
+    await this.sync()
+    return this.overview()
   }
 
   async selectProject(id: string): Promise<BoardOverview> {
@@ -305,6 +366,9 @@ export class BoardService {
     if (patch.stateMap) next.stateMap = { ...this.settingsFor(projectId).stateMap, ...patch.stateMap }
     if (patch.agents) next.agents = { ...this.settingsFor(projectId).agents, ...patch.agents }
     if (patch.commands) next.commands = patch.commands.map((c) => c.trim()).filter(Boolean)
+    next.reviewRounds = clamp(next.reviewRounds, 1, 5, REVIEW_ROUNDS)
+    next.checkFixes = clamp(next.checkFixes, 0, 5, CHECK_FIXES)
+    if (next.git !== 'pr') next.autoMerge = false
     all[this.skey(projectId)] = next
     this.ctx.kv.set(K_SETTINGS, all)
     this.changed()
@@ -327,8 +391,8 @@ export class BoardService {
   async linkChatProject(chatProjectId: string): Promise<BoardLink> {
     const cp = this.deps.projects.get(chatProjectId)
     const conn = this.storedConn()
-    if (!this.tracker || !conn) throw new Error('Connect Plane or Jira in Boards first')
-    const name = TRACKER_LABEL[conn.kind]
+    if (!this.tracker || !conn) throw new Error('Set up a board in Boards first: a Cloth board, Plane or Jira')
+    const name = TRACKER_NAMES[conn.kind]
     this.projects = await this.tracker.projects()
     const want = cp.name.trim().toLowerCase()
     let bp = this.projects.find((p) => p.name.trim().toLowerCase() === want)
@@ -398,7 +462,8 @@ export class BoardService {
       if (s.stateMap.merged && t.stateId === s.stateMap.merged) {
         pipe.status = 'done'
         changed = true
-      } else if (t.stateId === s.stateMap.req && STAGES.indexOf(pipe.stage) > STAGES.indexOf('req') && pipe.stage !== 'pr') {
+      } else if (this.writes(s) && t.stateId === s.stateMap.req && STAGES.indexOf(pipe.stage) > STAGES.indexOf('req') && pipe.stage !== 'pr') {
+        // Only when Cloth moves tickets itself: with updates off the tracker's state stays where it was, so it says nothing.
         // Anyone with access to the tracker can move a ticket, so agents don't start again on their own: it waits for you.
         Object.assign(pipe, { stage: 'req', status: 'needsYou', note: 'Moved back to Requirements in the tracker. Resume to write the requirements again.', activity: undefined, review: undefined, sendBacks: 0, updatedAt: Date.now() })
         changed = true
@@ -415,6 +480,7 @@ export class BoardService {
     const settings = p ? this.settingsFor(p.id) : null
     const pipes = this.pipes()
     const tickets: BoardTicket[] = []
+    const local = this.local()
     if (p && settings)
       for (const t of this.raw.get(p.id) ?? []) {
         const pipe = pipes[this.pkey(t.id)] ?? null
@@ -424,7 +490,7 @@ export class BoardService {
         // Without agents, the column comes from the tracker state (the first stage mapped to it).
         const mapped = STAGES.find((st) => settings.stateMap[st] === t.stateId)
         const stage: Stage = pipe?.stage ?? mapped ?? (state?.group === 'started' ? 'build' : 'new')
-        tickets.push({ id: t.id, key: t.key, title: t.title, priority: t.priority, stateId: t.stateId, stateName: state?.name ?? '', stage, url: t.url, description: t.description, pipeline: pipe ? this.publicPipe(pipe) : null })
+        tickets.push({ id: t.id, key: t.key, title: t.title, priority: t.priority, stateId: t.stateId, stateName: state?.name ?? '', stage, url: t.url, description: t.description, pipeline: pipe ? this.publicPipe(pipe) : null, ...(local ? { comments: local.comments(p.id, t.id) } : {}) })
       }
     const chatProjectId = p ? (Object.entries(this.links()).find(([, l]) => l.projectId === p.id)?.[0] ?? null) : null
     return { connection: conn, projects: this.projects, projectId: p?.id ?? null, states, settings, tickets, syncedAt: this.syncedAt, chatProjectId, error: this.syncError }
@@ -446,6 +512,7 @@ export class BoardService {
     if (!title) throw new Error('Enter a title')
     if (input.auto && !goal) throw new Error('Enter a goal: the planner writes the requirements from it')
     const s = this.settingsFor(p.id)
+    if (!this.writes(s)) throw new Error(`Ticket updates are off for this project, so Cloth won't create tickets in ${TRACKER_NAMES[t.kind]}. Turn on “Allow ticket sync and updates” in Project settings, or create the ticket in ${TRACKER_NAMES[t.kind]}.`)
     const made = await t.create(p, { title, description: goal ? describe(goal, [], []) : '', stateId: s.stateMap.new })
     this.raw.set(p.id, [made, ...(this.raw.get(p.id) ?? [])])
     if (input.auto) this.startPipeline(p, made, goal, { ...s.agents, ...input.agents })
@@ -481,6 +548,8 @@ export class BoardService {
   resume(ticketId: string): BoardOverview {
     const pipe = this.pipes()[this.pkey(ticketId)]
     if (!pipe) throw new Error('Agents aren\'t on for this ticket')
+    // Built without a PR: nothing runs any more; the changes wait to be applied or the ticket marked done.
+    if (pipe.stage === 'pr' && pipe.local) return this.overview()
     if (pipe.stage === 'pr' && !pipe.fixing) {
       // Nothing to rerun: the PR is open; go back to watching its checks.
       this.update(ticketId, { status: 'running', note: undefined })
@@ -510,6 +579,122 @@ export class BoardService {
     const pipes = this.pipes()
     delete pipes[this.pkey(ticketId)]
     this.ctx.kv.set(K_PIPES, pipes)
+    this.changed()
+    return this.overview()
+  }
+
+  /** The ticket and its project, with its pipeline when agents are on. */
+  private find(ticketId: string): { p: BoardProject; t: RawTicket; s: BoardProjectSettings; pipe: StoredPipe | null } {
+    const pipe = this.pipes()[this.pkey(ticketId)] ?? null
+    const p = this.project(pipe?.projectId ?? this.projectId())
+    const t = p && this.raw.get(p.id)?.find((x) => x.id === ticketId)
+    if (!p || !t) throw new Error('That ticket is no longer on the board')
+    return { p, t, s: this.settingsFor(p.id), pipe }
+  }
+
+  /**
+   * Copy a ticket's finished changes into the project's code folder as uncommitted changes (from its worktree,
+   * or from its local branch), then mark it done. Refuses, changing nothing, when they don't apply cleanly.
+   */
+  async applyChanges(ticketId: string): Promise<BoardOverview> {
+    const { p, t, s, pipe } = this.find(ticketId)
+    const local = pipe?.local
+    if (!pipe || pipe.stage !== 'pr' || !local) throw new Error('This ticket has no finished changes to apply')
+    if (!s.repo || !existsSync(s.repo)) throw new Error('Pick the code folder for this project in Project settings first')
+    const root = await repoRoot(s.repo)
+    if (!root) throw new Error(`${s.repo} isn't a git repository`)
+    let patch: string
+    if (local.mode === 'none') {
+      if (!local.dir || !existsSync(local.dir)) throw new Error('The copy holding these changes is gone, so there is nothing to apply')
+      await gitRun(local.dir, ['add', '-A'])
+      patch = await gitRun(local.dir, ['diff', '--cached', '--binary'])
+    } else {
+      if (!local.branch) throw new Error('This ticket has no branch to apply')
+      patch = await gitRun(root, ['diff', '--binary', `${local.base}...${local.branch}`])
+    }
+    if (!patch.trim()) throw new Error('There are no changes to apply')
+    const file = join(this.ctx.dataDir, 'boards', `${t.key.toLowerCase()}.patch`)
+    await mkdir(join(this.ctx.dataDir, 'boards'), { recursive: true })
+    await writeFile(file, patch.endsWith('\n') ? patch : `${patch}\n`)
+    try {
+      await gitRun(root, ['apply', '--check', '--whitespace=nowarn', file]).catch((err) => {
+        throw new Error(`The changes don't apply cleanly to ${s.repo}, so nothing was changed. ${errorMessage(err)}`)
+      })
+      await gitRun(root, ['apply', '--whitespace=nowarn', file])
+    } finally {
+      await rm(file, { force: true }).catch(() => undefined)
+    }
+    await this.close(p, t, s, { ...local, applied: true }, `Cloth applied the changes to ${s.repo}, uncommitted.`)
+    return this.overview()
+  }
+
+  /** Change a ticket's goal: what the planner works from. Written to the ticket too when Cloth may update it. */
+  async setGoal(ticketId: string, goal: string): Promise<BoardOverview> {
+    const { p, t, s, pipe } = this.find(ticketId)
+    const text = goal.trim()
+    if (!text) throw new Error('Enter a goal')
+    if (pipe && this.running.has(ticketId)) throw new Error('Pause the agents before changing the goal')
+    if (pipe) this.update(ticketId, { goal: text })
+    else if (!this.writes(s)) throw new Error(`Ticket updates are off for this project: change the description in ${TRACKER_NAMES[this.tracker!.kind]}`)
+    if (this.writes(s)) {
+      const description = describe(text, pipe?.requirements ?? [], pipe?.outOfScope ?? [])
+      await this.tracker!.setDescription(p, t, description)
+      t.description = description
+    }
+    this.changed()
+    return this.overview()
+  }
+
+  /** Mark a ticket built without a PR done. Its worktree (and uncommitted changes) goes; a local branch stays. */
+  async finish(ticketId: string): Promise<BoardOverview> {
+    const { p, t, s, pipe } = this.find(ticketId)
+    if (!pipe?.local) throw new Error('Only a ticket built without a pull request is marked done here; a PR finishes when it merges')
+    await this.close(p, t, s, pipe.local, pipe.local.mode === 'commit' ? `Marked done. The work is on the local branch ${pipe.local.branch}.` : 'Marked done without applying the changes.')
+    return this.overview()
+  }
+
+  private async close(p: BoardProject, t: RawTicket, s: BoardProjectSettings, local: NonNullable<StoredPipe['local']>, comment: string): Promise<void> {
+    if (local.mode === 'none' && local.dir) await this.dropWorktree(local.dir, s)
+    this.update(t.id, { status: 'done', local, note: undefined, activity: undefined })
+    await this.note(p, t, s, comment)
+    await this.moveTo(p, t, s, 'merged')
+  }
+
+  private async dropWorktree(dir: string, s: BoardProjectSettings): Promise<void> {
+    const root = s.repo && existsSync(s.repo) ? await repoRoot(s.repo) : null
+    if (root) await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
+    await rm(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 }).catch(() => undefined)
+    if (root) await git(root, ['worktree', 'prune']).catch(() => undefined)
+  }
+
+  /** Close a ticket on a Cloth board: it moves to Done and leaves the board; agents on it stop. */
+  async closeTicket(ticketId: string): Promise<BoardOverview> {
+    const local = this.local()
+    if (!local) throw new Error('Close tickets in the tracker itself')
+    const { p, t, s, pipe } = this.find(ticketId)
+    this.running.get(ticketId)?.abort()
+    this.queue = this.queue.filter((q) => q !== ticketId)
+    if (pipe?.local?.mode === 'none' && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
+    if (pipe) this.update(ticketId, { status: 'done', activity: undefined })
+    await local.setState(p, t, 'merged')
+    t.stateId = 'merged'
+    this.changed()
+    return this.overview()
+  }
+
+  /** Delete a ticket from a Cloth board, with its agents' record and any worktree holding its changes. */
+  async deleteTicket(ticketId: string): Promise<BoardOverview> {
+    const local = this.local()
+    if (!local) throw new Error('Delete tickets in the tracker itself')
+    const { p, s, pipe } = this.find(ticketId)
+    this.running.get(ticketId)?.abort()
+    this.queue = this.queue.filter((q) => q !== ticketId)
+    if (pipe?.local?.mode === 'none' && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
+    const pipes = this.pipes()
+    delete pipes[this.pkey(ticketId)]
+    this.ctx.kv.set(K_PIPES, pipes)
+    await local.deleteTicket(p, ticketId)
+    this.raw.set(p.id, (this.raw.get(p.id) ?? []).filter((x) => x.id !== ticketId))
     this.changed()
     return this.overview()
   }
@@ -585,7 +770,7 @@ export class BoardService {
 
   private async moveTo(p: BoardProject, t: RawTicket, s: BoardProjectSettings, stage: Stage | 'merged'): Promise<void> {
     const target = s.stateMap[stage]
-    if (!target || t.stateId === target || !this.tracker) return
+    if (!target || t.stateId === target || !this.tracker || !this.writes(s)) return
     try {
       await this.tracker.setState(p, t, target)
       t.stateId = target
@@ -630,8 +815,11 @@ export class BoardService {
     const requirements = Array.isArray(out?.requirements) ? out.requirements.map(String).filter(Boolean) : []
     if (!requirements.length) throw new Error('The planner didn\'t return any requirements. Resume to try again.')
     const outOfScope = Array.isArray(out?.outOfScope) ? out.outOfScope.map(String).filter(Boolean) : []
-    await this.tracker!.setDescription(p, t, describe(pipe.goal, requirements, outOfScope))
-    t.description = describe(pipe.goal, requirements, outOfScope)
+    // With ticket updates off the requirements stay in Cloth (on the pipeline), and the ticket keeps its description.
+    if (this.writes(s)) {
+      await this.tracker!.setDescription(p, t, describe(pipe.goal, requirements, outOfScope))
+      t.description = describe(pipe.goal, requirements, outOfScope)
+    }
     this.update(t.id, { requirements, outOfScope, stage: 'rev', activity: undefined })
   }
 
@@ -643,14 +831,20 @@ export class BoardService {
     const out = parseJson<{ verdict?: string; notes?: string }>(text)
     const verdict = out?.verdict === 'approve' ? 'approve' : 'revise'
     const notes = String(out?.notes ?? (out ? '' : text)).trim()
-    await this.tracker!.comment(p, t, verdict === 'approve' ? `Cloth review: the requirements match the goal. Approved.${notes ? `\n${notes}` : ''}` : `Cloth review: sent back to the planner.\n${notes}`).catch((err) => this.ctx.log('boards', errorMessage(err)))
+    await this.note(p, t, s, verdict === 'approve' ? `Cloth review: the requirements match the goal. Approved.${notes ? `\n${notes}` : ''}` : `Cloth review: sent back to the planner.\n${notes}`)
     if (verdict === 'approve') {
+      if (s.approveRequirements) {
+        // The person reads the requirements before any code is written; Resume starts the build.
+        this.update(t.id, { review: { verdict, notes }, stage: 'build', status: 'needsYou', note: 'The reviewer approved the requirements. Check them, then resume to build.', activity: undefined })
+        return false
+      }
       this.update(t.id, { review: { verdict, notes }, stage: 'build', activity: undefined })
       return true
     }
     const sendBacks = pipe.sendBacks + 1
-    if (sendBacks >= MAX_SEND_BACKS) {
-      this.update(t.id, { review: { verdict, notes }, sendBacks, stage: 'req', status: 'needsYou', note: 'Review sent the requirements back twice. Edit the goal in the tracker, or resume for one more round.', activity: undefined })
+    if (sendBacks >= s.reviewRounds) {
+      const times = sendBacks === 1 ? 'once' : sendBacks === 2 ? 'twice' : `${sendBacks} times`
+      this.update(t.id, { review: { verdict, notes }, sendBacks, stage: 'req', status: 'needsYou', note: `Review sent the requirements back ${times}. Edit the goal${this.isLocal() ? '' : ' in the tracker'}, or resume for one more round.`, activity: undefined })
       return false
     }
     this.update(t.id, { review: { verdict, notes }, sendBacks, stage: 'req', activity: undefined })
@@ -665,16 +859,17 @@ export class BoardService {
     const root = await repoRoot(s.repo)
     if (!root) throw new Error(`${s.repo} isn't a git repository`)
     const base = (await gitRun(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
-    const branch = pipe.branch ?? `boards/${t.key.toLowerCase()}`
+    // Without commits the worktree is detached: no branch is made, and the changes stay uncommitted in it.
+    const branch = s.git === 'none' ? undefined : (pipe.branch ?? `boards/${t.key.toLowerCase()}`)
     this.update(t.id, { branch, activity: 'Setting up the worktree' })
-    const dir = await this.worktree(root, branch, base, t.key)
+    const dir = await this.worktree(root, branch ?? null, base, t.key)
     const { model, system, saved } = this.model(pipe.agents.implementer)
     const scope = this.writeScope(join(dir, relative(root, s.repo)), s, saved)
     this.update(t.id, { activity: 'Starting' })
     await this.deps.runtime.run({
       model,
       prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}`,
-      systemPrompt: [system, IMPLEMENTER].filter(Boolean).join('\n\n'),
+      systemPrompt: [system, s.git === 'none' ? IMPLEMENTER_NO_GIT : IMPLEMENTER].filter(Boolean).join('\n\n'),
       scope,
       thinking: saved?.thinking ?? undefined,
       maxTurns: 80,
@@ -682,11 +877,28 @@ export class BoardService {
       onEvent: (_turn, progress) => this.update(t.id, { files: progress.files.length, ...(progress.current ? { activity: progress.current.summary || progress.current.tool } : {}) })
     })
     if (signal.aborted) return
+    if (s.git === 'none') {
+      const changed = (await gitRun(dir, ['status', '--porcelain'])).trim()
+      if (!changed) throw new Error('The implementer finished without changing anything. Resume to try again.')
+      const files = changed.split('\n').length
+      this.update(t.id, { stage: 'pr', status: 'needsYou', files, local: { mode: 'none', base, dir }, note: 'The changes are ready, uncommitted, in their own copy of the code. Apply them to your code folder, or open that copy to look first.', activity: undefined })
+      await this.moveTo(p, t, s, 'pr')
+      await this.note(p, t, s, `Cloth built this ticket. ${files} file${files === 1 ? '' : 's'} changed, uncommitted, in ${dir}.`)
+      return
+    }
     this.update(t.id, { activity: 'Committing' })
     await gitRun(dir, ['add', '-A'])
     const changed = (await gitRun(dir, ['status', '--porcelain'])).trim()
     if (!changed && !(await gitRun(dir, ['log', `${base}..HEAD`, '--oneline'])).trim()) throw new Error('The implementer finished without changing anything. Resume to try again.')
     if (changed) await gitRun(dir, ['commit', '-m', `${t.key}: ${t.title}`])
+    if (s.git === 'commit' || !branch) {
+      // Nothing leaves this PC: the commit stays on the local branch, and the worktree goes (the branch keeps it).
+      await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
+      this.update(t.id, { stage: 'pr', status: 'needsYou', local: { mode: 'commit', base, branch }, note: `Committed to the local branch ${branch}. Nothing was pushed. Apply the changes to your code folder, or merge the branch yourself.`, activity: undefined })
+      await this.moveTo(p, t, s, 'pr')
+      await this.note(p, t, s, `Cloth built this ticket and committed it to the local branch ${branch}.`)
+      return
+    }
     this.update(t.id, { activity: 'Pushing the branch' })
     await gitRun(dir, ['push', '-u', 'origin', branch])
     this.update(t.id, { activity: 'Opening the pull request' })
@@ -699,7 +911,7 @@ export class BoardService {
     }
     const number = Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0)
     if (!number) throw new Error(`GitHub didn't return a pull request link (${url || 'nothing'})`)
-    await this.tracker!.comment(p, t, `Cloth opened a pull request: ${url}`).catch(() => undefined)
+    await this.note(p, t, s, `Cloth opened a pull request: ${url}`)
     this.update(t.id, { stage: 'pr', status: 'running', pr: { number, url, checks: 'pending', merging: false }, activity: undefined })
     await this.moveTo(p, t, s, 'pr')
     await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
@@ -708,12 +920,19 @@ export class BoardService {
   }
 
   /** The ticket's worktree on `branch` (made from `start` when the branch doesn't exist yet). */
-  private async worktree(root: string, branch: string, start: string, key: string): Promise<string> {
-    const dir = join(this.ctx.dataDir, 'boards', 'worktrees', key.toLowerCase())
+  private async worktree(root: string, branch: string | null, start: string, key: string): Promise<string> {
+    // Named by board kind too: a Cloth board's CL-1 and a Plane board's CL-1 are different tickets.
+    const dir = join(this.ctx.dataDir, 'boards', 'worktrees', `${this.storedConn()?.kind ?? 'none'}-${key.toLowerCase()}`)
     if (!existsSync(dir)) {
       await mkdir(join(this.ctx.dataDir, 'boards', 'worktrees'), { recursive: true })
-      const exists = (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
-      await gitRun(root, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, start])
+      if (!branch) await gitRun(root, ['worktree', 'add', '--detach', dir, start])
+      else {
+        const exists = (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
+        await gitRun(root, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, start])
+      }
+    } else if (branch && (await git(dir, ['symbolic-ref', '-q', 'HEAD'])).code !== 0) {
+      // Left detached by a run without commits, before the project allowed them: put its work on the branch.
+      await gitRun(dir, ['checkout', '-B', branch])
     }
     return dir
   }
@@ -799,7 +1018,7 @@ export class BoardService {
     await gitRun(dir, ['push', 'origin', branch])
     await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
     const fixes = (pr.fixes ?? 0) + 1
-    await this.tracker!.comment(p, t, `Cloth pushed a fix for the failing checks (${failed.map((c) => c.name).join(', ')}) to ${pr.url}.`).catch(() => undefined)
+    await this.note(p, t, s, `Cloth pushed a fix for the failing checks (${failed.map((c) => c.name).join(', ')}) to ${pr.url}.`)
     const latest = this.pipes()[this.pkey(t.id)]?.pr ?? pr
     this.update(t.id, { fixing: false, status: 'running', note: undefined, activity: undefined, pr: { ...latest, checks: 'pending', failing: [], fixes } })
   }
@@ -813,7 +1032,7 @@ export class BoardService {
     const text = await this.ask(pipe.agents.reviewer, CODE_REVIEWER, `Requirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nDiff:\n${diff}`, null, signal, () => undefined)
     const out = parseJson<{ verdict?: string; notes?: string }>(text)
     if (out?.verdict !== 'approve') {
-      await this.tracker!.comment(p, t, `Cloth code review didn't approve, so it won't merge on its own.\n${out?.notes ?? ''}`).catch(() => undefined)
+      await this.note(p, t, this.settingsFor(p.id), `Cloth code review didn't approve, so it won't merge on its own.\n${out?.notes ?? ''}`)
       this.update(t.id, { status: 'needsYou', note: `Code review didn't approve: ${out?.notes ?? 'no notes'}`, activity: undefined })
       return
     }
@@ -852,11 +1071,11 @@ export class BoardService {
         } else if (checks === 'fail') {
           const fixes = pr.fixes ?? 0
           if (cur.status === 'paused' || cur.status === 'error') this.update(id, { pr })
-          else if (fixes < MAX_FIXES && v.headRefOid && v.headRefOid !== pr.fixedSha) {
+          else if (fixes < s.checkFixes && v.headRefOid && v.headRefOid !== pr.fixedSha) {
             this.update(id, { pr, fixing: true, status: 'queued', note: undefined })
             this.enqueue(id)
           } else
-            this.update(id, { pr, status: 'needsYou', note: fixes >= MAX_FIXES ? `Checks still fail after ${MAX_FIXES} fixes. Fix checks to have the agent try again, or fix it yourself.` : 'Checks failed on the pull request.' })
+            this.update(id, { pr, status: 'needsYou', note: s.checkFixes > 0 && fixes >= s.checkFixes ? `Checks still fail after ${s.checkFixes} fix${s.checkFixes === 1 ? '' : 'es'}. Fix checks to have the agent try again, or fix it yourself.` : 'Checks failed on the pull request.' })
         } else if ((checks === 'pass' || checks === 'none') && cur.status === 'running' && !pr.merging && !s.autoMerge) {
           this.update(id, { pr, status: 'needsYou', note: 'Waiting for you to review and merge.' })
         } else this.update(id, { pr })

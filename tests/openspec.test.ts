@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { newOpenSpecRun, openspecSection, pausesBeforeApply } from '../src/main/agent/openspec'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { bundledOpenSpec, newOpenSpecRun, openspecSection, pausesBeforeApply, runOpenSpec, setOpenSpecHomes } from '../src/main/agent/openspec'
 import { buildTools } from '../src/main/agent/tools'
 import { chatMode, nextModePatch } from '../src/renderer/src/lib/permissions'
 import type { OpenSpecRun } from '../src/shared/types'
@@ -61,4 +64,20 @@ describe('OpenSpec mode', () => {
     expect(services.chat.update(c.id, { title: 'Rate limits' }).openspec).toMatchObject({ step: 'setup' })
     expect(services.chat.update(c.id, { openspec: null }).openspec).toBeNull()
   })
+})
+
+describe('the bundled openspec CLI', () => {
+  const home = join(__dirname, '..', 'sidecars', 'openspec')
+  it.skipIf(!existsSync(join(home, 'node_modules', '@fission-ai', 'openspec', 'bin', 'openspec.js')))('runs the copy Cloth ships, not one on the PATH', async () => {
+    setOpenSpecHomes([join(tmpdir(), 'no-such-openspec'), home])
+    try {
+      expect(bundledOpenSpec()).toMatchObject({ home, version: '2.0.0' })
+      const out = await runOpenSpec(tmpdir(), ['--version'], undefined, 60_000)
+      expect(out).toMatchObject({ code: 0 })
+      expect(out.stdout.trim()).toBe('2.0.0')
+      expect(openspecSection(newOpenSpecRun(), null)).not.toContain('npm install')
+    } finally {
+      setOpenSpecHomes([])
+    }
+  }, 60_000)
 })

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fauxAssistantMessage } from '@earendil-works/pi-ai'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
+import { git } from '../src/main/panel/git'
 import { makeServices } from './helpers'
 import { checksReport, describe as describeTicket, failedChecks, goalOf, parseJson } from '../src/main/boards/boards'
 import { adfToText, defaultStateMap, htmlToText, projectIdentifiers, textToAdf, textToHtml } from '../src/main/boards/trackers'
@@ -104,6 +108,7 @@ describe('boards', () => {
     const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
     services.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
     await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: ' secret-tok-123 ' })
+    services.boards.saveSettings('p-1', { trackerUpdates: true })
 
     const o = services.boards.overview()
     expect(o.connection).toMatchObject({ kind: 'plane', label: 'plane.test · 1 project' })
@@ -162,9 +167,207 @@ describe('boards', () => {
     fakePlane()
     const { services } = makeServices()
     await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: 'secret-tok-123' })
+    services.boards.saveSettings('p-1', { trackerUpdates: true })
     await expect(services.boards.createTicket({ title: 'x', goal: ' ', auto: true })).rejects.toThrow(/goal/)
     services.boards.stop()
   })
+
+  it('starts with commits, PRs and ticket updates off, and keeps the other settings in range', async () => {
+    fakePlane()
+    const { services } = makeServices()
+    await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: 'secret-tok-123' })
+    expect(services.boards.overview().settings).toMatchObject({ git: 'none', trackerUpdates: false, approveRequirements: false, reviewRounds: 2, checkFixes: 2, autoMerge: false })
+    // Auto-merge needs pull requests; numbers are clamped.
+    expect(services.boards.saveSettings('p-1', { autoMerge: true, reviewRounds: 9, checkFixes: -1 }).settings).toMatchObject({ autoMerge: false, reviewRounds: 5, checkFixes: 0 })
+    expect(services.boards.saveSettings('p-1', { git: 'pr', autoMerge: true }).settings).toMatchObject({ git: 'pr', autoMerge: true })
+    expect(services.boards.saveSettings('p-1', { git: 'commit' }).settings?.autoMerge).toBe(false)
+    services.boards.stop()
+  })
+
+  it('with ticket updates off, reads the tracker but changes nothing in it', async () => {
+    const plane = fakePlane()
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    services.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
+    await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: 'secret-tok-123' })
+    await expect(services.boards.createTicket({ title: 'New one', goal: 'g', auto: true })).rejects.toThrow(/Ticket updates are off/)
+
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([fauxAssistantMessage('{"requirements":["Keeps it"],"outOfScope":[]}'), fauxAssistantMessage('{"verdict":"approve","notes":""}')])
+    services.boards.handToAgents('i-1')
+    let t = services.boards.overview().tickets[0]
+    for (let i = 0; i < 200 && t?.pipeline?.status !== 'needsYou'; i++) {
+      await wait(10)
+      t = services.boards.overview().tickets[0]
+    }
+    expect(t.pipeline).toMatchObject({ stage: 'build', status: 'needsYou', requirements: ['Keeps it'] })
+    // The ticket stays in Todo (the Requirements state); a sync doesn't send it back to the planner.
+    await services.boards.sync()
+    expect(services.boards.overview().tickets[0].pipeline?.stage).toBe('build')
+    expect(plane.calls.filter((c) => !c.startsWith('GET'))).toEqual([])
+    expect(plane.comments).toEqual([])
+    expect(plane.issues[0].state).toBe('s-todo')
+    services.boards.stop()
+  })
+
+  it('waits for you to approve the requirements when the project asks, and sends back as often as it allows', async () => {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    services.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
+    const o = await services.boards.connect({ kind: 'cloth' })
+    services.boards.saveSettings(o.projectId!, { approveRequirements: true, reviewRounds: 1 })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses([
+      fauxAssistantMessage('{"requirements":["A"],"outOfScope":[]}'),
+      fauxAssistantMessage('{"verdict":"revise","notes":"Too vague."}'),
+      fauxAssistantMessage('{"requirements":["A, exactly"],"outOfScope":[]}'),
+      fauxAssistantMessage('{"verdict":"approve","notes":""}')
+    ])
+    await services.boards.createTicket({ title: 'Do A', goal: 'A happens.', auto: true })
+    const ticket = async () => {
+      let t = services.boards.overview().tickets[0]
+      for (let i = 0; i < 200 && t?.pipeline?.status !== 'needsYou'; i++) {
+        await wait(10)
+        t = services.boards.overview().tickets[0]
+      }
+      return t
+    }
+    // One round allowed: the first send-back already waits for you.
+    let t = await ticket()
+    expect(t.pipeline).toMatchObject({ stage: 'req', status: 'needsYou', sendBacks: 1 })
+    expect(t.pipeline?.note).toMatch(/back once/)
+    services.boards.resume(t.id)
+    await wait(20)
+    t = await ticket()
+    expect(t.pipeline).toMatchObject({ stage: 'build', status: 'needsYou', requirements: ['A, exactly'] })
+    expect(t.pipeline?.note).toMatch(/approved the requirements/)
+    services.boards.stop()
+  })
+})
+
+async function gitRepo(): Promise<string> {
+  const root = mkdtempSync(join(tmpdir(), 'cloth-board-repo-'))
+  const run = async (args: string[]) => {
+    const r = await git(root, args)
+    if (r.code !== 0) throw new Error(r.stderr)
+  }
+  await run(['init', '-q', '-b', 'main'])
+  await run(['config', 'user.email', 'test@example.com'])
+  await run(['config', 'user.name', 'Test'])
+  writeFileSync(join(root, 'readme.md'), 'hello\n')
+  await run(['add', '-A'])
+  await run(['commit', '-q', '-m', 'start'])
+  return root
+}
+
+describe('the Cloth board', () => {
+  /** Plan, approve, then the implementer writes one file. */
+  const buildResponses = () => [
+    fauxAssistantMessage('{"requirements":["Adds notes.txt"],"outOfScope":[]}'),
+    fauxAssistantMessage('{"verdict":"approve","notes":"Good."}'),
+    fauxAssistantMessage([fauxToolCall('write', { path: 'notes.txt', content: 'from the agent\n' })], { stopReason: 'toolUse' }),
+    fauxAssistantMessage('Added notes.txt.')
+  ]
+
+  async function board() {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    services.settings.update({ defaultModel: { providerId: provider.id, modelId: 'faux-1' } })
+    const o = await services.boards.connect({ kind: 'cloth' })
+    return { services, projectId: o.projectId! }
+  }
+
+  async function settle(services: Awaited<ReturnType<typeof board>>['services'], title: string) {
+    let t = services.boards.overview().tickets.find((x) => x.title === title)
+    for (let i = 0; i < 400 && t?.pipeline?.status !== 'needsYou' && t?.pipeline?.status !== 'error'; i++) {
+      await wait(10)
+      t = services.boards.overview().tickets.find((x) => x.title === title)
+    }
+    return t!
+  }
+
+  it('keeps projects and tickets on this PC, with no token, and records the agents as comments', async () => {
+    const { services, projectId } = await board()
+    const o = services.boards.overview()
+    expect(o.connection).toMatchObject({ kind: 'cloth', label: 'On this PC · 1 project' })
+    expect(o.projects).toEqual([expect.objectContaining({ name: 'My board' })])
+    expect(o.settings?.stateMap).toEqual({ new: 'new', req: 'req', rev: 'rev', build: 'build', pr: 'pr', merged: 'merged' })
+
+    // Ticket updates don't apply: a Cloth board always updates its own tickets.
+    await services.boards.createTicket({ title: 'Manual one', goal: '', auto: false })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses(buildResponses().slice(0, 2))
+    await services.boards.createTicket({ title: 'Agent one', goal: 'Notes exist.', auto: true })
+    const t = await settle(services, 'Agent one')
+    // No code folder yet: it waits at Build. The ticket's state followed the stages, and the review is a comment.
+    expect(t).toMatchObject({ key: 'MB-2', stage: 'build', stateName: 'Building', url: '' })
+    expect(t.pipeline?.note).toMatch(/code folder/)
+    expect(t.description).toContain('- Adds notes.txt')
+    expect(t.comments?.map((c) => c.text)).toEqual([expect.stringContaining('Approved')])
+
+    // More projects, goals, closing and deleting.
+    const more = await services.boards.createProject('Side project')
+    expect(more.projects.map((p) => p.name)).toEqual(['My board', 'Side project'])
+    expect(more.projectId).not.toBe(projectId)
+    await expect(services.boards.createProject('side PROJECT')).rejects.toThrow(/already/)
+    await services.boards.selectProject(projectId)
+    const manual = services.boards.overview().tickets.find((x) => x.title === 'Manual one')!
+    expect((await services.boards.setGoal(manual.id, 'Something useful.')).tickets.find((x) => x.id === manual.id)?.description).toContain('Something useful.')
+    expect((await services.boards.closeTicket(manual.id)).tickets.map((x) => x.title)).toEqual(['Agent one'])
+    expect((await services.boards.deleteTicket(t.id)).tickets).toEqual([])
+
+    // Closing the board keeps its tickets for next time.
+    await services.boards.disconnect()
+    await services.boards.connect({ kind: 'cloth' })
+    expect(services.boards.overview().projects).toHaveLength(2)
+    services.boards.stop()
+  })
+
+  it('without commits, leaves the changes in a worktree and applies them to the code folder uncommitted', async () => {
+    const { services, projectId } = await board()
+    const repo = await gitRepo()
+    services.boards.saveSettings(projectId, { repo })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses(buildResponses())
+    await services.boards.createTicket({ title: 'Add notes', goal: 'Notes exist.', auto: true })
+    const t = await settle(services, 'Add notes')
+    expect(t.pipeline?.note ?? '').not.toMatch(/error/i)
+    expect(t).toMatchObject({ stage: 'pr', stateName: 'Ready', pipeline: { status: 'needsYou', files: 1, local: { mode: 'none', base: 'main' } } })
+    const dir = t.pipeline!.local!.dir!
+    expect(readFileSync(join(dir, 'notes.txt'), 'utf8')).toBe('from the agent\n')
+    // Nothing committed, no branch made, the code folder untouched.
+    expect((await git(repo, ['log', '--oneline'])).stdout.trim().split('\n')).toHaveLength(1)
+    expect((await git(repo, ['branch', '--format=%(refname:short)'])).stdout.trim()).toBe('main')
+    expect(existsSync(join(repo, 'notes.txt'))).toBe(false)
+
+    const after = await services.boards.applyChanges(t.id)
+    expect(after.tickets).toEqual([])
+    // Line endings follow the machine's git settings (core.autocrlf on Windows), as in any checkout.
+    expect(readFileSync(join(repo, 'notes.txt'), 'utf8').replace(/\r\n/g, '\n')).toBe('from the agent\n')
+    expect((await git(repo, ['status', '--porcelain'])).stdout).toContain('notes.txt')
+    expect((await git(repo, ['log', '--oneline'])).stdout.trim().split('\n')).toHaveLength(1)
+    expect(existsSync(dir)).toBe(false)
+    services.boards.stop()
+  }, 60_000)
+
+  it('committing locally, makes a branch with the commit and pushes nothing', async () => {
+    const { services, projectId } = await board()
+    const repo = await gitRepo()
+    services.boards.saveSettings(projectId, { repo, git: 'commit' })
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses(buildResponses())
+    await services.boards.createTicket({ title: 'Add notes', goal: 'Notes exist.', auto: true })
+    const t = await settle(services, 'Add notes')
+    expect(t.pipeline).toMatchObject({ status: 'needsYou', branch: 'boards/mb-1', local: { mode: 'commit', branch: 'boards/mb-1', base: 'main' } })
+    expect((await git(repo, ['log', '--format=%s', 'boards/mb-1', '-1'])).stdout.trim()).toBe('MB-1: Add notes')
+    // The repository has no remote, so a push would have failed the step.
+    expect((await git(repo, ['remote'])).stdout.trim()).toBe('')
+    expect(existsSync(join(repo, 'notes.txt'))).toBe(false)
+
+    expect((await services.boards.finish(t.id)).tickets).toEqual([])
+    expect((await git(repo, ['rev-parse', '--verify', 'boards/mb-1'])).code).toBe(0)
+    services.boards.stop()
+  }, 60_000)
 })
 
 describe('failing checks', () => {

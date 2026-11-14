@@ -263,6 +263,10 @@ export function createApi(s: Services): ClothApi {
       download: () => s.updates.download(),
       install: async () => s.updates.install()
     },
+    deps: {
+      list: () => s.deps.list(),
+      refresh: () => s.deps.refresh()
+    },
     boards: {
       overview: async () => s.boards.overview(),
       connect: (input) => s.boards.connect(input),
@@ -279,6 +283,12 @@ export function createApi(s: Services): ClothApi {
       resume: async (id) => s.boards.resume(id),
       stopAgents: async (id) => s.boards.stopAgents(id),
       fixChecks: async (id) => s.boards.fixChecks(id),
+      createProject: (name) => s.boards.createProject(name),
+      setGoal: (id, goal) => s.boards.setGoal(id, goal),
+      applyChanges: (id) => s.boards.applyChanges(id),
+      finish: (id) => s.boards.finish(id),
+      closeTicket: (id) => s.boards.closeTicket(id),
+      deleteTicket: (id) => s.boards.deleteTicket(id),
       links: async () => s.boards.links(),
       linkChatProject: (id) => s.boards.linkChatProject(id),
       unlinkChatProject: async (id) => s.boards.unlinkChatProject(id)

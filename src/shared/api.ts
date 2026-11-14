@@ -278,11 +278,29 @@ export interface ClothApi {
     rewrite(instructions: string, request: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<string>
   }
   /** Run page: local models served by llama.cpp's llama-server. Events arrive on the 'runs' channel. */
-  /** Boards: tickets from Plane or Jira moved through Cloth's agent stages. Changes arrive on the 'boards' channel. */
+  /** Settings → Dependencies: programs Cloth ships and the ones it uses from this PC. */
+  deps: {
+    /** The last check (a first one when there is none). */
+    list(): Promise<import('./deps').DependencyReport>
+    /** Check again. */
+    refresh(): Promise<import('./deps').DependencyReport>
+  }
+  /** Boards: tickets from Plane, Jira or a Cloth board on this PC, moved through Cloth's agent stages. Changes arrive on the 'boards' channel. */
   boards: {
     overview(): Promise<import('./boards').BoardOverview>
-    /** Checks the token by listing projects; replaces any other connection. */
+    /** Checks the token by listing projects (a Cloth board needs none); replaces any other connection. */
     connect(input: import('./boards').TrackerConnectInput): Promise<import('./boards').BoardOverview>
+    /** A new project on a Cloth board, shown at once. */
+    createProject(name: string): Promise<import('./boards').BoardOverview>
+    /** Change a ticket's goal (written to the ticket when Cloth may update it). */
+    setGoal(ticketId: string, goal: string): Promise<import('./boards').BoardOverview>
+    /** Copy a ticket's finished changes (built without a PR) into the code folder, uncommitted, and mark it done. */
+    applyChanges(ticketId: string): Promise<import('./boards').BoardOverview>
+    /** Mark a ticket built without a PR done; uncommitted changes in its worktree are dropped. */
+    finish(ticketId: string): Promise<import('./boards').BoardOverview>
+    /** Cloth board only: close a ticket (it moves to Done) or delete it. */
+    closeTicket(ticketId: string): Promise<import('./boards').BoardOverview>
+    deleteTicket(ticketId: string): Promise<import('./boards').BoardOverview>
     disconnect(): Promise<void>
     selectProject(id: string): Promise<import('./boards').BoardOverview>
     saveSettings(projectId: string, patch: Partial<import('./boards').BoardProjectSettings>): Promise<import('./boards').BoardOverview>

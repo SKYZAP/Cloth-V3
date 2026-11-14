@@ -14,6 +14,7 @@ import {
   GlobeHemisphereWest,
   Info,
   MagnifyingGlass,
+  Package,
   Palette,
   PlugsConnected,
   Plus,
@@ -32,11 +33,12 @@ import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
+import { DependencySettings } from './DependencySettings'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
-type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'about'
+type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'deps' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -58,6 +60,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow.', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Chat with Cloth from the Android app.', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
   { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Lets other apps, like your editor, use Cloth’s skills and knowledge.', keywords: 'mcp port server claude cursor' },
+  { id: 'deps', title: 'Dependencies', icon: Package, blurb: 'Programs Cloth ships with, the ones it uses from this PC, and what each one is for.', keywords: 'git github gh docker node python bash powershell obscura searxng openspec installed programs tools requirements', desktopOnly: true },
   { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and which version you have.', keywords: 'data folder version database about update updates github release' }
 ]
 
@@ -424,6 +427,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           </Row>
         </Group>
       )
+    case 'deps':
+      return <DependencySettings />
     case 'about':
       return <AboutSection />
   }

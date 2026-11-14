@@ -7,12 +7,12 @@ import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { Button, Field, Input, Modal, Select, Switch, Textarea, confirmAction } from '@/components/ui'
-import type { BoardLink, TrackerKind } from '@shared/boards'
+import { TRACKER_NAMES, type BoardLink, type TrackerKind } from '@shared/boards'
 import type { DesignSystem } from '@shared/design'
 import { effortLabel } from '@shared/effort'
 import { ModelPicker } from '@/components/ModelPicker'
 
-const TRACKER_NAME: Record<TrackerKind, string> = { plane: 'Plane', jira: 'Jira' }
+const TRACKER_NAME: Record<TrackerKind, string> = { ...TRACKER_NAMES, cloth: 'Cloth board' }
 
 /** The chat settings a project can hand to new chats (everything but the workspace, which is its folder). */
 const DEFAULT_KEYS = ['model', 'collectionIds', 'knowledgeEnabled', 'skillsEnabled', 'webEnabled', 'customTools', 'fileAccess', 'shell', 'autoApprove', 'subagents', 'codeIntel', 'imagesEnabled', 'thinking', 'container'] as const
@@ -208,8 +208,8 @@ export function ProjectDialog({
                     ? <>Linked to the {TRACKER_NAME[link.kind]} project {link.name}. Chats opened from its tickets come here.</>
                     : link
                       ? 'Unlinks when you save. The project and its tickets stay in the tracker.'
-                      : tracker === 'plane'
-                        ? `Uses the Plane project named “${name.trim() || 'this project'}”, or creates it, as this project's board.`
+                      : tracker === 'plane' || tracker === 'cloth'
+                        ? `Uses the ${TRACKER_NAME[tracker]} project named “${name.trim() || 'this project'}”, or creates it, as this project's board.`
                         : `Uses the Jira project named “${name.trim() || 'this project'}” as this project's board.`}
                 </div>
               </div>
