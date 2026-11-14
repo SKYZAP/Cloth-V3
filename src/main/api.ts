@@ -261,7 +261,11 @@ export function createApi(s: Services): ClothApi {
       handToAgents: async (id, agents) => s.boards.handToAgents(id, agents),
       pause: async (id) => s.boards.pause(id),
       resume: async (id) => s.boards.resume(id),
-      stopAgents: async (id) => s.boards.stopAgents(id)
+      stopAgents: async (id) => s.boards.stopAgents(id),
+      fixChecks: async (id) => s.boards.fixChecks(id),
+      links: async () => s.boards.links(),
+      linkChatProject: (id) => s.boards.linkChatProject(id),
+      unlinkChatProject: async (id) => s.boards.unlinkChatProject(id)
     },
     runs: {
       list: async () => s.runs.list(),

@@ -1,15 +1,18 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
-import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, Palette, PencilSimple, Plus } from '@phosphor-icons/react'
+import { CaretRight, ChatsCircle, Check, FolderDashed, FolderOpen, FolderSimple, Kanban, Palette, PencilSimple, Plus } from '@phosphor-icons/react'
 import { PROJECT_COLORS, type ChatSession, type Project, type ProjectDefaults, type ProjectInput } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
-import { Button, Field, Input, Modal, Select, Textarea, confirmAction } from '@/components/ui'
+import { Button, Field, Input, Modal, Select, Switch, Textarea, confirmAction } from '@/components/ui'
+import type { BoardLink, TrackerKind } from '@shared/boards'
 import type { DesignSystem } from '@shared/design'
 import { effortLabel } from '@shared/effort'
 import { ModelPicker } from '@/components/ModelPicker'
+
+const TRACKER_NAME: Record<TrackerKind, string> = { plane: 'Plane', jira: 'Jira' }
 
 /** The chat settings a project can hand to new chats (everything but the workspace, which is its folder). */
 const DEFAULT_KEYS = ['model', 'collectionIds', 'knowledgeEnabled', 'skillsEnabled', 'webEnabled', 'customTools', 'fileAccess', 'shell', 'autoApprove', 'subagents', 'codeIntel', 'imagesEnabled', 'thinking', 'container'] as const
@@ -59,9 +62,25 @@ export function ProjectDialog({
   const [designId, setDesignId] = useState<string | null>(null)
   const [designs, setDesigns] = useState<DesignSystem[]>([])
   const [saving, setSaving] = useState(false)
+  // The board this project is linked to on the connected tracker; `tracker` is null when none is connected.
+  const [tracker, setTracker] = useState<TrackerKind | null>(null)
+  const [link, setLink] = useState<BoardLink | null>(null)
+  const [wantLink, setWantLink] = useState(false)
 
   useEffect(() => {
     if (!open) return
+    setTracker(null)
+    setLink(null)
+    setWantLink(false)
+    void Promise.all([api.boards.overview(), api.boards.links()]).then(
+      ([o, links]) => {
+        setTracker(o.connection?.kind ?? null)
+        const l = project ? (links[project.id] ?? null) : null
+        setLink(l)
+        setWantLink(!!l)
+      },
+      () => undefined
+    )
     setName(project?.name ?? '')
     setFolder(project?.folder ?? null)
     setColor(project?.color ?? PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)])
@@ -82,8 +101,22 @@ export function ProjectDialog({
     setSaving(true)
     const input: ProjectInput = { name, folder, color, instructions, defaults, designId }
     const saved = await attempt(() => (project ? api.projects.update(project.id, input) : api.projects.create(input)), project ? 'Project saved' : 'Project created')
+    // Linking finds (or makes) the tracker project with this name, so it runs after the name is saved.
+    if (saved && tracker && wantLink && !link) {
+      const l = await attempt(() => api.boards.linkChatProject(saved.id))
+      if (l) useApp.getState().toast(`Linked to the ${TRACKER_NAME[l.kind]} project ${l.name}`, 'ok')
+    }
+    if (saved && link && !wantLink) await attempt(() => api.boards.unlinkChatProject(saved.id), `Unlinked from ${TRACKER_NAME[link.kind]}`)
     setSaving(false)
     if (saved) onSaved(saved)
+  }
+
+  const openBoard = async () => {
+    if (!link) return
+    const ok = await attempt(() => api.boards.selectProject(link.projectId))
+    if (!ok) return
+    onClose()
+    useApp.getState().setPage('boards')
   }
 
   const remove = async () => {
@@ -163,6 +196,46 @@ export function ProjectDialog({
             </Select>
           </Field>
         )}
+
+        <Field label="Board" hint={tracker ? undefined : 'Optional.'}>
+          {tracker ? (
+            <div className="flex items-center gap-3 rounded-[10px] border border-line bg-elev px-3 py-2.5">
+              <Kanban size={17} className="shrink-0 text-dim" />
+              <div className="min-w-0 flex-1">
+                <div className="text-ui font-medium">Link to {TRACKER_NAME[tracker]}</div>
+                <div className="mt-0.5 text-caption leading-relaxed text-dim">
+                  {link && wantLink
+                    ? <>Linked to the {TRACKER_NAME[link.kind]} project {link.name}. Chats opened from its tickets come here.</>
+                    : link
+                      ? 'Unlinks when you save. The project and its tickets stay in the tracker.'
+                      : tracker === 'plane'
+                        ? `Uses the Plane project named “${name.trim() || 'this project'}”, or creates it, as this project's board.`
+                        : `Uses the Jira project named “${name.trim() || 'this project'}” as this project's board.`}
+                </div>
+              </div>
+              {link && wantLink && (
+                <Button size="sm" onClick={() => void openBoard()}>
+                  Open board
+                </Button>
+              )}
+              <Switch checked={wantLink} onChange={setWantLink} ariaLabel={`Link to ${TRACKER_NAME[tracker]}`} />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-[10px] border border-dashed border-line-strong px-3 py-2.5">
+              <Kanban size={17} className="shrink-0 text-dim" />
+              <span className="min-w-0 flex-1 text-caption text-dim">Connect Plane or Jira in Boards to give this project a board.</span>
+              <Button
+                size="sm"
+                onClick={() => {
+                  onClose()
+                  useApp.getState().setPage('boards')
+                }}
+              >
+                Open Boards
+              </Button>
+            </div>
+          )}
+        </Field>
 
         <div className="rounded-[14px] border border-line bg-elev p-3">
           <div className="text-caption font-medium text-muted">New chats start with</div>

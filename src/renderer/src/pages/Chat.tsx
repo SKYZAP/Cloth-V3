@@ -31,6 +31,7 @@ import {
 import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, SpecWorkflow, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
+import { takeDraft } from '@/lib/drafts'
 import { Button, Empty, Input, ListPane, chooseAction, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
@@ -474,6 +475,11 @@ function ChatView({
   const side = useSideBySide()
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
+  // A message another page started for this chat (Boards' "Open in chat"): in the box, ready to edit and send.
+  useEffect(() => {
+    const text = takeDraft(session.id)
+    if (text) setDraft(text)
+  }, [session.id])
   const [approvals, setApprovals] = useState<PendingApproval[]>([])
   const [questions, setQuestions] = useState<PendingQuestion[]>([])
   const [usage, setUsage] = useState<ContextUsage | null>(null)

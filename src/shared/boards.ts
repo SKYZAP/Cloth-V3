@@ -99,7 +99,20 @@ export interface TicketPipeline {
   branch?: string
   /** Files the implementer changed. */
   files?: number
-  pr?: { number: number; url: string; checks: 'pending' | 'pass' | 'fail' | 'none'; merging: boolean }
+  pr?: {
+    number: number
+    url: string
+    checks: 'pending' | 'pass' | 'fail' | 'none'
+    merging: boolean
+    /** Names of the checks that failed on the PR's latest commit. */
+    failing?: string[]
+    /** How many times an agent has pushed a fix for failing checks. */
+    fixes?: number
+    /** The commit the last fix started from, so the same failure isn't fixed twice. */
+    fixedSha?: string
+  }
+  /** An agent is fixing (or is queued to fix) the PR's failing checks. */
+  fixing?: boolean
   updatedAt: number
 }
 
@@ -119,6 +132,14 @@ export interface BoardTicket {
   pipeline: TicketPipeline | null
 }
 
+/** A chat project linked to a tracker project: its board. */
+export interface BoardLink {
+  kind: TrackerKind
+  /** The tracker project's id. */
+  projectId: string
+  name: string
+}
+
 export interface BoardOverview {
   connection: TrackerConnection | null
   projects: BoardProject[]
@@ -127,6 +148,8 @@ export interface BoardOverview {
   settings: BoardProjectSettings | null
   tickets: BoardTicket[]
   syncedAt: number | null
+  /** The chat project linked to the board on show: chats opened from its tickets go there. */
+  chatProjectId: string | null
   /** The last sync failed: why. */
   error?: string
 }

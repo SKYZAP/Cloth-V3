@@ -292,6 +292,13 @@ export interface ClothApi {
     pause(ticketId: string): Promise<import('./boards').BoardOverview>
     resume(ticketId: string): Promise<import('./boards').BoardOverview>
     stopAgents(ticketId: string): Promise<import('./boards').BoardOverview>
+    /** Have an agent read the PR's failing checks, fix the code and push to the same PR. */
+    fixChecks(ticketId: string): Promise<import('./boards').BoardOverview>
+    /** Chat projects linked to a board on the connected tracker, by chat project id. */
+    links(): Promise<Record<string, import('./boards').BoardLink>>
+    /** Link a chat project to the tracker project with its name, creating one in Plane when there is none, and show that board. */
+    linkChatProject(chatProjectId: string): Promise<import('./boards').BoardLink>
+    unlinkChatProject(chatProjectId: string): Promise<void>
   }
   /** Updates from the private GitHub releases of SKYZAP/Cloth-V3. */
   updates: {

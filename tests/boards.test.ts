@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { makeServices } from './helpers'
-import { describe as describeTicket, goalOf, parseJson } from '../src/main/boards/boards'
-import { adfToText, defaultStateMap, htmlToText, textToAdf, textToHtml } from '../src/main/boards/trackers'
+import { checksReport, describe as describeTicket, failedChecks, goalOf, parseJson } from '../src/main/boards/boards'
+import { adfToText, defaultStateMap, htmlToText, projectIdentifiers, textToAdf, textToHtml } from '../src/main/boards/trackers'
 import type { TrackerState } from '../src/shared/boards'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -27,6 +27,7 @@ function fakePlane() {
   const issues: Record<string, unknown>[] = [{ id: 'i-1', name: 'Old ticket', description_html: '<p>Already there</p>', state: 's-todo', priority: 'high', sequence_id: 1 }]
   const comments: string[] = []
   const calls: string[] = []
+  const projects: Record<string, unknown>[] = [{ id: 'p-1', identifier: 'CL', name: 'Cloth app' }]
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}) => {
     const u = new URL(url)
     const method = init.method ?? 'GET'
@@ -34,8 +35,16 @@ function fakePlane() {
     expect((init.headers as Record<string, string>)['X-API-Key']).toBe('secret-tok-123')
     const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status })
     const path = u.pathname.replace('/api/v1/workspaces/team', '')
-    if (path === '/projects/') return json({ results: [{ id: 'p-1', identifier: 'CL', name: 'Cloth app' }] })
-    if (path === '/projects/p-1/states/') return json({ results: states })
+    if (path === '/projects/' && method === 'GET') return json({ results: projects })
+    if (path === '/projects/' && method === 'POST') {
+      const body = JSON.parse(String(init.body))
+      if (projects.some((x) => x.identifier === body.identifier)) return json({ identifier: ['taken'] }, 400)
+      const made = { id: `p-${projects.length + 1}`, identifier: body.identifier, name: body.name }
+      projects.push(made)
+      return json(made, 201)
+    }
+    if (/^\/projects\/[^/]+\/states\/$/.test(path)) return json({ results: states })
+    if (/^\/projects\/p-[2-9]\/issues\/$/.test(path)) return json({ results: [], next_page_results: false })
     if (path === '/projects/p-1/issues/' && method === 'GET') return json({ results: issues, next_page_results: false })
     if (path === '/projects/p-1/issues/' && method === 'POST') {
       const body = JSON.parse(String(init.body))
@@ -56,7 +65,7 @@ function fakePlane() {
     return json({ detail: 'not found' }, 404)
   })
   vi.stubGlobal('fetch', fetchMock)
-  return { issues, comments, calls }
+  return { issues, comments, calls, projects }
 }
 
 describe('boards helpers', () => {
@@ -79,6 +88,12 @@ describe('boards helpers', () => {
     const s = (id: string, name: string, group: TrackerState['group']): TrackerState => ({ id, name, group, custom: false })
     const map = defaultStateMap([s('b', 'Backlog', 'backlog'), s('t', 'Todo', 'unstarted'), s('p', 'In Progress', 'started'), s('r', 'In Review', 'started'), s('d', 'Done', 'completed')])
     expect(map).toEqual({ new: 'b', req: 't', rev: 't', build: 'p', pr: 'r', merged: 'd' })
+  })
+
+  it('makes ticket key prefixes from a project name', () => {
+    expect(projectIdentifiers('Billing service')).toEqual(['BS', 'BS2', 'BS3', 'BS4', 'BS5'])
+    expect(projectIdentifiers('cloth')).toEqual(['CLOTH', 'CLOT2', 'CLOT3', 'CLOT4', 'CLOT5'])
+    expect(projectIdentifiers('!!')[0]).toBe('PROJ')
   })
 })
 
@@ -121,11 +136,59 @@ describe('boards', () => {
     services.boards.stop()
   })
 
+  it('links a chat project to the Plane project with its name, or creates one', async () => {
+    const plane = fakePlane()
+    const { services } = makeServices()
+    await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: 'secret-tok-123' })
+
+    // Same name, any case: the existing project is the board.
+    const same = services.projects.create({ name: 'cloth APP', folder: null })
+    expect(await services.boards.linkChatProject(same.id)).toEqual({ kind: 'plane', projectId: 'p-1', name: 'Cloth app' })
+    expect(plane.projects).toHaveLength(1)
+
+    // No such project: one is made (CL is taken, so CL2), its board takes the folder and is shown.
+    const fresh = services.projects.create({ name: 'Command Line', folder: 'E:/code/cli' })
+    const link = await services.boards.linkChatProject(fresh.id)
+    expect(plane.projects[1]).toMatchObject({ name: 'Command Line', identifier: 'CL2' })
+    expect(services.boards.overview()).toMatchObject({ projectId: link.projectId, chatProjectId: fresh.id, settings: { repo: 'E:/code/cli' } })
+    expect(Object.keys(services.boards.links()).sort()).toEqual([same.id, fresh.id].sort())
+
+    services.boards.unlinkChatProject(same.id)
+    expect(Object.keys(services.boards.links())).toEqual([fresh.id])
+    services.boards.stop()
+  })
+
   it('refuses a ticket handed to agents without a goal', async () => {
     fakePlane()
     const { services } = makeServices()
     await services.boards.connect({ kind: 'plane', baseUrl: 'https://plane.test', workspace: 'team', token: 'secret-tok-123' })
     await expect(services.boards.createTicket({ title: 'x', goal: ' ', auto: true })).rejects.toThrow(/goal/)
     services.boards.stop()
+  })
+})
+
+describe('failing checks', () => {
+  it('picks failed check runs and statuses out of the rollup', () => {
+    const failed = failedChecks([
+      { name: 'test', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/o/r/actions/runs/11/job/22' },
+      { name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { name: 'build', status: 'IN_PROGRESS' },
+      { context: 'ci/external', state: 'ERROR', targetUrl: 'https://ci.example.com/1', description: 'Build broke' },
+      { name: 'skipped', status: 'COMPLETED', conclusion: 'SKIPPED' }
+    ])
+    expect(failed).toEqual([
+      { name: 'test', url: 'https://github.com/o/r/actions/runs/11/job/22', description: '' },
+      { name: 'ci/external', url: 'https://ci.example.com/1', description: 'Build broke' }
+    ])
+  })
+
+  it('writes the report the fixer reads, with logs fenced', () => {
+    const text = checksReport([
+      { name: 'test', url: 'https://x/1', description: '', log: 'FAIL src/a.test.ts' },
+      { name: 'ci/external', url: '', description: 'Build broke', log: '' }
+    ])
+    expect(text).toContain('### test (https://x/1)')
+    expect(text).toContain('```\nFAIL src/a.test.ts\n```')
+    expect(text).toContain('### ci/external\nBuild broke\n(No log available.)')
   })
 })

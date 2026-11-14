@@ -21,6 +21,17 @@ export interface Tracker {
   setState(project: BoardProject, ticket: RawTicket, stateId: string): Promise<void>
   setDescription(project: BoardProject, ticket: RawTicket, text: string): Promise<void>
   comment(project: BoardProject, ticket: RawTicket, text: string): Promise<void>
+  /** Make a project with this name (Plane only: Jira projects need an admin, a lead and a template). */
+  createProject?(name: string): Promise<BoardProject>
+}
+
+/** Ticket key prefixes to try for a new project: initials or the name's start, upper case, at most 5 characters. */
+export function projectIdentifiers(name: string): string[] {
+  const words = name.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean)
+  const initials = words.length > 1 ? words.map((w) => w[0]).join('').slice(0, 5) : ''
+  const start = (words.join('') || 'PROJ').slice(0, 5)
+  const base = initials.length >= 2 ? initials : start
+  return [base, ...[2, 3, 4, 5].map((n) => `${base.slice(0, 4)}${n}`)]
 }
 
 export interface TrackerConfig {
@@ -140,6 +151,20 @@ export function planeTracker(c: TrackerConfig): Tracker {
         cursor = res.next_cursor
       }
       return out
+    },
+    async createProject(name) {
+      let last: unknown = null
+      for (const identifier of projectIdentifiers(name)) {
+        try {
+          const p = (await call('/projects/', 'creating the project', { method: 'POST', body: JSON.stringify({ name, identifier }) })) as Record<string, unknown>
+          return { id: String(p.id), key: String(p.identifier ?? identifier), name: String(p.name ?? name) }
+        } catch (err) {
+          // Taken identifier: try the next; anything else (the token, the network) stops here.
+          last = err
+          if (!/\b(400|409)\b/.test(String((err as Error).message))) throw err
+        }
+      }
+      throw last
     },
     async create(p, input) {
       const body: Record<string, unknown> = { name: input.title, description_html: textToHtml(input.description) }

@@ -5,6 +5,7 @@ import { join, relative } from 'node:path'
 import {
   STAGES,
   type BoardAgents,
+  type BoardLink,
   type BoardOverview,
   type BoardProject,
   type BoardProjectSettings,
@@ -20,6 +21,7 @@ import type { ModelRef } from '@shared/types'
 import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import type { AgentService } from '../agent/agents'
+import type { ProjectService } from '../agent/projects'
 import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { ToolScope } from '../agent/tools'
 import { git, repoRoot } from '../panel/git'
@@ -35,9 +37,13 @@ const K_CONN = 'boards.connection'
 const K_PROJECT = 'boards.project'
 const K_SETTINGS = 'boards.settings'
 const K_PIPES = 'boards.pipelines'
+/** chat project id → its board. */
+const K_LINKS = 'boards.links'
 const SYNC_MS = 60_000
 const MAX_RUNNING = 2
 const MAX_SEND_BACKS = 2
+/** Fixes an agent pushes for failing checks on its own before it hands the PR to you. */
+const MAX_FIXES = 2
 const DEFAULT_COMMANDS = ['npm test', 'npm run', 'npx tsc', 'npx vitest', 'pnpm test', 'pnpm run', 'yarn test', 'node']
 
 interface StoredConn extends Omit<TrackerConfig, 'token'> {
@@ -49,6 +55,7 @@ export interface BoardDeps {
   runtime: AgentRuntime
   agents: AgentService
   settings: SettingsService
+  projects: ProjectService
 }
 
 function exec(cmd: string, args: string[], cwd: string, timeoutMs = 120_000): Promise<string> {
@@ -111,9 +118,49 @@ Reply with only a JSON object: {"verdict": "approve" | "revise", "notes": "..."}
 const CODE_REVIEWER = `You review a pull request's diff against the ticket's requirements. Approve when the change meets them and has no
 obvious bugs; otherwise say what is wrong. Reply with only a JSON object: {"verdict": "approve" | "revise", "notes": "..."}.`
 
+/** Checks GitHub reports as failed (check runs and commit statuses). */
+const FAILED = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED']
+
+export interface RollupCheck {
+  name?: string
+  context?: string
+  status?: string
+  conclusion?: string
+  state?: string
+  detailsUrl?: string
+  targetUrl?: string
+  description?: string
+}
+
+export interface FailedCheck {
+  name: string
+  url: string
+  description: string
+}
+
+/** The failed checks in a PR's status rollup, by name. */
+export function failedChecks(roll: RollupCheck[]): FailedCheck[] {
+  return roll
+    .filter((c) => FAILED.includes(String(c.conclusion ?? c.state ?? '')))
+    .map((c) => ({ name: c.name || c.context || 'Unnamed check', url: c.detailsUrl || c.targetUrl || '', description: c.description ?? '' }))
+}
+
+/** The PR's failing checks with the end of each one's log, as the fixer reads them. */
+export function checksReport(checks: (FailedCheck & { log: string })[]): string {
+  return checks.map((c) => [`### ${c.name}${c.url ? ` (${c.url})` : ''}`, c.description, c.log ? '```\n' + c.log + '\n```' : '(No log available.)'].filter(Boolean).join('\n')).join('\n\n')
+}
+
+const FIXER = `The pull request for this ticket failed its checks on GitHub. You are in a git worktree on the PR's branch.
+Read the failing checks and their logs below, find the cause in the code, and fix it. Reproduce the failure with the
+project's own commands first when you can, and run them again after the fix. Keep the change to what the checks need:
+don't rework the feature, and don't weaken, skip or delete tests or checks to make them pass.
+Don't commit or push: Cloth does that when you finish. End with a short summary of what was wrong and what you changed.`
+
 const IMPLEMENTER = `You implement a software ticket in this workspace, a git worktree on its own branch. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
 Don't commit or push: Cloth does that when you finish. End with a short summary of what you changed.`
+
+const TRACKER_LABEL = { plane: 'Plane', jira: 'Jira' } as const
 
 export class BoardService {
   private tracker: Tracker | null = null
@@ -263,6 +310,48 @@ export class BoardService {
     return this.overview()
   }
 
+  // ---- Chat projects ----
+
+  /** Links to boards on the connected tracker, for chat projects that still exist. */
+  links(): Record<string, BoardLink> {
+    const kind = this.storedConn()?.kind
+    const all = this.ctx.kv.get<Record<string, BoardLink>>(K_LINKS, {})
+    return Object.fromEntries(Object.entries(all).filter(([id, l]) => l.kind === kind && this.deps.projects.find(id)))
+  }
+
+  /**
+   * Link a chat project to the tracker project with the same name (any case), making one in Plane when
+   * there is none. The board's code folder starts as the chat project's folder, and the board is shown.
+   */
+  async linkChatProject(chatProjectId: string): Promise<BoardLink> {
+    const cp = this.deps.projects.get(chatProjectId)
+    const conn = this.storedConn()
+    if (!this.tracker || !conn) throw new Error('Connect Plane or Jira in Boards first')
+    const name = TRACKER_LABEL[conn.kind]
+    this.projects = await this.tracker.projects()
+    const want = cp.name.trim().toLowerCase()
+    let bp = this.projects.find((p) => p.name.trim().toLowerCase() === want)
+    if (!bp) {
+      if (!this.tracker.createProject) throw new Error(`${name} has no project named “${cp.name}”. Create it in ${name}, then link again.`)
+      bp = await this.tracker.createProject(cp.name.trim())
+      this.projects = [...this.projects, bp]
+      this.ctx.log('boards', `Created the ${name} project ${bp.name} (${bp.key}) for ${cp.name}`)
+    }
+    if (!this.settingsFor(bp.id).repo && cp.folder) this.saveSettings(bp.id, { repo: cp.folder })
+    const link: BoardLink = { kind: conn.kind, projectId: bp.id, name: bp.name }
+    this.ctx.kv.set(K_LINKS, { ...this.ctx.kv.get<Record<string, BoardLink>>(K_LINKS, {}), [chatProjectId]: link })
+    this.ctx.kv.set(K_PROJECT, bp.id)
+    await this.sync()
+    return link
+  }
+
+  unlinkChatProject(chatProjectId: string): void {
+    const all = this.ctx.kv.get<Record<string, BoardLink>>(K_LINKS, {})
+    delete all[chatProjectId]
+    this.ctx.kv.set(K_LINKS, all)
+    this.changed()
+  }
+
   // ---- Sync ----
 
   async sync(): Promise<void> {
@@ -336,7 +425,8 @@ export class BoardService {
         const stage: Stage = pipe?.stage ?? mapped ?? (state?.group === 'started' ? 'build' : 'new')
         tickets.push({ id: t.id, key: t.key, title: t.title, priority: t.priority, stateId: t.stateId, stateName: state?.name ?? '', stage, url: t.url, description: t.description, pipeline: pipe ? this.publicPipe(pipe) : null })
       }
-    return { connection: conn, projects: this.projects, projectId: p?.id ?? null, states, settings, tickets, syncedAt: this.syncedAt, error: this.syncError }
+    const chatProjectId = p ? (Object.entries(this.links()).find(([, l]) => l.projectId === p.id)?.[0] ?? null) : null
+    return { connection: conn, projects: this.projects, projectId: p?.id ?? null, states, settings, tickets, syncedAt: this.syncedAt, chatProjectId, error: this.syncError }
   }
 
   private publicPipe(p: StoredPipe): TicketPipeline {
@@ -390,7 +480,7 @@ export class BoardService {
   resume(ticketId: string): BoardOverview {
     const pipe = this.pipes()[this.pkey(ticketId)]
     if (!pipe) throw new Error('Agents aren\'t on for this ticket')
-    if (pipe.stage === 'pr') {
+    if (pipe.stage === 'pr' && !pipe.fixing) {
       // Nothing to rerun: the PR is open; go back to watching its checks.
       this.update(ticketId, { status: 'running', note: undefined })
       void this.sync()
@@ -398,6 +488,16 @@ export class BoardService {
     }
     // A ticket stopped after review sent it back twice gets one more round.
     this.update(ticketId, { status: 'queued', note: undefined, sendBacks: pipe.status === 'needsYou' && pipe.stage === 'req' ? 0 : pipe.sendBacks })
+    this.enqueue(ticketId)
+    return this.overview()
+  }
+
+  /** Queue an agent to fix the PR's failing checks and push to the same PR. */
+  fixChecks(ticketId: string): BoardOverview {
+    const pipe = this.pipes()[this.pkey(ticketId)]
+    if (!pipe || pipe.stage !== 'pr' || !pipe.pr) throw new Error('This ticket has no open pull request')
+    if (this.running.has(ticketId) || this.queue.includes(ticketId)) return this.overview()
+    this.update(ticketId, { fixing: true, status: 'queued', note: undefined })
     this.enqueue(ticketId)
     return this.overview()
   }
@@ -463,7 +563,13 @@ export class BoardService {
       const p = this.project(pipe.projectId)
       const raw = this.raw.get(pipe.projectId)?.find((t) => t.id === ticketId)
       if (!p || !raw || !this.tracker) throw new Error('The ticket or its project is no longer in the tracker')
-      if (pipe.stage === 'pr' || pipe.stage === 'new') return
+      if (pipe.stage === 'pr') {
+        if (!pipe.fixing) return
+        this.update(ticketId, { status: 'running', note: undefined })
+        await this.fix(p, raw, this.settingsFor(p.id), pipe, signal)
+        return
+      }
+      if (pipe.stage === 'new') return
       const s = this.settingsFor(p.id)
       await this.moveTo(p, raw, s, pipe.stage)
       this.update(ticketId, { status: 'running', note: undefined })
@@ -559,18 +665,10 @@ export class BoardService {
     if (!root) throw new Error(`${s.repo} isn't a git repository`)
     const base = (await gitRun(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
     const branch = pipe.branch ?? `boards/${t.key.toLowerCase()}`
-    const dir = join(this.ctx.dataDir, 'boards', 'worktrees', t.key.toLowerCase())
     this.update(t.id, { branch, activity: 'Setting up the worktree' })
-    if (!existsSync(dir)) {
-      await mkdir(join(this.ctx.dataDir, 'boards', 'worktrees'), { recursive: true })
-      const exists = (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
-      await gitRun(root, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, base])
-    }
-    const workspace = join(dir, relative(root, s.repo))
+    const dir = await this.worktree(root, branch, base, t.key)
     const { model, system, saved } = this.model(pipe.agents.implementer)
-    // The implementer edits files in its worktree and runs only the project's allowed commands.
-    let scope: ToolScope = { collectionIds: [], skillsEnabled: true, webEnabled: false, customTools: false, workspace, fileAccess: 'write', shell: true, commandAllow: s.commands, permissions: () => 'manual', autoApprove: () => 'edits', codeIntel: false }
-    if (saved) scope = { ...agentScope(saved, scope), fileAccess: 'write', shell: true, commandAllow: s.commands, autoApprove: () => 'edits', codeIntel: false }
+    const scope = this.writeScope(join(dir, relative(root, s.repo)), s, saved)
     this.update(t.id, { activity: 'Starting' })
     await this.deps.runtime.run({
       model,
@@ -608,6 +706,103 @@ export class BoardService {
     this.update(t.id, { status: s.autoMerge ? 'running' : 'needsYou', note: s.autoMerge ? undefined : 'Waiting for you to review and merge.' })
   }
 
+  /** The ticket's worktree on `branch` (made from `start` when the branch doesn't exist yet). */
+  private async worktree(root: string, branch: string, start: string, key: string): Promise<string> {
+    const dir = join(this.ctx.dataDir, 'boards', 'worktrees', key.toLowerCase())
+    if (!existsSync(dir)) {
+      await mkdir(join(this.ctx.dataDir, 'boards', 'worktrees'), { recursive: true })
+      const exists = (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code === 0
+      await gitRun(root, exists ? ['worktree', 'add', dir, branch] : ['worktree', 'add', '-b', branch, dir, start])
+    }
+    return dir
+  }
+
+  /** The implementer edits files in its worktree and runs only the project's allowed commands. */
+  private writeScope(workspace: string, s: BoardProjectSettings, saved: ReturnType<AgentService['find']>): ToolScope {
+    const scope: ToolScope = { collectionIds: [], skillsEnabled: true, webEnabled: false, customTools: false, workspace, fileAccess: 'write', shell: true, commandAllow: s.commands, permissions: () => 'manual', autoApprove: () => 'edits', codeIntel: false }
+    return saved ? { ...agentScope(saved, scope), fileAccess: 'write', shell: true, commandAllow: s.commands, autoApprove: () => 'edits', codeIntel: false } : scope
+  }
+
+  /** The failing checks' logs (GitHub Actions jobs; other checks give only their name and link), tails only. */
+  private async checkLogs(checks: FailedCheck[], root: string): Promise<(FailedCheck & { log: string })[]> {
+    let budget = 40_000
+    const out: (FailedCheck & { log: string })[] = []
+    for (const c of checks.slice(0, 8)) {
+      const job = /\/actions\/runs\/(\d+)\/job\/(\d+)/.exec(c.url)
+      const run = /\/actions\/runs\/(\d+)/.exec(c.url)
+      let log = ''
+      if (budget > 0 && (job || run)) {
+        try {
+          const full = await exec('gh', job ? ['run', 'view', '--job', job[2], '--log-failed'] : ['run', 'view', run![1], '--log-failed'], root, 90_000)
+          log = full.slice(-Math.min(12_000, budget)).trim()
+          budget -= log.length
+        } catch (err) {
+          log = `(Couldn't fetch the log: ${errorMessage(err)})`
+        }
+      }
+      out.push({ ...c, log })
+    }
+    return out
+  }
+
+  /** An agent fixes the PR's failing checks in a worktree on its branch, then Cloth pushes to the same PR. */
+  private async fix(p: BoardProject, t: RawTicket, s: BoardProjectSettings, pipe: StoredPipe, signal: AbortSignal): Promise<void> {
+    const pr = pipe.pr!
+    if (!s.repo || !existsSync(s.repo)) {
+      this.update(t.id, { status: 'needsYou', note: 'Pick the code folder for this project in Project settings, then fix the checks again.', activity: undefined })
+      throw Object.assign(new Error('no repo'), { quiet: true })
+    }
+    const root = await repoRoot(s.repo)
+    if (!root) throw new Error(`${s.repo} isn't a git repository`)
+    const branch = pipe.branch ?? `boards/${t.key.toLowerCase()}`
+    this.update(t.id, { activity: 'Reading the failing checks' })
+    const view = JSON.parse(await exec('gh', ['pr', 'view', String(pr.number), '--json', 'state,headRefOid,statusCheckRollup'], root, 30_000)) as { state: string; headRefOid: string; statusCheckRollup?: RollupCheck[] }
+    if (view.state !== 'OPEN') throw new Error(`PR #${pr.number} is ${view.state.toLowerCase()}, so there's nothing to fix`)
+    const failed = failedChecks(view.statusCheckRollup ?? [])
+    if (!failed.length) {
+      // Fixed in the meantime (or re-run and passed): back to watching.
+      this.update(t.id, { fixing: false, status: 'running', note: undefined, activity: undefined, pr: { ...pr, failing: [] } })
+      return
+    }
+    const logs = await this.checkLogs(failed, root)
+    this.update(t.id, { pr: { ...pr, failing: failed.map((c) => c.name), fixedSha: view.headRefOid }, activity: 'Setting up the worktree' })
+    await gitRun(root, ['fetch', 'origin', branch])
+    const dir = await this.worktree(root, branch, `origin/${branch}`, t.key)
+    // Pick up anything pushed to the branch since (a person's commits, an earlier fix).
+    await gitRun(dir, ['merge', '--ff-only', `origin/${branch}`]).catch(() => {
+      throw new Error(`The local ${branch} branch has commits GitHub doesn't, so Cloth won't push over it. Sync the branch, then fix the checks again.`)
+    })
+    const { model, system, saved } = this.model(pipe.agents.implementer)
+    this.update(t.id, { activity: 'Starting' })
+    const res = await this.deps.runtime.run({
+      model,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nPull request: ${pr.url}\n\nFailing checks:\n\n${checksReport(logs)}`,
+      systemPrompt: [system, FIXER].filter(Boolean).join('\n\n'),
+      scope: this.writeScope(join(dir, relative(root, s.repo)), s, saved),
+      thinking: saved?.thinking ?? undefined,
+      maxTurns: 80,
+      signal,
+      onEvent: (_turn, progress) => progress.current && this.update(t.id, { activity: progress.current.summary || progress.current.tool })
+    })
+    if (signal.aborted) return
+    await gitRun(dir, ['add', '-A'])
+    if (!(await gitRun(dir, ['status', '--porcelain'])).trim()) {
+      await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
+      const why = res.text.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400)
+      this.update(t.id, { fixing: false, status: 'needsYou', note: `The agent didn't find a change that fixes the checks.${why ? ` ${why}` : ''}`, activity: undefined })
+      return
+    }
+    this.update(t.id, { activity: 'Committing the fix' })
+    await gitRun(dir, ['commit', '-m', `${t.key}: fix failing checks`])
+    this.update(t.id, { activity: 'Pushing the fix' })
+    await gitRun(dir, ['push', 'origin', branch])
+    await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
+    const fixes = (pr.fixes ?? 0) + 1
+    await this.tracker!.comment(p, t, `Cloth pushed a fix for the failing checks (${failed.map((c) => c.name).join(', ')}) to ${pr.url}.`).catch(() => undefined)
+    const latest = this.pipes()[this.pkey(t.id)]?.pr ?? pr
+    this.update(t.id, { fixing: false, status: 'running', note: undefined, activity: undefined, pr: { ...latest, checks: 'pending', failing: [], fixes } })
+  }
+
   /** Experimental: a code review of the diff, then GitHub's auto-merge (it merges once required checks pass). */
   private async tryAutoMerge(p: BoardProject, t: RawTicket, root: string, base: string, branch: string, signal: AbortSignal): Promise<void> {
     const pipe = this.pipes()[this.pkey(t.id)]
@@ -629,35 +824,45 @@ export class BoardService {
     }
   }
 
-  /** Checks and merges for open PRs; a merged PR moves the ticket to the merged state. */
+  /** Checks and merges for open PRs; a merged PR moves the ticket to the merged state, failed checks go to a fixer. */
   private async checkPrs(p: BoardProject): Promise<void> {
     const s = this.settingsFor(p.id)
     if (!s.repo || !existsSync(s.repo)) return
-    const pipes = this.pipes()
-    for (const [k, pipe] of Object.entries(pipes)) {
-      if (pipe.projectId !== p.id || pipe.stage !== 'pr' || !pipe.pr || pipe.status === 'done') continue
+    for (const [k, pipe] of Object.entries(this.pipes())) {
+      // A fix in progress owns the PR until it pushes.
+      if (pipe.projectId !== p.id || pipe.stage !== 'pr' || !pipe.pr || pipe.status === 'done' || pipe.fixing) continue
+      const id = k.slice(k.indexOf(':') + 1)
       try {
-        const v = JSON.parse(await exec('gh', ['pr', 'view', String(pipe.pr.number), '--json', 'state,statusCheckRollup'], s.repo, 30_000)) as { state: string; statusCheckRollup?: { status?: string; conclusion?: string; state?: string }[] }
+        const v = JSON.parse(await exec('gh', ['pr', 'view', String(pipe.pr.number), '--json', 'state,headRefOid,statusCheckRollup'], s.repo, 30_000)) as { state: string; headRefOid?: string; statusCheckRollup?: RollupCheck[] }
+        // Read again: a step may have changed the ticket while GitHub answered.
+        const cur = this.pipes()[k]
+        if (!cur?.pr || cur.fixing || this.running.has(id)) continue
         const roll = v.statusCheckRollup ?? []
-        const failed = roll.some((c) => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT'].includes(String(c.conclusion ?? c.state)))
+        const failed = failedChecks(roll)
         const pending = roll.some((c) => (c.status && c.status !== 'COMPLETED') || c.state === 'PENDING')
-        pipe.pr.checks = !roll.length ? 'none' : failed ? 'fail' : pending ? 'pending' : 'pass'
-        const raw = this.raw.get(p.id)?.find((t) => t.id === k.slice(k.indexOf(':') + 1))
+        const checks = !roll.length ? 'none' : failed.length ? 'fail' : pending ? 'pending' : 'pass'
+        const pr: NonNullable<TicketPipeline['pr']> = { ...cur.pr, checks, failing: failed.map((c) => c.name) }
+        const raw = this.raw.get(p.id)?.find((t) => t.id === id)
         if (v.state === 'MERGED') {
-          pipe.status = 'done'
+          this.update(id, { pr, status: 'done', note: undefined })
           if (raw) await this.moveTo(p, raw, s, 'merged')
         } else if (v.state === 'CLOSED') {
-          pipe.status = 'needsYou'
-          pipe.note = 'The pull request was closed without merging.'
-        } else if (pipe.pr.checks === 'fail') {
-          pipe.status = 'needsYou'
-          pipe.note = 'Checks failed on the pull request.'
-        }
+          this.update(id, { pr, status: 'needsYou', note: 'The pull request was closed without merging.' })
+        } else if (checks === 'fail') {
+          const fixes = pr.fixes ?? 0
+          if (cur.status === 'paused' || cur.status === 'error') this.update(id, { pr })
+          else if (fixes < MAX_FIXES && v.headRefOid && v.headRefOid !== pr.fixedSha) {
+            this.update(id, { pr, fixing: true, status: 'queued', note: undefined })
+            this.enqueue(id)
+          } else
+            this.update(id, { pr, status: 'needsYou', note: fixes >= MAX_FIXES ? `Checks still fail after ${MAX_FIXES} fixes. Fix checks to have the agent try again, or fix it yourself.` : 'Checks failed on the pull request.' })
+        } else if ((checks === 'pass' || checks === 'none') && cur.status === 'running' && !pr.merging && !s.autoMerge) {
+          this.update(id, { pr, status: 'needsYou', note: 'Waiting for you to review and merge.' })
+        } else this.update(id, { pr })
       } catch (err) {
         this.ctx.log('boards', `PR #${pipe.pr.number}: ${errorMessage(err)}`)
       }
     }
-    this.ctx.kv.set(K_PIPES, pipes)
   }
 
   private changed(): void {

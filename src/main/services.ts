@@ -196,7 +196,7 @@ export function createServices(opts: {
     if (converted.length) ctx.log('automation', `Converted ${converted.length} flow${converted.length === 1 ? '' : 's'} into automations`)
   }
 
-  const boards = new BoardService(ctx, { runtime, agents, settings })
+  const boards = new BoardService(ctx, { runtime, agents, settings, projects })
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })

@@ -26,12 +26,15 @@ import {
   Robot,
   SlidersHorizontal,
   Tray,
-  X
+  Wrench,
+  X,
+  ChatCircleDots
 } from '@phosphor-icons/react'
 import { MAPPED_STAGES, STAGES, STAGE_LABELS, type BoardAgents, type BoardOverview, type BoardProjectSettings, type BoardTicket, type MappedStage, type Stage, type TicketPriority, type TrackerKind } from '@shared/boards'
 import type { Agent } from '@shared/types'
 import { api, useAsync, useEvent } from '@/lib/api'
-import { useApp } from '@/lib/store'
+import { attempt, useApp } from '@/lib/store'
+import { leaveDraft } from '@/lib/drafts'
 import { Badge, Button, Empty, Field, IconButton, Input, Modal, PageHeader, PageTitle, Segmented, Select, Spinner, Switch, Textarea } from '@/components/ui'
 
 /*
@@ -146,6 +149,7 @@ export function BoardsPage() {
             ticket={ticket}
             tracker={tracker}
             settings={o.settings}
+            chatProjectId={o.chatProjectId}
             agents={agents.data ?? []}
             onClose={() => setSelected(null)}
             run={run}
@@ -381,7 +385,14 @@ function CardChip({ ticket: t, autoMerge }: { ticket: BoardTicket; autoMerge: bo
   if (!p) return <Badge tone="dim">Manual</Badge>
   if (p.status === 'error') return <Badge tone="danger">Stopped</Badge>
   if (p.status === 'paused') return <Badge tone="dim"><Pause size={11} />Paused</Badge>
-  if (p.status === 'queued') return <Badge tone="dim"><Robot size={11} />Queued</Badge>
+  if (p.status === 'queued') return <Badge tone="dim"><Robot size={11} />{p.fixing ? 'Queued to fix checks' : 'Queued'}</Badge>
+  if (p.pr && p.fixing)
+    return (
+      <>
+        <Badge>#{p.pr.number}</Badge>
+        <Badge className="border-agent/30 bg-agent-soft text-agent"><CircleNotch size={11} className="animate-spin" />Fixing checks</Badge>
+      </>
+    )
   if (p.pr)
     return (
       <>
@@ -398,9 +409,36 @@ function CardChip({ ticket: t, autoMerge }: { ticket: BoardTicket; autoMerge: bo
 
 // ---- Ticket panel ----
 
-function TicketPanel({ ticket: t, tracker, settings, agents, onClose, run }: { ticket: BoardTicket; tracker: string; settings: BoardProjectSettings; agents: Agent[]; onClose(): void; run(fn: () => Promise<BoardOverview>, done?: string): Promise<void> }) {
+/** What a chat opened from a ticket starts with in its message box: the ticket, and where the agents got to. */
+export function ticketPrompt(t: BoardTicket, tracker: string): string {
+  const p = t.pipeline
+  const lines = [`Let's work on ${t.key}: ${t.title}`, `${tracker} ticket: ${t.url}`]
+  const goal = p?.goal || t.description
+  if (goal) lines.push('', `Goal: ${goal}`)
+  if (p?.requirements.length) lines.push('', 'Requirements:', ...p.requirements.map((r) => `- ${r}`))
+  if (p?.outOfScope.length) lines.push('', 'Out of scope:', ...p.outOfScope.map((r) => `- ${r}`))
+  if (p?.pr) {
+    lines.push('', `Pull request: ${p.pr.url}${p.branch ? ` (branch ${p.branch})` : ''}`)
+    if (p.pr.checks === 'fail') lines.push(`Failing checks: ${p.pr.failing?.length ? p.pr.failing.join(', ') : 'see the PR'}`)
+  } else if (p?.branch) lines.push('', `Branch: ${p.branch}`)
+  return lines.join('\n')
+}
+
+function TicketPanel({ ticket: t, tracker, settings, chatProjectId, agents, onClose, run }: { ticket: BoardTicket; tracker: string; settings: BoardProjectSettings; chatProjectId: string | null; agents: Agent[]; onClose(): void; run(fn: () => Promise<BoardOverview>, done?: string): Promise<void> }) {
   const p = t.pipeline
   const open = () => void api.app.openExternal(t.url)
+  // In the linked chat project when there is one (its folder and settings), else in the board's code folder.
+  const openInChat = async () => {
+    const chat = await attempt(() => api.chat.create({ title: `${t.key}: ${t.title}`, ...(chatProjectId ? { projectId: chatProjectId } : { workspace: settings.repo }) }))
+    if (!chat) return
+    leaveDraft(chat.id, ticketPrompt(t, tracker))
+    try {
+      localStorage.setItem('cloth.chat', chat.id)
+    } catch {
+      /* storage unavailable */
+    }
+    useApp.getState().setPage('chat')
+  }
   return (
     <aside aria-label={t.key} className="flex w-[420px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="border-b border-line px-4 pt-3.5 pb-3">
@@ -408,6 +446,7 @@ function TicketPanel({ ticket: t, tracker, settings, agents, onClose, run }: { t
           <span className="font-mono text-caption text-dim">{t.key}</span>
           <Badge>{tracker}: {t.stateName || '—'}</Badge>
           <span className="ml-auto flex items-center gap-0.5">
+            <Button size="sm" variant="ghost" icon={<ChatCircleDots size={14} />} onClick={() => void openInChat()} title={chatProjectId ? 'A new chat in the linked project, with this ticket in the message box' : 'A new chat in the code folder, with this ticket in the message box'}>Open in chat</Button>
             <Button size="sm" variant="ghost" icon={<ArrowSquareOut size={14} />} onClick={open}>Open in {tracker}</Button>
             <IconButton aria-label="Close" onClick={onClose}><X size={15} /></IconButton>
           </span>
@@ -418,8 +457,11 @@ function TicketPanel({ ticket: t, tracker, settings, agents, onClose, run }: { t
             {p.status === 'running' || p.status === 'queued' ? (
               <Button size="sm" icon={<Pause size={14} />} onClick={() => run(() => api.boards.pause(t.id))}>Pause agents</Button>
             ) : p.stage !== 'pr' || p.status === 'error' ? (
-              <Button size="sm" icon={<Play size={14} />} onClick={() => run(() => api.boards.resume(t.id))}>{p.stage === 'pr' ? 'Watch the PR again' : 'Resume'}</Button>
+              <Button size="sm" icon={<Play size={14} />} onClick={() => run(() => api.boards.resume(t.id))}>{p.stage !== 'pr' ? 'Resume' : p.fixing ? 'Resume the fix' : 'Watch the PR again'}</Button>
             ) : null}
+            {p.pr?.checks === 'fail' && !p.fixing && p.status !== 'running' && p.status !== 'queued' && (
+              <Button size="sm" variant="primary" icon={<Wrench size={14} />} onClick={() => run(() => api.boards.fixChecks(t.id), 'An agent is fixing the checks')}>Fix checks</Button>
+            )}
             {p.pr && <Button size="sm" variant={p.status === 'needsYou' ? 'primary' : 'outline'} icon={<GitMerge size={14} />} onClick={() => void api.app.openExternal(p.pr!.url)}>{p.pr.merging ? `View PR #${p.pr.number}` : `Review PR #${p.pr.number}`}</Button>}
             {p.status !== 'running' && <Button size="sm" variant="ghost" onClick={() => run(() => api.boards.stopAgents(t.id), 'Agents are off for this ticket')}>Take agents off</Button>}
           </div>
@@ -496,7 +538,35 @@ function Steps({ ticket: t, tracker, settings }: { ticket: BoardTicket; tracker:
         {at > 3 ? <>Built on {worktree}{p.files ? `, ${p.files} files changed` : ''}.</> : at === 3 ? <>Working in its own worktree{worktree ? <> on {worktree}</> : ''}{p.files ? ` · ${p.files} files changed` : ''}{activity}.</> : 'Works in its own worktree off your current branch, so your checkout isn\'t touched.'}
       </Step>
       <Step icon={<GitPullRequest size={14} />} color="text-ok" bg="bg-ok/15" title="Pull request" state={pr.state}>{pr.body}</Step>
+      {p.pr && (p.fixing || p.pr.checks === 'fail' || (p.pr.fixes ?? 0) > 0) && <FixStep pipeline={p} worktree={worktree} />}
     </div>
+  )
+}
+
+function FixStep({ pipeline: p, worktree }: { pipeline: NonNullable<BoardTicket['pipeline']>; worktree: ReactNode }) {
+  const pr = p.pr!
+  const fixes = pr.fixes ?? 0
+  const names = pr.failing?.length ? pr.failing.join(', ') : 'the failing checks'
+  const pushed = fixes ? `Pushed ${fixes === 1 ? 'one fix' : `${fixes} fixes`} to the PR so far.` : ''
+  let state: StepState
+  let body: ReactNode
+  if (p.fixing) {
+    state = p.status === 'running' ? 'now' : p.status === 'paused' || p.status === 'error' ? 'stopped' : 'wait'
+    body =
+      p.status === 'running' ? <>Reading the logs and fixing {names} in a worktree{worktree ? <> on {worktree}</> : ''}, then pushing to the same PR{p.activity ? ` · ${p.activity}` : ''}.</>
+      : p.status === 'queued' ? `Queued to fix ${names}.`
+      : `Stopped while fixing ${names}.`
+  } else if (pr.checks === 'fail') {
+    state = 'you'
+    body = `${names} failed. ${pushed} Fix checks has the agent read the logs and try again.`
+  } else {
+    state = 'done'
+    body = pushed
+  }
+  return (
+    <Step icon={<Wrench size={14} />} color="text-warn" bg="bg-warn/15" title="Fix checks" who={agentName(p.agents, 'implementer')} state={state}>
+      {body}
+    </Step>
   )
 }
 
