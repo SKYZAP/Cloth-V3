@@ -36,6 +36,7 @@ import { FlowExporter, type ExportToolchain } from './export/exporter'
 import { existsSync, mkdirSync } from 'node:fs'
 import { RunService, type RunDeps } from './run/run'
 import { UpdateService, type UpdateDeps } from './updates'
+import { BoardService } from './boards/boards'
 
 export interface Services {
   ctx: Ctx
@@ -67,6 +68,7 @@ export interface Services {
   runs: RunService
   updates: UpdateService
   approvals: ApprovalService
+  boards: BoardService
 }
 
 export function createServices(opts: {
@@ -194,10 +196,11 @@ export function createServices(opts: {
     if (converted.length) ctx.log('automation', `Converted ${converted.length} flow${converted.length === 1 ? '' : 's'} into automations`)
   }
 
+  const boards = new BoardService(ctx, { runtime, agents, settings })
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates, boards }
 }
 
 const SEEDED_KEY = 'mcp.homelabSeeded'

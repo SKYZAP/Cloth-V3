@@ -278,6 +278,21 @@ export interface ClothApi {
     rewrite(instructions: string, request: string, model?: ModelRef | null, thinking?: ThinkingLevel): Promise<string>
   }
   /** Run page: local models served by llama.cpp's llama-server. Events arrive on the 'runs' channel. */
+  /** Boards: tickets from Plane or Jira moved through Cloth's agent stages. Changes arrive on the 'boards' channel. */
+  boards: {
+    overview(): Promise<import('./boards').BoardOverview>
+    /** Checks the token by listing projects; replaces any other connection. */
+    connect(input: import('./boards').TrackerConnectInput): Promise<import('./boards').BoardOverview>
+    disconnect(): Promise<void>
+    selectProject(id: string): Promise<import('./boards').BoardOverview>
+    saveSettings(projectId: string, patch: Partial<import('./boards').BoardProjectSettings>): Promise<import('./boards').BoardOverview>
+    sync(): Promise<import('./boards').BoardOverview>
+    createTicket(input: import('./boards').NewTicketInput): Promise<import('./boards').BoardOverview>
+    handToAgents(ticketId: string, agents?: Partial<import('./boards').BoardAgents>): Promise<import('./boards').BoardOverview>
+    pause(ticketId: string): Promise<import('./boards').BoardOverview>
+    resume(ticketId: string): Promise<import('./boards').BoardOverview>
+    stopAgents(ticketId: string): Promise<import('./boards').BoardOverview>
+  }
   /** Updates from the private GitHub releases of SKYZAP/Cloth-V3. */
   updates: {
     status(): Promise<import('./types').UpdateStatus>
@@ -461,4 +476,5 @@ export type EventMap = {
   /** Computer use is missing a macOS permission. */
   computer: { kind: 'screen' | 'accessibility'; text: string }
   updates: import('./types').UpdateStatus
+  boards: import('./boards').BoardEvent
 }

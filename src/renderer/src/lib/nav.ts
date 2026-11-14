@@ -1,9 +1,10 @@
-import { Books, ChartLineUp, ChatCircleDots, Cpu, FlowArrow, GearSix, Play, PlugsConnected, Robot, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
+import { Books, ChartLineUp, ChatCircleDots, Kanban, Cpu, FlowArrow, GearSix, Play, PlugsConnected, Robot, Sparkle, Wrench, type Icon } from '@phosphor-icons/react'
 import type { Page } from './store'
 
 export const NAV: { page: Page; label: string; icon: Icon }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: ChartLineUp },
   { page: 'chat', label: 'Chat', icon: ChatCircleDots },
+  { page: 'boards', label: 'Boards', icon: Kanban },
   { page: 'knowledge', label: 'Knowledge', icon: Books },
   { page: 'skills', label: 'Skills', icon: Sparkle },
   { page: 'agents', label: 'Agents', icon: Robot },

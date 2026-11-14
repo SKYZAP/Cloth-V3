@@ -16,6 +16,7 @@ import { WorkflowsPage } from './pages/Workflows'
 import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
 import { RunPage } from './pages/Run'
+import { BoardsPage } from './pages/Boards'
 import { DesignPage } from './pages/Design'
 import { SettingsPage, openSettingsSection } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
@@ -33,6 +34,7 @@ const item = (page: Page) => NAV.find((n) => n.page === page)!
 const SIDEBAR: (typeof NAV)[number][] = [
   item('dashboard'),
   item('chat'),
+  item('boards'),
   item('workflows'),
   item('agents'),
   item('skills'),
@@ -59,6 +61,7 @@ export function PageContent({ page }: { page: Page }) {
     <ErrorBoundary resetKey={page} label="page">
       {page === 'dashboard' && <DashboardPage />}
       {page === 'chat' && <ChatPage />}
+      {page === 'boards' && <BoardsPage />}
       {page === 'knowledge' && <KnowledgePage />}
       {page === 'skills' && <SkillsPage />}
       {page === 'agents' && <AgentsPage />}

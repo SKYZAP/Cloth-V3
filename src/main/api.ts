@@ -247,6 +247,22 @@ export function createApi(s: Services): ClothApi {
       download: () => s.updates.download(),
       install: async () => s.updates.install()
     },
+    boards: {
+      overview: async () => s.boards.overview(),
+      connect: (input) => s.boards.connect(input),
+      disconnect: () => s.boards.disconnect(),
+      selectProject: (id) => s.boards.selectProject(id),
+      saveSettings: async (projectId, patch) => s.boards.saveSettings(projectId, patch),
+      sync: async () => {
+        await s.boards.sync()
+        return s.boards.overview()
+      },
+      createTicket: (input) => s.boards.createTicket(input),
+      handToAgents: async (id, agents) => s.boards.handToAgents(id, agents),
+      pause: async (id) => s.boards.pause(id),
+      resume: async (id) => s.boards.resume(id),
+      stopAgents: async (id) => s.boards.stopAgents(id)
+    },
     runs: {
       list: async () => s.runs.list(),
       status: async () => s.runs.status(),

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Collection, ModelRef, Provider, Settings } from '@shared/types'
 import { api } from './api'
 
-export type Page = 'dashboard' | 'chat' | 'knowledge' | 'skills' | 'agents' | 'tools' | 'workflows' | 'providers' | 'run' | 'mcp' | 'design' | 'settings'
+export type Page = 'dashboard' | 'chat' | 'boards' | 'knowledge' | 'skills' | 'agents' | 'tools' | 'workflows' | 'providers' | 'run' | 'mcp' | 'design' | 'settings'
 
 interface Toast {
   id: number

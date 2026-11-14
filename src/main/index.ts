@@ -165,6 +165,7 @@ else {
     services.remote.attach({ dispatch, keepAwake, version: app.getVersion() })
     createWindow()
     services.workflows.startScheduler()
+    services.boards.start()
     void services.updates.checkIfDue()
     await services.mcp.restart()
     await services.remote.restart()
@@ -199,6 +200,7 @@ else {
     quitting = true
     void computer?.release()
     services.workflows.stopScheduler()
+    services.boards.stop()
     services.lsp.disposeAll()
     services.panel.terminals.killAll()
     void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll()]).finally(() => app.quit())
