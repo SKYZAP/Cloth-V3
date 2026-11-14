@@ -1,6 +1,5 @@
 import { basename, join } from 'node:path'
 import { existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { git, repoRoot } from '../panel/git'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
@@ -8,7 +7,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { getCurrentSystemMessage, type AssistantMessage, type ImageContent, type SystemMessage, type TextContent, type ToolResultMessage, type UserMessage } from '@earendil-works/pi-ai'
 import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, ImageSize, Permissions, PlanProposal, QuestionRound, ReviewFinding, SharedSkills, SkillMode, SpecWorkflow, StageGate, WorkflowStage } from '@shared/types'
 import { FINDINGS_HEAD, findingsLogLines, handoverText, nextFeatureNote, nextStage, specIndexLine, STAGE_NAME, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
-import { commitWorkflowFinish, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree, type MergeResult, type WorkerTree } from './worktrees'
+import { appendFeatureLog, cleanupLogLine, cleanupWorkflow, commitWorkflowFinish, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree, WORKTREES_DIR, type MergeResult, type WorkerTree } from './worktrees'
 import { checkNote, parseCheckReport, VERIFIER_INSTRUCTIONS } from './checks'
 import { contextIsGuess, openFix } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
@@ -497,7 +496,7 @@ export class AgentRuntime {
       lines.push(
         '',
         '## Subagents',
-        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). access "reader" only reads and searches; "writer" can also edit files; "operator" can also run commands. verify makes it a check that runs the work (tests, probe scripts, the real app) and reports only findings it proved with a command and its output. Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
+        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). access "reader" only reads and searches; "writer" can also edit files; "operator" can also run commands. kind "check" makes it a check that runs finished work (tests, probe scripts, the real app), changes no project files and reports only findings it proved with a command and its output; anything that makes or fixes something is kind "build" (the default). Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
       const named = this.delegates(scope.agentId)
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
@@ -741,13 +740,13 @@ export class AgentRuntime {
       label: 'Subagent',
       description:
         maxDelegatedAccess(this.subagentSettings()) !== 'reader'
-          ? 'Run a subagent on a self-contained job with its own fresh context and return its report. access sets what a plain job may do: "reader" (default) reads and searches but changes nothing; "writer" can also edit files in the workspace; "operator" can also run commands. Set verify to have it check work by running it (tests, probe scripts, the real app) and report only findings it proved with a command and its output; in Spec → Ship it works in a throwaway copy of the project. The chat’s own access caps all of these. The subagent cannot see this conversation, so put everything it needs in prompt.'
+          ? 'Run a subagent on a self-contained job with its own fresh context and return its report. access sets what a plain job may do: "reader" (default) reads and searches but changes nothing; "writer" can also edit files in the workspace; "operator" can also run commands. kind says what the job is: "build" (default) for anything that makes or fixes something, including a fix that a check found; "check" only for a job that tests or reviews finished work by running it and changes no project files (it reports only findings it proved with a command and its output; in Spec → Ship it works in a throwaway copy of the project). The chat’s own access caps all of these. The subagent cannot see this conversation, so put everything it needs in prompt.'
           : 'Run a read-only subagent (a reader) on a self-contained job with its own fresh context and return its report. It can read and search but not change anything. The subagent cannot see this conversation, so put everything it needs in prompt.',
       parameters: Type.Object({
         description: Type.String({ description: 'Short label for the job (3–6 words), shown to the user' }),
         prompt: Type.String({ description: 'Complete instructions: goal, relevant context, and what to report back' }),
         access: Type.Optional(Type.Union([Type.Literal('reader'), Type.Literal('writer'), Type.Literal('operator')], { description: 'What the job may do (default reader)' })),
-        verify: Type.Optional(Type.Boolean({ description: 'A check: run the work and report only proven findings' })),
+        kind: Type.Optional(Type.Union([Type.Literal('build'), Type.Literal('check')], { description: 'build (default): makes or fixes something. check: only tests or reviews finished work and changes no project files' })),
         ...(this.delegates(parent.scope.agentId).length ? { agent: Type.Optional(Type.String({ description: `A saved agent to run instead of a plain job: ${this.delegates(parent.scope.agentId).map((a) => a.name).join(', ')}` })) } : {}),
         ...(tiers.length
           ? {
@@ -765,8 +764,8 @@ export class AgentRuntime {
           : {})
       }),
       execute: async (id, params, signal, onUpdate) => {
-        // `role` is what older turns sent (scout, worker, verifier); it maps onto access and verify.
-        const p = params as { description: string; prompt: string; access?: AgentAccess; verify?: boolean; role?: SubagentRun['role']; agent?: string; tier?: string; step?: number; continueFrom?: string }
+        // `role` is what older turns sent (scout, worker, verifier); it maps onto access and kind.
+        const p = params as { description: string; prompt: string; access?: AgentAccess; kind?: 'build' | 'check'; role?: SubagentRun['role']; agent?: string; tier?: string; step?: number; continueFrom?: string }
         const cfg = this.subagentSettings()
         const named = p.agent ? this.ws.agents?.byName(p.agent) : null
         if (p.agent && !named) throw new Error(`There is no agent called "${p.agent}". Run a plain job with an access level instead.`)
@@ -775,7 +774,7 @@ export class AgentRuntime {
         const chatAccess: AgentAccess = parent.scope.fileAccess !== 'write' ? 'reader' : parent.scope.shell ? 'operator' : 'writer'
         const access = capAccess(capAccess(asked, maxDelegatedAccess(cfg)), chatAccess)
         // A check runs things, so it needs a chat that may run commands; without that it is a reader.
-        const verify = !named && (p.verify === true || p.role === 'verifier') && !!parent.scope.shell && !!parent.scope.workspace
+        const verify = !named && (p.kind === 'check' || p.role === 'verifier') && !!parent.scope.shell && !!parent.scope.workspace
         const role: SubagentRun['role'] = verify ? 'verifier' : access === 'reader' ? 'scout' : 'worker'
         let scope: ToolScope = {
           ...parent.scope,
@@ -835,7 +834,7 @@ export class AgentRuntime {
         let treeNote = ''
         if ((flow?.stage === 'build' || flow?.stage === 'review') && (role === 'worker' || role === 'verifier') && scope.workspace && !scope.container) {
           const label = role === 'verifier' ? `check ${p.description || ''}`.trim() : p.description || 'ticket'
-          tree = await createWorkerTree(scope.workspace, join(tmpdir(), 'cloth-worktrees'), { slug: flow.slug, label, id, from: role === 'worker' ? p.continueFrom?.trim() || undefined : undefined }).catch((err) => {
+          tree = await createWorkerTree(scope.workspace, WORKTREES_DIR, { slug: flow.slug, label, id, from: role === 'worker' ? p.continueFrom?.trim() || undefined : undefined }).catch((err) => {
             treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder${role === 'verifier' ? ', changing nothing' : ''}.`
             return null
           })
@@ -1876,6 +1875,15 @@ export class ChatService {
       // the mark for the wrap-up's own run.
       const wrapped = flow?.stage === 'done' && this.wrapping.delete(id)
       if (wrapped && this.get(id).workspace) {
+        // Clean up first: checkouts and worker branches the feature left behind go, and branches deleted with unmerged
+        // work are noted in its decision log, which the final commit below includes.
+        const cleanup = await cleanupWorkflow(this.get(id).workspace!, flow.slug).catch((err) => {
+          this.ctx.log('chat', 'workflow clean-up failed', errorMessage(err))
+          return null
+        })
+        const note = cleanup && cleanupLogLine(cleanup)
+        if (note) await appendFeatureLog(this.get(id).workspace!, flow.slug, note).catch(() => undefined)
+        if (cleanup?.left.length) this.ctx.log('chat', `workflow clean-up: ${cleanup.left.length} folder(s) still in use, retried later`, cleanup.left.join(', '))
         await commitWorkflowFinish(this.get(id).workspace!, flow.slug, this.workflowFiles(id))
           .then((hash) => hash && this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent))
           .catch((err) => this.ctx.log('chat', 'final workflow commit failed', errorMessage(err)))

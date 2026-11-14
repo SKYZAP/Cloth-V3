@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFil
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { git } from '../src/main/panel/git'
-import { commitWorkflowDocs, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree } from '../src/main/agent/worktrees'
+import { appendFeatureLog, cleanupLogLine, cleanupWorkflow, commitWorkflowDocs, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree } from '../src/main/agent/worktrees'
 
 async function repo() {
   const root = mkdtempSync(join(tmpdir(), 'cloth-wt-'))
@@ -181,4 +181,43 @@ describe('worker worktrees', () => {
     const plain = mkdtempSync(join(tmpdir(), 'cloth-plain-'))
     expect(await createWorkerTree(plain, join(plain, '.trees'), { slug: 'x', label: 'y', id: 'z' })).toBeNull()
   })
+})
+
+describe('cleaning up when Spec → Ship is done', () => {
+  it('removes every checkout and worker branch the feature left, and lists unmerged work', async () => {
+    const { root, trees } = await repo()
+    // One worker merged (its branch is gone already), one parked with unfinished work, one still checked out.
+    const merged = (await createWorkerTree(root, trees, { slug: 'feat', label: 'Ticket 01', id: 'call_merged000001' }))!
+    writeFileSync(join(merged.workspace, 'a.txt'), 'a\n')
+    await finishWorkerTree(merged, 'Ticket 01')
+    const parked = (await createWorkerTree(root, trees, { slug: 'feat', label: 'Ticket 02', id: 'call_parked000002' }))!
+    writeFileSync(join(parked.workspace, 'b.txt'), 'b\n')
+    const kept = await parkWorkerTree(parked, 'Ticket 02')
+    const open = (await createWorkerTree(root, trees, { slug: 'feat', label: 'Check', id: 'call_open00000003' }))!
+    // Another feature's branch and checkout stay.
+    const other = (await createWorkerTree(root, trees, { slug: 'other', label: 'Ticket 01', id: 'call_other0000004' }))!
+    // A folder git has forgotten but that is still on disk (Windows couldn't delete it).
+    const stray = join(trees, 'stray-folder')
+    mkdirSync(stray)
+    writeFileSync(join(stray, '.git'), `gitdir: ${join(root, '.git', 'worktrees', 'stray-folder')}\n`)
+
+    const c = (await cleanupWorkflow(root, 'feat', trees))!
+    expect(existsSync(open.dir)).toBe(false)
+    expect(existsSync(stray)).toBe(false)
+    expect(existsSync(other.dir)).toBe(true)
+    expect(c.left).toEqual([])
+    expect(c.unmerged.map((u) => u.branch)).toEqual([kept])
+    expect(c.merged).toEqual([open.branch])
+    expect((await branches(root)).sort()).toEqual(['main', other.branch].sort())
+    expect((await git(root, ['worktree', 'list'])).stdout).not.toContain('call_open')
+
+    const line = cleanupLogLine(c)!
+    expect(line).toContain(kept!)
+    expect(line).toContain(c.unmerged[0].commit)
+    mkdirSync(join(root, 'docs', 'specs', 'feat'), { recursive: true })
+    writeFileSync(join(root, 'docs', 'specs', 'feat', 'log.md'), '| stage | decision | why | evidence |\n| --- | --- | --- | --- |')
+    await appendFeatureLog(root, 'feat', line)
+    expect(readFileSync(join(root, 'docs', 'specs', 'feat', 'log.md'), 'utf8').trimEnd().split('\n').at(-1)).toBe(line)
+    expect(cleanupLogLine({ trees: 0, merged: [], unmerged: [], left: [] })).toBeNull()
+  }, 60_000)
 })

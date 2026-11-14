@@ -71,4 +71,24 @@ describe('hub admin', () => {
     expect(names({ sessionId: 's1', depth: 1 }).filter((n) => hubTools.includes(n))).toEqual(['session_list', 'session_read'])
     expect(names({}).filter((n) => hubTools.includes(n))).toEqual([])
   })
+
+  it("leaves a chat's own id out of its list and doesn't reread it, but a subagent still can", async () => {
+    const { services, admin } = hub()
+    const self = services.chat.fromTranscript({ title: 'This one', workspace: null, agentId: null, messages: transcript })
+    const other = services.chat.fromTranscript({ title: 'Other one', workspace: null, agentId: null, messages: transcript })
+    const deps = { rag: services.rag, skills: services.skills, web: services.web, custom: services.custom, hub: admin }
+    const scope = { collectionIds: [], skillsEnabled: false, workspace: null, sessionId: self.id }
+    const text = (r: unknown) => ((r as { content: { text: string }[] }).content ?? []).map((c) => c.text).join('')
+    const call = async (s: object, name: string, params: object) => text(await buildTools(deps, { ...scope, ...s }).find((x) => x.name === name)!.execute('c', params as never))
+
+    const own = await call({}, 'session_list', {})
+    expect(own).toContain(other.id)
+    expect(own).not.toContain(self.id)
+    expect(own).toMatch(/^1 chat\./)
+    expect(await call({}, 'session_read', { id: self.id })).toContain('already in your context')
+    expect(await call({}, 'session_read', { id: other.id })).toContain('# Other one')
+
+    expect(await call({ depth: 1 }, 'session_list', {})).toContain(`${self.id} (this chat)`)
+    expect(await call({ depth: 1 }, 'session_read', { id: self.id })).toContain('# This one')
+  })
 })

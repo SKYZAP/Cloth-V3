@@ -1,12 +1,40 @@
-import { existsSync, realpathSync } from 'node:fs'
-import { copyFile, lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
-import { dirname, join, relative, sep } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { appendFile, copyFile, lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { git, repoRoot } from '../panel/git'
 
 /*
  * Spec → Ship builds tickets in parallel: each worker gets its own git worktree (a separate checkout of
  * the repository on its own branch), and its work is merged back into the chat's branch when it ends.
  */
+
+/** Where workers' checkouts live. */
+export const WORKTREES_DIR = join(tmpdir(), 'cloth-worktrees')
+
+/**
+ * Checkouts whose folder couldn't be removed yet, with their repository: on Windows a folder stays while a process
+ * still holds a file in it (a test runner or watcher a worker started). They are tried again when the next worker
+ * starts and when the workflow finishes.
+ */
+const leftovers = new Map<string, string>()
+
+/** Delete a checkout's folder, retrying while Windows reports it busy; remembered for later when it still won't go. */
+async function removeDir(dir: string, root: string): Promise<boolean> {
+  await rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }).catch(() => undefined)
+  if (existsSync(dir)) {
+    leftovers.set(dir, root)
+    return false
+  }
+  leftovers.delete(dir)
+  return true
+}
+
+/** Try again to delete checkouts that couldn't be removed earlier (all of them, or one repository's). Returns those still left. */
+export async function sweepLeftovers(root?: string): Promise<string[]> {
+  for (const [dir, r] of [...leftovers]) if (!root || r === root) await removeDir(dir, r)
+  return [...leftovers].filter(([, r]) => !root || r === root).map(([d]) => d)
+}
 
 /** A worker's private checkout. */
 export interface WorkerTree {
@@ -121,6 +149,7 @@ export async function createWorkerTree(workspace: string, dir: string, opts: { s
   if (!root) return null
   const base = (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
   if (!base || base === 'HEAD') return null
+  await sweepLeftovers()
   await serial(root, () => commitWorkflowDocs(root, workspace, opts.slug))
   const branch = `cloth/${slugPart(opts.slug ?? 'build')}/${slugPart(opts.label)}-${opts.id.slice(-6)}`
   const tree = join(dir, `${slugPart(opts.label)}-${opts.id.slice(-6)}`)
@@ -201,7 +230,7 @@ export async function removeWorkerTree(t: WorkerTree, dropBranch: boolean): Prom
   await unlinkDeps(t)
   await serial(t.root, async () => {
     await git(t.root, ['worktree', 'remove', '--force', t.dir])
-    await rm(t.dir, { recursive: true, force: true }).catch(() => undefined)
+    await removeDir(t.dir, t.root)
     await git(t.root, ['worktree', 'prune'])
     if (dropBranch) await git(t.root, ['branch', '-D', t.branch])
     if (dropBranch && t.from) await git(t.root, ['branch', '-D', t.from])
@@ -245,4 +274,89 @@ export async function parkWorkerTree(t: WorkerTree, message: string): Promise<st
   const kept = Number((await git(t.root, ['rev-list', '--count', `${t.base}..${t.branch}`])).stdout.trim()) > 0
   await removeWorkerTree(t, !kept)
   return kept ? t.branch : null
+}
+
+export interface WorkflowCleanup {
+  /** Checkout folders removed. */
+  trees: number
+  /** Worker branches deleted that were already merged. */
+  merged: string[]
+  /** Worker branches deleted with work that never merged, and the commit each pointed at (restore with `git branch <name> <commit>`). */
+  unmerged: { branch: string; commit: string }[]
+  /** Folders that still couldn't be deleted (tried again later). */
+  left: string[]
+}
+
+/**
+ * Spec → Ship's last step: remove every checkout and worker branch the feature left behind. Its checkouts (registered
+ * with git, or folders under `dir` whose .git file points into this repository) are removed, and its `cloth/<slug>/…`
+ * branches deleted. A branch whose work never merged is listed with its commit, so it can still be brought back.
+ */
+export async function cleanupWorkflow(workspace: string, slug: string | null, dir = WORKTREES_DIR): Promise<WorkflowCleanup | null> {
+  const root = await repoRoot(workspace)
+  if (!root) return null
+  const prefix = `cloth/${slugPart(slug ?? 'build')}/`
+  return serial(root, async () => {
+    let trees = 0
+    // Checkouts git still knows about, on this feature's branches.
+    const listed = (await git(root, ['worktree', 'list', '--porcelain'])).stdout.split(/\r?\n\r?\n/)
+    const live = new Set<string>()
+    for (const block of listed) {
+      const path = /^worktree (.+)$/m.exec(block)?.[1]?.trim()
+      const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]?.trim()
+      if (!path) continue
+      // Checkouts git lists for other branches (another feature's workers, the chat's own) are live and stay.
+      if (!branch?.startsWith(prefix)) {
+        live.add(resolve(path).toLowerCase())
+        continue
+      }
+      await git(root, ['worktree', 'remove', '--force', path])
+      if (await removeDir(resolve(path), root)) trees++
+    }
+    // Folders git has forgotten but that are still on disk: their .git file points into this repository.
+    const gitDir = resolve(root, '.git').toLowerCase()
+    const folders = existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(dir, e.name)) : []
+    for (const folder of folders) {
+      let points: string | null = null
+      try {
+        points = /^gitdir:\s*(.+)$/m.exec(readFileSync(join(folder, '.git'), 'utf8'))?.[1]?.trim() ?? null
+      } catch {
+        /* no .git file: git already emptied it */
+      }
+      if (live.has(resolve(folder).toLowerCase())) continue
+      const ours = points ? resolve(points).toLowerCase().startsWith(gitDir) : leftovers.get(folder) === root
+      if (ours && (await removeDir(folder, root))) trees++
+    }
+    await git(root, ['worktree', 'prune'])
+    // The feature's worker branches.
+    const refs = (await git(root, ['for-each-ref', '--format=%(refname:short) %(objectname:short)', `refs/heads/${prefix}`])).stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const merged: string[] = []
+    const unmerged: { branch: string; commit: string }[] = []
+    for (const line of refs) {
+      const [branch, commit] = line.split(' ')
+      const isMerged = (await git(root, ['merge-base', '--is-ancestor', branch, 'HEAD'])).code === 0
+      if ((await git(root, ['branch', '-D', branch])).code !== 0) continue
+      if (isMerged) merged.push(branch)
+      else unmerged.push({ branch, commit })
+    }
+    return { trees, merged, unmerged, left: await sweepLeftovers(root) }
+  })
+}
+
+/** A line for the feature's decision log about worker branches deleted unmerged (null when there were none). */
+export function cleanupLogLine(c: WorkflowCleanup): string | null {
+  if (!c.unmerged.length) return null
+  const list = c.unmerged.map((u) => `\`${u.branch}\` (${u.commit})`).join(', ')
+  return `| Done | Deleted worker branches whose work never merged: ${list} | The shipped change is on the chat's branch; these were superseded or abandoned during Build or Review | Restore one with \`git branch <name> <commit>\` |`
+}
+
+/** Append a line to the feature's decision log, when the feature has one. */
+export async function appendFeatureLog(workspace: string, slug: string | null, line: string): Promise<void> {
+  if (!slug) return
+  const file = join(workspace, 'docs', 'specs', slug, 'log.md')
+  if (!existsSync(file)) return
+  await appendFile(file, `${readFileSync(file, 'utf8').endsWith('\n') ? '' : '\n'}${line}\n`)
 }

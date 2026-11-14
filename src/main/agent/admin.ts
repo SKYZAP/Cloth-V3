@@ -12,8 +12,8 @@ import type { ChatService } from './chat'
 import type { ProjectService } from './projects'
 
 export interface HubAdmin {
-  /** Chats, newest first, matching a query on their title or last line. */
-  listChats(query: string, limit: number, self: string | null): string
+  /** Chats, newest first, matching a query on their title or last line. `self` is marked "(this chat)", or left out with `hideSelf`. */
+  listChats(query: string, limit: number, self: string | null, hideSelf?: boolean): string
   /** One chat's conversation as plain text: messages, what tools were called, from `from` (0 = first message). */
   readChat(id: string, from: number, limit: number, tools: boolean): string
   createAgent(input: AgentInput): string
@@ -42,9 +42,9 @@ function messageText(m: UiMessage, tools: boolean): string {
 export function buildHubAdmin(s: { chat: ChatService; projects: ProjectService; agents: AgentService; workflows: WorkflowService; settings: SettingsService; providers: ProviderService }): HubAdmin {
   const projectName = (c: ChatSession) => (c.projectId ? (s.projects.list().find((p) => p.id === c.projectId)?.name ?? null) : null)
   return {
-    listChats(query, limit, self) {
+    listChats(query, limit, self, hideSelf) {
       const q = query.trim().toLowerCase()
-      const chats = s.chat.list().filter((c) => !q || c.title.toLowerCase().includes(q) || (c.preview ?? '').toLowerCase().includes(q) || (projectName(c) ?? '').toLowerCase().includes(q))
+      const chats = s.chat.list().filter((c) => !(hideSelf && c.id === self)).filter((c) => !q || c.title.toLowerCase().includes(q) || (c.preview ?? '').toLowerCase().includes(q) || (projectName(c) ?? '').toLowerCase().includes(q))
       if (!chats.length) return q ? `No chats match "${query}".` : 'There are no chats yet.'
       const shown = chats.slice(0, Math.max(1, Math.min(limit, 100)))
       const lines = shown.map((c) => {

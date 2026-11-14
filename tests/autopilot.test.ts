@@ -41,7 +41,7 @@ describe('Spec → Ship on its own', () => {
 describe('the review stage', () => {
   it('checks with verifiers, tries to break the change, fixes what it proves and gets a second opinion', () => {
     const text = workflowSection(flow({ route: 'standard' })) ?? ''
-    expect(text).toContain('`task` with verify')
+    expect(text).toContain('`task` with kind check')
     expect(text).toContain('- Break (verifiers)')
     expect(text).toContain('- Safety (a verifier')
     expect(text).toContain('Keep only what reproduces')

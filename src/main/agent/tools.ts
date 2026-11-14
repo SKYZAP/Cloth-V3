@@ -634,7 +634,9 @@ export const BUILTINS: BuiltinSpec[] = [
     description: () => "List the user's other Cloth chats (id, title, project, last activity, last line), newest first. Use it when the user refers to another conversation, or earlier work may already be in one; then read it with session_read.",
     when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId,
     async run(p, ctx) {
-      return { text: ctx.deps.hub!.listChats(p.query ?? '', p.limit ?? 30, ctx.scope.sessionId ?? null) }
+      // The chat's own agent already has this chat in context, so it is left out; a subagent, which can't see the
+      // conversation, still gets it, marked "(this chat)".
+      return { text: ctx.deps.hub!.listChats(p.query ?? '', p.limit ?? 30, ctx.scope.sessionId ?? null, !ctx.scope.depth) }
     }
   }),
   spec({
@@ -651,6 +653,7 @@ export const BUILTINS: BuiltinSpec[] = [
     description: () => 'Read another Cloth chat: its messages as text, oldest first, a page at a time. Read-only; nothing in that chat changes.',
     when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId,
     async run(p, ctx) {
+      if (!ctx.scope.depth && p.id === ctx.scope.sessionId) return { text: 'That is this chat: its messages are already in your context, so there is nothing new to read.' }
       return { text: ctx.deps.hub!.readChat(p.id, p.from ?? 0, p.limit ?? 40, !!p.tools), details: { session: p.id } }
     }
   }),
