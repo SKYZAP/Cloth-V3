@@ -2,6 +2,7 @@ import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type Settings, type Subagent
 import { DEFAULT_AGENT_TIERS, DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { newId, type Ctx } from './context'
 import { normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
+import { mapClient, opener, sealer } from './secret-fields'
 
 export { DEFAULT_TIER_INSTRUCTIONS }
 
@@ -12,10 +13,38 @@ export const DEFAULT_SUBAGENTS: SubagentSettings = DEFAULT_SETTINGS.subagents
 export class SettingsService {
   private listeners: ((s: Settings, prev: Settings) => void)[] = []
 
+  /** The MCP servers as last opened, by the sealed list they came from (opening every read would be slow). */
+  private opened: { sealed: string; clients: Settings['mcpClients'] } | null = null
+
   constructor(private ctx: Ctx) {}
 
-  get(): Settings {
+  /** MCP server secrets as saved: encrypted. */
+  private seal(clients: Settings['mcpClients']): Settings['mcpClients'] {
+    const fn = sealer(this.ctx.secrets)
+    return clients.map((c) => mapClient(c, fn))
+  }
+
+  private open(clients: Settings['mcpClients'] | undefined): Settings['mcpClients'] | undefined {
+    if (!clients) return clients
+    const sealed = JSON.stringify(clients)
+    if (this.opened?.sealed !== sealed) {
+      const fn = opener(this.ctx.secrets)
+      this.opened = { sealed, clients: clients.map((c) => mapClient(c, fn)) }
+    }
+    return structuredClone(this.opened.clients)
+  }
+
+  /** Settings saved before secrets were encrypted get them encrypted now (once; no listeners run). */
+  sealAtRest(): void {
     const stored = this.ctx.kv.get<Partial<Settings>>('settings', {})
+    if (!stored.mcpClients?.length) return
+    const sealed = this.seal(stored.mcpClients)
+    if (JSON.stringify(sealed) !== JSON.stringify(stored.mcpClients)) this.ctx.kv.set('settings', { ...stored, mcpClients: sealed })
+  }
+
+  get(): Settings {
+    const raw = this.ctx.kv.get<Partial<Settings>>('settings', {})
+    const stored = raw.mcpClients ? { ...raw, mcpClients: this.open(raw.mcpClients) } : raw
     // Nested groups merge field by field so settings added later get their defaults.
     return {
       ...DEFAULT_SETTINGS,
@@ -37,7 +66,7 @@ export class SettingsService {
       else if (sub.allowWorkers !== prev.subagents.allowWorkers) sub.maxAccess = sub.allowWorkers ? 'operator' : 'reader'
       next.subagents = sub
     }
-    this.ctx.kv.set('settings', next)
+    this.ctx.kv.set('settings', { ...next, mcpClients: this.seal(next.mcpClients) })
     for (const l of this.listeners) l(next, prev)
     return next
   }

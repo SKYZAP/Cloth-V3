@@ -177,6 +177,9 @@ export function createServices(opts: {
 
   // The homelab servers (deploy control, the notes vault, Penpot) are set up for you when their
   // tokens are in ~/.homelab/env: each once, so one you remove stays removed.
+  // MCP server tokens saved before they were encrypted get encrypted now.
+  settings.sealAtRest()
+  providers.sealAtRest()
   seedHomelabServers(ctx, settings)
 
   // Skills Cloth ships with, each added once (penpot's once its server is set up). CLOTH_BUILTIN_SKILLS=off leaves

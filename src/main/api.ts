@@ -5,7 +5,8 @@ import { app, dialog, shell, BrowserWindow } from 'electron'
 import { MCP_PRESETS, mcpToolName } from './mcp/client'
 import { presetsWithTokens, readEnvFile } from './mcp/homelab'
 import type { ClothApi } from '@shared/api'
-import type { ToolRunResult } from '@shared/types'
+import type { McpClientConfig, Provider, Settings, ToolRunResult } from '@shared/types'
+import { mapClient, mapSecrets, masker, restoreClient } from './core/secret-fields'
 import { copyFile } from 'node:fs/promises'
 import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
@@ -13,6 +14,21 @@ import { describeBuiltins } from './agent/tools'
 import { TRYABLE } from './agent/chat'
 import { openPermissionPane } from './computer/host'
 import { globalRulesDir } from './agent/rules'
+
+/*
+ * Secrets in settings (MCP servers' tokens) and providers' headers never leave the main process: the app
+ * and paired phones get masks, and masks sent back are swapped for what's saved (core/secret-fields.ts).
+ */
+const maskSettings = (st: Settings): Settings => ({ ...st, mcpClients: st.mcpClients.map((c) => mapClient(c, masker)) })
+const maskProvider = (p: Provider): Provider => ({ ...p, headers: mapSecrets(p.headers, masker) })
+
+function restoreSettings(s: Services, patch: Partial<Settings>): Partial<Settings> {
+  if (!patch.mcpClients) return patch
+  const saved = s.settings.get().mcpClients
+  const presets = presetsWithTokens(MCP_PRESETS, readEnvFile())
+  const known = (c: McpClientConfig) => [saved.find((x) => x.id === c.id), presets.find((p) => p.name === c.name)].filter((x): x is NonNullable<typeof x> => !!x)
+  return { ...patch, mcpClients: patch.mcpClients.map((c) => restoreClient(c, known(c))) }
+}
 
 export function createApi(s: Services): ClothApi {
   return {
@@ -43,18 +59,18 @@ export function createApi(s: Services): ClothApi {
       openPrivacySettings: async (kind) => openPermissionPane(kind === 'accessibility' ? 'accessibility' : 'screen')
     },
     settings: {
-      get: async () => s.settings.get(),
-      update: async (patch) => s.settings.update(patch)
+      get: async () => maskSettings(s.settings.get()),
+      update: async (patch) => maskSettings(s.settings.update(restoreSettings(s, patch)))
     },
     providers: {
       presets: async () => s.providers.presets(),
-      list: async () => s.providers.list(),
-      create: async (input) => s.providers.create(input),
-      update: async (id, input) => s.providers.update(id, input),
+      list: async () => s.providers.list().map(maskProvider),
+      create: async (input) => maskProvider(s.providers.create(input)),
+      update: async (id, input) => maskProvider(s.providers.update(id, input)),
       remove: async (id) => s.providers.remove(id),
       test: (id) => s.providers.test(id),
-      refreshModels: (id) => s.providers.refreshModels(id),
-      setModels: async (id, models) => s.providers.setModels(id, models),
+      refreshModels: async (id) => maskProvider(await s.providers.refreshModels(id)),
+      setModels: async (id, models) => maskProvider(s.providers.setModels(id, models)),
       ping: async (ref) => {
         const started = Date.now()
         try {
@@ -374,7 +390,7 @@ export function createApi(s: Services): ClothApi {
       restart: () => s.mcp.restart(),
       rotateToken: async () => s.mcp.rotateToken(),
       clients: async () => s.mcpClients.status(),
-      clientPresets: async () => presetsWithTokens(MCP_PRESETS, readEnvFile()),
+      clientPresets: async () => presetsWithTokens(MCP_PRESETS, readEnvFile()).map((p) => mapClient(p, masker)),
       startClient: (id) => s.mcpClients.start(id),
       stopClient: (id) => s.mcpClients.stop(id),
       externalCalls: async () => s.mcpClients.calls()

@@ -12,7 +12,8 @@ import type {
   ThinkingLevel
 } from '@shared/types'
 import { json } from '../core/db'
-import { errorMessage, newId, type Ctx } from '../core/context'
+import { errorMessage, newId, type Ctx, type Secrets } from '../core/context'
+import { mapSecrets, opener, restoreHeaders, sealer } from '../core/secret-fields'
 import { UsageService, type Pricing } from '../core/usage'
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -86,13 +87,22 @@ export class ProviderService {
     return PROVIDER_PRESETS
   }
 
+  /** Header secrets saved before they were encrypted get encrypted now. */
+  sealAtRest(): void {
+    const seal = sealer(this.ctx.secrets)
+    for (const row of this.ctx.db.prepare('SELECT id, headers FROM providers').all() as unknown as { id: string; headers: string }[]) {
+      const sealed = JSON.stringify(mapSecrets(json(row.headers, {}), seal))
+      if (sealed !== row.headers) this.ctx.db.prepare('UPDATE providers SET headers = ? WHERE id = ?').run(sealed, row.id)
+    }
+  }
+
   list(): Provider[] {
     const rows = this.ctx.db.prepare('SELECT * FROM providers ORDER BY created_at').all() as unknown as ProviderRow[]
-    return [...rows.map(toProvider), ...this.transient.values()]
+    return [...rows.map((r) => toProvider(r, this.ctx.secrets)), ...this.transient.values()]
   }
 
   get(id: string): Provider {
-    return this.transient.get(id) ?? toProvider(this.row(id))
+    return this.transient.get(id) ?? toProvider(this.row(id), this.ctx.secrets)
   }
 
   /** Add or replace a provider that lives only in memory (a running local model). */
@@ -118,7 +128,7 @@ export class ProviderService {
         input.kind,
         baseUrl,
         input.apiKey ? this.ctx.secrets.encrypt(input.apiKey) : null,
-        JSON.stringify(input.headers ?? {}),
+        JSON.stringify(mapSecrets(input.headers ?? {}, sealer(this.ctx.secrets))),
         input.enabled === false ? 0 : 1,
         Date.now()
       )
@@ -137,7 +147,8 @@ export class ProviderService {
         input.kind ?? cur.kind,
         input.baseUrl ? normalizeBaseUrl(input.baseUrl) : cur.base_url,
         apiKey,
-        JSON.stringify(input.headers ?? json(cur.headers, {})),
+        // Masked header values sent back unchanged keep what's saved; everything secret is stored encrypted.
+        JSON.stringify(mapSecrets(input.headers ? restoreHeaders(input.headers, mapSecrets(json(cur.headers, {}), opener(this.ctx.secrets))) : json(cur.headers, {}), sealer(this.ctx.secrets))),
         input.enabled === undefined ? cur.enabled : input.enabled ? 1 : 0,
         id
       )
@@ -399,14 +410,14 @@ export class ProviderService {
   }
 }
 
-function toProvider(row: ProviderRow): Provider {
+function toProvider(row: ProviderRow, secrets: Secrets): Provider {
   return {
     id: row.id,
     name: row.name,
     kind: row.kind,
     baseUrl: row.base_url,
     hasApiKey: !!row.api_key && row.api_key.length > 0,
-    headers: json(row.headers, {}),
+    headers: mapSecrets(json(row.headers, {}), opener(secrets)),
     models: json(row.models, []),
     enabled: !!row.enabled,
     createdAt: row.created_at

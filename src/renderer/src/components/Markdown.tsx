@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import clsx from 'clsx'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, ImageIcon } from 'lucide-react'
 import type { RagHit } from '@shared/types'
 import { Diagram } from './Diagram'
 
@@ -25,6 +25,9 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
               </a>
             )
           },
+          img({ src, alt }) {
+            return <ReplyImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} />
+          },
           // The wrapper draws the frame and scrolls sideways, so the table itself can fill the width.
           table({ children }) {
             return (
@@ -46,6 +49,35 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
     </div>
   )
 })
+
+/**
+ * An image in a reply. Replies can be steered by what the model reads (pages, tickets, tool results), and
+ * loading an image sends its address, which can carry data out. So images from the web wait for a click;
+ * Cloth's own (cloth-image:, data:, blob:) show straight away.
+ */
+function ReplyImage({ src, alt }: { src: string; alt: string }) {
+  const remote = /^https?:/i.test(src)
+  const [load, setLoad] = useState(!remote)
+  if (!src) return null
+  if (load) return <img src={src} alt={alt} loading="lazy" />
+  let host = src
+  try {
+    host = new URL(src).host
+  } catch {
+    /* show the raw address */
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setLoad(true)}
+      title={`Load ${src}`}
+      className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-md border border-line bg-elev px-2 py-1 text-caption text-muted hover:border-line-strong hover:text-fg"
+    >
+      <ImageIcon size={13} className="shrink-0" aria-hidden="true" />
+      <span className="truncate">Load image{alt ? `: ${alt}` : ''} from {host}</span>
+    </button>
+  )
+}
 
 function Citation({ n, hit }: { n: number; hit?: RagHit }) {
   return (

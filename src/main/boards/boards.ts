@@ -44,7 +44,8 @@ const MAX_RUNNING = 2
 const MAX_SEND_BACKS = 2
 /** Fixes an agent pushes for failing checks on its own before it hands the PR to you. */
 const MAX_FIXES = 2
-const DEFAULT_COMMANDS = ['npm test', 'npm run', 'npx tsc', 'npx vitest', 'pnpm test', 'pnpm run', 'yarn test', 'node']
+// Bare `node` isn't here: `node -e …` runs any code, and these run with nobody watching.
+const DEFAULT_COMMANDS = ['npm test', 'npm run', 'npx tsc', 'npx vitest', 'pnpm test', 'pnpm run', 'yarn test']
 
 interface StoredConn extends Omit<TrackerConfig, 'token'> {
   token: string
@@ -385,7 +386,7 @@ export class BoardService {
     this.changed()
   }
 
-  /** Changes made in the tracker come back: a ticket moved to the Requirements state starts again there; one moved to the merged state is done. */
+  /** Changes made in the tracker come back: a ticket moved to the Requirements state waits there for you to resume it; one moved to the merged state is done. */
   private async reconcile(p: BoardProject, tickets: RawTicket[]): Promise<void> {
     const s = this.settingsFor(p.id)
     const pipes = this.pipes()
@@ -398,9 +399,9 @@ export class BoardService {
         pipe.status = 'done'
         changed = true
       } else if (t.stateId === s.stateMap.req && STAGES.indexOf(pipe.stage) > STAGES.indexOf('req') && pipe.stage !== 'pr') {
-        Object.assign(pipe, { stage: 'req', status: 'queued', note: undefined, review: undefined, sendBacks: 0, updatedAt: Date.now() })
+        // Anyone with access to the tracker can move a ticket, so agents don't start again on their own: it waits for you.
+        Object.assign(pipe, { stage: 'req', status: 'needsYou', note: 'Moved back to Requirements in the tracker. Resume to write the requirements again.', activity: undefined, review: undefined, sendBacks: 0, updatedAt: Date.now() })
         changed = true
-        this.enqueue(t.id)
       }
     }
     if (changed) this.ctx.kv.set(K_PIPES, pipes)

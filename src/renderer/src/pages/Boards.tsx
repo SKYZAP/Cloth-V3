@@ -738,7 +738,7 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
               )
             })}
           </div>
-          <div className="mt-1.5 text-caption text-dim">Moving a ticket in {tracker} moves it here too. A ticket moved back to the Requirements state starts again there.</div>
+          <div className="mt-1.5 text-caption text-dim">Moving a ticket in {tracker} moves it here too. A ticket moved back to the Requirements state waits there for you to resume it.</div>
         </Section>
         <Section label="Default agents">
           <AgentPicks value={s.agents} onChange={(agents) => void onSave({ agents })} agents={agents} />
