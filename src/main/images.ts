@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { generateImages } from '@earendil-works/pi-ai/compat'
-import type { ImagesModel } from '@earendil-works/pi-ai'
+import type { ImageModel } from '@earendil-works/pi-ai'
 import type { GeneratedImage, ImageSize, ModelRef } from '@shared/types'
 import { newId, type Ctx } from './core/context'
 import type { ProviderService } from './providers/providers'
@@ -129,7 +129,8 @@ export class ImageService {
 
   private async viaOpenRouter(ref: ModelRef, prompt: string, signal?: AbortSignal): Promise<{ bytes: Buffer; mime: string; revisedPrompt?: string }> {
     const provider = this.providers.get(ref.providerId)
-    const model: ImagesModel<'openrouter-images'> = {
+    const model: ImageModel<'openrouter-images'> = {
+      type: 'image',
       id: ref.modelId,
       name: ref.modelId,
       api: 'openrouter-images',
