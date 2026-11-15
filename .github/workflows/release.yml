@@ -74,7 +74,14 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists — installers will be (re)uploaded to it."
           else
-            flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Cloth $TAG" --generate-notes)
+            # The release body is the changelog in resources/release-notes.md (the same file 1.3.0's notes lived in).
+            notes="$(gh api "repos/$GITHUB_REPOSITORY/contents/resources/release-notes.md?ref=$GITHUB_SHA" --jq .content 2>/dev/null | base64 -d || true)"
+            if [ -n "$notes" ]; then
+              printf '%s\n' "$notes" > notes.md
+              flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Cloth $TAG" --notes-file notes.md)
+            else
+              flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Cloth $TAG" --generate-notes)
+            fi
             [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
             gh release create "$TAG" "${flags[@]}"
           fi

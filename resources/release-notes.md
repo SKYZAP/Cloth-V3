@@ -1,25 +1,33 @@
-## New look
-- A new sidebar with every page listed by name replaces the top bar and icon rail; pages now run to the top of the window.
-- A refined palette: crimson now only marks the main action, while errors use their own orange-red, warnings yellow and cancelled grey.
-- One consistent type scale across the app, and a calmer Dashboard.
+## Boards
+- A new Boards page drives tracker tickets through agent stages: a planner writes requirements, a reviewer checks them against the goal, and an implementer builds in its own worktree and opens a PR.
+- Works with Plane, Jira, or a Cloth board kept offline in Cloth's own storage, with no account or token.
+- Per-project settings for what agents may do: commit or not, open PRs, sync tickets back to the tracker, approve requirements first, and how many review rounds and check fixes to try.
+- When a PR fails its checks, the implementer reads the CI logs, fixes the cause and pushes to the same PR.
+- The planner researches what a ticket depends on, and each feature lands as one conventional commit with a standard PR title and description.
+- Open in chat starts a chat for a ticket with its requirements and PR ready in the message box.
 
-## Pages
-- **Settings:** every section on one scrolling page, with an index that follows you, Ctrl+F to find a setting, and Reset on anything you've changed from its default.
-- **Models:** a cleaner provider view with connection details, capability chips for each model, and a summary of which model does each job.
-- **Agents:** a live map of the agent team, a Compare view, and a week of activity per agent; each run shows one plain name instead of several badges.
+## Swatches
+- Chats can publish swatches: pages, documents and images the agent makes, shown live right in the conversation.
+- Open a swatch in the new Swatches tab of the side panel, or on the Swatches page; close it there and pick another from the chat's list.
+- Each swatch has a private link, and can be shared with phones and computers on your network.
 
-## Spec → Ship
-- Runs through agents, picks the right route itself, and diagnoses quick bug fixes before changing anything.
-- Builds several features one after another in one chat, with a fresh context for each stage.
-- The ticket board follows the build as it works and ticks off finished tickets; a work bar shows each stage with its cost.
-- Review checks have to prove their findings, and finished work is committed at Done.
+## Chat
+- Chat has its own canvas: the chat list on the frame, and a side panel card opened from a dock that shows running terminals, git changes, agents and builds.
+- Animated chat backgrounds in five styles (flow, waves, mesh, swirl and halftone) with adjustable strength; ask a chat to make or adjust a theme.
+- Chats are archived instead of deleted, with Undo and Ctrl+E.
+- File paths in replies open in the side panel's file viewer.
+- OpenSpec mode takes a change from proposal to pull request; OpenSpec and Spec → Ship share one Spec tab with a mode toggle.
+- Agents have one access level (Reader, Writer, Operator) and one reasoning level (Low to Max), and the chat agent can set up agents, automations, MCP servers and model providers for you.
 
-## Chat, skills and tools
-- Sent messages appear immediately, and long chats stay responsive.
-- A code tool made in a chat is switched on and usable everywhere.
-- Skills with the same name from different sets install side by side.
+## Setup and settings
+- A first-run setup picks your model, working folder, languages and tools, and imports skills, agents and MCP servers from Claude Code, Claude Desktop, Cursor and Codex.
+- Settings › Dependencies shows what Cloth ships and what it uses from your computer.
+- Reset Cloth starts over from scratch, optionally keeping downloaded models.
+- Changed settings are marked with a blue outline, and Models and Settings use the full window width.
 
-## Fixes
-- Downloads and builds trust your computer's certificates, so antivirus or company proxies no longer break them.
-- Fixed worker checkouts on Windows short paths and macOS, and folder watching on macOS.
-- On macOS the agent uses your login shell's PATH and knows about the BSD command-line tools.
+## Security and fixes
+- MCP and provider tokens are stored encrypted and never shown in the app or on paired phones.
+- Images from the web in replies wait for a click before loading.
+- The OpenSpec command-line tool now ships with Cloth, so it works without a separate install.
+- Web search no longer fails to start when another tool sets a key-log file.
+- Updated the agent runtime and patched dependencies; npm audit reports no vulnerabilities.
