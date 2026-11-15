@@ -20,11 +20,13 @@ const EXT: Record<SwatchFormat, string> = { html: 'html', markdown: 'md', svg: '
 /**
  * Every swatch page runs sandboxed: an opaque origin, so it can't read Cloth's or another swatch's data, and
  * markdown and SVG can't run scripts at all. HTML may load libraries from the web (charts, maps), as a page would.
+ * No frame-ancestors: `frame-ancestors *` doesn't match the installed app's file:// page, which then can't show
+ * swatches at all. Any page may frame one; the link's key is what keeps it private.
  */
 const CSP: Record<SwatchFormat, string> = {
-  html: "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors *",
-  markdown: "sandbox allow-popups; default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; frame-ancestors *",
-  svg: "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors *"
+  html: "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; default-src 'self' https: data: blob: 'unsafe-inline' 'unsafe-eval'",
+  markdown: "sandbox allow-popups; default-src 'none'; img-src https: data:; style-src 'unsafe-inline'",
+  svg: "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'"
 }
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -168,7 +170,7 @@ export class SwatchService {
     if (!s) throw new Error('That swatch no longer exists')
     const port = this.boundPort || this.settings.get().swatchPort
     const path = `/s/${s.id}/${s.key}`
-    const out: SwatchLink[] = [{ label: 'This PC', url: `http://127.0.0.1:${port}${path}`, kind: 'local' }]
+    const out: SwatchLink[] = [{ label: 'This computer', url: `http://127.0.0.1:${port}${path}`, kind: 'local' }]
     if (this.server && this.settings.get().swatchNetwork) for (const h of hostAddresses()) out.push({ label: h.label, url: `http://${h.address}:${port}${path}`, kind: h.kind })
     return out
   }

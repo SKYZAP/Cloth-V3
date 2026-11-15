@@ -20,7 +20,7 @@ import type { AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
 import type { SwatchService } from '../swatches/swatches'
 import { ChatThemes, type ThemeInput } from './themes'
-import { NO_THEME, THEME_DIALS, type ChatTheme } from '@shared/chat-themes'
+import { NO_THEME, THEME_DIALS, THEME_PATTERNS, type ChatTheme } from '@shared/chat-themes'
 import type { SwatchTrace } from '@shared/swatches'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
@@ -758,7 +758,7 @@ export class AgentRuntime {
         id: Type.Optional(Type.String({ description: 'The theme to update, apply or delete (its id or name); "none" with apply turns the background off' })),
         from: Type.Optional(Type.String({ description: 'create: the theme to start from (default the current one)' })),
         name: Type.Optional(Type.String({ description: 'create: required, 1–4 words. update: renames' })),
-        pattern: Type.Optional(Type.Union([Type.Literal('flow'), Type.Literal('waves')])),
+        pattern: Type.Optional(Type.Union(THEME_PATTERNS.map((p) => Type.Literal(p)), { description: 'flow: a turbulent field; waves: soft bands; mesh: large blended blobs; swirl: dithered spiral arms; halftone: a dot screen' })),
         colors: Type.Optional(Type.Array(Type.String(), { minItems: 4, maxItems: 4, description: 'Four #rrggbb, darkest first' })),
         scale: num('0.5–4'),
         intensity: num('0–1'),
@@ -830,7 +830,7 @@ export class AgentRuntime {
         const sw = swatches.publish({ ...p, sessionId: scope.sessionId ?? null })
         const links = swatches.links(sw.id)
         const network = links.filter((l) => l.kind !== 'local')
-        const where = network.length ? ` Other devices on the network can open it at ${network[0].url}.` : ' It opens on this PC; the user can turn on network sharing on the Swatches page to open it on other devices.'
+        const where = network.length ? ` Other devices on the network can open it at ${network[0].url}.` : ' It opens on this computer; the user can turn on network sharing on the Swatches page to open it on other devices.'
         return {
           content: [{ type: 'text', text: `Published "${sw.title}" (id ${sw.id}, version ${sw.version}, ${sw.format}). The user sees a card to open it.${where}` }],
           details: { swatch: { id: sw.id, title: sw.title, version: sw.version, format: sw.format } } as unknown as ToolDetails

@@ -1,8 +1,10 @@
 /**
  * Chat themes: the animated background behind the conversation. A theme is a pattern, four colours (darkest
- * first) and a few dials. Cloth ships two; you, or the chat agent, can add and adjust more.
+ * first) and a few dials. Cloth ships one per pattern; you, or the chat agent, can add and adjust more.
  */
-export type ChatThemePattern = 'flow' | 'waves'
+/** flow: a turbulent field; waves: soft horizontal bands; mesh: large blended blobs; swirl: dithered spiral arms; halftone: a dot screen. */
+export const THEME_PATTERNS = ['flow', 'waves', 'mesh', 'swirl', 'halftone'] as const
+export type ChatThemePattern = (typeof THEME_PATTERNS)[number]
 
 export interface ChatTheme {
   id: string
@@ -32,7 +34,10 @@ export interface ChatTheme {
 
 export const BUILTIN_THEMES: ChatTheme[] = [
   { id: 'crimson-flow', name: 'Crimson flow', pattern: 'flow', colors: ['#050102', '#5c0812', '#cf2845', '#f78c96'], scale: 1.5, intensity: 0.48, speed: 0.86, drift: 0.156, grain: 0.35, vignette: 0.61, brightness: -0.32, blur: 0.016, builtin: true },
-  { id: 'crimson-waves', name: 'Crimson waves', pattern: 'waves', colors: ['#020103', '#120305', '#6b0d1c', '#cf2845'], scale: 1.54, intensity: 0.71, speed: 0.86, drift: 0.14, grain: 0.06, vignette: 0.37, brightness: 0, blur: 0, builtin: true }
+  { id: 'crimson-waves', name: 'Crimson waves', pattern: 'waves', colors: ['#020103', '#120305', '#6b0d1c', '#cf2845'], scale: 1.54, intensity: 0.71, speed: 0.86, drift: 0.14, grain: 0.06, vignette: 0.37, brightness: 0, blur: 0, builtin: true },
+  { id: 'crimson-mesh', name: 'Crimson mesh', pattern: 'mesh', colors: ['#0a0204', '#5a0a18', '#c22440', '#f58a96'], scale: 1.1, intensity: 0.6, speed: 0.7, drift: 0.12, grain: 0.06, vignette: 0.35, brightness: -0.08, blur: 0, builtin: true },
+  { id: 'crimson-swirl', name: 'Crimson swirl', pattern: 'swirl', colors: ['#040102', '#24040a', '#7a0f21', '#e0465d'], scale: 1.6, intensity: 0.5, speed: 0.6, drift: 0.08, grain: 0, vignette: 0.5, brightness: -0.08, blur: 0, builtin: true },
+  { id: 'crimson-halftone', name: 'Crimson halftone', pattern: 'halftone', colors: ['#030102', '#1a0307', '#8c1226', '#f27887'], scale: 1.4, intensity: 0.5, speed: 0.6, drift: 0.1, grain: 0.04, vignette: 0.45, brightness: -0.05, blur: 0, builtin: true }
 ]
 
 /** The background chats start with. */
@@ -66,7 +71,7 @@ export function normalizeTheme(input: Partial<ChatTheme> & { id: string }, base:
   const out: ChatTheme = {
     id: input.id,
     name: String(input.name ?? '').trim().slice(0, 40) || base.name,
-    pattern: input.pattern === 'waves' || input.pattern === 'flow' ? input.pattern : base.pattern,
+    pattern: (THEME_PATTERNS as readonly unknown[]).includes(input.pattern) ? (input.pattern as ChatThemePattern) : base.pattern,
     colors,
     ...Object.fromEntries(
       THEME_DIALS.map((k) => {

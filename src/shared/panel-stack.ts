@@ -1,8 +1,8 @@
 // The chat side panel's stacked tabs: which tabs are shown top to bottom, how the height is shared, and
 // which section the tab bar acts on.
 
-export type PanelTab = 'setup' | 'terminal' | 'files' | 'git' | 'agents' | 'spec' | 'openspec'
-export const PANEL_TABS: readonly PanelTab[] = ['setup', 'files', 'terminal', 'git', 'agents', 'spec', 'openspec']
+export type PanelTab = 'setup' | 'terminal' | 'files' | 'git' | 'agents' | 'spec' | 'swatches'
+export const PANEL_TABS: readonly PanelTab[] = ['setup', 'files', 'terminal', 'git', 'agents', 'spec', 'swatches']
 /** Sections the panel can stack at most. */
 export const MAX_STACK = 3
 /** The smallest height a section's content can be dragged to, in pixels. */
@@ -18,6 +18,9 @@ export interface PanelStack {
 }
 
 const isTab = (t: unknown): t is PanelTab => typeof t === 'string' && (PANEL_TABS as readonly string[]).includes(t)
+/** Tabs that were merged into another: OpenSpec is now a mode of the Spec tab. */
+const RENAMED: Record<string, PanelTab> = { openspec: 'spec' }
+const upgrade = (t: unknown): unknown => (typeof t === 'string' && RENAMED[t]) || t
 const even = (n: number) => Array.from({ length: n }, () => 1 / n)
 
 /** Shares that sum to 1 (equal shares when the given ones don't fit the sections). */
@@ -31,8 +34,9 @@ function normalize(sizes: unknown, n: number): number[] {
 export function migrate(raw: unknown): PanelStack {
   const r = (raw && typeof raw === 'object' ? raw : {}) as { stack?: unknown; sizes?: unknown; focus?: unknown; tab?: unknown }
   let stack: PanelTab[] = []
-  if (Array.isArray(r.stack)) for (const t of r.stack) if (isTab(t) && !stack.includes(t) && stack.length < MAX_STACK) stack.push(t)
-  if (!stack.length) stack = [isTab(r.tab) ? r.tab : 'setup']
+  if (Array.isArray(r.stack)) for (const t of r.stack.map(upgrade)) if (isTab(t) && !stack.includes(t) && stack.length < MAX_STACK) stack.push(t)
+  const tab = upgrade(r.tab)
+  if (!stack.length) stack = [isTab(tab) ? tab : 'setup']
   const sizes = Array.isArray(r.stack) && r.stack.length === stack.length ? normalize(r.sizes, stack.length) : even(stack.length)
   const focus = typeof r.focus === 'number' && Number.isInteger(r.focus) && r.focus >= 0 && r.focus < stack.length ? r.focus : 0
   return { stack, sizes, focus }

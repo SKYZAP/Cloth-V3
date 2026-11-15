@@ -67,7 +67,7 @@ export function SwatchesPage() {
                 {network ? <WifiHigh size={15} className="shrink-0 text-ok" aria-hidden="true" /> : <WifiSlash size={15} className="shrink-0 text-dim" aria-hidden="true" />}
                 <div className="min-w-0 flex-1">
                   <div className="text-ui font-medium text-fg">Share on your network</div>
-                  <div className="text-caption text-dim">{network ? 'Phones and computers on this network can open the links.' : 'Links open on this PC only.'}</div>
+                  <div className="text-caption text-dim">{network ? 'Phones and computers on this network can open the links.' : 'Links open on this computer only.'}</div>
                 </div>
                 <Switch checked={network} onChange={(v) => void setShared(v)} ariaLabel="Share swatches on your network" />
               </div>
@@ -236,7 +236,7 @@ function SwatchView({ swatch, network }: { swatch: Swatch; network: boolean }) {
             className="h-full w-full border-0"
           />
         ) : (
-          <div className="grid h-full place-items-center bg-bg p-6 text-center text-ui text-dim">{isMobile ? 'Turn on “Share on your network” on the PC to open swatches here.' : 'Starting the swatch server…'}</div>
+          <div className="grid h-full place-items-center bg-bg p-6 text-center text-ui text-dim">{isMobile ? 'Turn on “Share on your network” on the computer running Cloth to open swatches here.' : 'Starting the swatch server…'}</div>
         )}
       </div>
     </>

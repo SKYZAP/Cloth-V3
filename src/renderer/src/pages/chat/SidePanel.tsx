@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import clsx from 'clsx'
-import { FileText, FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, TerminalWindow, X } from '@phosphor-icons/react'
-import { OpenSpecPanel } from './OpenSpec'
+import { FolderSimple, GitBranch, ListChecks, Robot, Rows, SlidersHorizontal, Swatches, TerminalWindow, X } from '@phosphor-icons/react'
 import type { ChatSession, TerminalInfo, UiMessage, WorkspaceFile } from '@shared/types'
 import { terminalsAfter } from '@shared/terminal-tabs'
 import { api, useEvent } from '@/lib/api'
@@ -15,8 +14,8 @@ import { Files } from './Files'
 import { GitPanel } from './GitPanel'
 import { SetupPanel } from './Setup'
 import { AgentsPanel } from './AgentsPanel'
-import { SpecPanel } from './Workflow'
-import { docsVersion, ticketProgress } from '@/lib/tickets'
+import { SpecTab } from './SpecTab'
+import { SwatchesPanel } from './SwatchesPanel'
 import { useSetupNav } from './setupNav'
 
 export type { PanelTab } from '@shared/panel-stack'
@@ -68,7 +67,7 @@ const TABS: { id: PanelTab; label: string; icon: typeof TerminalWindow }[] = [
   { id: 'git', label: 'Git', icon: GitBranch },
   { id: 'agents', label: 'Agents', icon: Robot },
   { id: 'spec', label: 'Spec', icon: ListChecks },
-  { id: 'openspec', label: 'OpenSpec', icon: FileText }
+  { id: 'swatches', label: 'Swatches', icon: Swatches }
 ]
 
 const HEADER = 28
@@ -295,14 +294,14 @@ export function SidePanel({
         {visible('spec') && (
           <div className="relative min-h-0" style={place('spec')} {...sectionEvents('spec')}>
             <div className="absolute inset-0">
-              <SpecPanel sessionId={session.id} workflow={session.workflow} version={docsVersion(messages)} {...ticketProgress(messages)} />
+              <SpecTab session={session} messages={messages} visible={visible('spec')} />
             </div>
           </div>
         )}
-        {visible('openspec') && (
-          <div className="relative min-h-0" style={place('openspec')} {...sectionEvents('openspec')}>
+        {seen.has('swatches') && (
+          <div className={clsx('relative min-h-0', !visible('swatches') && 'hidden')} style={place('swatches')} {...sectionEvents('swatches')}>
             <div className="absolute inset-0">
-              <OpenSpecPanel sessionId={session.id} visible={visible('openspec')} />
+              <SwatchesPanel key={session.id} sessionId={session.id} visible={visible('swatches')} />
             </div>
           </div>
         )}
@@ -406,8 +405,8 @@ export function PanelDock({ session, messages, state, set }: { session: ChatSess
     if (tab === 'terminal' && badges.terminals) return `${badges.terminals} running`
     if (tab === 'git' && badges.changes) return `${badges.changes} change${badges.changes === 1 ? '' : 's'}`
     if (tab === 'agents' && badges.agents) return `${badges.agents} running`
-    if (tab === 'spec' && session.workflow && session.workflow.stage !== 'done') return 'In progress'
-    if (tab === 'openspec' && session.openspec && session.openspec.step !== 'done') return session.openspec.awaitingReview ? 'Waiting for you' : 'In progress'
+    if (tab === 'spec' && session.openspec && session.openspec.step !== 'done') return session.openspec.awaitingReview ? 'OpenSpec waiting for you' : 'OpenSpec in progress'
+    if (tab === 'spec' && session.workflow && session.workflow.stage !== 'done') return 'Spec → Ship in progress'
     return null
   }
 
@@ -461,8 +460,7 @@ export function PanelDock({ session, messages, state, set }: { session: ChatSess
               )}
               {t.id === 'terminal' && badges.terminals > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ok ring-2 ring-panel" />}
               {t.id === 'agents' && badges.agents > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-info ring-2 ring-panel" />}
-              {t.id === 'spec' && note && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-mode ring-2 ring-panel" />}
-              {t.id === 'openspec' && note && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ospec ring-2 ring-panel" />}
+              {t.id === 'spec' && note && <span className={clsx('absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full ring-2 ring-panel', session.openspec && session.openspec.step !== 'done' ? 'bg-ospec' : 'bg-mode')} />}
             </button>
           </Tooltip>
         )

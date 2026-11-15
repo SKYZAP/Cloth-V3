@@ -35,6 +35,7 @@ import { takeDraft } from '@/lib/drafts'
 import { Button, Empty, Input, ListPane, chooseAction, confirmAction } from '@/components/ui'
 import { Markdown } from '@/components/Markdown'
 import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
+import { SwatchBlock } from '@/components/SwatchBlock'
 import { ActivityGroup, ChangedFiles } from '@/components/Activity'
 import { AgentRunLine } from '@/components/AgentRun'
 import { groupTurn } from '@/lib/activity'
@@ -1761,6 +1762,8 @@ function AssistantTurnView({
           if (block.type === 'tool' && block.trace.stageGate)
             return <StageGateCard key={block.trace.id} gate={block.trace.stageGate} actionable={!!workflow?.actionable && i === lastFlowIdx} onApprove={() => workflow?.onApprove() ?? Promise.resolve()} onRevise={() => workflow?.onRevise()} onFix={workflow?.onFix} flow={workflow?.flow} onAutoContinue={workflow?.onAutoContinue} onApproveSpec={workflow?.onApproveSpec} docs={workflow?.docs} />
           if (block.type === 'tool' && block.trace.openspecStep) return <OpenSpecStepCard key={block.trace.id} trace={block.trace} fresh={fresh} />
+          // A published swatch shows as itself (the tool row stays while it runs, or if it failed).
+          if (block.type === 'tool' && block.trace.swatch && block.trace.status !== 'error') return <SwatchBlock key={block.trace.id} swatch={block.trace.swatch} />
           if (block.type === 'tool' && block.trace.subagent) return <AgentRunLine key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           if (block.type === 'tool') return <ToolTraceCard key={block.trace.id} trace={block.trace} fresh={fresh} awaiting={awaiting.has(block.trace.id)} onUndo={onUndo} superseded={block.trace.name === 'todo_write' && i !== lastTodoIdx} />
           return <Markdown key={i} text={block.text} references={refs} streaming={streaming && i === lastTextIdx && i === all.length - 1} className="mb-1" />

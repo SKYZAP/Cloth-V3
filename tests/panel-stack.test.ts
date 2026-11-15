@@ -14,6 +14,11 @@ describe('panel stack: migrate', () => {
   it('falls back to Setup for nothing or nonsense', () => {
     for (const raw of [null, undefined, 'x', {}, { tab: 'nope' }, { stack: [] }, { stack: ['nope'] }]) expect(migrate(raw)).toEqual({ stack: ['setup'], sizes: [1], focus: 0 })
   })
+  it('moves the old OpenSpec tab into Spec', () => {
+    expect(migrate({ tab: 'openspec' })).toEqual({ stack: ['spec'], sizes: [1], focus: 0 })
+    expect(migrate({ stack: ['files', 'openspec'], sizes: [1, 1], focus: 1 })).toEqual({ stack: ['files', 'spec'], sizes: [0.5, 0.5], focus: 1 })
+    expect(migrate({ stack: ['spec', 'openspec', 'git'], sizes: [1, 1, 1], focus: 0 }).stack).toEqual(['spec', 'git'])
+  })
   it('keeps a saved stack, normalizing its sizes', () => {
     expect(migrate({ stack: ['files', 'terminal'], sizes: [1, 3], focus: 1 })).toEqual({ stack: ['files', 'terminal'], sizes: [0.25, 0.75], focus: 1 })
   })

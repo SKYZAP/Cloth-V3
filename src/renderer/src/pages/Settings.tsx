@@ -696,7 +696,7 @@ function BackgroundRows({ settings }: { settings: Settings }) {
   const custom = themes.filter((t) => !t.builtin)
   return (
     <>
-      <Row label="Background" track="chatTheme" hint="An animated background behind the conversation. Ask a chat to make a new theme or adjust one, like “make the background slower and blue”. It stays still when Windows asks for reduced motion.">
+      <Row label="Background" track="chatTheme" hint="An animated background behind the conversation. Ask a chat to make a new theme or adjust one, like “make the background slower and blue”. It stays still when your system is set to reduce motion.">
         <Select className="w-56 mobile:w-full" aria-label="Chat background" value={active} onChange={(e) => void update({ chatTheme: e.target.value })}>
           {themes.map((t) => (
             <option key={t.id} value={t.id}>

@@ -3,8 +3,8 @@ import type { SubagentRun, ToolTrace, UiBlock } from '@shared/types'
 /** One item of an assistant turn: a block shown as-is, or a run of thinking and tool calls folded into one line. */
 export type TurnItem = { kind: 'block'; i: number } | { kind: 'group'; key: string; indices: number[] }
 
-/** Tools that keep their own card: the plan, images, questions, Spec → Ship rounds and gates, and subagents. */
-export const ownCard = (t: ToolTrace): boolean => t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || !!t.subagent || !!t.plan || !!t.questions || !!t.stageGate || !!t.openspecStep
+/** Tools that keep their own card: the plan, images, swatches, questions, Spec → Ship rounds and gates, and subagents. */
+export const ownCard = (t: ToolTrace): boolean => t.name === 'todo_write' || t.name === 'generate_image' || t.name === 'ask_user' || t.name === 'task' || !!t.subagent || !!t.plan || !!t.questions || !!t.stageGate || !!t.openspecStep || !!t.swatch
 
 /**
  * Folds every run of thinking and ordinary tool blocks into one activity group. Text and own-card

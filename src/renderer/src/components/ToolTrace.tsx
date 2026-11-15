@@ -3,6 +3,8 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowCounterClockwise,
+  ArrowUpRight,
+  SidebarSimple,
   Books,
   Swatches as SwatchesIcon,
   FilePlus,
@@ -40,8 +42,9 @@ import { api } from '@/lib/api'
 import { relativeTo } from '@shared/file-links'
 import { FileLinks } from './FileLink'
 import { openWorkspaceFile } from '@/pages/chat/setupNav'
-import { openSwatch } from '@/lib/swatchNav'
+import { openSwatch, openSwatchInPanel, useSwatchNav } from '@/lib/swatchNav'
 import type { SwatchTrace } from '@shared/swatches'
+import { Tooltip } from './Tooltip'
 
 export const ICONS: Record<string, Icon> = {
   rag_search: Books,
@@ -501,24 +504,52 @@ function ChangedPath({ path, undone }: { path: string; undone: boolean }) {
 
 const SWATCH_KIND: Record<SwatchTrace['format'], string> = { html: 'Page', markdown: 'Document', svg: 'Image' }
 
-/** A swatch the agent published: opens it on the Swatches page (its preview and links). */
+/** A swatch inside a tool card (agent runs): shows it in the side panel, or opens it on the Swatches page. In the chat itself it shows as a SwatchBlock. */
 function SwatchCard({ swatch }: { swatch: SwatchTrace }) {
+  const showing = useSwatchNav((s) => s.panelVisible && s.panel === swatch.id)
   return (
-    <button
-      type="button"
-      onClick={() => openSwatch(swatch.id)}
-      className="group/sw flex w-full max-w-[440px] items-center gap-3 rounded-xl border border-line bg-elev px-3.5 py-3 text-left transition-colors hover:border-crimson-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+    <div
+      className={clsx(
+        'group/sw flex w-full max-w-[440px] items-center gap-3 rounded-xl border px-3.5 py-2.5 transition-colors',
+        showing ? 'border-crimson bg-crimson-soft/60' : 'border-line bg-elev hover:border-crimson-line'
+      )}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson-soft text-crimson-text">
-        <SwatchesIcon size={18} aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-ui font-medium text-fg">{swatch.title}</span>
-        <span className="block text-caption text-dim">
-          {SWATCH_KIND[swatch.format]} swatch{swatch.version > 1 ? ` · version ${swatch.version}` : ''}
+      <button
+        type="button"
+        onClick={() => openSwatchInPanel(swatch.id)}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-crimson-hi"
+        aria-label={`Show ${swatch.title} in the side panel`}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson-soft text-crimson-text">
+          <SwatchesIcon size={18} aria-hidden="true" />
         </span>
-      </span>
-      <span className="shrink-0 text-caption font-medium text-muted group-hover/sw:text-fg">Open</span>
-    </button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-ui font-medium text-fg">{swatch.title}</span>
+          <span className="block truncate text-caption text-dim">
+            {SWATCH_KIND[swatch.format]} swatch{swatch.version > 1 ? ` · version ${swatch.version}` : ''}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className={clsx(
+            'flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-caption font-medium',
+            showing ? 'border border-crimson-line text-crimson-text' : 'bg-crimson text-white group-hover/sw:bg-crimson-hi'
+          )}
+        >
+          <SidebarSimple size={13} mirrored />
+          {showing ? 'Showing' : 'Open'}
+        </span>
+      </button>
+      <Tooltip content="Open on the Swatches page">
+        <button
+          type="button"
+          onClick={() => openSwatch(swatch.id)}
+          aria-label={`Open ${swatch.title} on the Swatches page`}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-line-strong text-muted hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+        >
+          <ArrowUpRight size={13} />
+        </button>
+      </Tooltip>
+    </div>
   )
 }

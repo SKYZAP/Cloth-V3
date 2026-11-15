@@ -7,7 +7,7 @@ interface SetupNav {
   /** Bumped on every request; the side panel opens (on `tab`) whenever it changes. */
   seq: number
   /** The tab the latest request opens. */
-  tab: 'setup' | 'agents' | 'spec' | 'files'
+  tab: 'setup' | 'agents' | 'spec' | 'files' | 'swatches'
   /** The section the Setup tab should show next; cleared once it has. */
   pending: { section: SetupSection; seq: number } | null
   /** The agent run (its task trace's id) the Agents tab should show next; cleared once it has. */
@@ -54,4 +54,9 @@ export function openWorkspaceFile(path: string): void {
 /** Mark a Files tab request as shown (only that one). */
 export function takeWorkspaceFile(seq: number): void {
   if (useSetupNav.getState().file?.seq === seq) useSetupNav.setState({ file: null })
+}
+
+/** Open the chat's side panel on Swatches (the tab shows the swatch picked in `useSwatchNav`). */
+export function openSwatchesTab(): void {
+  useSetupNav.setState({ seq: useSetupNav.getState().seq + 1, tab: 'swatches' })
 }

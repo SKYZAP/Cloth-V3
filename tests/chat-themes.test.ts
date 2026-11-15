@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeTheme, BUILTIN_THEMES, normalizeTheme, themeId } from '../src/shared/chat-themes'
+import { activeTheme, BUILTIN_THEMES, normalizeTheme, THEME_PATTERNS, themeId } from '../src/shared/chat-themes'
 import { ChatThemes } from '../src/main/agent/themes'
 import { makeServices } from './helpers'
 
@@ -11,6 +11,12 @@ describe('chat themes', () => {
     expect(t.colors).toEqual(BUILTIN_THEMES[0].colors)
     expect(themeId('Ocean drift', ['ocean-drift'])).toBe('ocean-drift-2')
     expect(themeId('None', [])).toBe('none-2')
+  })
+
+  it('keeps every pattern, ships one theme per pattern, and refuses unknown ones', () => {
+    for (const p of THEME_PATTERNS) expect(normalizeTheme({ id: 'x', pattern: p }).pattern).toBe(p)
+    expect(normalizeTheme({ id: 'x', pattern: 'plasma' as never }).pattern).toBe(BUILTIN_THEMES[0].pattern)
+    expect(BUILTIN_THEMES.map((t) => t.pattern).sort()).toEqual([...THEME_PATTERNS].sort())
   })
 
   it('defaults to Crimson flow, and none turns it off', () => {
@@ -44,6 +50,6 @@ describe('chat themes', () => {
     expect(services.settings.get().chatTheme).toBe('crimson-flow')
     expect(() => themes.remove('crimson-flow')).toThrow(/can't be deleted/)
     expect(themes.apply('none')).toBe('none')
-    expect(themes.list().themes.map((t) => t.id)).toEqual(['crimson-flow', 'crimson-waves', ocean.id])
+    expect(themes.list().themes.map((t) => t.id)).toEqual([...BUILTIN_THEMES.map((t) => t.id), ocean.id])
   })
 })
