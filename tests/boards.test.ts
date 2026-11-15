@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { git } from '../src/main/panel/git'
 import { makeServices } from './helpers'
-import { checksReport, cleanLog, commitHeader, commitMessage, describe as describeTicket, failedChecks, goalOf, parseJson, prBody, prTitle } from '../src/main/boards/boards'
+import { checksReport, cleanLog, installCommand, commitHeader, commitMessage, describe as describeTicket, failedChecks, goalOf, parseJson, prBody, prTitle } from '../src/main/boards/boards'
 import { adfToText, defaultStateMap, htmlToText, projectIdentifiers, textToAdf, textToHtml } from '../src/main/boards/trackers'
 import type { TrackerState } from '../src/shared/boards'
 
@@ -427,3 +427,44 @@ describe('commits and pull requests', () => {
   })
 })
 
+
+describe('worktree setup and step limits', () => {
+  it('picks the install command from the lockfile', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cloth-deps-'))
+    expect(installCommand(dir)).toBeNull()
+    writeFileSync(join(dir, 'package.json'), '{}')
+    expect(installCommand(dir)).toEqual({ cmd: 'npm', args: ['install', '--no-package-lock', '--no-audit', '--no-fund'] })
+    writeFileSync(join(dir, 'package-lock.json'), '{}')
+    expect(installCommand(dir)?.args[0]).toBe('ci')
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), '')
+    expect(installCommand(dir)).toEqual({ cmd: 'pnpm', args: ['install', '--frozen-lockfile'] })
+  })
+
+  it('skips the install when node_modules is already there', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cloth-deps-'))
+    writeFileSync(join(dir, 'package.json'), '{}')
+    mkdirSync(join(dir, 'node_modules'))
+    expect(installCommand(dir)).toBeNull()
+  })
+
+  it('asks an agent at its step limit to answer, then cuts it off with a clear error', async () => {
+    const { services } = makeServices()
+    const provider = services.providers.create({ name: 'faux', kind: 'openai-compatible', baseUrl: 'http://127.0.0.1:1/v1' })
+    const model = { providerId: provider.id, modelId: 'faux-1' }
+    const root = mkdtempSync(join(tmpdir(), 'cloth-steps-'))
+    writeFileSync(join(root, 'a.txt'), 'a\n')
+    const scope = { collectionIds: [], skillsEnabled: false, webEnabled: false, customTools: false, workspace: root, fileAccess: 'read' as const, permissions: () => 'manual' as const, autoApprove: () => 'none' as const, codeIntel: false }
+    const read = (i: number) => fauxAssistantMessage([fauxToolCall('read', { path: 'a.txt' }, { id: `r${i}` })], { stopReason: 'toolUse' })
+    let told = false
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    // Answers once it's told it's out of steps.
+    faux.setResponses([read(1), read(2), (ctx) => ((told = JSON.stringify(ctx.messages).includes('step limit')), fauxAssistantMessage('Done: read a.txt.'))])
+    const res = await services.runtime.run({ model, prompt: 'Read a.txt', scope, maxTurns: 2 })
+    expect(told).toBe(true)
+    expect(res.text).toBe('Done: read a.txt.')
+
+    // Keeps calling tools: stopped two turns past the limit, saying why.
+    faux.setResponses([read(1), read(2), read(3), read(4), read(5)])
+    await expect(services.runtime.run({ model, prompt: 'Read a.txt', scope, maxTurns: 2 })).rejects.toThrow(/Ran out of steps/)
+  })
+})

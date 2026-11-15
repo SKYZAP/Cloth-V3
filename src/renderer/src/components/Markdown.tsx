@@ -5,6 +5,8 @@ import clsx from 'clsx'
 import { Check, Copy, ImageIcon } from 'lucide-react'
 import type { RagHit } from '@shared/types'
 import { Diagram } from './Diagram'
+import { FileCode, useFileHref } from './FileLink'
+import { openWorkspaceFile } from '@/pages/chat/setupNav'
 
 /** Markdown renderer with code-copy buttons and [n] citation chips linked to RAG hits. */
 export const Markdown = memo(function Markdown({ text, references, streaming, className }: { text: string; references?: RagHit[]; streaming?: boolean; className?: string }) {
@@ -19,11 +21,13 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
               const hit = references[Number(href.slice(6)) - 1]
               return <Citation n={Number(href.slice(6))} hit={hit} />
             }
-            return (
-              <a href={href} target="_blank" rel="noreferrer">
-                {children}
-              </a>
-            )
+            return <ReplyLink href={href}>{children}</ReplyLink>
+          },
+          // Inline code naming a file in the chat's folder opens it in the file viewer (blocks end in a newline).
+          code({ className, children }) {
+            const text = extractText(children)
+            if (className || text.includes('\n')) return <code className={className}>{children}</code>
+            return <FileCode text={text} />
           },
           img({ src, alt }) {
             return <ReplyImage src={typeof src === 'string' ? src : ''} alt={alt ?? ''} />
@@ -49,6 +53,29 @@ export const Markdown = memo(function Markdown({ text, references, streaming, cl
     </div>
   )
 })
+
+/** A link in a reply: a file path opens in the chat's file viewer, anything else in the browser. */
+function ReplyLink({ href, children }: { href?: string; children: React.ReactNode }) {
+  const file = useFileHref(href)
+  if (file)
+    return (
+      <a
+        href={href}
+        title={`Open ${file} in the file viewer`}
+        onClick={(e) => {
+          e.preventDefault()
+          openWorkspaceFile(file)
+        }}
+      >
+        {children}
+      </a>
+    )
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  )
+}
 
 /**
  * An image in a reply. Replies can be steered by what the model reads (pages, tickets, tool results), and

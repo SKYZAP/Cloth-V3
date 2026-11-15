@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useContext, useState } from 'react'
 import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowCounterClockwise,
   Books,
+  Swatches as SwatchesIcon,
   FilePlus,
   Files,
   ListChecks,
@@ -36,6 +37,11 @@ import { TodoList, todosOf } from './Planning'
 import { Markdown } from './Markdown'
 import { GeneratedImageCard } from './GeneratedImageCard'
 import { api } from '@/lib/api'
+import { relativeTo } from '@shared/file-links'
+import { FileLinks } from './FileLink'
+import { openWorkspaceFile } from '@/pages/chat/setupNav'
+import { openSwatch } from '@/lib/swatchNav'
+import type { SwatchTrace } from '@shared/swatches'
 
 export const ICONS: Record<string, Icon> = {
   rag_search: Books,
@@ -162,6 +168,12 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
 
       {trace.subagent && !open && <SubagentBody trace={trace} />}
 
+      {trace.swatch && trace.status === 'ok' && (
+        <div className="pb-3.5 pl-12 pr-3">
+          <SwatchCard swatch={trace.swatch} />
+        </div>
+      )}
+
       {trace.image && (
         <div className="pb-3.5 pl-12 pr-3">
           <GeneratedImageCard image={trace.image} className="max-w-[440px]" />
@@ -185,7 +197,7 @@ export function ToolTraceCard({ trace, fresh, awaiting, onUndo, superseded, comp
           {changes.map((c) => (
             <span key={c.path} className={clsx('flex items-center gap-1.5 rounded-full border border-line bg-elev py-0.5 pl-2 pr-2.5 text-caption', c.undone && 'opacity-50 line-through')}>
               {c.kind === 'create' ? <FilePlus size={12} className="text-ok" /> : <NotePencil size={12} className="text-muted" />}
-              <span className="font-mono text-muted">{c.path}</span>
+              <ChangedPath path={c.path} undone={!!c.undone} />
               <DiffStat added={c.added} removed={c.removed} />
             </span>
           ))}
@@ -473,4 +485,40 @@ function argValues(args: unknown): string {
     .filter((v) => (typeof v === 'string' && v.trim()) || typeof v === 'number')
     .map(String)
     .join(' · ')
+}
+
+/** A changed file's path on its chip: opens the file in the viewer (unless the change was undone). */
+function ChangedPath({ path, undone }: { path: string; undone: boolean }) {
+  const ctx = useContext(FileLinks)
+  const rel = ctx && !undone ? relativeTo(ctx.root, path) : null
+  if (!rel) return <span className="font-mono text-muted">{path}</span>
+  return (
+    <button type="button" onClick={() => openWorkspaceFile(rel)} title={`Open ${rel} in the file viewer`} className="rounded font-mono text-muted underline decoration-dotted decoration-dim underline-offset-[3px] hover:text-fg hover:decoration-crimson-hi focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
+      {path}
+    </button>
+  )
+}
+
+const SWATCH_KIND: Record<SwatchTrace['format'], string> = { html: 'Page', markdown: 'Document', svg: 'Image' }
+
+/** A swatch the agent published: opens it on the Swatches page (its preview and links). */
+function SwatchCard({ swatch }: { swatch: SwatchTrace }) {
+  return (
+    <button
+      type="button"
+      onClick={() => openSwatch(swatch.id)}
+      className="group/sw flex w-full max-w-[440px] items-center gap-3 rounded-xl border border-line bg-elev px-3.5 py-3 text-left transition-colors hover:border-crimson-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson-soft text-crimson-text">
+        <SwatchesIcon size={18} aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-ui font-medium text-fg">{swatch.title}</span>
+        <span className="block text-caption text-dim">
+          {SWATCH_KIND[swatch.format]} swatch{swatch.version > 1 ? ` · version ${swatch.version}` : ''}
+        </span>
+      </span>
+      <span className="shrink-0 text-caption font-medium text-muted group-hover/sw:text-fg">Open</span>
+    </button>
+  )
 }

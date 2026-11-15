@@ -42,20 +42,20 @@
   /* Small crimson text on a crimson-soft tint (badges, chips): crimson-hi is under 4.5:1 there. */
   --color-crimson-text: #f88d96;
 
-  /* Errors, failures, deletions and destructive actions: coral orange, far enough from crimson that they never read as the brand,
-     including for red-green colour blindness. Always pair with an icon. */
-  --color-danger: #f57050;
-  --color-danger-hi: #fe9975;
-  --color-danger-lo: #b5462b;
-  --color-danger-soft: rgb(245 112 80 / 0.12);
-  --color-danger-line: rgb(245 112 80 / 0.4);
+  /* Errors, failures, deletions and destructive actions: Cloth's crimson red, a step lighter so small text stays
+     over 4.5:1 on the panels. Always pair with an icon, so an error never relies on colour alone. */
+  --color-danger: #ef4a5f;
+  --color-danger-hi: #f88d96;
+  --color-danger-lo: #b01c36;
+  --color-danger-soft: rgb(207 40 69 / 0.14);
+  --color-danger-line: rgb(229 64 86 / 0.45);
 
   /* Cancelled or stopped by the user: neutral, not a failure. Pair with a slashed-circle icon. */
   --color-cancel: #94949e;
   --color-cancel-text: #bdbdc5;
 
   --color-ok: #5ccb89;
-  /* Amber, kept clear of the coral danger colour. */
+  /* Amber, kept clear of the red danger colour. */
   --color-warn: #f6b84d;
   --color-info: #6cb2ec;
 
@@ -233,6 +233,35 @@
   border: 1px solid var(--color-line);
   border-radius: 4px;
   padding: 0.05em 0.35em;
+}
+/* A file path in a chat: opens in the side panel's file viewer. Dotted underline, so it reads as clickable but not as a web link. */
+.file-link {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.file-link code {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--color-dim);
+  text-underline-offset: 3px;
+}
+.file-link:hover code {
+  border-color: var(--color-crimson-line);
+  color: var(--color-fg);
+  text-decoration-color: var(--color-crimson-hi);
+}
+.file-link:focus-visible {
+  outline: 2px solid var(--color-crimson-hi);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+/* Outside replies (a sent message, a tool's file chip) the code keeps the look of where it sits. */
+.file-link.plain code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
 }
 .prose-cloth pre {
   background: #101014;

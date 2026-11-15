@@ -17,6 +17,7 @@ import { ProvidersPage } from './pages/Providers'
 import { McpPage } from './pages/Mcp'
 import { RunPage } from './pages/Run'
 import { BoardsPage } from './pages/Boards'
+import { SwatchesPage } from './pages/Swatches'
 import { DesignPage } from './pages/Design'
 import { SettingsPage, openSettingsSection } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
@@ -36,6 +37,7 @@ const SIDEBAR: (typeof NAV)[number][] = [
   item('dashboard'),
   item('chat'),
   item('boards'),
+  item('swatches'),
   item('workflows'),
   item('agents'),
   item('skills'),
@@ -63,6 +65,7 @@ export function PageContent({ page }: { page: Page }) {
       {page === 'dashboard' && <DashboardPage />}
       {page === 'chat' && <ChatPage />}
       {page === 'boards' && <BoardsPage />}
+      {page === 'swatches' && <SwatchesPage />}
       {page === 'knowledge' && <KnowledgePage />}
       {page === 'skills' && <SkillsPage />}
       {page === 'agents' && <AgentsPage />}

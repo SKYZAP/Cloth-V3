@@ -7,7 +7,9 @@ import { presetsWithTokens, readEnvFile } from './mcp/homelab'
 import type { ClothApi } from '@shared/api'
 import type { McpClientConfig, Provider, Settings, ToolRunResult } from '@shared/types'
 import { mapClient, mapSecrets, masker, restoreClient } from './core/secret-fields'
-import { copyFile } from 'node:fs/promises'
+import { scheduleReset } from './core/reset'
+import { swatchFileName } from '@shared/swatches'
+import { copyFile, writeFile } from 'node:fs/promises'
 import type { Services } from './services'
 import { validateCron } from './workflows/workflows'
 import { describeBuiltins } from './agent/tools'
@@ -58,7 +60,15 @@ export function createApi(s: Services): ClothApi {
       openExternal: async (url) => {
         if (/^https?:\/\//.test(url)) await shell.openExternal(url)
       },
-      openPrivacySettings: async (kind) => openPermissionPane(kind === 'accessibility' ? 'accessibility' : 'screen')
+      openPrivacySettings: async (kind) => openPermissionPane(kind === 'accessibility' ? 'accessibility' : 'screen'),
+      reset: async (opts) => {
+        scheduleReset(s.ctx.dataDir, { keepModels: opts?.keepModels === true })
+        // After the reply reaches the window: quit (sidecars stop as usual) and start again, empty.
+        setTimeout(() => {
+          app.relaunch()
+          app.quit()
+        }, 300)
+      }
     },
     settings: {
       get: async () => maskSettings(s.settings.get()),
@@ -413,6 +423,24 @@ export function createApi(s: Services): ClothApi {
       startClient: (id) => s.mcpClients.start(id),
       stopClient: (id) => s.mcpClients.stop(id),
       externalCalls: async () => s.mcpClients.calls()
+    },
+    swatches: {
+      list: async () => s.swatches.list(),
+      content: async (id) => s.swatches.content(id),
+      links: async (id) => s.swatches.links(id),
+      newLink: async (id) => s.swatches.newLink(id),
+      rename: async (id, title) => s.swatches.rename(id, title),
+      remove: async (id) => s.swatches.remove(id),
+      status: async () => s.swatches.status(),
+      saveAs: async (id) => {
+        const sw = s.swatches.get(id)
+        const win = BrowserWindow.getFocusedWindow()
+        const opts = { title: 'Save swatch', defaultPath: swatchFileName(sw) }
+        const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+        if (res.canceled || !res.filePath) return false
+        await writeFile(res.filePath, s.swatches.content(id))
+        return true
+      }
     },
     remote: {
       status: async () => s.remote.status(),

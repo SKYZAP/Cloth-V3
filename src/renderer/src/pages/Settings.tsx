@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import {
   ArrowClockwise,
+  ArrowCounterClockwise,
   Books,
   CaretRight,
   ChatCircleDots,
@@ -27,7 +28,7 @@ import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings,
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, confirmAction } from '@/components/ui'
+import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, chooseAction, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
@@ -35,6 +36,7 @@ import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
 import { DependencySettings } from './DependencySettings'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
+import { activeTheme, allThemes, clampStrength, DEFAULT_CHAT_THEME, NO_THEME, STRENGTH_RANGE } from '@shared/chat-themes'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
@@ -52,7 +54,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Which model does each job. Add or edit providers on the Models page.', keywords: 'default model embedding image llm provider' },
-  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, and how long ones stay within the model’s limit.', keywords: 'compact summarise summarize context window title name rename ai titles' },
+  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, how long ones stay within the model’s limit, and the background behind them.', keywords: 'compact summarise summarize context window title name rename ai titles background theme shader animation flow waves strength' },
   { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, what they may do, and the reasoning levels they run at.', keywords: 'task delegate reader writer operator access reasoning tier parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Where chats look things up when web search is on.', keywords: 'searxng obscura web_fetch internet results' },
@@ -117,6 +119,8 @@ const sub = <K extends keyof SubagentSettings>(key: K): [string, Tracked] => [
 const TRACKED = new Map<string, Tracked>([
   top('autoCompact', 'chat'),
   top('aiTitles', 'chat'),
+  top('chatTheme', 'chat'),
+  top('chatThemeStrength', 'chat'),
   top('chunkSize', 'knowledge'),
   top('chunkOverlap', 'knowledge'),
   top('mcpPort', 'mcp'),
@@ -378,6 +382,7 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
               <ModelPicker className="w-72 mobile:w-full" value={settings.titleModel} onChange={(titleModel) => void update({ titleModel })} allowNone noneLabel="Same as the chat" />
             </Row>
           )}
+          <BackgroundRows settings={settings} />
         </Group>
       )
     case 'coding':
@@ -674,7 +679,110 @@ function AboutSection() {
         </div>
       </Card>
       {!isMobile && <UpdatesGroup />}
+      {!isMobile && <ResetGroup />}
     </>
+  )
+}
+
+/** The chat background: which theme, how strongly it shows, and the themes you or the agent made. */
+function BackgroundRows({ settings }: { settings: Settings }) {
+  const update = useApp((s) => s.updateSettings)
+  const themes = allThemes(settings.chatThemes)
+  const active = settings.chatTheme === NO_THEME ? NO_THEME : (activeTheme(settings.chatTheme, settings.chatThemes)?.id ?? NO_THEME)
+  const saved = clampStrength(settings.chatThemeStrength)
+  const [strength, setStrength] = useState(saved)
+  useEffect(() => setStrength(saved), [saved])
+  const commit = () => strength !== saved && void update({ chatThemeStrength: strength })
+  const custom = themes.filter((t) => !t.builtin)
+  return (
+    <>
+      <Row label="Background" track="chatTheme" hint="An animated background behind the conversation. Ask a chat to make a new theme or adjust one, like “make the background slower and blue”. It stays still when Windows asks for reduced motion.">
+        <Select className="w-56 mobile:w-full" aria-label="Chat background" value={active} onChange={(e) => void update({ chatTheme: e.target.value })}>
+          {themes.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+          <option value={NO_THEME}>None</option>
+        </Select>
+      </Row>
+      {active !== NO_THEME && (
+        <Row label="Strength" track="chatThemeStrength" hint="How much of the background shows behind the chat.">
+          <div className="flex w-56 items-center gap-3 mobile:w-full">
+            <input
+              type="range"
+              aria-label="Background strength"
+              min={STRENGTH_RANGE[0] * 100}
+              max={STRENGTH_RANGE[1] * 100}
+              step={5}
+              value={Math.round(strength * 100)}
+              onChange={(e) => setStrength(Number(e.target.value) / 100)}
+              onPointerUp={commit}
+              onKeyUp={commit}
+              onBlur={commit}
+              className="min-w-0 flex-1 accent-crimson"
+            />
+            <span className="w-10 text-right text-caption tabular-nums text-muted">{Math.round(strength * 100)}%</span>
+          </div>
+        </Row>
+      )}
+      {custom.length > 0 && (
+        <Row label="Your themes" hint="Made here or by a chat. The built-in ones can't be deleted." stacked>
+          <div className="flex flex-wrap gap-1.5">
+            {custom.map((t) => (
+              <span key={t.id} className="flex items-center gap-1.5 rounded-full border border-line bg-elev py-0.5 pl-1.5 pr-1 text-caption">
+                <span className="flex overflow-hidden rounded-full" aria-hidden="true">
+                  {t.colors.map((c) => (
+                    <span key={c} className="h-3 w-2" style={{ background: c }} />
+                  ))}
+                </span>
+                <span className="text-muted">{t.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Delete the ${t.name} theme`}
+                  title="Delete"
+                  onClick={async () => {
+                    if (!(await confirmAction(`Delete the “${t.name}” theme?`, { title: 'Delete theme?', danger: true, confirmLabel: 'Delete' }))) return
+                    await update({ chatThemes: settings.chatThemes.filter((x) => x.id !== t.id), ...(settings.chatTheme === t.id ? { chatTheme: DEFAULT_CHAT_THEME } : {}) })
+                  }}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-dim hover:bg-elev-2 hover:text-fg"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </Row>
+      )}
+    </>
+  )
+}
+
+/** Wipe everything Cloth has saved and restart as if just installed. Downloaded models can stay (they're large). */
+function ResetGroup() {
+  const [resetting, setResetting] = useState(false)
+  const reset = async () => {
+    const choice = await chooseAction(
+      'This deletes all your chats, projects, boards, knowledge, skills, agents, automations, providers and API keys, and every setting, then restarts Cloth as if it were just installed. Your own folders and repositories are left alone. This can’t be undone.',
+      { title: 'Reset Cloth?', danger: true, confirmLabel: 'Delete everything', alternative: 'Keep downloaded models', cancelLabel: 'Cancel' }
+    )
+    if (choice === 'cancel') return
+    setResetting(true)
+    try {
+      await api.app.reset({ keepModels: choice === 'alternative' })
+    } catch (err) {
+      setResetting(false)
+      useApp.getState().toast(`Couldn't reset Cloth: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    }
+  }
+  return (
+    <Group title="Reset">
+      <Row label="Reset Cloth" hint="Deletes everything Cloth has saved and restarts it with only the defaults. You can keep downloaded models so they don't need downloading again.">
+        <Button size="sm" variant="danger" icon={<ArrowCounterClockwise size={13} />} disabled={resetting} onClick={() => void reset()}>
+          {resetting ? 'Restarting…' : 'Reset Cloth…'}
+        </Button>
+      </Row>
+    </Group>
   )
 }
 

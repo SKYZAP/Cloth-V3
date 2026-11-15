@@ -53,6 +53,8 @@ import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { PanelDock, SidePanel, usePanelState } from './chat/SidePanel'
+import { FileLinks } from '@/components/FileLink'
+import { ChatBackdrop } from '@/components/ChatBackdrop'
 import { showTab, shownTabs } from '@shared/panel-stack'
 import { ComposerBar } from './chat/ComposerBar'
 import { OpenSpecBar, OpenSpecStepCard } from './chat/OpenSpec'
@@ -953,12 +955,15 @@ function ChatView({
   const provider = providers.find((p) => p.id === session.model?.providerId)
   const waiting = running && messages.at(-1)?.role === 'user'
   const noVision = !!provider && !provider.models.find((m) => m.id === session.model?.modelId)?.vision
+  // File paths in the chat open in the side panel's file viewer when the chat has a folder.
+  const fileLinks = useMemo(() => (session.workspace ? { root: session.workspace } : null), [session.workspace])
 
   return (
-    // Desktop: the conversation is a rounded canvas on the window frame; the side panel is a card beside it and its dock sits on the frame.
+    <FileLinks.Provider value={fileLinks}>
+    {/* Desktop: the conversation is a rounded canvas on the window frame; the side panel is a card beside it and its dock sits on the frame. */}
     <div className={clsx('relative flex h-full min-w-0', !isMobile && 'gap-2 pb-2')}>
     <div
-      className={clsx('relative flex h-full min-w-0 flex-1 flex-col overflow-hidden', !isMobile && 'rounded-xl border border-line bg-bg')}
+      className={clsx('relative isolate flex h-full min-w-0 flex-1 flex-col overflow-hidden', !isMobile && 'rounded-xl border border-line bg-bg')}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
@@ -975,6 +980,7 @@ function ChatView({
         void attach([...e.dataTransfer.files])
       }}
     >
+      <ChatBackdrop />
       <AnimatePresence>
         {dragging && (
           <motion.div
@@ -1325,6 +1331,7 @@ function ChatView({
     {panel.open && <SidePanel session={session} messages={messages} update={update} state={panel} set={setPanel} onAttach={(f) => void attachWorkspaceFile(f)} onInsert={insertPath} onPickFolder={() => void pickFolder()} />}
     {!isMobile && <PanelDock session={session} messages={messages} state={panel} set={setPanel} />}
     </div>
+    </FileLinks.Provider>
   )
 }
 

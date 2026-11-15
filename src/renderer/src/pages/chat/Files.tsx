@@ -6,6 +6,7 @@ import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { Button } from '@/components/ui'
+import { takeWorkspaceFile, useSetupNav } from './setupNav'
 
 const CODE = /\.(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|cs|cpp|c|h|rb|php|swift|css|scss|html|json|yaml|yml|toml|sql|sh|ps1|vue|svelte)$/i
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|ico|bmp)$/i
@@ -82,6 +83,14 @@ export function Files({ sessionId, visible, onAttach, onInsert, onPickFolder }: 
     const f = await attempt(() => api.panel.read(sessionId, path))
     if (f) setFile(f)
   }
+  // A file clicked in the chat (a path in a reply, a tool's changed file): show it once this tab is on screen.
+  const request = useSetupNav((n) => n.file)
+  useEffect(() => {
+    if (!request || !visible) return
+    takeWorkspaceFile(request.seq)
+    void preview(request.path)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.seq, visible])
 
   const q = filter.trim().toLowerCase()
   const rows = useMemo(() => {

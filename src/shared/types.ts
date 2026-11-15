@@ -818,6 +818,8 @@ export interface ToolTrace {
   subagent?: SubagentRun
   /** For `generate_image` calls. */
   image?: GeneratedImage
+  /** For `publish_swatch` calls: the swatch it made or updated. */
+  swatch?: import('./swatches').SwatchTrace
   /** For `computer` calls: what was done and a small copy of the screenshot it returned. */
   computer?: ComputerTrace
   /** For `present_plan` calls: the plan waiting for the user's approval. */
@@ -1233,6 +1235,15 @@ export interface Settings {
   remotePort: number
   /** Keep the PC from sleeping while a phone is connected. */
   remoteKeepAwake: boolean
+  /** Swatches (pages chats make) open on other devices on the network, not only this PC. */
+  swatchNetwork: boolean
+  swatchPort: number
+  /** The chat background: a theme id, or 'none'. */
+  chatTheme: string
+  /** Themes added in Settings or by the chat agent (the built-in ones aren't stored). */
+  chatThemes: import('./chat-themes').ChatTheme[]
+  /** How much of the background shows through behind the chat: 0.1 (faint) to 1. */
+  chatThemeStrength: number
   /** Subagents (the chat agent's `task` tool). */
   subagents: SubagentSettings
   /** Tiers the chat agent picks from when it delegates (cheapest first). */

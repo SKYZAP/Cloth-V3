@@ -2,6 +2,9 @@ import { Fragment } from 'react'
 import clsx from 'clsx'
 import { SKILL_TOKEN } from '@shared/slash'
 import { AGENT_TOKEN } from '@shared/mention'
+import { filePathIn } from '@shared/file-links'
+import { useFileTarget } from '@/components/FileLink'
+import { openWorkspaceFile } from './setupNav'
 
 export { invokedSkills, slashAt, unknownSkills } from '@shared/slash'
 export { agentSlug, mentionAt, mentionedAgents } from '@shared/mention'
@@ -22,11 +25,17 @@ export function SkillText({ text, known, agents, className }: { text: string; kn
       if (!name) continue
       tokens.push({ at: m.index! + m[1].length, length: m[2].length + 1, node: (key) => <AgentToken key={key} slug={m[2]} name={name} /> })
     }
-    tokens.sort((a, b) => a.at - b.at)
   }
+  // `path` (as the Files tab inserts it): opens the file in the viewer when the chat has a folder.
+  for (const m of text.matchAll(/`([^`\n]+)`/g)) {
+    if (!filePathIn(m[1])) continue
+    tokens.push({ at: m.index!, length: m[0].length, node: (key) => <PathToken key={key} text={m[1]} /> })
+  }
+  tokens.sort((a, b) => a.at - b.at)
   const parts: React.ReactNode[] = []
   let last = 0
   for (const t of tokens) {
+    if (t.at < last) continue
     parts.push(<Fragment key={`t${last}`}>{text.slice(last, t.at)}</Fragment>)
     parts.push(t.node(`s${t.at}`))
     last = t.at + t.length
@@ -50,5 +59,16 @@ export function AgentToken({ slug, name, className }: { slug: string; name: stri
     <span title={`Hands this to the ${name} agent`} className={clsx('rounded-[4px] bg-agent-soft text-agent shadow-[0_0_0_2px_var(--color-agent-soft)]', className)}>
       @{slug}
     </span>
+  )
+}
+
+/** A `path` in a sent message: a button that opens the file, or the text as written when it can't. */
+function PathToken({ text }: { text: string }) {
+  const rel = useFileTarget(text)
+  if (!rel) return <>{`\`${text}\``}</>
+  return (
+    <button type="button" onClick={() => openWorkspaceFile(rel)} title={`Open ${rel} in the file viewer`} className="file-link plain">
+      <code className="rounded-[4px] border border-line bg-elev px-1">{text}</code>
+    </button>
   )
 }

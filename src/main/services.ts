@@ -1,3 +1,4 @@
+import { SwatchService } from './swatches/swatches'
 import { join } from 'node:path'
 import { MCP_PRESETS } from './mcp/client'
 import { migrateOldPenpot, readEnvFile, serversToSeed } from './mcp/homelab'
@@ -42,6 +43,7 @@ import { setOpenSpecHomes } from './agent/openspec'
 
 export interface Services {
   ctx: Ctx
+  swatches: SwatchService
   settings: SettingsService
   providers: ProviderService
   rag: RagService
@@ -129,7 +131,8 @@ export function createServices(opts: {
   const images = new ImageService(ctx, providers, settings)
   const mcpClients = new McpClientService(ctx, settings, approvals)
   const agents = new AgentService(ctx, providers, settings)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents })
+  const swatches = new SwatchService(ctx, settings)
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents, swatches })
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)
@@ -160,6 +163,8 @@ export function createServices(opts: {
   settings.onChange((next, prev) => {
     if (next.mcpEnabled !== prev.mcpEnabled || next.mcpPort !== prev.mcpPort) void mcp.restart()
     if (next.remoteEnabled !== prev.remoteEnabled || next.remotePort !== prev.remotePort) void remote.restart()
+    if (next.swatchNetwork !== prev.swatchNetwork || next.swatchPort !== prev.swatchPort) void swatches.restart()
+    if (next.chatTheme !== prev.chatTheme || next.chatThemes !== prev.chatThemes || next.chatThemeStrength !== prev.chatThemeStrength) ctx.emit('themes', { type: 'changed' })
     if (next.webEngine !== prev.webEngine || next.searxngUrl !== prev.searxngUrl || next.obscuraPath !== prev.obscuraPath || next.webCaCertPath !== prev.webCaCertPath) {
       void web.searxng.stop()
       web.warm()
@@ -208,7 +213,7 @@ export function createServices(opts: {
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, swatches, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
 }
 
 const SEEDED_KEY = 'mcp.homelabSeeded'

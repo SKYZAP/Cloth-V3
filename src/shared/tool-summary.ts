@@ -18,6 +18,8 @@ export function toolSummary(name: string, args: unknown): string {
   if (['agent_create', 'mcp_server_add', 'provider_add'].includes(name)) return String(a.name ?? '')
   if (name === 'automation_create') return clip(String(a.name ?? a.description ?? ''))
   if (name === 'generate_image') return clip(String(a.prompt ?? ''))
+  if (name === 'publish_swatch') return clip(String(a.title ?? ''))
+  if (name === 'chat_theme') return clip([a.action, a.id ?? a.name].filter(Boolean).join(' '))
   if (name === 'computer') return String(a.action ?? '').replace(/_/g, ' ')
   if (name === 'ask_user') return clip(String(a.question ?? ''))
   if (name === 'skill_create' || name === 'tool_create') return String(a.name ?? '')

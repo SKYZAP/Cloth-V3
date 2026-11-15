@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, relative } from 'node:path'
 import {
   STAGES,
   TRACKER_NAMES,
@@ -50,6 +50,8 @@ const REVIEW_ROUNDS = 2
 const CHECK_FIXES = 2
 // Bare `node` isn't here: `node -e …` runs any code, and these run with nobody watching.
 const DEFAULT_COMMANDS = ['npm test', 'npm run', 'npx tsc', 'npx vitest', 'pnpm test', 'pnpm run', 'yarn test']
+/** Always allowed next to the project's commands: adding a package updates the lockfile, and `view` checks a version exists. */
+const PACKAGE_COMMANDS = ['npm install', 'npm i', 'npm ci', 'npm view', 'pnpm install', 'pnpm add', 'pnpm view', 'yarn install', 'yarn add', 'yarn info']
 const clamp = (n: unknown, lo: number, hi: number, fallback: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback)
 
 interface StoredConn extends Omit<TrackerConfig, 'token' | 'kind'> {
@@ -66,15 +68,29 @@ export interface BoardDeps {
   projects: ProjectService
 }
 
-function exec(cmd: string, args: string[], cwd: string, timeoutMs = 120_000): Promise<string> {
+// `shell` only for fixed commands: on Windows npm, pnpm and yarn are .cmd scripts that need one.
+function exec(cmd: string, args: string[], cwd: string, timeoutMs = 120_000, shell = false): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024, shell: shell && process.platform === 'win32' }, (err, stdout, stderr) => {
       if (err) {
         const missing = (err as NodeJS.ErrnoException).code === 'ENOENT'
         reject(new Error(missing ? `${cmd} isn't installed or isn't on the PATH.` : (String(stderr || stdout || err.message).trim().split('\n').slice(-3).join(' '))))
       } else resolve(String(stdout))
     })
   })
+}
+
+/**
+ * The command that installs a JS project's dependencies in `dir` from its lockfile: null when there's no package.json,
+ * or node_modules is already there. Without a lockfile none is written, so it can't end up in the commit.
+ */
+export function installCommand(dir: string): { cmd: string; args: string[] } | null {
+  if (!existsSync(join(dir, 'package.json')) || existsSync(join(dir, 'node_modules'))) return null
+  if (existsSync(join(dir, 'pnpm-lock.yaml'))) return { cmd: 'pnpm', args: ['install', '--frozen-lockfile'] }
+  if (existsSync(join(dir, 'yarn.lock'))) return { cmd: 'yarn', args: ['install', '--frozen-lockfile'] }
+  if (existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb'))) return { cmd: 'bun', args: ['install', '--frozen-lockfile'] }
+  if (existsSync(join(dir, 'package-lock.json'))) return { cmd: 'npm', args: ['ci', '--no-audit', '--no-fund'] }
+  return { cmd: 'npm', args: ['install', '--no-package-lock', '--no-audit', '--no-fund'] }
 }
 
 const gitRun = async (cwd: string, args: string[]) => {
@@ -215,18 +231,25 @@ Find the root cause before you change anything:
    CI runs it when you can.
 3. Fix the cause where it lives (the code, the test setup, config or the workflow), not the symptom in one test. Don't weaken,
    skip or delete tests or checks, and don't rework the feature.
-4. Run the commands CI runs and make sure they pass.
+4. Run the commands CI runs and make sure they pass. The dependencies are installed; a package that's missing or has a
+   version that doesn't exist is fixed with the package manager (check with \`npm view name versions\`), so the lockfile matches.
 Earlier fix attempts, if any, are listed below: they didn't work, so don't repeat them.
 Don't commit or push: Cloth does that when you finish. End with only a fenced JSON block:
 {"rootCause": "one sentence", "fix": "what you changed", "commit": "fix(scope): imperative summary under 60 characters"}`
 
 const IMPLEMENTER = `You implement a software ticket in this workspace, a git worktree on its own branch. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
+The project's dependencies are installed. To add a package, install it with the project's package manager
+(\`npm install name@version\` or the like) so the lockfile updates too, after checking the version exists (\`npm view name versions\`);
+never write a dependency into package.json by hand.
 Don't commit or push: Cloth does that when you finish. End with only a fenced JSON block:
 {"summary": "what you changed, in one to three sentences", "testing": ["each command you ran and its result"]}`
 
 const IMPLEMENTER_NO_GIT = `You implement a software ticket in this workspace, a separate git worktree. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
+The project's dependencies are installed. To add a package, install it with the project's package manager
+(\`npm install name@version\` or the like) so the lockfile updates too, after checking the version exists (\`npm view name versions\`);
+never write a dependency into package.json by hand.
 Don't commit, push or make branches: your changes are left as they are for the person to review and apply.
 End with a short summary of what you changed.`
 
@@ -934,12 +957,15 @@ export class BoardService {
     this.update(t.id, { branch, activity: 'Setting up the worktree' })
     const dir = await this.worktree(root, branch ?? null, base, t.key)
     const { model, system, saved } = this.model(pipe.agents.implementer)
-    const scope = this.writeScope(join(dir, relative(root, s.repo)), s, saved)
+    const project = join(dir, relative(root, s.repo))
+    const deps = await this.installDeps(dir, project, t.key, (a) => this.update(t.id, { activity: a }))
+    if (signal.aborted) return
+    const scope = this.writeScope(project, s, saved)
     this.update(t.id, { activity: 'Starting' })
     const research = pipe.research?.notes.length || pipe.research?.assumptions.length ? `\n\nWhat the planner found out:\n${[...(pipe.research?.notes ?? []), ...(pipe.research?.assumptions ?? []).map((a) => `Assumed: ${a}`)].map((r) => `- ${r}`).join('\n')}` : ''
     const res = await this.deps.runtime.run({
       model,
-      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}${research}`,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}${research}${deps}`,
       systemPrompt: [system, s.git === 'none' ? IMPLEMENTER_NO_GIT : IMPLEMENTER].filter(Boolean).join('\n\n'),
       scope,
       thinking: saved?.thinking ?? undefined,
@@ -1021,10 +1047,37 @@ export class BoardService {
     return dir
   }
 
+  /**
+   * Installs the dependencies in a fresh worktree, so agents can run the tests and add packages properly.
+   * Returns a line for the agent's prompt when that failed ('' otherwise); failing doesn't stop the run.
+   */
+  private async installDeps(worktree: string, project: string, key: string, onActivity: (a: string) => void): Promise<string> {
+    const dir = installCommand(project) ? project : project !== worktree && installCommand(worktree) ? worktree : null
+    const c = dir && installCommand(dir)
+    if (!dir || !c) return ''
+    // node_modules mustn't reach the commit (`git add -A`) even where the project doesn't ignore it.
+    if ((await git(dir, ['check-ignore', '-q', 'node_modules'])).code !== 0) {
+      const exclude = (await gitRun(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])).trim()
+      await mkdir(dirname(exclude), { recursive: true })
+      await appendFile(exclude, '\nnode_modules/\n')
+    }
+    const command = `${c.cmd} ${c.args.join(' ')}`
+    onActivity(`Installing dependencies (${command})`)
+    try {
+      await exec(c.cmd, c.args, dir, 10 * 60_000, true)
+      return ''
+    } catch (err) {
+      this.ctx.log('boards', `${command} failed for ${key}: ${errorMessage(err)}`)
+      return `\n\nCloth couldn't install the dependencies (\`${command}\` failed: ${errorMessage(err).slice(0, 300)}). Install them yourself before running anything.`
+    }
+  }
+
   /** The implementer edits files in its worktree and runs only the project's allowed commands. */
   private writeScope(workspace: string, s: BoardProjectSettings, saved: ReturnType<AgentService['find']>): ToolScope {
-    const scope: ToolScope = { collectionIds: [], skillsEnabled: true, webEnabled: false, customTools: false, workspace, fileAccess: 'write', shell: true, commandAllow: s.commands, permissions: () => 'manual', autoApprove: () => 'edits', codeIntel: false }
-    return saved ? { ...agentScope(saved, scope), fileAccess: 'write', shell: true, commandAllow: s.commands, autoApprove: () => 'edits', codeIntel: false } : scope
+    // No commands at all stays no shell; otherwise the package manager comes too.
+    const commandAllow = s.commands.length ? [...new Set([...s.commands, ...PACKAGE_COMMANDS])] : []
+    const scope: ToolScope = { collectionIds: [], skillsEnabled: true, webEnabled: false, customTools: false, workspace, fileAccess: 'write', shell: true, commandAllow, permissions: () => 'manual', autoApprove: () => 'edits', codeIntel: false }
+    return saved ? { ...agentScope(saved, scope), fileAccess: 'write', shell: true, commandAllow, autoApprove: () => 'edits', codeIntel: false } : scope
   }
 
   /** The failing checks' logs (GitHub Actions jobs; other checks give only their name and link), tails only. */
@@ -1077,12 +1130,15 @@ export class BoardService {
       throw new Error(`The local ${branch} branch has commits GitHub doesn't, so Cloth won't push over it. Sync the branch, then fix the checks again.`)
     })
     const { model, system, saved } = this.model(pipe.agents.implementer)
+    const project = join(dir, relative(root, s.repo))
+    const deps = await this.installDeps(dir, project, t.key, (a) => this.update(t.id, { activity: a }))
+    if (signal.aborted) return
     this.update(t.id, { activity: 'Starting' })
     const res = await this.deps.runtime.run({
       model,
-      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nPull request: ${pr.url}\n\nFailing checks:\n\n${checksReport(logs)}${pipe.fixLog?.length ? `\n\nEarlier fix attempts that didn't make the checks pass:\n${pipe.fixLog.map((f, i) => `${i + 1}. Thought the cause was: ${f.rootCause}\n   Changed: ${f.fix}`).join('\n')}` : ''}`,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nPull request: ${pr.url}\n\nFailing checks:\n\n${checksReport(logs)}${pipe.fixLog?.length ? `\n\nEarlier fix attempts that didn't make the checks pass:\n${pipe.fixLog.map((f, i) => `${i + 1}. Thought the cause was: ${f.rootCause}\n   Changed: ${f.fix}`).join('\n')}` : ''}${deps}`,
       systemPrompt: [system, FIXER].filter(Boolean).join('\n\n'),
-      scope: this.writeScope(join(dir, relative(root, s.repo)), s, saved),
+      scope: this.writeScope(project, s, saved),
       thinking: saved?.thinking ?? undefined,
       maxTurns: 80,
       signal,

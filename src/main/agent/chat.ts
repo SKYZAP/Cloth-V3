@@ -18,6 +18,10 @@ import type { Agent as SavedAgent, AgentSetup, AgentTier, SubagentActivity, Todo
 import type { ProjectService } from './projects'
 import type { AgentService } from './agents'
 import type { McpClientService } from '../mcp/client'
+import type { SwatchService } from '../swatches/swatches'
+import { ChatThemes, type ThemeInput } from './themes'
+import { NO_THEME, THEME_DIALS, type ChatTheme } from '@shared/chat-themes'
+import type { SwatchTrace } from '@shared/swatches'
 import { attachmentContent, FILE_OPEN, parseFileBlock } from './attachments'
 import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
@@ -125,6 +129,8 @@ export function cleanTitle(raw: string): string {
   return t
 }
 
+/** Sent when an unattended agent reaches its step limit. */
+const OUT_OF_STEPS = "You've reached your step limit. Don't call any more tools: finish now with your final answer in the format your instructions ask for, saying what's done and what's left."
 const SKILL_OPEN = '<skill-invocation name="'
 const SKILL_CLOSE = '</skill-invocation>'
 const AGENT_OPEN = '<agent-mention name="'
@@ -385,7 +391,7 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin; swatches?: SwatchService } = {}
   ) {}
 
   /** Cloth itself for the agent's hub tools: other chats, agents, automations, MCP servers, providers (set once the services exist). */
@@ -613,6 +619,8 @@ export class AgentRuntime {
       ...buildTools({ rag: this.rag, skills: this.skills, web: this.web, custom: this.custom, ...(usage ? { usage: this.providers.usage } : {}), ...this.ws }, scope),
       ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
+      ...(this.swatchesAvailable(scope) ? [this.swatchTool(scope)] : []),
+      ...(this.themesAvailable(scope) ? [this.themeTool()] : []),
       ...(this.computerAvailable(parent) ? [this.computerTool(scope)] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
     ]
@@ -726,6 +734,106 @@ export class AgentRuntime {
         return {
           content: [{ type: 'text', text: `Generated a ${dims}image with ${img.model}; it is shown to the user.${img.revisedPrompt ? ` The model revised the prompt to: ${img.revisedPrompt}` : ''}` }],
           details: { image } as unknown as ToolDetails
+        }
+      }
+    }
+  }
+
+  private themesAvailable(scope: ToolScope): boolean {
+    return !!this.ws.settings && !!scope.sessionId && !scope.depth && !scope.disabledTools?.includes('chat_theme') && (!scope.onlyTools || scope.onlyTools.includes('chat_theme'))
+  }
+
+  /** chat_theme: list, make, adjust, apply and delete the animated chat backgrounds. */
+  private themeTool(): AgentTool<any, ToolDetails> {
+    const themes = new ChatThemes(this.ws.settings!)
+    const num = (description: string) => Type.Optional(Type.Number({ description }))
+    const describe = (t: ChatTheme) => `${t.id}${t.builtin ? ' (built in)' : ''}: "${t.name}", ${t.pattern}, colours ${t.colors.join(' ')}, ${THEME_DIALS.map((k) => `${k} ${t[k]}`).join(', ')}`
+    return {
+      name: 'chat_theme',
+      label: 'Chat theme',
+      description:
+        'Change the animated background behind Cloth chats when the user asks (a new look, a colour, calmer or livelier, stronger or fainter). action "list" shows every theme, which is on and the strength; "strength" sets how much of the background shows behind the chat (0.1 faint to 1 full, the same for every theme; it also works alongside any other action); "create" makes one from an existing theme (from, default the current one) with your changes; "update" changes one (a built-in theme is copied instead); "apply" switches to one, or to "none" for no background; "delete" removes one the user or you made. Patterns: "flow" (a slow swirling flow field) or "waves" (soft horizontal bands). colors are four #rrggbb from darkest to brightest; keep the darkest near black so text stays readable. Dials: scale 0.5–4 (higher = smaller detail), intensity 0–1 (swirl), speed 0–2 (0 = still), drift 0–0.5, grain 0–0.5, vignette 0–1, brightness -0.6–0.3, blur 0–0.03. Changes show at once.',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('list'), Type.Literal('create'), Type.Literal('update'), Type.Literal('apply'), Type.Literal('delete'), Type.Literal('strength')]),
+        id: Type.Optional(Type.String({ description: 'The theme to update, apply or delete (its id or name); "none" with apply turns the background off' })),
+        from: Type.Optional(Type.String({ description: 'create: the theme to start from (default the current one)' })),
+        name: Type.Optional(Type.String({ description: 'create: required, 1–4 words. update: renames' })),
+        pattern: Type.Optional(Type.Union([Type.Literal('flow'), Type.Literal('waves')])),
+        colors: Type.Optional(Type.Array(Type.String(), { minItems: 4, maxItems: 4, description: 'Four #rrggbb, darkest first' })),
+        scale: num('0.5–4'),
+        intensity: num('0–1'),
+        speed: num('0–2'),
+        drift: num('0–0.5'),
+        grain: num('0–0.5'),
+        vignette: num('0–1'),
+        brightness: num('-0.6–0.3'),
+        blur: num('0–0.03'),
+        strength: num('How much of the background shows behind the chat, 0.1–1 (for every theme)'),
+        apply: Type.Optional(Type.Boolean({ description: 'create/update: also switch to it (default true)' }))
+      }),
+      execute: async (_id, params) => {
+        const { action, id, from, apply, strength, ...rest } = params as { action: string; id?: string; from?: string; apply?: boolean; strength?: number } & ThemeInput
+        const input = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) as ThemeInput
+        if (action === 'strength' && strength === undefined) throw new Error('strength needs a strength from 0.1 to 1')
+        const setStrength = strength !== undefined ? ` Strength is ${themes.setStrength(strength)}.` : ''
+        const text = (() => {
+          if (action === 'list') {
+            const { themes: all, active, strength: now } = themes.list()
+            return `Current: ${active}, strength ${now}\n${all.map(describe).join('\n')}`
+          }
+          if (action === 'strength') return 'The background strength changed.'
+          if (action === 'create') {
+            if (!input.name) throw new Error('create needs a name')
+            const t = themes.create(input as ThemeInput & { name: string }, from, apply !== false)
+            return `Made ${describe(t)}${apply !== false ? '. It is on now.' : '.'}`
+          }
+          if (!id) throw new Error(`${action} needs id`)
+          if (action === 'update') {
+            const t = themes.update(id, input, apply !== false)
+            return `${t.id === id ? 'Updated' : 'Built-in themes stay as they are, so made a copy:'} ${describe(t)}${apply !== false ? '. It is on now.' : '.'}`
+          }
+          if (action === 'apply') {
+            const on = themes.apply(id)
+            return on === NO_THEME ? 'The chat background is off.' : `Switched to ${on}.`
+          }
+          if (action === 'delete') {
+            themes.remove(id)
+            return `Deleted ${id}.`
+          }
+          throw new Error(`Unknown action ${action}`)
+        })()
+        return { content: [{ type: 'text', text: text + setStrength }], details: {} as ToolDetails }
+      }
+    }
+  }
+
+  private swatchesAvailable(scope: ToolScope): boolean {
+    return !!this.ws.swatches && !!scope.sessionId && !scope.depth && !scope.disabledTools?.includes('publish_swatch') && (!scope.onlyTools || scope.onlyTools.includes('publish_swatch'))
+  }
+
+  /** publish_swatch: save a page the user can open in Cloth and, with network sharing on, on their other devices. */
+  private swatchTool(scope: ToolScope): AgentTool<any, ToolDetails> {
+    const swatches = this.ws.swatches!
+    return {
+      name: 'publish_swatch',
+      label: 'Publish swatch',
+      description:
+        'Publish a swatch: a self-contained page the user opens in Cloth (Swatches page) and, if they share swatches on their network, on their phone or other computers. Use it when the user asks for something to look at or share rather than text in the chat: a report, dashboard, chart, diagram, slide-like summary, interactive demo or small tool. Give the full content every time. format "html" is a complete page (inline CSS and JS; libraries from a CDN such as cdnjs or jsdelivr are fine; it runs sandboxed, without access to Cloth or storage that lasts); "markdown" is rendered as a clean document; "svg" is one image. Make it work on a phone too. To change a swatch you made, pass its id: the same link then shows the new version. Do not paste the content into your reply; the user sees a card for it.',
+      parameters: Type.Object({
+        title: Type.String({ description: 'Short name, 2 to 6 words, sentence case' }),
+        content: Type.String({ description: 'The whole page, document or SVG' }),
+        format: Type.Optional(Type.Union([Type.Literal('html'), Type.Literal('markdown'), Type.Literal('svg')], { description: 'Default: worked out from the content' })),
+        id: Type.Optional(Type.String({ description: 'An existing swatch to update (from an earlier publish_swatch)' }))
+      }),
+      execute: async (_id, params) => {
+        const p = params as { title: string; content: string; format?: string; id?: string }
+        const sw = swatches.publish({ ...p, sessionId: scope.sessionId ?? null })
+        const links = swatches.links(sw.id)
+        const network = links.filter((l) => l.kind !== 'local')
+        const where = network.length ? ` Other devices on the network can open it at ${network[0].url}.` : ' It opens on this PC; the user can turn on network sharing on the Swatches page to open it on other devices.'
+        return {
+          content: [{ type: 'text', text: `Published "${sw.title}" (id ${sw.id}, version ${sw.version}, ${sw.format}). The user sees a card to open it.${where}` }],
+          details: { swatch: { id: sw.id, title: sw.title, version: sw.version, format: sw.format } } as unknown as ToolDetails
         }
       }
     }
@@ -949,8 +1057,21 @@ export class AgentRuntime {
     // What it is doing now and the files it has changed, for live progress.
     const running = new Map<string, SubagentActivity>()
     const files: string[] = []
+    // At the step limit the agent gets two more turns to stop using tools and answer; only then is it cut off.
+    let wrapping = false
+    let outOfSteps = false
     agent.subscribe((e) => {
-      if (e.type === 'turn_end' && ++turns >= maxTurns) agent.abort()
+      if (e.type === 'turn_end') {
+        turns++
+        const continues = e.toolResults.length > 0
+        if (continues && turns >= maxTurns + 2) {
+          outOfSteps = true
+          agent.abort()
+        } else if (continues && turns >= maxTurns && !wrapping) {
+          wrapping = true
+          agent.steer({ role: 'user', content: [{ type: 'text', text: OUT_OF_STEPS }], timestamp: Date.now() })
+        }
+      }
       if (e.type === 'tool_execution_start') running.set(e.toolCallId, { tool: e.toolName, summary: toolSummary(e.toolName, e.args) })
       if (e.type === 'tool_execution_end') {
         running.delete(e.toolCallId)
@@ -966,6 +1087,7 @@ export class AgentRuntime {
     await agent.prompt(opts.prompt)
     const messages = agent.state.messages
     const turn = toUiMessages(messages.slice(startIndex)).filter((m) => m.role === 'assistant').at(-1)
+    if (outOfSteps) throw new Error(`Ran out of steps: the agent used all ${maxTurns} of its turns without finishing`)
     if (!turn) throw new Error(agent.state.errorMessage || 'Agent produced no response')
     if (turn.error) throw new Error(turn.error)
     const text = turn.blocks.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('\n').trim()
@@ -2085,6 +2207,7 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
           ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
           ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {}),
+          ...(block.name === 'publish_swatch' && r?.details?.swatch ? { swatch: r.details.swatch as unknown as SwatchTrace } : {}),
           ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {}),
           ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {}),
           ...(block.name === 'ask_questions' && r?.details?.questions ? { questions: r.details.questions as unknown as QuestionRound } : {}),

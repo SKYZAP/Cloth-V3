@@ -33,6 +33,11 @@ export const DEFAULT_SETTINGS: Settings = {
   remoteEnabled: false,
   remotePort: 7812,
   remoteKeepAwake: true,
+  swatchNetwork: false,
+  swatchPort: 7841,
+  chatTheme: 'crimson-flow',
+  chatThemes: [],
+  chatThemeStrength: 0.55,
   subagents: {
     enabledByDefault: true,
     model: null,

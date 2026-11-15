@@ -13,6 +13,7 @@ import type { UsageService } from './core/usage'
 import type { ChatEvent, UsageSource, WorkflowEvent } from '@shared/types'
 import { createComputer } from './computer/host'
 import { loadLoginShellPath } from './core/shell-env'
+import { runPendingReset } from './core/reset'
 import type { ComputerController } from './computer/tool'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -112,6 +113,9 @@ function devUpdates(): boolean {
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
 else {
+  // Settings › Reset Cloth restarts into this: the data folder is wiped before anything opens it.
+  const reset = runPendingReset(app.getPath('userData'))
+  if (reset) console.log(`[cloth] reset: removed ${reset.removed.length} items${reset.failed.length ? `; couldn't remove ${reset.failed.join(', ')}` : ''}`)
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
@@ -169,6 +173,7 @@ else {
     void services.updates.checkIfDue()
     await services.mcp.restart()
     await services.remote.restart()
+    await services.swatches.restart()
     // Dev: pair a phone (or the mobile web build) without clicking through Settings.
     if (!app.isPackaged && process.env.CLOTH_PAIR_FILE) {
       const { writeFile } = await import('node:fs/promises')
@@ -203,7 +208,7 @@ else {
     services.boards.stop()
     services.lsp.disposeAll()
     services.panel.terminals.killAll()
-    void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll()]).finally(() => app.quit())
+    void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.swatches.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll()]).finally(() => app.quit())
   })
 }
 

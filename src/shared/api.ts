@@ -80,6 +80,8 @@ export interface ClothApi {
     openExternal(url: string): Promise<void>
     /** macOS: open the Privacy & Security pane for a permission computer use needs. */
     openPrivacySettings(kind: 'screen' | 'accessibility'): Promise<void>
+    /** Delete everything Cloth has saved (optionally keeping downloaded models) and restart as new. */
+    reset(opts: { keepModels: boolean }): Promise<void>
   }
   settings: {
     get(): Promise<Settings>
@@ -479,6 +481,19 @@ export interface ClothApi {
     /** Call one of a server's tools directly (the Tools page's Try it). */
     callTool(id: string, tool: string, args: Record<string, unknown>): Promise<ToolRunResult>
   }
+  /** Swatches: pages chats publish, opened in Cloth and (with network sharing on) on other devices. */
+  swatches: {
+    list(): Promise<import('./swatches').Swatch[]>
+    content(id: string): Promise<string>
+    links(id: string): Promise<import('./swatches').SwatchLink[]>
+    /** A new secret in its link: the old links stop working. */
+    newLink(id: string): Promise<import('./swatches').SwatchLink[]>
+    rename(id: string, title: string): Promise<import('./swatches').Swatch>
+    remove(id: string): Promise<void>
+    status(): Promise<import('./swatches').SwatchServerStatus>
+    /** Save it as a file where the person picks; false when they cancelled. */
+    saveAs(id: string): Promise<boolean>
+  }
   /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
   remote: {
     status(): Promise<RemoteStatus>
@@ -513,4 +528,7 @@ export type EventMap = {
   computer: { kind: 'screen' | 'accessibility'; text: string }
   updates: import('./types').UpdateStatus
   boards: import('./boards').BoardEvent
+  swatches: import('./swatches').SwatchEvent
+  /** The chat background or the saved themes changed (the agent's chat_theme tool, or Settings). */
+  themes: { type: 'changed' }
 }

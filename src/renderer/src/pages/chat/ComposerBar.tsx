@@ -25,10 +25,10 @@ const MODE_TONE: Record<ChatMode, string> = {
 }
 const MODE_ICON_TONE: Record<ChatMode, string> = { chat: 'text-muted', plan: 'text-info', spec: 'text-mode', openspec: 'text-ospec' }
 export const ACCESS_ICON: Record<Access, Icon> = { auto: Lightning, manual: Hand }
-const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-ok', manual: 'text-warn' }
-/** The access chip: outlined and tinted in its own colour (green for Auto, amber for Manual). */
+const ACCESS_ICON_TONE: Record<Access, string> = { auto: 'text-crimson-hi', manual: 'text-warn' }
+/** The access chip: outlined and tinted in its own colour (Cloth's crimson for Auto, amber for Manual). */
 const ACCESS_TONE: Record<Access, string> = {
-  auto: 'border-ok/35 bg-ok/[0.08] text-ok hover:bg-ok/15',
+  auto: 'border-crimson-line bg-crimson-soft text-crimson-text hover:bg-crimson/20',
   manual: 'border-warn/35 bg-warn/[0.08] text-warn hover:bg-warn/15'
 }
 

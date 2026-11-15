@@ -3,7 +3,7 @@ import type { Collection, ModelRef, Provider, Settings } from '@shared/types'
 import { api } from './api'
 import type { OnboardingStep } from '@shared/onboarding'
 
-export type Page = 'dashboard' | 'chat' | 'boards' | 'knowledge' | 'skills' | 'agents' | 'tools' | 'workflows' | 'providers' | 'run' | 'mcp' | 'design' | 'settings'
+export type Page = 'dashboard' | 'chat' | 'boards' | 'knowledge' | 'skills' | 'agents' | 'tools' | 'workflows' | 'providers' | 'run' | 'mcp' | 'design' | 'settings' | 'swatches'
 
 interface Toast {
   id: number

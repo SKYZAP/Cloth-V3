@@ -773,7 +773,7 @@ export const BUILTINS: BuiltinSpec[] = [
   })
 ]
 
-export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task', 'generate_image']
+export const BUILTIN_NAMES = [...BUILTINS.map((b) => b.name), ...WORKSPACE_TOOL_NAMES, 'task', 'generate_image', 'publish_swatch', 'chat_theme']
 
 const W = (chats: boolean, subagents: boolean, flows: boolean, apps: boolean): ToolWhere => ({ chats, subagents, flows, apps })
 /**

@@ -87,6 +87,8 @@ export class SearxngSidecar {
       cwd: src,
       env: {
         ...process.env,
+        // A key-log path set for another tool (often unwritable here) makes Python's ssl fail at start-up.
+        SSLKEYLOGFILE: undefined,
         PYTHONPATH: src,
         SEARXNG_SETTINGS_PATH: settingsFile,
         PYTHONUNBUFFERED: '1',
