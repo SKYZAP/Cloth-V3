@@ -26,6 +26,7 @@ import type { AgentService } from '../agent/agents'
 import type { ProjectService } from '../agent/projects'
 import { agentScope, type AgentRuntime } from '../agent/chat'
 import type { ToolScope } from '../agent/tools'
+import { canonicalPath } from '../agent/worktrees'
 import { git, repoRoot } from '../panel/git'
 import { defaultStateMap, makeTracker, type RawTicket, type Tracker, type TrackerConfig } from './trackers'
 import { LOCAL_STATE_MAP, localTracker, type LocalTracker } from './local'
@@ -957,7 +958,7 @@ export class BoardService {
     this.update(t.id, { branch, activity: 'Setting up the worktree' })
     const dir = await this.worktree(root, branch ?? null, base, t.key)
     const { model, system, saved } = this.model(pipe.agents.implementer)
-    const project = join(dir, relative(root, s.repo))
+    const project = join(dir, relative(canonicalPath(root), canonicalPath(s.repo)))
     const deps = await this.installDeps(dir, project, t.key, (a) => this.update(t.id, { activity: a }))
     if (signal.aborted) return
     const scope = this.writeScope(project, s, saved)
@@ -1130,7 +1131,7 @@ export class BoardService {
       throw new Error(`The local ${branch} branch has commits GitHub doesn't, so Cloth won't push over it. Sync the branch, then fix the checks again.`)
     })
     const { model, system, saved } = this.model(pipe.agents.implementer)
-    const project = join(dir, relative(root, s.repo))
+    const project = join(dir, relative(canonicalPath(root), canonicalPath(s.repo)))
     const deps = await this.installDeps(dir, project, t.key, (a) => this.update(t.id, { activity: a }))
     if (signal.aborted) return
     this.update(t.id, { activity: 'Starting' })

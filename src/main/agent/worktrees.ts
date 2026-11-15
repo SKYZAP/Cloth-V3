@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { appendFile, copyFile, lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { git, repoRoot } from '../panel/git'
 
 /*
@@ -80,18 +80,25 @@ function serial<T>(root: string, job: () => Promise<T>): Promise<T> {
   return next
 }
 
-/** The folder's path inside the repository ('' at its top). Git reports the top with links resolved (macOS's /var is
- * /private/var) and Windows short names expanded (RUNNER~1), so both sides are resolved the same way before comparing. */
-const subfolder = (root: string, workspace: string) => {
-  const real = (p: string) => {
-    try {
-      return realpathSync.native(p)
-    } catch {
-      return p
-    }
+/**
+ * A path as git reports it: links resolved (macOS's /var is /private/var) and Windows short names expanded (RUNNER~1).
+ * A path that doesn't exist (yet, or any more) is resolved through its nearest existing parent.
+ */
+export function canonicalPath(p: string): string {
+  const abs = resolve(p)
+  try {
+    return realpathSync.native(abs)
+  } catch {
+    const parent = dirname(abs)
+    return parent === abs ? abs : join(canonicalPath(parent), basename(abs))
   }
-  return relative(real(root), real(workspace))
 }
+
+/** The same path for comparing: canonical, and case-insensitive on Windows. */
+const samePathKey = (p: string) => (process.platform === 'win32' ? canonicalPath(p).toLowerCase() : canonicalPath(p))
+
+/** The folder's path inside the repository ('' at its top), with both sides resolved the way git resolves them. */
+const subfolder = (root: string, workspace: string) => relative(canonicalPath(root), canonicalPath(workspace))
 
 const slugPart = (s: string) =>
   s
@@ -307,14 +314,14 @@ export async function cleanupWorkflow(workspace: string, slug: string | null, di
       if (!path) continue
       // Checkouts git lists for other branches (another feature's workers, the chat's own) are live and stay.
       if (!branch?.startsWith(prefix)) {
-        live.add(resolve(path).toLowerCase())
+        live.add(samePathKey(path))
         continue
       }
       await git(root, ['worktree', 'remove', '--force', path])
       if (await removeDir(resolve(path), root)) trees++
     }
     // Folders git has forgotten but that are still on disk: their .git file points into this repository.
-    const gitDir = resolve(root, '.git').toLowerCase()
+    const gitDir = samePathKey(join(root, '.git'))
     const folders = existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(dir, e.name)) : []
     for (const folder of folders) {
       let points: string | null = null
@@ -323,8 +330,8 @@ export async function cleanupWorkflow(workspace: string, slug: string | null, di
       } catch {
         /* no .git file: git already emptied it */
       }
-      if (live.has(resolve(folder).toLowerCase())) continue
-      const ours = points ? resolve(points).toLowerCase().startsWith(gitDir) : leftovers.get(folder) === root
+      if (live.has(samePathKey(folder))) continue
+      const ours = points ? samePathKey(resolve(folder, points)).startsWith(gitDir) : leftovers.get(folder) === root
       if (ours && (await removeDir(folder, root))) trees++
     }
     await git(root, ['worktree', 'prune'])
