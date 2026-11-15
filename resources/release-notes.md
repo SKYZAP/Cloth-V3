@@ -1,33 +1,20 @@
-## Boards
-- A new Boards page drives tracker tickets through agent stages: a planner writes requirements, a reviewer checks them against the goal, and an implementer builds in its own worktree and opens a PR.
-- Works with Plane, Jira, or a Cloth board kept offline in Cloth's own storage, with no account or token.
-- Per-project settings for what agents may do: commit or not, open PRs, sync tickets back to the tracker, approve requirements first, and how many review rounds and check fixes to try.
-- When a PR fails its checks, the implementer reads the CI logs, fixes the cause and pushes to the same PR.
-- The planner researches what a ticket depends on, and each feature lands as one conventional commit with a standard PR title and description.
-- Open in chat starts a chat for a ticket with its requirements and PR ready in the message box.
+## Agents
+- The Agents page now works like Models and Automations: your agents are listed on the left, and the one you pick is edited in place on the right.
+- Each agent in the list says what it's working on right now, or its access level and how many jobs it ran this week.
+- An agent's page groups how it works (access, reasoning, model, approvals and instructions) and what it can use (skills, tools, servers and knowledge), with a strip of its week's activity.
+- Select Cloth, or Compare all, to see the whole team side by side.
 
 ## Swatches
-- Chats can publish swatches: pages, documents and images the agent makes, shown live right in the conversation.
-- Open a swatch in the new Swatches tab of the side panel, or on the Swatches page; close it there and pick another from the chat's list.
-- Each swatch has a private link, and can be shared with phones and computers on your network.
+- Swatches in a chat show as a compact bar with Open and a link to the Swatches page, without the preview.
+- New Settings › Swatches section: share on your network, change the port, and see whether the swatch server is running.
+- When the swatch port is already taken, the Swatches page says so and Change the port takes you to the setting.
 
-## Chat
-- Chat has its own canvas: the chat list on the frame, and a side panel card opened from a dock that shows running terminals, git changes, agents and builds.
-- Animated chat backgrounds in five styles (flow, waves, mesh, swirl and halftone) with adjustable strength; ask a chat to make or adjust a theme.
-- Chats are archived instead of deleted, with Undo and Ctrl+E.
-- File paths in replies open in the side panel's file viewer.
-- OpenSpec mode takes a change from proposal to pull request; OpenSpec and Spec → Ship share one Spec tab with a mode toggle.
-- Agents have one access level (Reader, Writer, Operator) and one reasoning level (Low to Max), and the chat agent can set up agents, automations, MCP servers and model providers for you.
+## User guide
+- The bundled Cloth user guide now covers every feature, from Boards and Swatches to Run, Automations and keyboard shortcuts.
+- Existing installs get the updated guide in the Cloth examples collection automatically (unless you've deleted the collection).
 
-## Setup and settings
-- A first-run setup picks your model, working folder, languages and tools, and imports skills, agents and MCP servers from Claude Code, Claude Desktop, Cursor and Codex.
-- Settings › Dependencies shows what Cloth ships and what it uses from your computer.
-- Reset Cloth starts over from scratch, optionally keeping downloaded models.
-- Changed settings are marked with a blue outline, and Models and Settings use the full window width.
-
-## Security and fixes
-- MCP and provider tokens are stored encrypted and never shown in the app or on paired phones.
-- Images from the web in replies wait for a click before loading.
-- The OpenSpec command-line tool now ships with Cloth, so it works without a separate install.
-- Web search no longer fails to start when another tool sets a key-log file.
-- Updated the agent runtime and patched dependencies; npm audit reports no vulnerabilities.
+## Fixes
+- Spec → Ship's cleanup no longer mistakes another feature's live checkout for a leftover when your temp folder sits behind a link or a short Windows name.
+- Boards builds work out the project folder correctly in those same setups.
+- The Models sidebar no longer has a Jobs heading; which model does each job is still listed there, and changed in Settings › Models.
+- The composer's place picker says "This computer" instead of "This PC".
