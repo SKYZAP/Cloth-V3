@@ -20,10 +20,12 @@ import {
   PlugsConnected,
   Plus,
   Robot,
+  Swatches as SwatchesIcon,
   Trash,
   X,
   type Icon
 } from '@phosphor-icons/react'
+import type { SwatchServerStatus } from '@shared/swatches'
 import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings, type UpdateStatus, type SubagentSettings, type ThinkingLevel } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
@@ -40,7 +42,7 @@ import { activeTheme, allThemes, clampStrength, DEFAULT_CHAT_THEME, NO_THEME, ST
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
-type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'mcp' | 'deps' | 'about'
+type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'swatches' | 'mcp' | 'deps' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -61,6 +63,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split before they’re indexed. Changes apply to documents added afterwards.', keywords: 'chunk chunking overlap rag index' },
   { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow.', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Chat with Cloth from the Android app.', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
+  { id: 'swatches', title: 'Swatches', icon: SwatchesIcon, blurb: 'Where the pages chats publish are served, and who can open them.', keywords: 'swatch swatches port server network share link lan wifi page', desktopOnly: true },
   { id: 'mcp', title: 'MCP server', icon: PlugsConnected, blurb: 'Lets other apps, like your editor, use Cloth’s skills and knowledge.', keywords: 'mcp port server claude cursor' },
   { id: 'deps', title: 'Dependencies', icon: Package, blurb: 'Programs Cloth ships with, the ones it uses from this PC, and what each one is for.', keywords: 'git github gh docker node python bash powershell obscura searxng openspec installed programs tools requirements', desktopOnly: true },
   { id: 'about', title: 'Data & about', icon: Info, blurb: 'Where Cloth keeps its data, and which version you have.', keywords: 'data folder version database about update updates github release setup onboarding first run welcome languages import' }
@@ -123,6 +126,8 @@ const TRACKED = new Map<string, Tracked>([
   top('chatThemeStrength', 'chat'),
   top('chunkSize', 'knowledge'),
   top('chunkOverlap', 'knowledge'),
+  top('swatchPort', 'swatches'),
+  top('swatchNetwork', 'swatches'),
   top('mcpPort', 'mcp'),
   sub('enabledByDefault'),
   sub('thinking'),
@@ -424,6 +429,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           <PhoneSettings />
         </>
       )
+    case 'swatches':
+      return <SwatchSettings settings={settings} />
     case 'mcp':
       return (
         <Group>
@@ -437,6 +444,39 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
     case 'about':
       return <AboutSection />
   }
+}
+
+/** The swatch server: whether it's running (and why not), sharing with the network, and its port. */
+function SwatchSettings({ settings }: { settings: Settings }) {
+  const update = useApp((s) => s.updateSettings)
+  const [status, setStatus] = useState<SwatchServerStatus | null>(null)
+  useEffect(() => {
+    void api.swatches.status().then(setStatus, () => undefined)
+  }, [])
+  useEvent('swatches', (e) => e.type === 'status' && setStatus(e.status))
+  return (
+    <Group
+      note={
+        status?.error ? (
+          <span className="text-danger-hi">{status.error.replace(/ Pick another in Settings › Swatches\.$/, ' Pick another port above.')}</span>
+        ) : status?.running ? (
+          <span>
+            Running on port <span className="font-mono tabular-nums text-muted">{status.port}</span>
+            {status.network ? ', open to devices on your network.' : ', on this computer only.'}
+          </span>
+        ) : status ? (
+          'Not running.'
+        ) : undefined
+      }
+    >
+      <Row label="Share on your network" track="swatchNetwork" hint="Phones and computers on the same network can open swatch links. Each link has its own key, so only people you send one to can open it.">
+        <Switch checked={settings.swatchNetwork} onChange={(swatchNetwork) => void update({ swatchNetwork })} />
+      </Row>
+      <Row label="Port" track="swatchPort" hint="Change it if another app, or another copy of Cloth, already uses this port. Links made before stop working on the old port.">
+        <NumberInput value={settings.swatchPort} min={1024} max={65535} onCommit={(swatchPort) => void update({ swatchPort })} />
+      </Row>
+    </Group>
+  )
 }
 
 function SubagentSection({ value }: { value: SubagentSettings }) {

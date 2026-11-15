@@ -10,6 +10,7 @@ import { isMobile, useSideBySide } from '@/lib/platform'
 import { useSwatchNav } from '@/lib/swatchNav'
 import { Button, Empty, IconButton, Input, ListItem, ListPane, PageHeader, Switch, confirmAction } from '@/components/ui'
 import { SplitDetail, SplitRoot } from '@/components/SplitView'
+import { openSettingsSection } from './Settings'
 
 const FORMAT: Record<Swatch['format'], { label: string; icon: typeof FileHtml }> = {
   html: { label: 'Page', icon: FileHtml },
@@ -72,7 +73,16 @@ export function SwatchesPage() {
                 <Switch checked={network} onChange={(v) => void setShared(v)} ariaLabel="Share swatches on your network" />
               </div>
             )}
-            {status?.error && <div className="px-1 text-caption text-danger">{status.error}</div>}
+            {status?.error && (
+              <div className="grid justify-items-start gap-1.5 px-1 text-caption text-danger">
+                {status.error.replace(/ Pick another in Settings › Swatches\.$/, '')}
+                {!isMobile && (
+                  <Button size="sm" onClick={() => openSettingsSection('swatches')}>
+                    Change the port
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         }
       >

@@ -160,6 +160,7 @@ A swatch is a page, document or image a chat publishes with `publish_swatch`: an
 - It shows live in the conversation. **Open** shows it in the chat's Swatches tab; close it there to pick another of the chat's swatches.
 - The **Swatches** page lists every swatch, with versions, renaming, a new link, and deletion.
 - Each swatch has a private link. Turn on **Share on your network** to open it from phones and other computers on the same network.
+- Swatches are served on port 7841. If another app (or another copy of Cloth) already uses it, the Swatches page says so; **Change the port** opens **Settings › Swatches**, where you can also turn network sharing on or off.
 - Swatch pages run sandboxed: they can't read Cloth's data or each other's.
 
 ## Automations
@@ -244,7 +245,7 @@ Settings › Phone pairs the Android app by QR code. Use Cloth from your phone o
 - **Chat:** chat titles, summarising long chats, and the background.
 - **Coding rules:** rules every agent follows when it writes code, and ast-grep rule files.
 - **Subagents:** how many run at once, their steps, the most they may do, and the model for review checks.
-- **Web search**, **Knowledge** (chunking), **MCP server** (port and token) and **Phone**.
+- **Web search**, **Knowledge** (chunking), **Swatches** (network sharing and port), **MCP server** (port and token) and **Phone**.
 - **Design systems:** palettes, type and shape that projects follow; the Designer agent uses them.
 - **Dependencies:** what Cloth ships (Obscura, SearXNG, OpenSpec) and what it uses from your computer (Git, GitHub CLI, Docker, Node.js, Python, Bash, PowerShell 7), each with its version and what happens without it.
 - **Data & about:** the data folder, the version, updates, first-run setup again, and **Reset Cloth**, which deletes everything and restarts with defaults (optionally keeping downloaded models).
