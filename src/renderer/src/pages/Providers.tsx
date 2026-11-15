@@ -9,7 +9,6 @@ import { compact } from '@/lib/format'
 import { Button, Empty, Field, IconButton, Input, Modal, Switch, Textarea, confirmAction, PageTitle } from '@/components/ui'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { useSideBySide } from '@/lib/platform'
-import { openSettingsSection } from './Settings'
 import { GeneratedImageCard } from '@/components/GeneratedImageCard'
 
 const isLocal = (url: string) => /\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(url)
@@ -123,7 +122,7 @@ function Health({ enabled, test }: { enabled: boolean; test?: ProviderTestResult
   )
 }
 
-/** Which model does each job, so it's visible where models are managed. Changed in Settings. */
+/** Which model does each job, so it's visible where models are managed. Changed in Settings › Models. */
 function Jobs({ providers }: { providers: Provider[] }) {
   const settings = useApp((s) => s.settings)
   if (!settings) return null
@@ -135,13 +134,7 @@ function Jobs({ providers }: { providers: Provider[] }) {
   ]
   const exists = (r: ModelRef | null) => !!r && providers.some((p) => p.id === r.providerId && p.models.some((m) => m.id === r.modelId))
   return (
-    <div className="border-t border-line/60 px-5 pb-4 pt-3.5 mobile:hidden">
-      <div className="mb-2 flex items-center justify-between text-caption font-semibold text-muted">
-        Jobs
-        <button className="rounded px-1 font-medium text-dim hover:text-fg" onClick={() => openSettingsSection('models')}>
-          Change
-        </button>
-      </div>
+    <div className="border-t border-line/60 px-5 pb-4 pt-3 mobile:hidden">
       {jobs.map(([job, ref, none]) => (
         <div key={job} className="flex justify-between gap-3 py-1 text-caption">
           <span className="text-dim">{job}</span>

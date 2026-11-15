@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   webResults: 6,
   webAllowPrivate: false,
   examplesLoaded: false,
+  examplesHash: '',
   mcpEnabled: true,
   mcpPort: 7811,
   mcpRequireToken: false,

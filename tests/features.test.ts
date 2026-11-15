@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fauxAssistantMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import { executeGraph } from '../src/main/workflows/engine'
@@ -151,6 +151,31 @@ describe('example knowledge', () => {
     services.rag.deleteCollection(col.id)
     await services.examples.seedIfNeeded()
     expect(services.rag.listCollections()).toHaveLength(0)
+  })
+
+  it('covers current features in the user guide, and reloads the docs once when a release changes them', async () => {
+    const { services } = makeServices()
+    await services.examples.seedIfNeeded()
+    const count = () => services.rag.listCollections()[0]?.docCount
+    for (let i = 0; i < 100 && count() !== services.examples.files().length; i++) await new Promise((r) => setTimeout(r, 50))
+    const col = services.rag.listCollections()[0]
+    const res = await services.rag.search({ query: 'tracker tickets planner reviewer implementer worktree', collectionIds: [col.id] })
+    expect(res.hits[0].title).toBe('cloth-user-guide.md')
+
+    const hash = services.settings.get().examplesHash
+    expect(hash).toMatch(/^[a-f0-9]{40}$/)
+    const load = vi.spyOn(services.examples, 'load')
+    // The same bundle as last time: nothing to do.
+    await services.examples.seedIfNeeded()
+    expect(load).not.toHaveBeenCalled()
+    // A release changed the docs: they are loaded again, once.
+    services.settings.update({ examplesHash: 'an older release' })
+    await services.examples.seedIfNeeded()
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(services.settings.get().examplesHash).toBe(hash)
+    expect(services.rag.listCollections()).toHaveLength(1)
+    load.mockRestore()
+    services.rag.deleteCollection(col.id)
   })
 })
 

@@ -1,111 +1,269 @@
 # Cloth user guide
 
-Cloth is an offline developer hub. Everything runs on your machine: model providers, the agent, the knowledge base, the skill hub, workflows, tools, web search and an MCP server.
+Cloth is a desktop workbench for AI work. You chat with any model, let agents work on your files, give them your own documents, build skills and tools, automate tasks, and run local models, all from one app. Chats, documents, skills and settings stay on your computer: in `%APPDATA%\Cloth` on Windows and `~/Library/Application Support/Cloth` on macOS. The only things that leave it are requests to the model providers and websites you use.
+
+The sidebar lists every page: Dashboard, Chat, Boards, Swatches, Automations, Agents, Skills, Tools, Knowledge, Models, Run, MCP servers and Settings.
+
+## First-run setup
+
+The first time Cloth opens, a short setup walks you through:
+
+- **Model:** add a provider or pick a local model to chat with.
+- **Main working folder:** new chats start in it (not chats in a project or a container).
+- **Languages:** the ones you pick decide which language servers Cloth may start (for example gopls, rust-analyzer and clangd), with optional best-practice skills for them.
+- **Tools check:** which programs Cloth found on your computer (Git, GitHub CLI, Docker, Node.js, Python and others).
+- **Import:** copy skills, agents and MCP servers from Claude Code, Claude Desktop, Cursor and Codex. Imported MCP servers arrive switched off, and their secrets never reach the app window.
+- **Ways to work:** which way of working suits you (see below).
+
+**Set up later** leaves a card on the Dashboard. **Settings › Data & about › Run setup again** starts it over.
+
+## Which way to work
+
+- **Chat:** quick, simple fixes. A bug, a rename, a question about the code; the agent works directly and shows each change.
+- **OpenSpec:** fixes that need a plan first. It writes a short proposal and task list, implements it once agreed, and opens a pull request.
+- **Spec → Ship:** large features and risky changes. It works in stages (questions, spec, tickets, build and review) and you sign off between them.
+- **Boards:** a defined goal broken into tickets that agents pick up and move across the board. Best when you know the finish line.
 
 ## Providers and models
 
-Open **Models** to register a provider.
+Open **Models** to add a provider.
 
 - **OpenAI** uses the Responses API; **Anthropic** uses the Messages API. Both need an API key.
 - **OpenAI-compatible** covers LM Studio (`http://localhost:1234/v1`), Ollama (`http://localhost:11434/v1`), llama.cpp, vLLM and OpenRouter.
-- Click **Fetch** to list models. Tick **Embed** for embedding models, **Reason** for models that think, **Vision** for image input.
-- Pick a **default chat model** and a **default embedding model** at the top of the page. Workflows, agentic search and skill tests fall back to the default chat model.
-- API keys are encrypted with the operating system keychain.
+- **Fetch list** lists a provider's models. Each model shows its context size and what it can do: **Reasoning**, **Vision**, **Embed** (embedding model) and **Images** (image generation). Click a chip to correct it.
+- The star marks the default chat model. The bottom of the provider list shows which model does each job (chat, embeddings, images and chat titles); change them in **Settings › Models**.
+- Set a price (USD per 1M input and output tokens) for models the built-in price list doesn't know; the Dashboard uses it for cost.
+- API keys and secret headers are encrypted with your system keychain and are never shown in the app.
+
+## Run: local models
+
+The **Run** page serves local GGUF models with llama.cpp's `llama-server`, one runner per model. A running model is available in every chat like any other model.
+
+- **Install** llama.cpp in one click (the upstream builds, or PrismML's fork) and update it from the same page.
+- **Search models** finds GGUF models and marks how well each fits your hardware ("Fits on the GPU", "Fits on the GPU even at full length", or partial offload).
+- Per runner, set the **context window** (up to the model's limit), the **reasoning level** for models that think (or turn thinking off), the context cache and extra server arguments.
+- Downloads resume if interrupted. Reset Cloth can keep downloaded models.
 
 ## Image generation
 
-Models that generate images are marked **Image** on the Models page (detected automatically for OpenAI `gpt-image` / DALL·E and common open models such as Flux or SDXL, and for OpenRouter models that output images; tick it by hand for others). OpenAI and OpenAI-compatible servers are called through the Images API (`/images/generations`); OpenRouter models through its image output.
+Models marked **Images** generate pictures: OpenAI `gpt-image` and DALL·E, open models such as Flux or SDXL on compatible servers, and OpenRouter models that output images.
 
-- **Generate** on an image model opens a playground: type a prompt, pick square, landscape or portrait, and watch the image resolve.
-- In chat, the agent can call `generate_image` (toggle **Images** under Capabilities). It uses the default image model from Settings, or the first model marked Image. The image appears inline; **Open** shows it in your image viewer and **Save as…** copies it anywhere.
-- Generated images are stored in Cloth's data folder under `images`.
+- **Generate** on an image model opens a playground: type a prompt, pick square, landscape or portrait.
+- In a chat the agent can call `generate_image`. It uses the image model set in Settings › Models, or the first model marked Images. **Open** shows the image in your viewer; **Save as…** copies it anywhere.
 
-## Agent chat
+## Chat
 
-Each chat has its own model, knowledge scope and tool switches.
+The Chat page has the chat list on the left, the conversation in the middle, and a side panel on the right.
 
-- The icons under the composer toggle **skills**, **web** and **custom tools**; the **books**, **folder** and **brain** icons open the chat-context sheet for knowledge collections, the workspace folder and the thinking level.
-- Type **/** in the composer to invoke a skill directly: pick it from the menu (arrow keys and Enter), and its instructions are sent with that message. Invoked skills appear as chips; Backspace at the start of the box removes the last one.
-- Every tool call appears as a trace card with its arguments, result, duration and status. Click a card to expand it.
-- When the agent searches the knowledge base or the web, results appear as numbered references. Citations such as `[2]` in the answer show the source on hover.
-- **Regenerate** reruns the last question; **Stop** aborts a running turn.
-- A **workspace folder** lets the agent work with files there. Choose it from the folder icon, then pick what it may do:
-  - **Files: Read only** gives `read`, `ls`, `find` and `grep`. **Read & write** adds `write` (new files, rewrites) and `edit` (targeted replacements).
-  - **AST tools**: `ast_grep` searches code by structure with ast-grep patterns — code with `$NAME` (one node) and `$$ARGS` (a list) placeholders, e.g. `console.log($$ARGS)` — and, in read & write chats, `ast_edit` rewrites every match reusing the captures (e.g. `logger.debug($$ARGS)`), with all changed files in one approval and one Undo. Languages: TypeScript, TSX, JavaScript, HTML, CSS, Python, Go, Rust and Java.
-  - **Code intel** (on by default) starts bundled language servers when first needed — TypeScript 7's native server for TypeScript/JavaScript and Pyright for Python. The `lsp` tool gives the agent diagnostics, go to definition, find references, hover types, symbol outlines and project-wide **rename** (one diff for approval). After every change to such a file, new type errors are reported straight back to the agent so it can fix them in the same turn. Servers stop after 10 idle minutes.
-  - **Shell** adds a command tool (PowerShell on Windows, bash elsewhere) that runs in the workspace folder.
-  - **Approvals**: *Ask every time* shows each change as a diff (or the command) with **Apply** / **Decline**; *Auto-approve edits* stops asking for file changes but still asks before commands; *Auto-approve all* asks for nothing. On an approval card, "Allow all edits in this chat" switches to auto-approving edits.
-  - Paths can never leave the workspace folder, including through links.
-  - Every change is checkpointed. Trace cards list the files changed with +/− line counts; **Undo** restores them (Cloth warns if a file was changed again since).
-- **Subagents** (on by default; toggle under Capabilities): the agent can hand a self-contained job to a subagent with the `task` tool — a read-only **scout** for exploring and researching, or a **worker** that can also edit files (read & write chats only). Each subagent starts with a fresh context, several can run in parallel, and each appears as a card that streams its own steps and ends with its report. A worker's edits still go through approvals, and **Undo** on its card reverts everything it changed.
-- For multi-step work the agent keeps a **plan** with `todo_write`: the checklist appears in the chat and pinned above the composer while work is in progress.
-- **Long conversations are summarised**: near the model's context window, older turns are condensed into a structured summary (goal, progress, decisions, next steps) before the next message. The ring next to the send button shows how full the context is; click it to summarise now. Summarised turns stay visible under *Show earlier messages*, and the summary itself opens from the divider. Turn automatic summarising off under Settings → Chat.
+### Starting and finding chats
 
-## Knowledge (RAG)
+- **Ctrl+N** (Cmd+N on macOS) starts a chat in the current chat's project; **Ctrl+K** jumps to the chat search; **Ctrl+B** hides or shows the chat list.
+- Chats get a short AI-written title after the first answer (Settings › Chat › Name chats with AI).
+- **Projects** group chats under a shared folder, instructions and starting settings. Make one from the chat list; new chats in it start in its folder with its settings.
+- Chats are **archived** rather than deleted: **Ctrl+E** archives the open chat, with Undo. Archived chats sit in their own section. The chat's header menu has Rename, Move to project, Archive and Delete.
 
-Collections hold documents. Add files, whole folders (code-aware), PDFs, Word documents, web pages (with optional crawling) or pasted text.
+### The composer
 
-- Documentation sites built with React, Angular or Vue send an empty page until JavaScript runs. Cloth detects that and renders those pages with its bundled Obscura browser (**JS rendering: Auto**); **Always** renders every page, **Off** uses plain HTTP only.
-- A page or file with no readable text is marked as an error rather than indexed empty.
+- The model chip picks the model and **reasoning effort** for this chat. The figure next to it is what the chat has spent so far, including agents it handed work to.
+- The **agent** picker sets which agent answers in this chat (Cloth by default, or one of your agents).
+- Type **/** to invoke a skill directly; it shows as a chip and its instructions go with that message.
+- Type **@** and an agent's name to hand the message to that agent.
+- Attach files and images by dropping or pasting them.
+- **Online / Offline** switches web search and page reading on or off.
+- **This computer / Linux container** picks where commands run (see Containers below).
+- **Computer use** lets the agent see the screen and use the mouse and keyboard (see below).
 
-- Documents are split into chunks along Markdown headings. Each chunk keeps its heading path, for example `Guide › Install`.
-- **Keyword** search uses SQLite FTS5 with BM25 ranking.
-- **Vector** search needs an embedding model on the collection.
-- **Hybrid** search fuses keyword and vector rankings with reciprocal-rank fusion (RRF) and caps results per document for diversity.
-- **Agentic** search asks the model to plan several sub-queries, checks whether the results cover the question, runs follow-up queries if not, and reranks the candidates.
-- Changing a collection's embedding model drops its vectors. Use **Embed missing** to rebuild them.
+### Access: Manual, Auto and Plan
+
+The access chip sets what the agent may do without asking:
+
+- **Manual** asks before risky actions: deleting or writing outside the chat's folder, pushing to a remote, installing packages, and similar. Each ask says why it needs a look.
+- **Auto** acts without asking.
+- **Plan mode** is read-only. The agent explores, then proposes a plan with `present_plan`. Once you approve it, the chat goes back to Manual or Auto and carries it out.
+
+### Working on files
+
+Give a chat a folder (the folder icon, or a project) and the agent can work there.
+
+- **Files: Read only** gives `read`, `ls`, `find` and `grep`. **Read and write** adds `write` and `edit`.
+- **AST tools:** `ast_grep` searches code by structure with ast-grep patterns, such as `console.log($$ARGS)`; `ast_edit` rewrites every match (for example to `logger.debug($$ARGS)`), with one approval and one Undo. Languages: TypeScript, TSX, JavaScript, HTML, CSS, Python, Go, Rust and Java.
+- **Code intel** starts bundled language servers when first needed (TypeScript and Python, plus the languages you picked in setup). The `lsp` tool gives diagnostics, go to definition, find references, hover types, outlines and project-wide rename. New type errors after a change go straight back to the agent.
+- **Shell** runs commands in the folder: PowerShell 7 (or Windows PowerShell) on Windows, your login shell on macOS and Linux. On macOS the agent uses your login shell's PATH.
+- **Coding rules** (Settings › Coding rules) and a folder's `AGENTS.md` or `CLAUDE.md` are part of every agent's instructions there. ast-grep rule files (the folder's `sgconfig.yml`, and a global rules folder) are checked on every file the agent changes.
+- Every change is checkpointed. Trace cards list the files changed with +/− counts; **Undo** restores them.
+- File paths in replies are links: click one to open the file in the side panel.
+
+### Agents in a chat
+
+- The chat agent can hand a job to a subagent with the `task` tool, at an access level (Reader, Writer or Operator) and reasoning level that suits the job. Several run in parallel, each with a fresh context; each shows as a card that streams its steps and ends with its report.
+- Settings › Subagents sets how many run at once, how many steps each may take, the most they may do, and the model that runs review checks.
+- For multi-step work the agent keeps a **plan** with `todo_write`, pinned above the composer while it works, and can ask you questions with `ask_user`.
+- The chat agent can also read your other chats (`session_list`, `session_read`) and set up agents, automations, MCP servers and model providers for you. In Manual it asks first.
+
+### Long chats
+
+Near the model's context limit, older turns are summarised (goal, progress, decisions, next steps). The ring next to Send shows how full the context is; click it to summarise now. Turn this off in Settings › Chat.
+
+### Chat backgrounds
+
+Settings › Chat › Background puts an animated background behind the conversation. Five built-in themes, one per style: **Crimson flow** (the default), **waves**, **mesh**, **swirl** and **halftone**. **Strength** sets how much shows through. Ask a chat for a new look ("make the background slower and blue") and it makes or adjusts a theme with its `chat_theme` tool. Backgrounds hold still when your system is set to reduce motion.
+
+### The side panel
+
+**Ctrl+.** shows or hides the side panel. A dock beside it shows running terminals, git changes, running agents and builds. Right-click a dock tab, or press Shift+Enter on it, to stack up to three tabs.
+
+- **Setup:** the chat's agent, instructions and context, knowledge, skills, tools and MCP servers, with the token cost of each.
+- **Terminal:** interactive shells in the chat's folder or container. **Ctrl+`** opens it.
+- **Files:** the folder's tree and a file viewer.
+- **Git:** changes, staged and unstaged diffs, discard, an AI-written commit message, and commit.
+- **Agents:** the subagents working for this chat.
+- **Spec:** Spec → Ship's documents or the folder's OpenSpec changes, with a toggle between them. It follows the mode the chat is running.
+- **Swatches:** the chat's swatches, live (see Swatches).
+
+### Spec → Ship
+
+A mode for building features properly. It asks clarifying questions, writes a spec and tickets, then builds them with agents and reviews the result.
+
+- It picks the right route itself, and for a quick bug fix it diagnoses before changing anything.
+- Workers build tickets in parallel, each in its own git worktree on its own branch, and their work merges back into the chat's branch. Unfinished work is kept on its branch.
+- Review checks must prove each finding by running a command and showing its output.
+- Several features can be built one after another in one chat, with a fresh context for each stage. The ticket board follows the build and ticks off finished tickets.
+- At the end it commits the finished work and removes its worktrees and worker branches. Branches dropped with unmerged work are logged with their commit, so they can be restored.
+
+### OpenSpec mode
+
+Takes a change from proposal to pull request with the OpenSpec command-line tool, which ships with Cloth. A progress strip and step cards show where it is, and you can pause after Propose to review the proposal.
+
+### Containers
+
+Set a chat to **Linux container** to run its commands in Docker instead of on your computer. Cloth copies the folder in (skipping what `.gitignore` excludes), forwards ports the container opens, and offers the changes back to your real folder for review. Docker must be installed.
+
+### Computer use
+
+With computer use on, the agent sees the screen and controls the mouse and keyboard. A banner shows while it works, and a keyboard shortcut stops it at once. On macOS, grant Screen Recording and Accessibility when asked.
+
+## Boards
+
+**Boards** drives tracker tickets through agent stages: New, Requirements, Review, Building and PR open.
+
+- Connect **Plane** or **Jira**, or use a **Cloth board**: an offline board in Cloth's own storage, with no account or token.
+- A **planner** researches what the ticket depends on (web and docs) and writes requirements into it. A **reviewer** checks them against the goal. An **implementer** builds in its own worktree.
+- Per project, choose what agents may do: no commits (changes stay in a worktree for you to apply), commit locally, or commit and open a PR. Also: whether to sync ticket changes back to the tracker, whether to approve requirements before building, how many review rounds, and how many check fixes to try.
+- When a PR fails its checks, the implementer reads the CI logs, finds the cause and pushes a fix to the same PR.
+- Each feature lands as one conventional commit, with PRs titled `[Cloth][KEY] Title`.
+- **Open in chat** starts a chat for a ticket with its requirements and PR in the message box.
+
+## Swatches
+
+A swatch is a page, document or image a chat publishes with `publish_swatch`: an HTML page, Markdown or SVG.
+
+- It shows live in the conversation. **Open** shows it in the chat's Swatches tab; close it there to pick another of the chat's swatches.
+- The **Swatches** page lists every swatch, with versions, renaming, a new link, and deletion.
+- Each swatch has a private link. Turn on **Share on your network** to open it from phones and other computers on the same network.
+- Swatch pages run sandboxed: they can't read Cloth's data or each other's.
+
+## Automations
+
+An **automation** is a task an agent does on its own: a prompt with the tools, knowledge, folder and commands it may use.
+
+- **New** drafts one from a description, such as "Every weekday at 8:30, run the tests in my project folder and explain any failures."
+- **When it runs:** only when you run it, or on a schedule. It can also run when files in its folder change, a web page changes, or an MCP check changes.
+- **Reports:** it reports in a chat (one per run, in the Automation project), with a desktop notification, or as a note in one of its knowledge collections.
+- Risky actions are refused, since nobody is there to approve them.
+- **Export as app** packages an automation as its own Windows installer to share.
+
+## Agents
+
+The **Agents** page lists Cloth's team on the left (Cloth, the built-in agents, then yours) and edits the selected one in place on the right. Cloth is the main agent in every chat; the others take jobs it hands out. A row says what each agent is working on right now.
+
+- Built in: **Designer** (builds UI, following the project's design system), **Researcher** (searches the web and knowledge and cites sources; read-only) and **Code reviewer** (reports findings with file and line; never edits).
+- Each agent has a purpose, instructions, an **access level** (Reader, Writer or Operator), a **reasoning level** (Low, Medium, High or Max), a model, and the skills, tools, servers and knowledge it can use.
+- **New agent** drafts one from a sentence, or starts from a template. **Rewrite with AI** changes an agent's instructions on request, with Undo.
+- Select **Cloth** (or **Compare all** under This week) to see the whole team side by side, with this week's jobs for each.
+
+## Knowledge
+
+Collections hold documents: files, whole folders (code-aware), PDFs, Word documents, web pages (with optional crawling) and pasted text.
+
+- Pages built with React, Angular or Vue are rendered with the bundled Obscura browser (**JS rendering: Auto**); **Always** renders every page, **Off** uses plain HTTP.
+- Documents are split along Markdown headings; each chunk keeps its heading path, such as `Guide › Install`. Settings › Knowledge sets chunk size and overlap.
+- **Keyword** search uses SQLite FTS5 with BM25 ranking. **Vector** search needs an embedding model on the collection. **Hybrid** fuses both. **Agentic** search plans several sub-queries, checks coverage, runs follow-ups and reranks.
+- **Ask** answers a question from your collections with citations.
+- Changing a collection's embedding model drops its vectors; **Embed missing** rebuilds them.
+- The **Cloth examples** collection (this guide plus Git, HTTP, regex, cron and SQL references) can be reloaded from the Knowledge page.
 
 ## Skills
 
-A skill is a folder with a `SKILL.md` file: YAML front matter (`name`, `description`) followed by Markdown instructions. Extra files in the folder are loaded on demand.
+A skill is a folder with a `SKILL.md` file: YAML front matter (`name`, `description`) and Markdown instructions. Extra files load on demand.
 
-- Import skills from `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` or any folder, and install hub skills into those folders.
-- **Tests** run eval cases against a model. A judge model grades each expectation.
-- Turn on **Baseline** to rerun each case without the skill, and **Freshness audit** to have the model look for deprecated APIs or outdated advice.
-- Verdicts: **fresh** (passes, nothing outdated), **stale** (score below 80%, a drop of 20 points since the last run, or a high-severity audit finding), **failing** (under 50%), **redundant** (the model does as well without the skill).
+- **Add skills** imports from `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` or any folder, or installs from the skills.sh registry. Skills with the same name from different sets install side by side.
+- **Write one** drafts a skill with AI.
+- **Tests** run eval cases against a model, graded by a judge model. **Baseline** reruns each case without the skill; **Freshness audit** looks for outdated advice.
+- Verdicts: **fresh**, **stale** (below 80%, a 20-point drop, or a high-severity audit finding), **failing** (under 50%) and **redundant** (the model does as well without it).
 
 ## Tools
 
-The **Tools** page lists the built-in tools (read-only) and your custom tools.
+The **Tools** page lists the built-in tools (grouped, including the Cloth group for managing Cloth itself) and your custom tools.
 
-- **HTTP** tools call an API. URL, headers and body are templates, for example `https://api.example.com/items/{{id}}`.
-- **JavaScript** tools run an async function body with `args`, `fetch` and `console` in scope and must return a value.
-- **Command** tools run an executable with one argument per line. There is no shell, so parameter values cannot inject extra commands.
+- **HTTP** tools call an API; URL, headers and body are templates such as `https://api.example.com/items/{{id}}`.
+- **JavaScript** tools run an async function body with `args`, `fetch` and `console`.
+- **Command** tools run a program with one argument per line, with no shell, so values can't inject commands.
 - **Prompt** tools call a model with a templated prompt.
-- Every tool has a **Test** panel. Enabled custom tools are offered to chats (when the custom tools chip is on) and to workflow agent nodes.
+- Every tool has a **Test** panel. A tool a chat makes with `tool_create` is reviewed by you before it can run code, then works everywhere.
 
 ## Web search
 
-Cloth ships two engines; pick one in **Settings → Web search**.
+Pick an engine in **Settings › Web search**.
 
-- **Obscura** is a stealthy headless browser. Cloth runs `obscura fetch` against the DuckDuckGo HTML results page. It starts instantly and also renders pages for `web_fetch`.
-- **SearXNG** is a metasearch engine that queries several search engines at once. Cloth starts its bundled copy on first use (a few seconds), bound to 127.0.0.1. You can point Cloth at an external SearXNG instance instead.
-- `web_fetch` blocks localhost and private network addresses unless you allow them in Settings.
-- The same CA certificate also applies to skills.sh registry searches, downloads, and update checks.
+- **Obscura** is a headless browser that searches DuckDuckGo. It starts instantly and also renders pages for `web_fetch`.
+- **SearXNG** queries several search engines at once. Cloth starts its bundled copy on first use, bound to 127.0.0.1, or you can point it at your own instance.
+- `web_fetch` blocks localhost and private network addresses unless you allow them.
+- Images from the web in replies wait for a click before they load.
+- Downloads and searches trust your computer's certificates, so antivirus or company proxies don't break them.
 
-## Workflows
+## MCP servers
 
-Workflows are graphs of nodes: Trigger, LLM, Agent, Knowledge search, Web search, Skill, Custom tool, HTTP, Transform, Condition, Loop and Output.
+The **MCP servers** page connects Cloth to outside MCP servers and runs Cloth's own.
 
-- Templates reference data with `{{input.field}}` (run input), `{{prev}}` (the node feeding in) and `{{key}}` or `{{key.field}}` (any earlier node by its key).
-- Condition nodes branch through their **true** and **false** handles; nodes on the untaken branch are skipped.
-- **Loop** nodes repeat part of a flow. Wire the steps to repeat from the **body** handle and what comes after from **done**; connect the last repeated step back into the loop's **next** handle to choose each pass's result. *For each item* runs the body once per element of `items` (for example `{{search.hits}}`) and outputs an array; *Repeat until* re-runs the body, feeding each result back in as `{{prev}}`, until the stop expression is true or the iteration limit is reached. Inside the body use `{{loop.item}}`, `{{loop.index}}` and `{{loop.last}}`.
-- **Arrange** (top-right of the canvas) lays the nodes out left to right in run order.
-- Click **View output** in the Runs panel to read a run's result as formatted Markdown.
-- Add a cron expression and switch on **Scheduled** to run automatically. For example `0 9 * * 1-5` runs at 09:00 on weekdays.
-- **Assemble with AI** describes a workflow in plain language and lets an agent build (or modify) the graph, which you review before saving.
+- **External servers** give chats and agents more tools. Add them by command or address; their secrets are stored encrypted. Each chat or agent can switch them on, or narrow them to some tools.
+- **Cloth's MCP server** at `http://127.0.0.1:7811/mcp` lets other apps use Cloth: `skill_list`, `skill_use`, `skill_create`, `rag_search`, `rag_collections`, `rag_index`, `tool_create` and `web_search`. An activity log shows each call.
+- Claude Code: `claude mcp add --transport http cloth http://127.0.0.1:7811/mcp`. Cursor: add the URL under `mcpServers` in `~/.cursor/mcp.json`. Clients that only speak stdio can bridge with `npx mcp-remote <url>`.
+- Turn on **Require bearer token** to demand `Authorization: Bearer <token>`.
 
 ## Dashboard
 
-The Dashboard shows usage for the last 24 hours, 7, 30 or 90 days, or all time: total tokens (input, output, embeddings), estimated cost, model calls and failures, average response time, tool calls and skill uses, each compared with the previous period. Below that: usage over time, which parts of Cloth use the most tokens (chat, flows, skill tests, knowledge, MCP), busiest hours, a per-model table, the most used tools and skills, flow success rates, skill health and a recent-activity feed.
+Usage for the last 24 hours, 7, 30 or 90 days, or all time: tokens, estimated cost, model calls and failures, response time, tool calls and skill uses, each compared with the previous period. Below: usage over time, which parts of Cloth use the most tokens, busiest hours, a per-model table, the most used tools and skills, automation success, skill health and recent activity.
 
-Cost uses the built-in price list for OpenAI and Anthropic models. For other models, set a price (USD per 1M input and output tokens) in the **$ / 1M** column on the Models page; local models without a price are counted as unpriced.
+## Phone
 
-## MCP server
+Settings › Phone pairs the Android app by QR code. Use Cloth from your phone on the same Wi-Fi, or anywhere with Tailscale. Only paired phones can connect, and they never see your saved secrets.
 
-Cloth hosts an MCP server at `http://127.0.0.1:7811/mcp` with `skill_list`, `skill_use`, `rag_search`, `rag_collections` and `web_search`.
+## Settings
 
-- Claude Code: `claude mcp add --transport http cloth http://127.0.0.1:7811/mcp`
-- Cursor: add the URL under `mcpServers` in `~/.cursor/mcp.json`.
-- Clients that only speak stdio can bridge with `npx mcp-remote <url>`.
-- Turn on **Require bearer token** to demand `Authorization: Bearer <token>`.
+- **Models:** which model does each job.
+- **Chat:** chat titles, summarising long chats, and the background.
+- **Coding rules:** rules every agent follows when it writes code, and ast-grep rule files.
+- **Subagents:** how many run at once, their steps, the most they may do, and the model for review checks.
+- **Web search**, **Knowledge** (chunking), **MCP server** (port and token) and **Phone**.
+- **Design systems:** palettes, type and shape that projects follow; the Designer agent uses them.
+- **Dependencies:** what Cloth ships (Obscura, SearXNG, OpenSpec) and what it uses from your computer (Git, GitHub CLI, Docker, Node.js, Python, Bash, PowerShell 7), each with its version and what happens without it.
+- **Data & about:** the data folder, the version, updates, first-run setup again, and **Reset Cloth**, which deletes everything and restarts with defaults (optionally keeping downloaded models).
+- **Ctrl+F** finds a setting. A setting you've changed has a blue outline and a Reset link.
+
+Installed Windows builds update themselves from Cloth's releases; Settings shows when an update is ready.
+
+## Keyboard shortcuts
+
+On macOS use Cmd instead of Ctrl.
+
+| Shortcut | Does |
+|---|---|
+| Ctrl+N | New chat |
+| Ctrl+K | Search chats |
+| Ctrl+B | Hide or show the chat list |
+| Ctrl+E | Archive the open chat |
+| Ctrl+. | Hide or show the side panel |
+| Ctrl+` | Open the terminal |
+| Ctrl+F | Find a setting (on Settings) |
+| / | Invoke a skill (in the composer) |
+| @ | Hand the message to an agent (in the composer) |

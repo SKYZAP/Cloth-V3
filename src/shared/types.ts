@@ -1213,6 +1213,8 @@ export interface Settings {
   /** Let web_fetch reach localhost / private network addresses. */
   webAllowPrivate: boolean
   examplesLoaded: boolean
+  /** A hash of the bundled example docs last loaded, so a release's updated docs are loaded once. */
+  examplesHash: string
   mcpEnabled: boolean
   mcpPort: number
   mcpRequireToken: boolean

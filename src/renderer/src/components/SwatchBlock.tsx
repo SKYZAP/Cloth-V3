@@ -7,7 +7,6 @@ import {
 } from "@phosphor-icons/react";
 import type { SwatchLink, SwatchTrace } from "@shared/swatches";
 import { api, useEvent } from "@/lib/api";
-import { isMobile } from "@/lib/platform";
 import { openSwatch, openSwatchInPanel, useSwatchNav } from "@/lib/swatchNav";
 import { Tooltip } from "./Tooltip";
 
@@ -18,8 +17,8 @@ const KIND: Record<SwatchTrace["format"], string> = {
 };
 
 /**
- * A swatch the agent published, shown in the conversation as itself: a live preview of the page, with its name
- * and buttons to show it in the side panel or open it on the Swatches page.
+ * A swatch the agent published, shown in the conversation by its name and kind, with buttons to show it in the
+ * side panel or open it on the Swatches page. The page itself shows there, not in the chat.
  */
 export function SwatchBlock({ swatch }: { swatch: SwatchTrace }) {
   const showing = useSwatchNav((s) => s.panelVisible && s.panel === swatch.id);
@@ -27,56 +26,25 @@ export function SwatchBlock({ swatch }: { swatch: SwatchTrace }) {
   const [links, setLinks] = useState<SwatchLink[] | null | undefined>(
     undefined,
   );
-  const [version, setVersion] = useState(0);
   const load = () =>
     void api.swatches.links(swatch.id).then(setLinks, () => setLinks(null));
   useEffect(load, [swatch.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A new version (or a new link) shows here too.
+  // Deleted (or brought back) since: the bar says so.
   useEvent("swatches", (e) => {
-    if (e.type === "status" || e.id === swatch.id) {
-      setVersion((n) => n + 1);
-      load();
-    }
+    if (e.type === "changed" && e.id === swatch.id) load();
   });
-  // A phone can't reach this PC's 127.0.0.1: it previews through a network link.
-  const preview = links
-    ? isMobile
-      ? links.find((l) => l.kind !== "local")
-      : links.find((l) => l.kind === "local")
-    : undefined;
   const gone = links === null;
 
   return (
     <div
       className={clsx(
-        "my-2 w-full max-w-[640px] overflow-hidden rounded-xl border transition-colors",
+        "my-2 w-full max-w-[480px] overflow-hidden rounded-xl border transition-colors",
         showing ? "border-crimson" : "border-line",
       )}
     >
-      {!gone && (
-        <div className="h-[300px] bg-white mobile:h-[240px]">
-          {preview ? (
-            <iframe
-              key={`${preview.url}:${version}`}
-              src={preview.url}
-              title={swatch.title}
-              loading="lazy"
-              sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-              className="h-full w-full border-0"
-            />
-          ) : (
-            <div className="grid h-full place-items-center p-6 text-center text-caption text-dim">
-              {links && isMobile
-                ? "Turn on “Share on your network” on the computer running Cloth to see swatches here."
-                : "Loading…"}
-            </div>
-          )}
-        </div>
-      )}
       <div
         className={clsx(
           "flex items-center gap-2.5 px-3 py-2",
-          !gone && "border-t",
           showing
             ? "border-crimson-line bg-crimson-soft/60"
             : "border-line bg-elev",

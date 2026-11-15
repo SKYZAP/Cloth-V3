@@ -142,7 +142,7 @@ export function FolderMenu({ session, update }: { session: ChatSession; update: 
           value={session.container ? 'container' : 'local'}
           onChange={(v) => void update(v === 'container' ? { container: session.container ?? DEFAULT_CONTAINER, fileAccess: 'write', shell: true } : { container: null })}
           options={[
-            { value: 'local', label: 'This PC', icon: Desktop },
+            { value: 'local', label: 'This computer', icon: Desktop },
             { value: 'container', label: 'Linux container', icon: Cube }
           ]}
           label="Runs in"

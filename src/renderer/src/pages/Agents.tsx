@@ -1,56 +1,46 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { LayoutGroup } from 'motion/react'
-import { ArrowCounterClockwise, CaretRight, ChatCircleDots, Copy, MagnifyingGlass, Plus, Sparkle, Trash, X } from '@phosphor-icons/react'
+import { ArrowCounterClockwise, Books, Brain, CaretRight, ChatCircleDots, Copy, Cpu, FileText, LockSimple, MagnifyingGlass, PlugsConnected, Plus, ShieldCheck, Sparkle, Trash, Wrench } from '@phosphor-icons/react'
 import { AGENT_TEMPLATES, type Agent, type AgentActivity, type AgentInput, type AgentSetup, type ChatSetup, type McpClientStatus, type ModelRef } from '@shared/types'
 import { EFFORT_OPTIONS, effortLabel, normalizeEffortOrNull, type Effort } from '@shared/effort'
 import { ACCESS_LEVELS, accessCaps, accessLabel, accessOf } from '@shared/access'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
-import { Inspector, refocus } from '@/components/Inspector'
-import { Button, Input, Modal, PageHeader, Spinner, Textarea, confirmAction, PageTitle } from '@/components/ui'
+import { useSideBySide } from '@/lib/platform'
+import { Button, Input, Modal, Spinner, Textarea, confirmAction, PageTitle } from '@/components/ui'
+import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { ModelPicker } from '@/components/ModelPicker'
+import { FOCUS } from './automation/AutomationDetail'
 import { Segmented } from './chat/StatusLine'
 import { KnowledgeView, ServersView, SkillsView, ToolsView, k, useCapabilities } from './chat/Setup'
 import { Tile } from './agents/Tile'
-import { TeamOrbit, useTeamLive, type Live } from './agents/Orbit'
+import { useTeamLive, type Live } from './agents/Orbit'
 import { CompareTable, WeekStrip, alwaysSkills } from './agents/Compare'
 
 export { initials } from './agents/Tile'
 
 type Activity = Record<string, AgentActivity>
-type View = 'cards' | 'compare'
-const VIEW_KEY = 'cloth.agents.view'
+/** What the detail side shows: an agent, or the team (Cloth and every agent side by side). */
+const TEAM = 'team'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+const NO_WEEK = [0, 0, 0, 0, 0, 0, 0]
 
 /**
- * The team: Cloth in the middle with every agent around it, and the agents below as cards or side by side.
- * Jobs Cloth hands out show live on the map and the cards; the editor opens beside the team rather than replacing it.
+ * The team, laid out like Models and Automations: the agents listed on the left (Cloth, the built-in ones, then
+ * yours) and the selected one edited in place on the right. Cloth's row opens the team view, every agent side by side.
  */
 export function AgentsPage() {
+  const side = useSideBySide()
   const [agents, setAgents] = useState<Agent[]>([])
   const [activity, setActivity] = useState<Activity>({})
   const [chatsUsing, setChatsUsing] = useState<Record<string, number>>({})
   const [loaded, setLoaded] = useState(false)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
-  const [view, setView] = useState<View>(() => {
-    try {
-      return localStorage.getItem(VIEW_KEY) === 'compare' ? 'compare' : 'cards'
-    } catch {
-      return 'cards'
-    }
-  })
-  const changeView = (v: View) => {
-    setView(v)
-    try {
-      localStorage.setItem(VIEW_KEY, v)
-    } catch {
-      /* storage unavailable */
-    }
-  }
+  const listRef = useRef<HTMLDivElement>(null)
 
   const load = async () => {
     const [list, act, chats] = await Promise.all([api.agents.list(), api.agents.activity().catch(() => ({})), api.chat.list().catch(() => [])])
@@ -60,245 +50,250 @@ export function AgentsPage() {
     for (const c of chats) if (c.agentId) using[c.agentId] = (using[c.agentId] ?? 0) + 1
     setChatsUsing(using)
     setLoaded(true)
-    setOpenId((cur) => (cur && list.some((a) => a.id === cur) ? cur : null))
   }
   useEffect(() => {
     void load()
   }, [])
-  // A finished job changes this week's counts; a started one only moves things on the map.
+  // A finished job changes this week's counts; a started one only changes who is working.
   useEvent('agents', (e) => (e.type === 'changed' || e.state !== 'start') && void load())
   const team = useTeamLive(activity)
 
+  // Side by side, something is always selected: the first agent, or the team when there are none.
+  useEffect(() => {
+    if (!loaded) return
+    if (selected === TEAM || agents.some((a) => a.id === selected)) return
+    setSelected(side ? (agents[0]?.id ?? TEAM) : null)
+  }, [loaded, agents, selected, side])
+
   const q = filter.trim().toLowerCase()
-  const match = (a: Agent) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q)
-  const shown = agents.filter(match)
-  const open = agents.find((a) => a.id === openId) ?? null
-  const close = () => {
-    const id = openId
-    setOpenId(null)
-    // Focus goes back to the card that opened the editor.
-    refocus(id)
+  const shown = agents.filter((a) => !q || a.name.toLowerCase().includes(q) || a.purpose.toLowerCase().includes(q))
+  const builtin = shown.filter((a) => a.builtin)
+  const yours = shown.filter((a) => !a.builtin)
+  const current = agents.find((a) => a.id === selected) ?? null
+  const select = (id: string) => {
+    setSelected(id)
+    setOpen(true)
   }
-  // One scale for every card's week strip, so a busy week looks busier than a quiet one.
-  const busiest = Math.max(1, ...Object.values(activity).flatMap((a) => a.days ?? []))
+  const order = [TEAM, ...builtin.map((a) => a.id), ...yours.map((a) => a.id)]
+  const move = (dir: 1 | -1) => {
+    const i = order.indexOf(selected ?? '')
+    const next = order[Math.min(order.length - 1, Math.max(0, i + dir))]
+    select(next)
+    requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>(`[data-id="${CSS.escape(next)}"]`)?.focus())
+  }
+
+  const week = Object.values(activity)
+  const jobs = week.reduce((n, a) => n + (a.jobs ?? 0), 0)
+  const failed = week.reduce((n, a) => n + (a.failed ?? 0), 0)
+  const busiest = agents.reduce<Agent | null>((best, a) => ((activity[a.id]?.jobs ?? 0) > (best ? (activity[best.id]?.jobs ?? 0) : 0) ? a : best), null)
+  const working = agents.filter((a) => team.live[a.id]?.state === 'working').length
 
   return (
-    <div className="relative h-full">
-      <div className="h-full overflow-y-auto">
-        <div className="mx-auto grid w-[calc(100%-48px)] max-w-[2200px] gap-5 py-6 mobile:w-[calc(100%-24px)] mobile:py-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[200px] flex-1">
-              <PageTitle>Agents</PageTitle>
-            </div>
-            <div className="relative w-[220px] mobile:w-full mobile:flex-1">
-              <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
-              <Input className="pl-7" placeholder="Filter agents" aria-label="Filter agents" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            </div>
-            <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreating(true)}>
-              New agent
-            </Button>
-          </div>
-
-          {/* The map needs room to breathe; on a narrow window Cloth sits above the cards instead. */}
-          {loaded && (
-            <div className="max-[760px]:hidden">
-              <TeamOrbit agents={agents} activity={activity} team={team} match={match} selected={openId} onOpen={setOpenId} />
-            </div>
-          )}
-          <div className="hidden max-[760px]:flex items-center gap-3 rounded-[14px] border border-line bg-elev px-4 py-3">
-            <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crimson text-ui font-semibold text-white">
-              C
-            </span>
-            <div className="min-w-0">
-              <div className="text-body font-semibold">Cloth</div>
-              <div className="text-caption text-muted">The main agent in every chat. It hands work to the team below.</div>
-            </div>
-          </div>
-
-          <LayoutGroup>
-            <Lane
-              title="Team"
-              action={
-                <div className="w-[176px]">
-                  <Segmented
-                    size="sm"
-                    label="Show the team as"
-                    value={view}
-                    onChange={changeView}
-                    options={[
-                      { value: 'cards', label: 'Cards' },
-                      { value: 'compare', label: 'Compare' }
-                    ]}
-                  />
-                </div>
-              }
-            >
-              {view === 'compare' && shown.length > 0 ? (
-                <CompareTable agents={shown} activity={activity} selected={openId} onOpen={setOpenId} />
-              ) : (
-                shown.map((a) => (
-                  <AgentCard key={a.id} agent={a} activity={activity[a.id]} live={team.live[a.id]} busiest={busiest} chats={chatsUsing[a.id] ?? 0} selected={a.id === openId} onOpen={() => setOpenId(a.id)} />
-                ))
-              )}
-              {!q && view === 'cards' && (
-                <div className="grid content-start gap-2 rounded-[12px] border border-dashed border-line-strong p-3.5">
-                  <span className="text-ui font-semibold">Describe your own</span>
-                  <span className="text-ui text-muted">Say what it's for in a sentence, like "Writes vitest suites for changed files and runs them". Cloth drafts the name and instructions.</span>
-                  <Button size="sm" className="mt-1 justify-self-start" icon={<Sparkle size={13} />} onClick={() => setCreating(true)}>
-                    Describe an agent
-                  </Button>
-                </div>
-              )}
-              {q && !shown.length && <LaneEmpty>No agent matches “{filter.trim()}”.</LaneEmpty>}
-            </Lane>
-          </LayoutGroup>
+    <SplitRoot open={open} onBack={() => setOpen(false)}>
+      <aside aria-label="Agents" className={clsx('flex h-full shrink-0 flex-col', side ? 'w-[300px] border-r border-line' : 'w-full')}>
+        <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-[18px]">
+          <PageTitle className="flex-1">Agents</PageTitle>
+          <Button variant="primary" className={FOCUS} icon={<Plus size={13} aria-hidden="true" />} onClick={() => setCreating(true)}>
+            New
+          </Button>
         </div>
-      </div>
+        <div className="relative mx-3 mb-1.5">
+          <MagnifyingGlass size={13} className="absolute left-2.5 top-2.5 text-dim" aria-hidden="true" />
+          <Input className="pl-7" placeholder="Filter agents" aria-label="Filter agents" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        </div>
 
-      <Inspector open={!!open} label={open ? `Edit ${open.name}` : ''} onClose={close}>
-        {open && (
-          <AgentEditor
-            key={open.id}
-            agent={open}
-            onClose={close}
-            onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))}
-            onRemoved={() => (setOpenId(null), void load())}
-            onDuplicated={(a) => void load().then(() => setOpenId(a.id))}
-          />
+        <div
+          ref={listRef}
+          className="min-h-0 flex-1 overflow-y-auto px-2 pb-3"
+          onKeyDown={(e) => {
+            if (!side || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return
+            e.preventDefault()
+            move(e.key === 'ArrowDown' ? 1 : -1)
+          }}
+        >
+          {!q && (
+            <Row id={TEAM} selected={side && selected === TEAM} onSelect={() => select(TEAM)} tile={<ClothTile />} name="Cloth" sub={working ? `Main agent · ${working} working` : 'Main agent in every chat'} />
+          )}
+          {builtin.length > 0 && <Group label="Built in" />}
+          {builtin.map((a) => (
+            <AgentRow key={a.id} agent={a} activity={activity[a.id]} live={team.live[a.id]} selected={side && a.id === selected} onSelect={() => select(a.id)} />
+          ))}
+          {(yours.length > 0 || !q) && <Group label="Yours" />}
+          {yours.map((a) => (
+            <AgentRow key={a.id} agent={a} activity={activity[a.id]} live={team.live[a.id]} selected={side && a.id === selected} onSelect={() => select(a.id)} />
+          ))}
+          {!q && (
+            <button type="button" onClick={() => setCreating(true)} className={clsx('mt-0.5 flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-ui text-muted hover:bg-panel hover:text-fg', FOCUS)}>
+              <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-dashed border-line-strong">
+                <Sparkle size={14} />
+              </span>
+              Describe an agent
+            </button>
+          )}
+          {q && !shown.length && <p className="px-2.5 py-2 text-ui text-dim">No agent matches “{filter.trim()}”.</p>}
+        </div>
+
+        {loaded && (
+          <div className="border-t border-line px-5 pb-4 pt-3 mobile:hidden">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-caption font-semibold text-muted">This week</span>
+              <button type="button" onClick={() => select(TEAM)} className={clsx('rounded px-1 text-caption text-dim hover:text-fg', FOCUS)}>
+                Compare all
+              </button>
+            </div>
+            <Stat label="Jobs" value={String(jobs)} />
+            <Stat label="Failed" value={String(failed)} tone={failed ? 'text-danger-hi' : undefined} />
+            <Stat label="Busiest" value={busiest ? busiest.name : 'None yet'} />
+          </div>
         )}
-      </Inspector>
+      </aside>
+
+      <SplitDetail>
+        <div className="@container h-full overflow-y-auto">
+          {!loaded ? null : selected === TEAM || !current ? (
+            <TeamView agents={agents} activity={activity} working={working} jobs={jobs} onOpen={select} />
+          ) : (
+            <AgentDetail
+              key={current.id}
+              agent={current}
+              activity={activity[current.id]}
+              live={team.live[current.id]}
+              chats={chatsUsing[current.id] ?? 0}
+              onSaved={(a) => setAgents((list) => list.map((x) => (x.id === a.id ? a : x)))}
+              onRemoved={() => {
+                setSelected(null)
+                setOpen(false)
+                void load()
+              }}
+              onDuplicated={(a) => void load().then(() => select(a.id))}
+            />
+          )}
+        </div>
+      </SplitDetail>
 
       <NewAgentDialog
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={(a) => {
           setCreating(false)
-          void load().then(() => setOpenId(a.id))
+          void load().then(() => select(a.id))
         }}
       />
+    </SplitRoot>
+  )
+}
+
+function Group({ label }: { label: string }) {
+  return <div className="px-2 pb-1 pt-2.5 text-caption text-dim">{label}</div>
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex justify-between gap-3 py-0.5 text-caption">
+      <span className="text-dim">{label}</span>
+      <span className={clsx('truncate tabular-nums', tone ?? 'text-fg')}>{value}</span>
     </div>
   )
 }
 
-function Lane({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function ClothTile({ large }: { large?: boolean }) {
   return (
-    <section className="grid gap-2.5" aria-label={title}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-body font-semibold">{title}</h2>
-        {action}
-      </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%_-_36px)/4)),1fr))] gap-3">{children}</div>
-    </section>
-  )
-}
-
-function LaneEmpty({ children }: { children: ReactNode }) {
-  return <p className="col-span-full rounded-[12px] border border-dashed border-line px-4 py-5 text-ui text-dim">{children}</p>
-}
-
-const ACCESS_TONE = { reader: 'border-info/35 bg-info/10 text-info', writer: 'border-warn/35 bg-warn/[0.08] text-warn', operator: 'border-danger-line bg-danger-soft text-danger' } as const
-
-/** The agent's access level as a coloured chip: Reader, Writer or Operator. */
-function AccessChip({ agent }: { agent: Agent }) {
-  const level = accessOf(agent)
-  return (
-    <span className={clsx('rounded-full border px-2 py-px text-caption font-semibold', ACCESS_TONE[level])} title={ACCESS_LEVELS.find((l) => l.value === level)!.sub}>
-      {accessLabel(level)}
+    <span aria-hidden="true" className={clsx('flex shrink-0 items-center justify-center bg-crimson font-semibold text-white', large ? 'h-10 w-10 rounded-[10px] text-body' : 'h-9 w-9 rounded-[9px] text-caption')}>
+      C
     </span>
   )
 }
 
-function AgentCard({
-  agent: a,
-  activity,
-  live,
-  busiest,
-  chats,
-  selected,
-  onOpen
-}: {
-  agent: Agent
-  activity?: AgentActivity
-  live?: Live
-  busiest: number
-  chats: number
-  selected: boolean
-  onOpen(): void
-}) {
-  const always = alwaysSkills(a)
-  // Chats it runs and jobs other agents handed it, together.
-  const parts = [chats ? plural(chats, 'chat') : '', activity?.jobs ? `${plural(activity.jobs, 'job')} this week${activity.failed ? ` (${activity.failed} failed)` : ''}` : ''].filter(Boolean)
-  const use = parts.length ? parts.join(', ') : 'Not used yet'
-  const working = live?.state === 'working'
+function Row({ id, selected, onSelect, tile, name, sub, subTone, busy }: { id: string; selected: boolean; onSelect(): void; tile: ReactNode; name: string; sub: string; subTone?: string; busy?: boolean }) {
   return (
     <button
-      data-agent={a.id}
-      data-focus-key={a.id}
-      onClick={onOpen}
-      aria-haspopup="dialog"
-      aria-expanded={selected}
-      className={clsx(
-        'grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-2.5 rounded-[12px] border bg-elev p-3.5 text-left transition-colors hover:border-line-strong hover:bg-elev-2 focus-visible:ring-2 focus-visible:ring-crimson-line',
-        selected || working ? 'border-crimson-line' : 'border-line'
-      )}
+      type="button"
+      data-id={id}
+      aria-current={selected ? 'true' : undefined}
+      onClick={onSelect}
+      className={clsx('grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] px-2.5 py-[7px] text-left mobile:min-h-[56px]', selected ? 'bg-elev' : 'hover:bg-panel', FOCUS)}
     >
-      <span className="flex min-w-0 items-center gap-2.5">
-        <Tile name={a.name} builtin={a.builtin} layoutId={`agent-tile-${a.id}`} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-body font-semibold" title={a.name}>
-            {a.name}
-          </span>
+      {tile}
+      <span className="min-w-0">
+        <span className="block truncate text-ui font-semibold" title={name}>
+          {name}
         </span>
-        {working && <span className="animate-pulse h-2 w-2 shrink-0 rounded-full bg-info" aria-hidden="true" />}
-        {a.builtin && <span className="shrink-0 rounded-full border border-line-strong px-2 py-px text-caption text-muted">built in</span>}
-      </span>
-      <span className="line-clamp-2 text-ui text-muted">{a.purpose || 'No purpose yet. Open it to say what it is for.'}</span>
-      <span className="flex flex-wrap gap-1.5">
-        <AccessChip agent={a} />
-        <Cap>{a.thinking ? `${effortLabel(a.thinking)} reasoning` : a.tier ? 'Tier reasoning' : 'Chat’s reasoning'}</Cap>
-        {a.webEnabled && <Cap>Web</Cap>}
-        {a.knowledgeEnabled && <Cap>Knowledge</Cap>}
-        {!!a.mcpServers?.length && <Cap>{plural(a.mcpServers.length, 'server')}</Cap>}
-        {always.slice(0, 3).map((s) => (
-          <span key={s} className="rounded-full border border-skill/30 px-2 py-px text-caption text-skill" title={`${s} is always on`} translate="no">
-            {s}
-          </span>
-        ))}
-        {always.length > 3 && <Cap>+{always.length - 3} skills</Cap>}
-      </span>
-      <span className="grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-line pt-2">
-        <WeekStrip days={activity?.days ?? [0, 0, 0, 0, 0, 0, 0]} max={busiest} />
-        <span className="flex items-center justify-between gap-2 text-caption text-dim">
-          <span className={clsx('min-w-0 truncate', working && 'max-w-[40%] shrink-0')}>{a.model ? a.model.modelId : "Chat's model"}</span>
-          {working ? (
-            <span className="min-w-0 truncate text-info" title={live.text}>
-              Working{live.text ? `: ${live.text}` : ''}
-            </span>
-          ) : live?.state === 'done' ? (
-            <span className="shrink-0 text-ok">Done just now</span>
-          ) : live?.state === 'failed' ? (
-            <span className="shrink-0 text-danger-hi">Failed just now</span>
-          ) : (
-            <span className="shrink-0 tabular-nums">{use}</span>
-          )}
+        <span className={clsx('block truncate text-caption', subTone ?? 'text-dim')} title={sub}>
+          {sub}
         </span>
       </span>
+      {busy ? <span aria-hidden="true" className="h-2 w-2 animate-pulse rounded-full bg-info motion-reduce:animate-none" /> : <span />}
     </button>
   )
 }
 
-function Cap({ children }: { children: ReactNode }) {
-  return <span className="rounded-full border border-line-strong px-2 py-px text-caption text-muted">{children}</span>
+/** What an agent is up to in a few words: working, just finished, or its access and how much it's used. */
+function status(a: Agent, activity: AgentActivity | undefined, live: Live | undefined): { text: string; tone?: string } {
+  if (live?.state === 'working') return { text: live.text ? `Working: ${live.text}` : 'Working', tone: 'text-info' }
+  if (live?.state === 'done') return { text: 'Done just now', tone: 'text-ok' }
+  if (live?.state === 'failed') return { text: 'Failed just now', tone: 'text-danger-hi' }
+  const used = activity?.jobs ? `${plural(activity.jobs, 'job')} this week` : 'not used yet'
+  return { text: `${accessLabel(accessOf(a))} · ${used}` }
 }
 
-const EFFORT: { value: Effort | 'chat'; label: string }[] = [...EFFORT_OPTIONS, { value: 'chat', label: 'Same as chat' }]
+function AgentRow({ agent: a, activity, live, selected, onSelect }: { agent: Agent; activity?: AgentActivity; live?: Live; selected: boolean; onSelect(): void }) {
+  const s = status(a, activity, live)
+  return <Row id={a.id} selected={selected} onSelect={onSelect} tile={<Tile name={a.name} builtin={a.builtin} />} name={a.name} sub={s.text} subTone={s.tone} busy={live?.state === 'working'} />
+}
 
-function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { agent: Agent; onClose(): void; onSaved(a: Agent): void; onRemoved(): void; onDuplicated(a: Agent): void }) {
+// ─── The team (Cloth) ────────────────────────────────────────────────────────
+
+function TeamView({ agents, activity, working, jobs, onOpen }: { agents: Agent[]; activity: Activity; working: number; jobs: number; onOpen(id: string): void }) {
+  return (
+    <div className="mx-auto max-w-[1100px] px-8 pb-16 pt-[22px] @max-[620px]:px-4 mobile:px-4">
+      <div className="flex items-center gap-3">
+        <SplitBack />
+        <ClothTile large />
+        <div className="min-w-0 flex-1">
+          <h1 className="text-title font-semibold">Cloth</h1>
+          <p className="text-ui text-dim">The main agent in every chat. It hands jobs to the team and checks what comes back.</p>
+        </div>
+      </div>
+      <p className="mt-3 text-ui text-muted">
+        {working ? `${plural(working, 'agent')} working now. ` : ''}
+        {plural(jobs, 'job')} handed out this week. Mention an agent with @ in a chat to hand it a message yourself.
+      </p>
+      <Section title="The team side by side">
+        {agents.length ? <CompareTable agents={agents} activity={activity} selected={null} onOpen={onOpen} /> : <p className="text-ui text-dim">No agents yet.</p>}
+      </Section>
+    </div>
+  )
+}
+
+// ─── One agent ───────────────────────────────────────────────────────────────
+
+const EFFORT: { value: Effort | 'chat'; label: string }[] = [...EFFORT_OPTIONS, { value: 'chat', label: 'As chat' }]
+const ACCESS_TONE = { reader: 'text-info', writer: 'text-warn', operator: 'text-danger-hi' } as const
+type Open = 'instructions' | 'skills' | 'servers' | 'tools' | 'knowledge' | null
+
+function AgentDetail({
+  agent,
+  activity,
+  live,
+  chats,
+  onSaved,
+  onRemoved,
+  onDuplicated
+}: {
+  agent: Agent
+  activity?: AgentActivity
+  live?: Live
+  chats: number
+  onSaved(a: Agent): void
+  onRemoved(): void
+  onDuplicated(a: Agent): void
+}) {
   const [name, setName] = useState(agent.name)
   const [purpose, setPurpose] = useState(agent.purpose)
   const [instructions, setInstructions] = useState(agent.instructions)
   const [setup, setSetup] = useState<ChatSetup | null>(null)
   const [servers, setServers] = useState<McpClientStatus[]>([])
+  const [open, setOpen] = useState<Open>(null)
   const setPage = useApp((s) => s.setPage)
   const tiers = useApp((s) => s.settings?.agentTiers) ?? []
   // Agents set to a tier before Access and Reasoning: it shows as their own level until they are changed here.
@@ -340,114 +335,172 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
     }
     setPage('chat')
   }
+  const duplicate = async () => {
+    const a = await attempt(() => api.agents.duplicate(agent.id))
+    if (a) onDuplicated(a)
+  }
+  const remove = async () => {
+    if (!(await confirmAction(`Chats set up from ${agent.name} keep their setup.`, { title: `Delete ${agent.name}?`, confirmLabel: 'Delete', danger: true }))) return
+    if (await attempt(() => api.agents.remove(agent.id).then(() => true))) onRemoved()
+  }
+
+  const level = accessOf(agent)
+  const effort = normalizeEffortOrNull(agent.thinking ?? tier?.thinking)
+  const always = alwaysSkills(agent)
+  const serversOn = m.external.filter((t) => m.isOn(t.name)).length
+  const builtinOn = m.builtin.filter((t) => m.isOn(t.name)).length
+  const used = [chats ? plural(chats, 'chat') : '', activity?.jobs ? `${plural(activity.jobs, 'job')} this week${activity.failed ? `, ${activity.failed} failed` : ''}` : ''].filter(Boolean).join(' · ') || 'Not used yet'
+  const instructionLine = instructions.trim().split('\n').find((l) => l.trim())?.trim() ?? ''
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
-        title={
-          <span className="flex items-center gap-2.5">
-            <Tile name={agent.name} builtin={agent.builtin} />
-            {agent.name}
-          </span>
-        }
-        subtitle={agent.builtin ? 'Built in' : undefined}
-        actions={
-          <>
-            <Button size="sm" icon={<ChatCircleDots size={14} />} onClick={() => void useInChat()}>
-              New chat with it
-            </Button>
-            <Button size="sm" variant="ghost" icon={<Copy size={14} />} onClick={async () => {
-              const a = await attempt(() => api.agents.duplicate(agent.id))
-              if (a) onDuplicated(a)
-            }}>
-              Duplicate
-            </Button>
-            {!agent.builtin && (
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Trash size={14} />}
-                aria-label="Delete agent"
-                onClick={async () => {
-                  if (!(await confirmAction(`Chats set up from ${agent.name} keep their setup.`, { title: `Delete ${agent.name}?`, confirmLabel: 'Delete', danger: true }))) return
-                  if (await attempt(() => api.agents.remove(agent.id).then(() => true))) onRemoved()
-                }}
-              />
-            )}
-            <Button size="sm" variant="ghost" icon={<X size={15} />} aria-label="Close" title="Close (Esc)" onClick={onClose} />
-          </>
-        }
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-[min(760px,calc(100%-40px))] grid-cols-[minmax(0,1fr)] gap-6 py-6">
-          {!agent.builtin && (
-            <Section title="Name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== agent.name && void save({ name })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} aria-label="Name" />
-            </Section>
+    <div className="mx-auto max-w-[760px] px-8 pb-16 pt-[22px] @max-[620px]:px-4 mobile:px-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <SplitBack />
+        <Tile name={agent.name} builtin={agent.builtin} size="lg" />
+        <div className="min-w-[180px] flex-1">
+          {agent.builtin ? (
+            <h1 className="truncate text-title font-semibold">{agent.name}</h1>
+          ) : (
+            <input
+              aria-label="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => (name.trim() && name !== agent.name ? void save({ name }) : setName(agent.name))}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              spellCheck={false}
+              className="w-full truncate border-b border-transparent bg-transparent py-0.5 text-title font-semibold outline-none hover:border-line-strong focus:border-crimson-line focus-visible:outline-none"
+            />
           )}
-          <Section title="Purpose">
-            <Textarea rows={2} value={purpose} onChange={(e) => setPurpose(e.target.value)} onBlur={() => purpose !== agent.purpose && void save({ purpose })} aria-label="Purpose" placeholder="e.g. Reviews and fixes interfaces against the project's design system." />
-          </Section>
-          <Section title="Access">
-            <div className="w-[360px] mobile:w-full">
-              <Segmented
-                size="sm"
-                label="Access"
-                value={accessOf(agent)}
-                onChange={(v) => void save(accessCaps(v))}
-                disabled={fixedRead ? ['writer', 'operator'] : []}
-                options={ACCESS_LEVELS.map((l) => ({ value: l.value, label: l.label }))}
-              />
+          <p className="text-ui text-dim">
+            {agent.builtin ? 'Built in · ' : ''}
+            <span className={ACCESS_TONE[level]}>{accessLabel(level)}</span> · {effort ? `${effortLabel(effort)} reasoning` : 'Chat’s reasoning'}
+          </p>
+        </div>
+        <Button className={FOCUS} icon={<ChatCircleDots size={14} aria-hidden="true" />} onClick={() => void useInChat()}>
+          New chat with it
+        </Button>
+      </div>
+
+      {live?.state === 'working' && (
+        <div role="status" className="mt-4 flex items-center gap-2.5 rounded-[12px] border border-crimson-line bg-crimson-soft/40 px-3.5 py-2.5 text-ui">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-info motion-reduce:animate-none" />
+          <span className="min-w-0 flex-1 truncate" title={live.text}>
+            {live.text ? `Working: ${live.text}` : 'Working on a job'}
+          </span>
+        </div>
+      )}
+
+      <Section title="What it does">
+        <Textarea
+          rows={2}
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+          onBlur={() => purpose !== agent.purpose && void save({ purpose })}
+          aria-label="What it does"
+          placeholder="Reviews and fixes interfaces against the project's design system."
+        />
+        <p className="mt-1.5 text-caption text-dim">Cloth reads this to decide which jobs to hand it.</p>
+      </Section>
+
+      <Section title="How it works">
+        <div className="overflow-hidden rounded-[12px] border border-line">
+          <FixedRow icon={LockSimple} label="Access">
+            <div className="w-[300px] max-w-full">
+              <Segmented size="sm" label="Access" value={level} onChange={(v) => void save(accessCaps(v))} disabled={fixedRead ? ['writer', 'operator'] : []} options={ACCESS_LEVELS.map((l) => ({ value: l.value, label: l.label }))} />
             </div>
-            <p className="text-caption text-dim">
-              {fixedRead ? 'Built in as a Reader: it never changes anything.' : ACCESS_LEVELS.find((l) => l.value === accessOf(agent))!.sub}. The chat it works for can only lower this: in Plan mode it is a Reader.
-            </p>
-          </Section>
-          <Section title="Reasoning">
-            <div className="w-[360px] mobile:w-full">
-              <Segmented size="sm" label="Reasoning" value={normalizeEffortOrNull(agent.thinking ?? tier?.thinking) ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v, tier: null, ...(tier?.model && !agent.model ? { model: tier.model } : {}) })} options={EFFORT} />
+          </FixedRow>
+          <FixedRow icon={Brain} label="Reasoning">
+            <div className="w-[440px] max-w-full">
+              <Segmented size="sm" label="Reasoning" value={effort ?? 'chat'} onChange={(v) => void save({ thinking: v === 'chat' ? null : v, tier: null, ...(tier?.model && !agent.model ? { model: tier.model } : {}) })} options={EFFORT} />
             </div>
-            <div className="grid gap-1.5">
-              <span className="text-caption text-dim">Model</span>
+          </FixedRow>
+          <FixedRow icon={Cpu} label="Model">
+            <div className="w-[320px] max-w-full">
               <ModelPicker value={agent.model ?? tier?.model ?? null} onChange={(model) => void save({ model, tier: null, ...(tier && agent.thinking === null ? { thinking: tier.thinking } : {}) })} allowNone noneLabel="The chat's model" />
             </div>
-          </Section>
-          <InstructionsEditor agent={agent} value={instructions} onChange={setInstructions} onSave={(text) => void save({ instructions: text })} />
-
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
-            <div className="flex items-baseline justify-between">
-              <h3 className="text-ui font-semibold">What it can use</h3>
-              <span className="font-mono text-caption tabular-nums text-dim">{setup ? `about ${k(m.total)} tokens per request` : '…'}</span>
-            </div>
-            <Collapsible title="Skills" meta={`${m.skillsOn.length} · +${k(m.parts.skills)}`} defaultOpen>
-              <SkillsView target={agent} update={update} m={m} />
-            </Collapsible>
-            <Collapsible title="External servers" meta={m.configs.length ? `${m.external.filter((t) => m.isOn(t.name)).length} tools · +${k(m.parts.servers)}` : 'none set up'}>
-              <ServersView target={agent} update={update} m={m} status={servers} />
-            </Collapsible>
-            <Collapsible title="Built-in tools" meta={`${m.builtin.filter((t) => m.isOn(t.name)).length} · +${k(m.parts.builtin)}`}>
-              <ToolsView target={agent} update={update} m={m} />
-            </Collapsible>
-            <Collapsible title="Knowledge" meta={`${m.selected.length} · +${k(m.parts.knowledge)}`}>
-              <KnowledgeView target={agent} update={update} total={m.parts.knowledge} />
-            </Collapsible>
-          </div>
-
+          </FixedRow>
           {!agent.builtin && (
-            <Section title="Approvals">
-              <Segmented
-                label="Approvals"
-                value={agent.autoApprove}
-                onChange={(autoApprove) => void save({ autoApprove })}
-                options={[
-                  { value: 'none', label: 'Ask first' },
-                  { value: 'edits', label: 'Allow edits' },
-                  { value: 'all', label: 'Allow all' }
-                ]}
-              />
-            </Section>
+            <FixedRow icon={ShieldCheck} label="Approvals">
+              <div className="w-[300px] max-w-full">
+                <Segmented
+                  size="sm"
+                  label="Approvals"
+                  value={agent.autoApprove}
+                  onChange={(autoApprove) => void save({ autoApprove })}
+                  options={[
+                    { value: 'none', label: 'Ask first' },
+                    { value: 'edits', label: 'Allow edits' },
+                    { value: 'all', label: 'Allow all' }
+                  ]}
+                />
+              </div>
+            </FixedRow>
           )}
+          <UseRow id="instructions" icon={FileText} label="Instructions" open={open} setOpen={setOpen} action="Edit" value={<span className="truncate text-ui text-muted">{instructionLine || 'None yet'}</span>}>
+            <InstructionsEditor agent={agent} value={instructions} onChange={setInstructions} onSave={(text) => void save({ instructions: text })} />
+          </UseRow>
         </div>
+        <p className="mt-2 text-caption text-dim">
+          {fixedRead ? 'Built in as a Reader: it never changes anything.' : `${ACCESS_LEVELS.find((l) => l.value === level)!.sub}.`} The chat it works for can only lower this: in Plan mode it is a Reader.
+        </p>
+      </Section>
+
+      <Section title="What it can use" hint={setup ? `about ${k(m.total)} tokens per request` : undefined}>
+        <div className="overflow-hidden rounded-[12px] border border-line">
+          <UseRow
+            id="skills"
+            icon={Sparkle}
+            label="Skills"
+            open={open}
+            setOpen={setOpen}
+            value={
+              <>
+                {always.slice(0, 3).map((s) => (
+                  <Tag key={s} tone="skill">
+                    {s}
+                  </Tag>
+                ))}
+                {always.length > 3 && <span className="text-ui text-muted">+{always.length - 3} more</span>}
+                {!always.length && <span className={clsx('text-ui', m.skillsOn.length ? 'text-muted' : 'text-dim')}>{m.skillsOn.length ? plural(m.skillsOn.length, 'skill') : 'None'}</span>}
+              </>
+            }
+          >
+            <SkillsView target={agent} update={update} m={m} />
+          </UseRow>
+          <UseRow id="tools" icon={Wrench} label="Built-in tools" open={open} setOpen={setOpen} value={<span className="text-ui text-muted">{builtinOn ? plural(builtinOn, 'tool') : 'None'}</span>}>
+            <ToolsView target={agent} update={update} m={m} />
+          </UseRow>
+          <UseRow id="servers" icon={PlugsConnected} label="Servers" open={open} setOpen={setOpen} value={<span className={clsx('text-ui', serversOn ? 'text-muted' : 'text-dim')}>{m.configs.length ? (serversOn ? `${plural(serversOn, 'tool')} from your servers` : 'No server tools') : 'No servers set up'}</span>}>
+            <ServersView target={agent} update={update} m={m} status={servers} />
+          </UseRow>
+          <UseRow id="knowledge" icon={Books} label="Knowledge" open={open} setOpen={setOpen} value={<span className={clsx('text-ui', m.selected.length ? 'text-muted' : 'text-dim')}>{m.selected.length ? plural(m.selected.length, 'collection') : 'None'}</span>}>
+            <KnowledgeView target={agent} update={update} total={m.parts.knowledge} />
+          </UseRow>
+        </div>
+      </Section>
+
+      <Section title="This week" hint={used}>
+        <div className="rounded-[12px] border border-line px-3.5 py-3">
+          <WeekStrip days={activity?.days ?? NO_WEEK} max={Math.max(1, ...(activity?.days ?? [0]))} />
+          <div className="mt-2 flex justify-between gap-3 text-caption text-dim">
+            <span>{agent.model ? agent.model.modelId : "Runs on the chat's model"}</span>
+            <span>{activity?.lastAt ? `Last job ${new Date(activity.lastAt).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : 'No jobs yet'}</span>
+          </div>
+        </div>
+      </Section>
+
+      <div className="mt-[30px] flex flex-wrap items-center gap-2.5 border-t border-line pt-4 text-caption text-dim">
+        <FooterButton icon={Copy} onClick={() => void duplicate()}>
+          Duplicate
+        </FooterButton>
+        {!agent.builtin && (
+          <>
+            <span aria-hidden="true">·</span>
+            <FooterButton danger icon={Trash} onClick={() => void remove()}>
+              Delete agent…
+            </FooterButton>
+          </>
+        )}
       </div>
     </div>
   )
@@ -455,25 +508,79 @@ function AgentEditor({ agent, onClose, onSaved, onRemoved, onDuplicated }: { age
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
-      <div className="text-caption font-medium text-muted">{title}</div>
+    <section aria-label={title} className="mt-[26px]">
+      <h2 className="mb-2 flex items-baseline gap-2 text-ui font-semibold">
+        {title}
+        {hint && <small className="truncate text-caption font-normal tabular-nums text-dim">{hint}</small>}
+      </h2>
       {children}
-      {hint && <div className="text-caption text-dim">{hint}</div>}
+    </section>
+  )
+}
+
+function RowTile({ icon: Icon }: { icon: typeof Wrench }) {
+  return (
+    <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-elev-2 text-muted">
+      <Icon size={14} />
+    </span>
+  )
+}
+
+/** A row whose control sits in the row itself. */
+function FixedRow({ icon, label, children }: { icon: typeof Wrench; label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[28px_120px_minmax(0,1fr)] items-center gap-2.5 border-line px-3.5 py-2 @max-[620px]:grid-cols-[28px_minmax(0,1fr)] mobile:grid-cols-[28px_minmax(0,1fr)] [&+*]:border-t">
+      <RowTile icon={icon} />
+      <span className="text-ui text-muted @max-[620px]:sr-only mobile:sr-only">{label}</span>
+      <div className="min-w-0">{children}</div>
     </div>
   )
 }
 
-function Collapsible({ title, meta, defaultOpen, children }: { title: string; meta: string; defaultOpen?: boolean; children: ReactNode }) {
-  const [open, setOpen] = useState(!!defaultOpen)
+/** A row showing what's set, with Change (or Edit) opening its editor below; one at a time. */
+function UseRow({ id, icon, label, value, open, setOpen, action = 'Change', children }: { id: Exclude<Open, null>; icon: typeof Wrench; label: string; value: ReactNode; open: Open; setOpen(o: Open): void; action?: string; children: ReactNode }) {
+  const expanded = open === id
+  const panel = `agent-${id}`
   return (
-    <div className="min-w-0 rounded-[12px] border border-line bg-panel">
-      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
-        <CaretRight size={11} className={clsx('shrink-0 text-dim transition-transform', open && 'rotate-90')} />
-        <span className="min-w-0 flex-1 text-ui font-medium">{title}</span>
-        <span className="font-mono text-caption tabular-nums text-dim">{meta}</span>
-      </button>
-      {open && <div className="border-t border-line p-2">{children}</div>}
+    <div className="border-line [&+*]:border-t">
+      <div className="grid grid-cols-[28px_120px_minmax(0,1fr)_auto] items-center gap-2.5 px-3.5 py-2 @max-[620px]:grid-cols-[28px_minmax(0,1fr)_auto] mobile:grid-cols-[28px_minmax(0,1fr)_auto]">
+        <RowTile icon={icon} />
+        <span className="text-ui text-muted @max-[620px]:sr-only mobile:sr-only">{label}</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-[5px]">{value}</span>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={panel}
+          aria-label={`${expanded ? 'Close' : action} ${label.toLowerCase()}`}
+          onClick={() => setOpen(expanded ? null : id)}
+          className={clsx('h-8 rounded px-2 text-caption', expanded ? 'text-fg' : 'text-dim hover:text-fg', FOCUS)}
+        >
+          {expanded ? 'Done' : action}
+        </button>
+      </div>
+      {expanded && (
+        <div id={panel} className="border-t border-line bg-panel/60 p-3">
+          {children}
+        </div>
+      )}
     </div>
+  )
+}
+
+function Tag({ tone, children }: { tone?: 'skill'; children: ReactNode }) {
+  return (
+    <span translate="no" className={clsx('max-w-full truncate rounded-md border px-[7px] py-px text-caption', tone === 'skill' ? 'border-skill/30 text-skill' : 'border-line')}>
+      {children}
+    </span>
+  )
+}
+
+function FooterButton({ danger, icon: Icon, onClick, children }: { danger?: boolean; icon: typeof Wrench; onClick(): void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className={clsx('inline-flex h-8 items-center gap-1.5 rounded px-1 text-ui text-dim', danger ? 'hover:text-danger-hi' : 'hover:text-fg', FOCUS)}>
+      <Icon size={13} aria-hidden="true" />
+      {children}
+    </button>
   )
 }
 
@@ -497,9 +604,9 @@ function InstructionsEditor({ agent, value, onChange, onSave }: { agent: Agent; 
     setRequest('')
   }
   return (
-    <div className="grid gap-1.5">
+    <div className="grid gap-2">
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-caption font-medium text-muted">Instructions</span>
+        <span className="flex-1 text-caption text-dim">What it should do first, how to work, what to check before finishing, and what never to do.</span>
         {previous !== null && (
           <Button size="sm" variant="ghost" icon={<ArrowCounterClockwise size={13} />} onClick={() => (onChange(previous), onSave(previous), setPrevious(null))}>
             Undo rewrite
@@ -516,7 +623,7 @@ function InstructionsEditor({ agent, value, onChange, onSave }: { agent: Agent; 
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && request.trim() && !busy && void rewrite()}
-            placeholder="What should change? e.g. be stricter about mobile layouts"
+            placeholder="Be stricter about mobile layouts"
             aria-label="What should change"
           />
           <Button variant="primary" loading={busy} disabled={!request.trim() || !model} onClick={() => void rewrite()}>
@@ -524,14 +631,7 @@ function InstructionsEditor({ agent, value, onChange, onSave }: { agent: Agent; 
           </Button>
         </div>
       )}
-      <Textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={() => value !== agent.instructions && onSave(value)}
-        rows={10}
-        aria-label="Instructions"
-        placeholder="What it should do first, how to work, what to check before finishing, and what never to do."
-      />
+      <Textarea value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => value !== agent.instructions && onSave(value)} rows={12} aria-label="Instructions" />
     </div>
   )
 }
@@ -591,7 +691,7 @@ function NewAgentDialog({ open, onClose, onCreated }: { open: boolean; onClose()
             rows={6}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. Check my web pages for design problems against the project's design system and fix them. It should look at the page in a real browser on phone and desktop, in both themes, before saying it's done."
+            placeholder="Check my web pages for design problems against the project's design system and fix them. It should look at the page in a real browser on phone and desktop, in both themes, before saying it's done."
           />
           <div className="grid gap-1">
             <span className="text-caption text-dim">Write with</span>
