@@ -19,6 +19,8 @@ export interface ModelInfo {
   pricing?: { input: number; output: number } | null
   /** Where contextWindow came from: reported by the server, the built-in catalogue, or a default guess. */
   contextSource?: 'server' | 'catalog' | 'guess'
+  /** The only reasoning efforts it accepts, when it doesn't take them all (e.g. Bonsai 2: low, medium, xhigh). */
+  efforts?: ('low' | 'medium' | 'high' | 'xhigh')[]
 }
 
 /** The context size is a default guess (older model lists don't say where it came from; 32,768 was the default). */
@@ -1701,8 +1703,8 @@ export interface Runner {
   useInChats: boolean
   /**
    * How much the model thinks before answering, for models whose template allows it: 'default' leaves
-   * it to the model; 'off'/'on' for models that can turn thinking off; 'low'/'medium'/'high' for those
-   * with a reasoning effort.
+   * it to the model; 'off'/'on' for models that can turn thinking off; 'low'/'medium'/'high'/'xhigh' for
+   * those with a reasoning effort.
    */
   reasoning: RunnerReasoning
   /** Where the model came from, when added from Hugging Face. */
@@ -1711,7 +1713,13 @@ export interface Runner {
   updatedAt: number
 }
 
-export type RunnerReasoning = 'default' | 'off' | 'on' | 'low' | 'medium' | 'high'
+export type RunnerReasoning = 'default' | 'off' | 'on' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/**
+ * Built-in models that accept only some reasoning levels, in order: the runner offers just these, starts on
+ * the last, and chats that use the model pick from the same ones. Bonsai 2 takes low, medium and xhigh.
+ */
+export const RUNNER_LEVELS: Partial<Record<RunnerBuiltin, ('low' | 'medium' | 'xhigh')[]>> = { 'bonsai-2-27b': ['low', 'medium', 'xhigh'] }
 /** What a model's chat template allows: an effort level, thinking on/off, or nothing to set. */
 export type ReasoningKind = 'levels' | 'toggle' | null
 

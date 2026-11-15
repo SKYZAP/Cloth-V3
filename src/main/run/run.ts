@@ -30,6 +30,7 @@ import type {
   RuntimeBackend,
   RuntimeOptions
 } from '@shared/types'
+import { RUNNER_LEVELS } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import { isReasoningModelId, type ProviderService } from '../providers/providers'
@@ -77,7 +78,7 @@ const BUILTINS: Record<RunnerBuiltin, { name: string; config: RunnerConfig }> = 
       extraArgs: '--jinja',
       alias: 'bonsai-2-27b',
       useInChats: true,
-      reasoning: 'default',
+      reasoning: 'xhigh',
       source: { repo: BONSAI_REPO, quant: 'PQ2_0' }
     }
   }
@@ -155,7 +156,7 @@ export function resolveServer(serverPath: string | null, platform: NodeJS.Platfo
  */
 export function reasoningArgs(reasoning: RunnerReasoning | undefined, kind: ReasoningKind): string[] {
   if (!reasoning || reasoning === 'default' || !kind) return []
-  if (kind === 'levels' && (reasoning === 'low' || reasoning === 'medium' || reasoning === 'high')) return ['--chat-template-kwargs', JSON.stringify({ reasoning_effort: reasoning })]
+  if (kind === 'levels' && (reasoning === 'low' || reasoning === 'medium' || reasoning === 'high' || reasoning === 'xhigh')) return ['--chat-template-kwargs', JSON.stringify({ reasoning_effort: reasoning })]
   if (kind === 'toggle' && reasoning === 'off') return ['--reasoning-budget', '0']
   return []
 }
@@ -173,7 +174,8 @@ export function buildCommand(runner: Runner, server: string, kind: ReasoningKind
   if (s.topP !== undefined && s.topP !== null) args.push('--top-p', String(s.topP))
   if (s.topK !== undefined && s.topK !== null) args.push('--top-k', String(s.topK))
   if (s.minP !== undefined && s.minP !== null) args.push('--min-p', String(s.minP))
-  args.push(...reasoningArgs(runner.reasoning, kind))
+  // A built-in with its own levels takes an effort level whatever its header says.
+  args.push(...reasoningArgs(runner.reasoning, runner.builtin && RUNNER_LEVELS[runner.builtin] ? 'levels' : kind))
   args.push(...splitArgs(runner.extraArgs ?? ''))
   return { file: server, args, cwd: dirname(server) }
 }
@@ -374,7 +376,7 @@ export class RunService {
   update(id: string, patch: RunnerPatch): Runner {
     const cur = this.get(id)
     const { id: _i, name: _n, builtin: _b, createdAt: _c, updatedAt: _u, ...config } = cur
-    const next = validate({ ...config, ...pickConfig(patch) })
+    const next = validate({ ...config, ...pickConfig(patch) }, cur.builtin)
     const name = patch.name?.trim() || cur.name
     this.ctx.db.prepare('UPDATE runners SET name = ?, config = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(next), Date.now(), id)
     const runner = this.get(id)
@@ -599,7 +601,8 @@ export class RunService {
       reasoning: runner.reasoning === 'off' ? false : this.reasoningKindOf(runner) !== null || isReasoningModelId(runner.alias),
       vision: !!runner.mmprojPath,
       embedding: false,
-      contextSource: 'server'
+      contextSource: 'server',
+      ...(runner.builtin && RUNNER_LEVELS[runner.builtin] ? { efforts: RUNNER_LEVELS[runner.builtin] } : {})
     }
     const provider: Provider = {
       id: pid,
@@ -1056,11 +1059,14 @@ function toRunner(r: RunnerRow): Runner {
   const builtin = (r.builtin as RunnerBuiltin | null) ?? null
   const base = builtin ? BUILTINS[builtin]?.config ?? DEFAULTS : DEFAULTS
   const config = { ...base, ...json<Partial<RunnerConfig>>(r.config, {}) }
+  // Saved before the model's levels were known (Bonsai's was 'default'): it starts on its top level.
+  const levels = builtin ? RUNNER_LEVELS[builtin] : undefined
+  if (levels && !(levels as RunnerReasoning[]).includes(config.reasoning)) config.reasoning = levels[levels.length - 1]
   return { id: r.id, name: r.name, builtin, ...config, sampling: { ...(config.sampling ?? {}) }, createdAt: r.created_at, updatedAt: r.updated_at }
 }
 
 const CONFIG_KEYS: (keyof RunnerConfig)[] = ['serverPath', 'modelPath', 'mmprojPath', 'device', 'gpuLayers', 'contextSize', 'port', 'flashAttention', 'sampling', 'extraArgs', 'alias', 'useInChats', 'reasoning', 'source']
-const REASONING: RunnerReasoning[] = ['default', 'off', 'on', 'low', 'medium', 'high']
+const REASONING: RunnerReasoning[] = ['default', 'off', 'on', 'low', 'medium', 'high', 'xhigh']
 
 function pickConfig(input: RunnerPatch): Partial<RunnerConfig> {
   const out: Partial<RunnerConfig> = {}
@@ -1068,7 +1074,7 @@ function pickConfig(input: RunnerPatch): Partial<RunnerConfig> {
   return out
 }
 
-function validate(c: RunnerConfig): RunnerConfig {
+function validate(c: RunnerConfig, builtin: RunnerBuiltin | null = null): RunnerConfig {
   const blank = (s: string | null | undefined) => (s && s.trim() ? s.trim() : null)
   const out: RunnerConfig = {
     ...c,
@@ -1084,6 +1090,8 @@ function validate(c: RunnerConfig): RunnerConfig {
   if (!Number.isInteger(out.contextSize) || out.contextSize < 0) throw new Error('Context size must be a whole number (0 = the model’s own)')
   if (!Number.isInteger(out.gpuLayers) || out.gpuLayers < -1) throw new Error('GPU layers must be a whole number (-1 = auto)')
   if (!REASONING.includes(out.reasoning)) throw new Error(`Unknown reasoning setting ${out.reasoning}`)
+  const levels = builtin ? RUNNER_LEVELS[builtin] : undefined
+  if (levels && !(levels as RunnerReasoning[]).includes(out.reasoning)) throw new Error(`This model takes only these reasoning levels: ${levels.join(', ')}`)
   if (!out.alias) throw new Error('Give the model an alias (the id chats use)')
   if (/\s/.test(out.alias)) throw new Error('The alias can’t contain spaces')
   return out

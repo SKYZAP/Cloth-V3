@@ -11,6 +11,7 @@ import { Tooltip } from '@/components/Tooltip'
 import { ContextMeter } from '@/components/Planning'
 import { openSetupSection } from './setupNav'
 import { ComposerPopover, effortLabel, FolderMenu, ModelEffortMenu } from './StatusLine'
+import { effortFor } from '@shared/effort'
 import { STAGE_LABEL, stageIndex } from './Workflow'
 import { routeStages } from '@shared/types'
 
@@ -219,12 +220,12 @@ export function ComposerBar({
               <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', session.model ? 'bg-fg/80' : 'bg-line-strong')} />
               <span className="min-w-[3ch] max-w-[200px] truncate mobile:max-w-[140px]">{session.model ? (model?.name ?? session.model.modelId) : 'Pick a model'}</span>
               {/* As the row narrows: the folder name gives way first, then the effort (sooner beside the wider Spec → Ship chip), then the access label. */}
-              {model?.reasoning && <span className={clsx('hidden shrink-0 text-dim mobile:hidden', mode === 'spec' ? '@[860px]:inline' : '@[680px]:inline')}>– {effortLabel(session.thinking)}</span>}
+              {model?.reasoning && <span className={clsx('hidden shrink-0 text-dim mobile:hidden', mode === 'spec' ? '@[860px]:inline' : '@[680px]:inline')}>– {effortLabel(effortFor(session.thinking, model?.efforts))}</span>}
               <CaretDown size={10} weight="bold" className={clsx('shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
             </button>
           )}
         >
-          {(close) => <ModelEffortMenu session={session} update={update} reasoning={!!model?.reasoning} onPicked={close} />}
+          {(close) => <ModelEffortMenu session={session} update={update} reasoning={!!model?.reasoning} efforts={model?.efforts} onPicked={close} />}
         </ComposerPopover>
       </div>
       {usage && usage.cost > 0 && (

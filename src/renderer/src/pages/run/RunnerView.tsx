@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { CaretRight, ChatCircleDots, Play, Stop, Trash, Warning } from '@phosphor-icons/react'
 import type { EnginesState, Hardware, ModelMeta, ReasoningKind, Runner, RunnerPatch, RunnerReasoning, RunnerSampling, RunnerStatus } from '@shared/types'
+import { RUNNER_LEVELS } from '@shared/types'
 import { api } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, Segmented, Spinner, Switch, confirmAction } from '@/components/ui'
@@ -67,7 +68,9 @@ export function RunnerView({
               </div>
             </Section>
           )}
-          {meta?.reasoning && <Reasoning kind={meta.reasoning} value={runner.reasoning} locked={locked} onChange={(reasoning) => void save({ reasoning })} />}
+          {(meta?.reasoning || (runner.builtin && RUNNER_LEVELS[runner.builtin])) && (
+            <Reasoning kind={meta?.reasoning ?? 'levels'} only={runner.builtin ? RUNNER_LEVELS[runner.builtin] : undefined} value={runner.reasoning} locked={locked} onChange={(reasoning) => void save({ reasoning })} />
+          )}
           <Section title="Hardware" aside={lock}>
             <div className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 px-3.5 py-3 mobile:grid-cols-1">
               <Row label="GPU">
@@ -351,7 +354,8 @@ const LEVELS: { value: RunnerReasoning; label: string; title?: string }[] = [
   { value: 'default', label: 'Default', title: "The model's own setting" },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' }
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'Max', title: 'xhigh' }
 ]
 const TOGGLE: { value: RunnerReasoning; label: string; title?: string }[] = [
   { value: 'default', label: 'Default', title: "The model's own setting" },
@@ -359,9 +363,11 @@ const TOGGLE: { value: RunnerReasoning; label: string; title?: string }[] = [
   { value: 'on', label: 'On' }
 ]
 
-function Reasoning({ kind, value, locked, onChange }: { kind: NonNullable<ReasoningKind>; value: RunnerReasoning; locked: boolean; onChange(v: RunnerReasoning): void }) {
-  const items = kind === 'levels' ? LEVELS : TOGGLE
-  const current = items.some((i) => i.value === value) ? value : 'default'
+/** Reasoning for the runner. `only`: a model that takes just these levels (Bonsai 2), with no Default to fall back on. */
+function Reasoning({ kind, only, value, locked, onChange }: { kind: NonNullable<ReasoningKind>; only?: RunnerReasoning[]; value: RunnerReasoning; locked: boolean; onChange(v: RunnerReasoning): void }) {
+  const items = only ? LEVELS.filter((i) => only.includes(i.value)) : kind === 'levels' ? LEVELS.filter((i) => i.value !== 'xhigh') : TOGGLE
+  const fallback = only ? only[only.length - 1] : 'default'
+  const current = items.some((i) => i.value === value) ? value : fallback
   return (
     <Section title="Reasoning" aside={locked && <span className="text-caption text-dim">Stop it to change</span>}>
       <fieldset disabled={locked} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3 disabled:opacity-60">
