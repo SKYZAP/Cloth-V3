@@ -36,3 +36,22 @@ describe('reasoning effort', () => {
     expect(effortLabel('xhigh')).toBe('Max')
   })
 })
+
+describe('models that take only some efforts', () => {
+  const bonsai = ['low', 'medium', 'xhigh'] as const
+
+  it('shows only those efforts, and the saved one rounded up to one it takes', async () => {
+    const { effortFor, effortOptions } = await import('../src/shared/effort')
+    expect(effortOptions(bonsai).map((o) => o.label)).toEqual(['Low', 'Medium', 'Max'])
+    expect(effortOptions(undefined)).toHaveLength(4)
+    expect(effortFor('high', bonsai)).toBe('xhigh')
+    expect(effortFor('medium', bonsai)).toBe('medium')
+    expect(effortFor('off', bonsai)).toBe('low')
+    expect(effortFor('high', undefined)).toBe('high')
+  })
+
+  it('sends every other level as the nearest one it takes', async () => {
+    const { effortMap } = await import('../src/main/providers/providers')
+    expect(effortMap([...bonsai])).toEqual({ off: 'low', minimal: 'low', high: 'xhigh', max: 'xhigh' })
+  })
+})

@@ -251,7 +251,7 @@ export class ProviderService {
       }
       // Local reasoning models (Qwen 3.x, DeepSeek-R1, …) think by default. With thinking "off",
       // send reasoning_effort "none" so they answer directly (LM Studio / Ollama honour it).
-      if (info.reasoning) model.thinkingLevelMap = { off: 'none' }
+      if (info.reasoning) model.thinkingLevelMap = info.efforts?.length ? effortMap(info.efforts) : { off: 'none' }
     }
     // Local servers accept any key; pi-ai still wants a non-empty one.
     return { model, apiKey: this.apiKey(provider.id) || 'cloth-local' }
@@ -408,6 +408,23 @@ export class ProviderService {
     const live = this.transient.get(id)
     if (live) throw new Error(`${live.name} runs on this PC; change it on the Run page`)
   }
+}
+
+const EFFORT_ORDER = ['low', 'medium', 'high', 'xhigh'] as const
+
+/**
+ * For a model that takes only some efforts: every level it doesn't take is sent as the nearest one it does,
+ * rounding up (Bonsai 2: high → xhigh), and off or minimal as its lowest.
+ */
+export function effortMap(efforts: NonNullable<ModelInfo['efforts']>): Record<string, string> {
+  const allowed = EFFORT_ORDER.filter((e) => efforts.includes(e))
+  const map: Record<string, string> = { off: allowed[0], minimal: allowed[0] }
+  EFFORT_ORDER.forEach((e, i) => {
+    if (allowed.includes(e)) return
+    map[e] = EFFORT_ORDER.slice(i).find((x) => allowed.includes(x)) ?? allowed[allowed.length - 1]
+  })
+  map.max = allowed[allowed.length - 1]
+  return map
 }
 
 function toProvider(row: ProviderRow, secrets: Secrets): Provider {

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Code, Cube, Desktop, FolderDashed, FolderSimple, FolderSimplePlus, GlobeHemisphereWest, X } from '@phosphor-icons/react'
 import { DEFAULT_CONTAINER } from '@shared/types'
 import type { ChatSession, ContainerStatus, Project } from '@shared/types'
-import { EFFORT_OPTIONS, effortLabel, normalizeEffort } from '@shared/effort'
+import { effortFor, effortLabel, effortOptions, type Effort } from '@shared/effort'
 import { api } from '@/lib/api'
 import { isMobile } from '@/lib/platform'
 import { Button } from '@/components/ui'
@@ -80,7 +80,8 @@ export function ComposerPopover({
   )
 }
 
-export function ModelEffortMenu({ session, update, reasoning, onPicked }: { session: ChatSession; update: Update; reasoning: boolean; onPicked(): void }) {
+/** `efforts`: the only efforts the chat's model takes (Bonsai 2), when it doesn't take all four. */
+export function ModelEffortMenu({ session, update, reasoning, efforts, onPicked }: { session: ChatSession; update: Update; reasoning: boolean; efforts?: readonly Effort[]; onPicked(): void }) {
   const list = (
     <div key="list" className="flex min-h-0 flex-1 flex-col" style={{ height: isMobile ? undefined : 360 }}>
       <ModelMenu autoFocus={!isMobile} value={session.model} onChange={(model) => void update({ model }).then(() => !reasoning && onPicked())} />
@@ -91,7 +92,7 @@ export function ModelEffortMenu({ session, update, reasoning, onPicked }: { sess
       <div className="mb-1.5 text-caption text-dim">Reasoning effort</div>
       {reasoning && (
         <>
-          <Segmented value={normalizeEffort(session.thinking)} onChange={(thinking) => void update({ thinking })} options={EFFORT_OPTIONS} label="Reasoning effort" />
+          <Segmented value={effortFor(session.thinking, efforts)} onChange={(thinking) => void update({ thinking })} options={effortOptions(efforts)} label="Reasoning effort" />
         </>
       )}
     </div>

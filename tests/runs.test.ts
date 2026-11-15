@@ -274,6 +274,25 @@ describe('log parsing', () => {
 // ─── Runners ──────────────────────────────────────────────────────────────────
 
 describe('runners', () => {
+  it('gives Bonsai only the reasoning levels it takes, starting on xhigh', () => {
+    const { runs, s } = setup()
+    const b = runs.list()[0]
+    expect(b.reasoning).toBe('xhigh')
+    expect(() => runs.update(b.id, { reasoning: 'high' })).toThrow(/only these reasoning levels: low, medium, xhigh/)
+    expect(() => runs.update(b.id, { reasoning: 'default' })).toThrow(/only these reasoning levels/)
+    expect(runs.update(b.id, { reasoning: 'medium' }).reasoning).toBe('medium')
+    // Saved before its levels were known: reads as its top level.
+    s.ctx.db.prepare('UPDATE runners SET config = ? WHERE id = ?').run(JSON.stringify({ reasoning: 'default' }), b.id)
+    expect(runs.get(b.id).reasoning).toBe('xhigh')
+    // Its level goes to the chat template even when the file's header says nothing about reasoning.
+    const cmd = buildCommand({ ...runs.get(b.id), modelPath: 'D:\\m\\Bonsai.gguf' }, '/opt/llama/llama-server', null)
+    expect(cmd.args.join(' ')).toContain('--chat-template-kwargs {"reasoning_effort":"xhigh"}')
+    // Other runners keep Default and every level.
+    const mine = runs.create({ name: 'Qwen 3 8B' })
+    expect(mine.reasoning).toBe('default')
+    expect(runs.update(mine.id, { reasoning: 'high' }).reasoning).toBe('high')
+  })
+
   it('seeds the built-in Bonsai runner once; it can be edited but not deleted', async () => {
     const { runs, s } = setup()
     const all = runs.list()
