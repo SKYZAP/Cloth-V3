@@ -27,6 +27,7 @@ const run = (cmd) => {
   const r = spawnSync(cmd, { stdio: 'inherit', shell: true, env })
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
+run('npm run check-deps')
 run('npm run sidecars')
 run('npm run build:runner')
 run('npx electron-vite build')

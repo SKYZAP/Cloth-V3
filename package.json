@@ -16,8 +16,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "package": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --dir",
-    "dist": "npm run sidecars && npm run build:runner && electron-vite build && electron-builder --publish never",
+    "package": "npm run check-deps && npm run sidecars && npm run build:runner && electron-vite build && electron-builder --dir",
+    "dist": "npm run check-deps && npm run sidecars && npm run build:runner && electron-vite build && electron-builder --publish never",
     "release": "node scripts/release.mjs",
     "mock-llm": "node scripts/mock-llm.mjs",
     "icon": "electron scripts/make-icon.mjs",
@@ -26,7 +26,8 @@
     "mobile:dev": "vite --config vite.mobile.config.ts",
     "mobile:apk": "node scripts/mobile-apk.mjs debug",
     "mobile:release": "node scripts/mobile-apk.mjs release",
-    "build:runner": "node scripts/build-runner.mjs"
+    "build:runner": "node scripts/build-runner.mjs",
+    "check-deps": "node scripts/check-deps.mjs"
   },
   "dependencies": {
     "@ast-grep/lang-go": "^0.0.6",
