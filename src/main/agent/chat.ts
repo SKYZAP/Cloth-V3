@@ -47,7 +47,14 @@ import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary
 import type { UsageService } from '../core/usage'
 import type { HubAdmin } from './admin'
 import { OPENSPEC_SECTION, openspecSection } from './openspec'
-import type { OpenSpecStepReport } from '@shared/types'
+import type { NudgeInput, OpenSpecStepReport, PendingNudge } from '@shared/types'
+
+/** A nudge held for the running agent: its prepared message and what was written, to hand back if the run doesn't take it. */
+interface HeldNudge {
+  id: string
+  input: NudgeInput
+  message: UserMessage
+}
 import { accessOf, capAccess, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 import { UNSLOP } from './unslop'
 
@@ -1277,6 +1284,7 @@ export class ChatService {
 
   remove(id: string): void {
     this.abort(id)
+    this.held.delete(id)
     this.ctx.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
     void this.checkpoints?.removeSession(id)
     void this.containers?.remove(id).catch(() => undefined)
@@ -1452,6 +1460,54 @@ export class ChatService {
   /** Running, getting ready to run, or summarising. */
   private busy(id: string): boolean {
     return this.active.has(id) || this.starting.has(id) || this.compacting.has(id)
+  }
+
+  /** Nudges written while a chat works, waiting for the end of the agent's current step. */
+  private held = new Map<string, HeldNudge[]>()
+  private nudgeSeq = 0
+
+  nudges(id: string): PendingNudge[] {
+    return (this.held.get(id) ?? []).map((n) => ({ id: n.id, text: n.input.text, attachments: n.input.attachments.length }))
+  }
+
+  private emitNudges(id: string, returned?: NudgeInput[]): void {
+    this.ctx.emit('chat', { sessionId: id, type: 'nudges', pending: this.nudges(id), ...(returned?.length ? { returned } : {}) } satisfies ChatEvent)
+  }
+
+  /** Hold a message for the running agent: it reads it once its current step ends, and carries on from there. */
+  async nudge(id: string, input: NudgeInput): Promise<PendingNudge> {
+    if (!this.isRunning(id)) throw new Error("This chat isn't running")
+    const delegates = this.runtime.delegates(this.get(id).agentId)
+    const agents = [...new Set(input.agents.map((n) => n.toLowerCase()))].map((n) => delegates.find((a) => a.name.toLowerCase() === n)).filter((a): a is SavedAgent => !!a)
+    const message = await this.userMessage(input.text, input.skills, input.attachments, agents)
+    // The run may have ended while the message was being prepared.
+    if (!this.isRunning(id)) throw new Error("This chat isn't running")
+    const held: HeldNudge = { id: `n${++this.nudgeSeq}`, input, message }
+    this.held.set(id, [...(this.held.get(id) ?? []), held])
+    this.emitNudges(id)
+    return { id: held.id, text: input.text, attachments: input.attachments.length }
+  }
+
+  unnudge(id: string, nudgeId: string): boolean {
+    const list = this.held.get(id) ?? []
+    if (!list.some((n) => n.id === nudgeId)) return false
+    const rest = list.filter((n) => n.id !== nudgeId)
+    if (rest.length) this.held.set(id, rest)
+    else this.held.delete(id)
+    this.emitNudges(id)
+    return true
+  }
+
+  private returnNudges(id: string): void {
+    const list = this.takeNudges(id)
+    if (list.length) this.emitNudges(id, list.map((n) => n.input))
+  }
+
+  /** Take every held nudge (for the agent, or to hand back). */
+  private takeNudges(id: string): HeldNudge[] {
+    const list = this.held.get(id) ?? []
+    this.held.delete(id)
+    return list
   }
 
   abort(id: string): void {
@@ -1863,6 +1919,7 @@ export class ChatService {
       }
     } catch (err) {
       this.starting.delete(id)
+      this.returnNudges(id)
       emit({ sessionId: id, type: 'end' })
       throw err
     }
@@ -1870,6 +1927,7 @@ export class ChatService {
     if (ready.signal.aborted) {
       this.saveMessages(id, [...this.rawMessages(id), message])
       this.starting.delete(id)
+      this.returnNudges(id)
       emit({ sessionId: id, type: 'end' })
       return
     }
@@ -1942,8 +2000,29 @@ export class ChatService {
       if (!timer) timer = setTimeout(pushTurn, 40)
     }
 
+    // Nudges go to the agent when a step ends: it reads them before its next call, and carries on.
+    const nudged = new Set<number>()
+    agent.steeringMode = 'all'
+    const deliver = () => {
+      const list = this.takeNudges(id)
+      if (!list.length) return
+      for (const n of list) {
+        const m = { ...n.message, timestamp: Date.now() + nudged.size }
+        nudged.add(m.timestamp)
+        agent.steer(m)
+      }
+      this.emitNudges(id)
+    }
+    // Written while the run was getting ready: read along with the message that started it.
+    deliver()
+
     agent.subscribe((e) => {
       switch (e.type) {
+        case 'turn_end':
+          // A stopped or failed step ends the run: its nudges go back to the queue instead.
+          if (e.message.role === 'assistant' && (e.message.stopReason === 'aborted' || e.message.stopReason === 'error')) break
+          deliver()
+          break
         case 'tool_execution_update':
           if (e.partialResult?.details) partials.set(e.toolCallId, e.partialResult.details as ToolDetails)
           schedule()
@@ -1953,6 +2032,14 @@ export class ChatService {
           schedule()
           break
         case 'message_end':
+          // A nudge the agent just read shows in the chat where it landed.
+          if (e.message.role === 'user' && nudged.has(e.message.timestamp)) {
+            const ui = toUiMessages([e.message])[0]
+            if (ui) emit({ sessionId: id, type: 'message', message: ui })
+          }
+          pushTurn()
+          this.saveMessages(id, agent.state.messages)
+          break
         case 'tool_execution_end':
           pushTurn()
           this.saveMessages(id, agent.state.messages)
@@ -1980,6 +2067,8 @@ export class ChatService {
         if (ref && this.runtime.providers.list().find((p) => p.id === ref.providerId)?.kind === 'openai-compatible') {
           await this.runtime.providers.refreshModel(ref, { force: true, timeoutMs: 3000 }).catch(() => undefined)
         }
+        // Written too late for this run (or it was stopped): back to the queue, which sends them once it ends.
+        this.returnNudges(id)
         emit({ sessionId: id, type: 'end', error })
       }
       const finished = this.finished.get(id)

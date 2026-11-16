@@ -8,6 +8,7 @@ import {
   DotsThree,
   ArrowDown,
   ArrowUp,
+  ArrowBendDownRight,
   Books,
   Brain,
   CaretRight,
@@ -28,7 +29,7 @@ import {
   Trash,
   X
 } from '@phosphor-icons/react'
-import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingQuestion, PlanProposal, RagHit, Skill, SpecWorkflow, UiBlock, UiMessage, UiUsage } from '@shared/types'
+import type { Agent, ApprovalDecision, ChatSession, WorkspaceFile, Project, ContextUsage, PendingApproval, PendingNudge, PendingQuestion, PlanProposal, RagHit, Skill, SpecWorkflow, UiBlock, UiMessage, UiUsage } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { takeDraft } from '@/lib/drafts'
@@ -64,7 +65,7 @@ import { RoundCard, StageDivider, StageGateCard } from './chat/Workflow'
 import { openSpecDocs } from './chat/setupNav'
 import { docsVersion, ticketProgress } from '@/lib/tickets'
 import { cyclesPermission, nextModePatch, planStatus } from '@/lib/permissions'
-import { drain, enqueue, promote, unqueue, useQueue, type QueuedMessage } from '@/lib/queue'
+import { drain, enqueue, promote, requeue, setNudges, unqueue, useQueue, type QueuedMessage } from '@/lib/queue'
 import { agentSlug, invokedSkills, mentionAt, mentionedAgents, SkillText, SkillToken, slashAt, unknownSkills } from './chat/slash'
 import { initials } from './Agents'
 
@@ -164,6 +165,11 @@ export function ChatPage() {
 
   useEvent('chat', (e) => {
     if (e.type === 'start') setRunning((r) => new Set(r).add(e.sessionId))
+    // Nudges waiting for the agent; ones a run ended without reading go first in the queue (sent below, on 'end').
+    if (e.type === 'nudges') {
+      setNudges(e.sessionId, e.pending)
+      if (e.returned?.length) requeue(e.sessionId, e.returned)
+    }
     if (e.type === 'end') {
       setRunning((r) => {
         const n = new Set(r)
@@ -522,11 +528,27 @@ function ChatView({
   useEffect(() => {
     if (!running) void drain(session.id)
   }, [running, session.id])
-  /** Send a queued message now: it goes first, and the reply in progress stops to make way. */
+  // Nudges the agent hasn't read yet (kept in step by ChatPage's 'nudges' events; fetched again when the chat opens).
+  const nudges = useQueue((s) => s.nudges[session.id]) ?? NO_NUDGES
+  useEffect(() => {
+    void api.chat.nudges(session.id).then((p) => setNudges(session.id, p), () => undefined)
+  }, [session.id])
+  /** Hand a message to the running agent for its next step; if it isn't running after all, it waits in the queue. */
+  const nudge = (m: Omit<QueuedMessage, 'id'>) =>
+    void api.chat.nudge(session.id, m).catch((e: unknown) => {
+      requeue(session.id, [m])
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!/isn't running/i.test(msg)) useApp.getState().toast(`Couldn’t nudge, so it was queued: ${msg}`, 'error')
+      else void drain(session.id)
+    })
+  /** Send a queued message now: while the chat works, as a nudge for its next step (nothing stops). */
   const sendNow = (m: QueuedMessage) => {
-    promote(session.id, m.id)
-    if (running) void api.chat.abort(session.id)
-    else void drain(session.id)
+    if (!running) {
+      promote(session.id, m.id)
+      return void drain(session.id)
+    }
+    unqueue(session.id, m.id)
+    nudge(m)
   }
   const editQueued = (m: QueuedMessage) => {
     unqueue(session.id, m.id)
@@ -654,15 +676,18 @@ function ChatView({
   const slugs = useMemo(() => new Set(agentsBySlug.keys()), [agentsBySlug])
   const tagged = useMemo(() => mentionedAgents(draft, slugs), [draft, slugs])
 
-  const send = async (text = draft) => {
+  /** `later`: while the chat works, wait for the reply to finish instead of nudging it. */
+  const send = async (text = draft, later = false) => {
     const t = text.trim()
     const files = attachments
     const withSkills = invokedSkills(t, known)
     const withAgents = mentionedAgents(t, slugs).map((slug) => agentsBySlug.get(slug)!)
     if (!t && !files.length) return
-    // Still working: the message waits its turn (or is sent now from the queue).
+    // Still working: a nudge the agent reads after its current step, or (asked for) a message that waits for the reply to end.
     if (running) {
-      enqueue(session.id, { text: t, skills: withSkills, agents: withAgents, attachments: files.map(({ name, mimeType, data }) => ({ name, mimeType, data })) })
+      const m = { text: t, skills: withSkills, agents: withAgents, attachments: files.map(({ name, mimeType, data }) => ({ name, mimeType, data })) }
+      if (later) enqueue(session.id, m)
+      else nudge(m)
       setDraft('')
       setHint(null)
       setSlash(null)
@@ -1213,6 +1238,7 @@ function ChatView({
             {slash && <SlashMenu key="slash" skills={matches} total={skills.length} index={slashIndex} query={slash.query} onPick={pickSkill} onHover={setSlashIndex} />}
             {mention && <AgentMenu key="mention" agents={agentMatches} total={taggable.length} index={mentionIndex} query={mention.query} onPick={pickAgent} onHover={setMentionIndex} />}
           </AnimatePresence>
+          <NudgeList items={nudges} approving={approvals.length > 0 || questions.length > 0} onRemove={(n) => void api.chat.unnudge(session.id, n.id).catch(() => undefined)} />
           <QueuedList items={queued} running={running} onSendNow={sendNow} onEdit={editQueued} onRemove={(m) => unqueue(session.id, m.id)} />
           <PendingAttachments items={attachments} onRemove={unattach} noVision={noVision} />
           <div className="relative">
@@ -1287,9 +1313,10 @@ function ChatView({
                 return
               }
               // Phones: Enter is a newline; the send button sends.
+              // While it works: Enter nudges, Alt+Enter queues for after the reply.
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isMobile) {
                 e.preventDefault()
-                void send()
+                void send(draft, e.altKey)
               }
             }}
             rows={1}
@@ -1324,7 +1351,7 @@ function ChatView({
             attach={{ count: attachments.length, onClick: () => fileInput.current?.click() }}
             onWorkflow={workflowAction}
             specArmed={specArmed}
-            send={<SendButton running={running} queue={running && (!!draft.trim() || attachments.length > 0)} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onStop={() => void api.chat.abort(session.id)} />}
+            send={<SendButton running={running} queue={running && (!!draft.trim() || attachments.length > 0)} disabled={!running && ((!draft.trim() && !attachments.length) || !session.model)} onSend={() => void send()} onLater={() => void send(draft, true)} onStop={() => void api.chat.abort(session.id)} />}
           />
         </div>
       </div>
@@ -1513,34 +1540,88 @@ function Key({ children }: { children: React.ReactNode }) {
 }
 
 /** Send; Stop while the chat works; Queue while it works and there's something written (it goes when the reply ends). */
-function SendButton({ running, queue, disabled, onSend, onStop }: { running: boolean; queue: boolean; disabled: boolean; onSend(): void; onStop(): void }) {
+/**
+ * Send, or while the chat works: nudge (with something written) or stop (with nothing). A nudge goes to the agent after
+ * its current step; the clock beside it queues the message for after the reply instead.
+ */
+function SendButton({ running, queue, disabled, onSend, onLater, onStop }: { running: boolean; queue: boolean; disabled: boolean; onSend(): void; onLater(): void; onStop(): void }) {
   const stop = running && !queue
+  const nudging = running && queue
   return (
-    <motion.button
-      whileTap={{ scale: 0.92 }}
-      onClick={stop ? onStop : onSend}
-      disabled={disabled}
-      title={stop ? 'Stop' : queue ? (isMobile ? 'Queue: sends when the reply finishes' : 'Queue (Enter): sends when the reply finishes') : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
-      aria-label={stop ? 'Stop the reply' : queue ? 'Queue message' : 'Send message'}
-      className="relative h-9 w-9 overflow-hidden rounded-[10px] bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
-    >
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
-          key={stop ? 'stop' : queue ? 'queue' : 'send'}
-          initial={{ opacity: 0, scale: 0.6, y: stop ? 8 : -8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.6, y: stop ? -8 : 8 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-          className="absolute inset-0 flex items-center justify-center"
-        >
-          {stop ? <Stop size={16} weight="fill" /> : queue ? <ClockCountdown size={17} weight="bold" /> : <ArrowUp size={17} weight="bold" />}
-        </motion.span>
+    <div className="flex items-center gap-1">
+      <AnimatePresence initial={false}>
+        {nudging && (
+          <motion.button
+            key="later"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={onLater}
+            title={isMobile ? 'Queue: send when the reply finishes' : 'Queue (Alt+Enter): send when the reply finishes'}
+            aria-label="Queue for after the reply"
+            className="flex h-9 w-9 items-center justify-center rounded-[10px] text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+          >
+            <ClockCountdown size={17} />
+          </motion.button>
+        )}
       </AnimatePresence>
-    </motion.button>
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        onClick={stop ? onStop : onSend}
+        disabled={disabled}
+        title={stop ? 'Stop' : nudging ? (isMobile ? 'Nudge: Cloth reads it after its current step, without stopping' : 'Nudge (Enter): Cloth reads it after its current step, without stopping') : isMobile ? 'Send' : 'Send (Enter) — Shift+Enter for a new line'}
+        aria-label={stop ? 'Stop the reply' : nudging ? 'Nudge: send without stopping the reply' : 'Send message'}
+        className="relative h-9 w-9 overflow-hidden rounded-[10px] bg-crimson text-white transition-colors hover:bg-crimson-hi disabled:bg-elev-2 disabled:text-dim"
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={stop ? 'stop' : nudging ? 'nudge' : 'send'}
+            initial={{ opacity: 0, scale: 0.6, y: stop ? 8 : -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.6, y: stop ? -8 : 8 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 26 }}
+            className="absolute inset-0 flex items-center justify-center"
+          >
+            {stop ? <Stop size={16} weight="fill" /> : nudging ? <ArrowBendDownRight size={17} weight="bold" /> : <ArrowUp size={17} weight="bold" />}
+          </motion.span>
+        </AnimatePresence>
+      </motion.button>
+    </div>
   )
 }
 
 const NO_QUEUE: QueuedMessage[] = []
+const NO_NUDGES: PendingNudge[] = []
+
+/** Nudges the running agent hasn't read yet, above the queue: each can be taken back until it does. */
+function NudgeList({ items, approving, onRemove }: { items: PendingNudge[]; approving: boolean; onRemove(n: PendingNudge): void }) {
+  if (!items.length) return null
+  return (
+    <ul aria-label="Nudges waiting" className="flex flex-col gap-1 border-b border-line px-2.5 pb-2 pt-2.5">
+      {items.map((n) => (
+        <li key={n.id} className="flex min-w-0 items-center gap-2 rounded-[10px] bg-elev py-1 pl-2.5 pr-1 text-ui">
+          <ArrowBendDownRight size={14} className="shrink-0 text-crimson-hi" aria-hidden="true" />
+          <span className="shrink-0 text-dim" title={approving ? 'Cloth reads it once you answer what it asked and its step ends' : 'Cloth reads it when its current step ends'}>
+            {approving ? 'Nudge · after your answer' : 'Nudge · next step'}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-fg" title={n.text}>
+            {n.text || `${n.attachments} file${n.attachments === 1 ? '' : 's'}`}
+          </span>
+          {n.attachments > 0 && n.text && (
+            <span className="flex shrink-0 items-center gap-0.5 text-caption text-dim">
+              <Paperclip size={12} aria-hidden="true" />
+              {n.attachments}
+            </span>
+          )}
+          <button type="button" onClick={() => onRemove(n)} aria-label="Take back nudge" title="Take back" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-dim hover:bg-elev-2 hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi">
+            <X size={14} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 /** Messages waiting for the chat to finish, above the message box: each can go now, go back for editing, or be dropped. */
 function QueuedList({ items, running, onSendNow, onEdit, onRemove }: { items: QueuedMessage[]; running: boolean; onSendNow(m: QueuedMessage): void; onEdit(m: QueuedMessage): void; onRemove(m: QueuedMessage): void }) {
@@ -1563,7 +1644,7 @@ function QueuedList({ items, running, onSendNow, onEdit, onRemove }: { items: Qu
           <button
             type="button"
             onClick={() => onSendNow(m)}
-            title={running ? 'Stop the current reply and send this now' : 'Send this now'}
+            title={running ? 'Nudge: Cloth reads it after its current step, without stopping' : 'Send this now'}
             className="flex h-7 shrink-0 items-center gap-1 rounded-[8px] px-2 font-medium text-fg hover:bg-elev-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-crimson-hi"
           >
             <ArrowUp size={13} weight="bold" aria-hidden="true" />
@@ -1631,8 +1712,9 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
   const agents = useMemo(() => new Map((message.agents ?? []).map((n) => [agentSlug(n), n] as const)), [message.agents])
   // Messages from before skills were written inline carry them only as a list: show those first.
   const leading = (message.skills ?? []).filter((n) => !invokedSkills(text, used).includes(n))
+  const [copied, setCopied] = useState(false)
   return (
-    <motion.div {...enterProps(fresh)} className="mb-9 flex flex-col items-end gap-1.5">
+    <motion.div {...enterProps(fresh)} className="group relative mb-9 flex flex-col items-end gap-1.5">
       {message.attachments?.length ? <SentAttachments items={message.attachments} /> : null}
       {(text.trim() || leading.length > 0) && (
         <div className="selectable max-w-[78%] whitespace-pre-wrap mobile:max-w-[86%] rounded-[20px] rounded-br-md border border-line bg-elev-2 px-4 py-[11px] text-body leading-relaxed">
@@ -1642,6 +1724,23 @@ function UserBubble({ message, fresh }: { message: UiMessage; fresh: boolean }) 
             </span>
           ))}
           <SkillText text={text} known={used} agents={agents} />
+        </div>
+      )}
+      {text.trim() && (
+        <div className="absolute -bottom-8 right-0 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 mobile:opacity-100">
+          <Tooltip content={copied ? 'Copied' : 'Copy'}>
+            <button
+              aria-label="Copy message"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-dim transition-colors hover:bg-elev-2 hover:text-fg"
+              onClick={() => {
+                void navigator.clipboard.writeText(text)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1200)
+              }}
+            >
+              {copied ? <Check size={15} className="text-ok" /> : <Copy size={15} />}
+            </button>
+          </Tooltip>
         </div>
       )}
     </motion.div>

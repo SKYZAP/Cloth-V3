@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ChatAttachment } from '@shared/types'
+import type { ChatAttachment, NudgeInput, PendingNudge } from '@shared/types'
 import { api } from './api'
 import { useApp } from './store'
 
@@ -13,7 +13,22 @@ export interface QueuedMessage {
 }
 
 /** Queued messages per chat, oldest first. Kept while you look at other chats; not saved across restarts. */
-export const useQueue = create<{ bySession: Record<string, QueuedMessage[]> }>(() => ({ bySession: {} }))
+export const useQueue = create<{ bySession: Record<string, QueuedMessage[]>; nudges: Record<string, PendingNudge[]> }>(() => ({ bySession: {}, nudges: {} }))
+
+/** Nudges the running agent hasn't read yet, as the main process reports them. */
+export function setNudges(sessionId: string, pending: PendingNudge[]): void {
+  useQueue.setState((s) => {
+    const nudges = { ...s.nudges }
+    if (pending.length) nudges[sessionId] = pending
+    else delete nudges[sessionId]
+    return { nudges }
+  })
+}
+
+/** Nudges a run ended without reading: first in the queue, in the order they were written. */
+export function requeue(sessionId: string, items: NudgeInput[]): void {
+  edit(sessionId, (q) => [...items.map((m) => ({ ...m, id: `q${++seq}` })), ...q])
+}
 
 const edit = (sessionId: string, fn: (q: QueuedMessage[]) => QueuedMessage[]) =>
   useQueue.setState((s) => {

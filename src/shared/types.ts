@@ -989,6 +989,25 @@ export type ChatEvent =
   | { sessionId: string; type: 'compacted'; error?: string }
   /** Spec → Ship ended a run on its own: finished, waiting for the person, or stopped (shown as a desktop notification). */
   | { sessionId: string; type: 'report'; title: string; body: string }
+  /**
+   * Nudges waiting for the running agent's next step changed. `returned` are ones the run ended (or was stopped)
+   * before taking: they go back to the chat's queue and are sent like any queued message.
+   */
+  | { sessionId: string; type: 'nudges'; pending: PendingNudge[]; returned?: NudgeInput[] }
+
+/** A message sent while the chat works: handed to the agent between steps instead of stopping it. */
+export interface NudgeInput {
+  text: string
+  skills: string[]
+  agents: string[]
+  attachments: ChatAttachment[]
+}
+
+export interface PendingNudge {
+  id: string
+  text: string
+  attachments: number
+}
 
 // ─── Workflows ────────────────────────────────────────────────────────────────
 

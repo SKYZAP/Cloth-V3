@@ -1,5 +1,7 @@
 import type { DesignDraft, DesignInput, DesignSystem } from './design'
 import type {
+  NudgeInput,
+  PendingNudge,
   AppInfo,
   BuiltinToolInfo,
   CustomTool,
@@ -230,6 +232,11 @@ export interface ClothApi {
     /** Run a user message again: drops it and everything after, then sends the same content (skills and attachments included). */
     resend(id: string, messageId: string): Promise<void>
     abort(id: string): Promise<void>
+  /** Send a message to the running agent for its next step, without stopping it. Fails when the chat isn't running. */
+  nudge(id: string, input: NudgeInput): Promise<PendingNudge>
+  /** Take back a nudge the agent hasn't read yet. False when it already has. */
+  unnudge(id: string, nudgeId: string): Promise<boolean>
+  nudges(id: string): Promise<PendingNudge[]>
     rewind(id: string, messageId: string): Promise<UiMessage[]>
     running(): Promise<string[]>
     pendingApprovals(id: string): Promise<PendingApproval[]>
