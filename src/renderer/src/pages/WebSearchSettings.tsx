@@ -16,7 +16,6 @@ export function WebSearchSettings() {
   const [searching, setSearching] = useState(false)
   const [external, setExternal] = useState(settings.searxngUrl)
   const [obscuraPath, setObscuraPath] = useState(settings.obscuraPath)
-  const [caCertPath, setCaCertPath] = useState(settings.webCaCertPath)
   const refresh = () => void api.web.status().then(setStatus)
   useEffect(refresh, [settings.webEngine, settings.searxngUrl, settings.obscuraPath, settings.webCaCertPath])
   useEvent('web', refresh)
@@ -117,20 +116,8 @@ export function WebSearchSettings() {
         </div>
       )}
 
-      <div className="space-y-2">
-        <Field label="SSL CA certificate (optional)">
-          <div className="flex gap-1.5">
-            <Input className="font-mono text-caption" placeholder="Use system trust store" value={caCertPath} onChange={(e) => setCaCertPath(e.target.value)} onBlur={() => caCertPath !== settings.webCaCertPath && void update({ webCaCertPath: caCertPath.trim() })} />
-            <Button size="sm" onClick={async () => {
-              const [file] = await api.app.pickPaths({ title: 'Select PEM CA certificate' })
-              if (file) {
-                setCaCertPath(file)
-                void update({ webCaCertPath: file })
-              }
-            }}>…</Button>
-          </div>
-          <div className="mt-1 text-micro text-dim">PEM certificate authority for web search and web_fetch.</div>
-        </Field>
+      <div className="text-caption text-dim">
+        {settings.webCaCertPath ? 'Searches and fetched pages also trust the certificate set in Network.' : 'On a network that inspects HTTPS? Add its certificate in Network.'}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Results per search">

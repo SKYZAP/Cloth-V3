@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { ArrowSquareOut, CaretDown, Check, CheckCircle, Circle, FolderSimple, Info, Warning, X, XCircle } from '@phosphor-icons/react'
 import type { Dependency, DependencyReport } from '@shared/deps'
-import type { Provider, ProviderPreset } from '@shared/types'
+import type { NetworkCheck, Provider, ProviderPreset } from '@shared/types'
+import { NetworkNotice, NetworkRow } from './NetworkTrust'
 import {
   LANGUAGES,
   ONBOARDING_STEPS,
@@ -55,10 +56,21 @@ function OnboardingDialog({ initial, saved }: { initial: OnboardingStep; saved: 
   const [langs, setLangs] = useState<Set<LanguageId>>(() => new Set(settings.languages))
   const [frameworks, setFrameworks] = useState<Set<string>>(new Set())
   const [deps, setDeps] = useState<DependencyReport | null>(null)
-  // The tools check runs as soon as setup opens, so it's usually ready by its step.
+  // How HTTPS reaches sites from here: a network that re-signs it with something untrusted stops the provider connecting.
+  const [net, setNet] = useState<NetworkCheck | null>(null)
+  const [netFixed, setNetFixed] = useState(false)
+  const [netLater, setNetLater] = useState(false)
+  const recheckNet = () => void api.network.check().then(setNet, () => undefined)
+  // The tools and network checks run as soon as setup opens, so they're usually ready by their steps.
   useEffect(() => {
     void api.deps.list().then(setDeps).catch(() => undefined)
+    recheckNet()
   }, [])
+  const netChecked = (c: NetworkCheck) => {
+    setNet(c)
+    if (c.state !== 'untrusted') setNetFixed(true)
+  }
+  const network = { check: net, fixed: netFixed, later: netLater, onChecked: netChecked, onLater: () => setNetLater(true), recheck: () => (setNetLater(false), recheckNet()) }
 
   const save = (patch: Partial<OnboardingState>) => {
     const base: OnboardingState = settings.onboarding ?? { completedAt: null, skipped: [], step: 'welcome' }
@@ -147,7 +159,7 @@ function OnboardingDialog({ initial, saved }: { initial: OnboardingStep; saved: 
             <X size={15} />
           </button>
           {step === 'welcome' && <Welcome onStart={() => go('model')} onLater={() => void later('welcome')} />}
-          {step === 'model' && <ModelStep {...common} onLocal={() => void later('folder').then(() => useApp.getState().setPage('run'))} />}
+          {step === 'model' && <ModelStep {...common} network={network} onLocal={() => void later('folder').then(() => useApp.getState().setPage('run'))} />}
           {step === 'folder' && (
             <FolderStep
               {...common}
@@ -160,7 +172,7 @@ function OnboardingDialog({ initial, saved }: { initial: OnboardingStep; saved: 
             />
           )}
           {step === 'langs' && <LanguagesStep {...common} scan={scan} langs={langs} setLangs={setLangs} frameworks={frameworks} setFrameworks={setFrameworks} />}
-          {step === 'deps' && <DepsStep {...common} report={deps} setReport={setDeps} langs={langs} />}
+          {step === 'deps' && <DepsStep {...common} report={deps} setReport={setDeps} langs={langs} network={network} />}
           {step === 'import' && <ImportStep {...common} />}
           {step === 'modes' && (
             <ModesStep
@@ -253,6 +265,18 @@ interface StepProps {
   skip(): void
 }
 
+/** The network check, shared by the Model step (its notice) and the Tools check (its row). */
+interface NetworkProps {
+  check: NetworkCheck | null
+  /** Trusted from here in this setup: the notice turns into a confirmation. */
+  fixed: boolean
+  /** "Not now" on the Model step's notice; the Tools check still offers the fix. */
+  later: boolean
+  onChecked(c: NetworkCheck): void
+  onLater(): void
+  recheck(): void
+}
+
 function Welcome({ onStart, onLater }: { onStart(): void; onLater(): void }) {
   return (
     <Pane
@@ -284,7 +308,7 @@ function Welcome({ onStart, onLater }: { onStart(): void; onLater(): void }) {
   )
 }
 
-function ModelStep({ advance, back, onLocal }: StepProps & { onLocal(): void }) {
+function ModelStep({ advance, back, onLocal, network }: StepProps & { onLocal(): void; network: NetworkProps }) {
   const providers = useApp((s) => s.providers)
   const loadProviders = useApp((s) => s.loadProviders)
   const settings = useApp((s) => s.settings)!
@@ -332,7 +356,10 @@ function ModelStep({ advance, back, onLocal }: StepProps & { onLocal(): void }) 
       setAdding(false)
       await loadProviders()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+      // Refused over a certificate: check the network again so the notice above can name what re-signs it and fix it.
+      if (/certificate isn’t trusted|certificate isn't trusted/i.test(msg)) network.recheck()
       await loadProviders()
     } finally {
       setBusy(false)
@@ -365,6 +392,7 @@ function ModelStep({ advance, back, onLocal }: StepProps & { onLocal(): void }) 
         </>
       }
     >
+      {!network.later && <NetworkNotice check={network.check} fixed={network.fixed} onChecked={network.onChecked} onLater={network.onLater} />}
       {!adding && usable.length > 0 ? (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
@@ -719,11 +747,12 @@ const DEP_HELP: Partial<Record<string, string>> = {
   docker: 'https://docs.docker.com/desktop/'
 }
 
-function DepsStep({ advance, back, skip, report, setReport, langs }: StepProps & { report: DependencyReport | null; setReport(r: DependencyReport): void; langs: Set<LanguageId> }) {
+function DepsStep({ advance, back, skip, report, setReport, langs, network }: StepProps & { report: DependencyReport | null; setReport(r: DependencyReport): void; langs: Set<LanguageId>; network: NetworkProps }) {
   const [busy, setBusy] = useState(false)
   const recheck = async () => {
     setBusy(true)
     try {
+      network.recheck()
       setReport(await api.deps.refresh())
     } finally {
       setBusy(false)
@@ -731,7 +760,7 @@ function DepsStep({ advance, back, skip, report, setReport, langs }: StepProps &
   }
   const system = report?.items.filter((d) => d.source === 'system') ?? []
   const bundled = report?.items.filter((d) => d.source === 'bundled') ?? []
-  const problems = system.filter((d) => requiredBy(d, langs) && d.status !== 'ok')
+  const problems = [...system.filter((d) => requiredBy(d, langs) && d.status !== 'ok'), ...(network.check?.state === 'untrusted' ? [null] : [])]
   const bundledOk = bundled.every((d) => d.status === 'ok')
 
   return (
@@ -764,6 +793,7 @@ function DepsStep({ advance, back, skip, report, setReport, langs }: StepProps &
       ) : (
         <>
           <div className="overflow-hidden rounded-lg border border-line">
+            <NetworkRow check={network.check} onChecked={network.onChecked} />
             {system.map((d) => {
               const need = requiredBy(d, langs)
               const tone = d.status === 'ok' ? 'ok' : d.status === 'warn' ? 'warn' : need ? 'danger' : 'neutral'

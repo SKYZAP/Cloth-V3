@@ -20,18 +20,20 @@ import {
   PlugsConnected,
   Plus,
   Robot,
+  ShieldCheck,
   Swatches as SwatchesIcon,
   Trash,
   X,
   type Icon
 } from '@phosphor-icons/react'
 import type { SwatchServerStatus } from '@shared/swatches'
-import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Settings, type UpdateStatus, type SubagentSettings, type ThinkingLevel } from '@shared/types'
+import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type CertificateInfo, type NetworkCheck, type Settings, type UpdateStatus, type SubagentSettings, type ThinkingLevel } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
 import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, chooseAction, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
+import { NetworkFix, NetworkPill, networkSummary } from '@/components/NetworkTrust'
 import { Logo } from '@/components/Logo'
 import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
@@ -42,7 +44,7 @@ import { activeTheme, allThemes, clampStrength, DEFAULT_CHAT_THEME, NO_THEME, ST
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
-type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'knowledge' | 'design' | 'phone' | 'swatches' | 'mcp' | 'deps' | 'about'
+type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'network' | 'knowledge' | 'design' | 'phone' | 'swatches' | 'mcp' | 'deps' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -60,6 +62,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, what they may do, and the reasoning levels they run at.', keywords: 'task delegate reader writer operator access reasoning tier parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Where chats look things up when web search is on.', keywords: 'searxng obscura web_fetch internet results' },
+  { id: 'network', title: 'Network', icon: ShieldCheck, blurb: 'How Cloth reaches sites over HTTPS, and certificates it trusts on networks that inspect it.', keywords: 'certificate cert ca pem crt ssl tls https proxy corporate company antivirus norton zscaler trust store mcp web search' },
   { id: 'knowledge', title: 'Knowledge', icon: Books, blurb: 'How documents are split before they’re indexed. Changes apply to documents added afterwards.', keywords: 'chunk chunking overlap rag index' },
   { id: 'design', title: 'Design systems', icon: Palette, blurb: 'Palettes, type and shape that projects follow.', keywords: 'design system palette colours colors fonts theme tokens tailwind shadcn DESIGN.md' },
   { id: 'phone', title: 'Phone', icon: DeviceMobile, blurb: 'Chat with Cloth from the Android app.', keywords: 'mobile android pair qr remote tailscale wifi', desktopOnly: true },
@@ -401,6 +404,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       )
     case 'web':
       return <WebSearchSettings />
+    case 'network':
+      return <NetworkSection settings={settings} />
     case 'knowledge':
       return (
         <Group>
@@ -978,6 +983,101 @@ function UpdatesGroup() {
 }
 
 /** A titled card of setting rows. */
+/** The operating system's certificate store, as people know it. */
+const settingsStoreName = () => (/Mac/i.test(navigator.platform) ? 'the macOS Keychain' : /Win/i.test(navigator.platform) ? 'Windows' : 'the system certificates')
+
+/**
+ * The certificate Cloth trusts on top of the computer's own, for networks that inspect HTTPS (company proxies, some
+ * antivirus): the whole app and the programs it starts use it. Shows what the file holds, so a wrong pick is caught here.
+ */
+function NetworkSection({ settings }: { settings: Settings }) {
+  const update = useApp((s) => s.updateSettings)
+  const [path, setPath] = useState(settings.webCaCertPath)
+  const [info, setInfo] = useState<CertificateInfo | null>(null)
+  useEffect(() => setPath(settings.webCaCertPath), [settings.webCaCertPath])
+  useEffect(() => {
+    const p = settings.webCaCertPath.trim()
+    if (!p) return setInfo(null)
+    void api.app.certificateInfo(p).then(setInfo, () => setInfo(null))
+  }, [settings.webCaCertPath])
+  const save = (next: string) => next.trim() !== settings.webCaCertPath && void update({ webCaCertPath: next.trim() })
+  const pick = async () => {
+    const [file] = await api.app.pickPaths({ title: 'Choose a certificate (PEM)', filters: [{ name: 'Certificates', extensions: ['pem', 'crt', 'cer'] }, { name: 'All files', extensions: ['*'] }] })
+    if (file) {
+      setPath(file)
+      save(file)
+    }
+  }
+  const expired = info && !('error' in info) && info.validTo < Date.now()
+  const [check, setCheck] = useState<NetworkCheck | null>(null)
+  const [checking, setChecking] = useState(false)
+  const runCheck = async () => {
+    setChecking(true)
+    try {
+      setCheck(await api.network.check())
+    } finally {
+      setChecking(false)
+    }
+  }
+  return (
+    <>
+    <Group title="Connection">
+      <Row
+        label="Check the connection"
+        hint={check ? networkSummary(check) : `Connects to a few sites and says whether HTTPS on this network is inspected, and by whom. Certificates in ${settingsStoreName()} are always trusted.`}
+      >
+        <div className="flex items-center gap-2">
+          {check && <NetworkPill check={check} />}
+          <Button size="sm" variant="outline" loading={checking} onClick={() => void runCheck()}>
+            {check ? 'Check again' : 'Check'}
+          </Button>
+        </div>
+      </Row>
+      {check?.state === 'untrusted' && (
+        <div className="px-3 pb-3">
+          <NetworkFix check={check} onChecked={setCheck} />
+        </div>
+      )}
+    </Group>
+    <Group
+      title="Certificates"
+      note="Applies straight away. Programs that were already running when you changed it, like an open terminal or a running MCP server, use it once they start again."
+    >
+      <Row
+        label="Extra certificate"
+        stacked
+        hint={`Needed when your network re-signs HTTPS with a certificate that isn’t in ${settingsStoreName()}: a certificate authority (PEM) Cloth trusts on top of the computer’s own. Used for model providers, web search and web_fetch, MCP servers, the skills registry, updates, and the programs Cloth starts (the shell tool, terminals, npx and uvx).`}
+      >
+        <div className="flex gap-1.5">
+          <Input className="font-mono text-caption" placeholder="None: only what this computer trusts" aria-label="Certificate file" value={path} onChange={(e) => setPath(e.target.value)} onBlur={() => save(path)} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+          <Button size="sm" variant="outline" onClick={() => void pick()}>
+            <FolderOpen size={14} /> Choose…
+          </Button>
+          {settings.webCaCertPath && (
+            <Button size="sm" variant="ghost" onClick={() => (setPath(''), save(''))} aria-label="Remove the certificate">
+              <X size={14} />
+            </Button>
+          )}
+        </div>
+        {info &&
+          ('error' in info ? (
+            <div role="alert" className="text-caption text-danger-hi">
+              {info.error} Cloth keeps using only what this computer trusts.
+            </div>
+          ) : (
+            <div className={clsx('text-caption', expired ? 'text-danger-hi' : 'text-dim')}>
+              {info.subject}
+              {info.issuer !== info.subject ? `, issued by ${info.issuer}` : ''} · {expired ? 'expired' : 'valid until'} {new Date(info.validTo).toLocaleDateString()}
+              {info.count > 1 ? ` · ${info.count} certificates in the file` : ''}
+              {!info.ca ? ' · not marked as a certificate authority, so it may not be the one your network uses' : ''}
+            </div>
+          ))}
+      </Row>
+    </Group>
+    </>
+  )
+}
+
 function Group({ title, note, children }: { title?: string; note?: ReactNode; children: ReactNode }) {
   return (
     <section className="mb-6">

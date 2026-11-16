@@ -995,6 +995,30 @@ export type ChatEvent =
    */
   | { sessionId: string; type: 'nudges'; pending: PendingNudge[]; returned?: NudgeInput[] }
 
+/** A certificate file chosen in Settings → Network, as read: its first certificate, or why it can't be used. */
+export type CertificateInfo = { subject: string; issuer: string; validTo: number; count: number; ca: boolean } | { error: string }
+
+/** One site's HTTPS, as the network check saw it: the site's own certificate, or re-signed on the way (by `issuer`). */
+export interface NetworkProbe {
+  host: string
+  state: 'direct' | 'inspected' | 'untrusted' | 'error'
+  issuer?: string
+  error?: string
+}
+
+/**
+ * Whether connections reach sites directly, are inspected by something Cloth trusts (antivirus, a company proxy), or
+ * by something it doesn't yet. `candidate`: a certificate with the inspector's name in the system store (`store`).
+ */
+export interface NetworkCheck {
+  state: 'direct' | 'inspected' | 'untrusted' | 'offline'
+  issuer: string | null
+  store: string
+  candidate: { subject: string; validTo: number; fingerprint: string } | null
+  probes: NetworkProbe[]
+  checkedAt: number
+}
+
 /** A message sent while the chat works: handed to the agent between steps instead of stopping it. */
 export interface NudgeInput {
   text: string

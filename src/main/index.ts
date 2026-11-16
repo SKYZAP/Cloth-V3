@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ClothApi } from '@shared/api'
 import { createServices, type Services } from './services'
+import { applyNetworkCertificate } from './web/trust'
 import { createApi } from './api'
 import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
@@ -153,6 +154,13 @@ else {
         if (channel === 'chat') notifyChatReport(payload as ChatEvent)
       }
     })
+    // Settings → Network: the certificate is trusted by the whole app and the programs it starts, now and when it changes.
+    const trust = (path: string) => {
+      const error = applyNetworkCertificate(path, app.getPath('userData'))
+      if (error) services?.ctx.log('network', 'the certificate in Settings → Network was not applied', error)
+    }
+    trust(services.settings.get().webCaCertPath)
+    services.settings.onChange((next, prev) => next.webCaCertPath !== prev.webCaCertPath && trust(next.webCaCertPath))
     // Computer use: the agent hands the screen back whenever a chat waits for the user.
     computer = createComputer((notice) => services?.ctx.emit('computer', notice))
     services.runtime.attachComputer(computer)

@@ -15,6 +15,7 @@ import { json } from '../core/db'
 import { errorMessage, newId, type Ctx, type Secrets } from '../core/context'
 import { mapSecrets, opener, restoreHeaders, sealer } from '../core/secret-fields'
 import { UsageService, type Pricing } from '../core/usage'
+import { isCertificateError } from '../web/trust'
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'openai', label: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', needsKey: true, hint: 'Responses API' },
@@ -178,12 +179,14 @@ export class ProviderService {
       const models = await this.fetchModels(id)
       return { ok: true, latencyMs: Date.now() - started, message: `Reachable — ${models.length} models`, models }
     } catch (err) {
-      return { ok: false, latencyMs: Date.now() - started, message: errorMessage(err) }
+      return { ok: false, latencyMs: Date.now() - started, message: errorMessage(certificateHint(err, this.get(id).baseUrl)) }
     }
   }
 
   async refreshModels(id: string): Promise<Provider> {
-    const fetched = await this.fetchModels(id)
+    const fetched = await this.fetchModels(id).catch((err: unknown) => {
+      throw certificateHint(err, this.get(id).baseUrl)
+    })
     // Keep user overrides (e.g. embedding flag, pricing) for models we already know.
     const previous = new Map(this.get(id).models.map((m) => [m.id, m]))
     const merged = fetched.map((m) => {
@@ -556,4 +559,19 @@ function hasThinking(message: AssistantMessage): boolean {
 /** Some servers leave the reasoning inline as <think>…</think> in the content. */
 export function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim()
+}
+
+/**
+ * A connection refused because the network re-signed the site's certificate (a company proxy, some antivirus) says so,
+ * and where to fix it, instead of "fetch failed". Other errors pass through unchanged.
+ */
+export function certificateHint(err: unknown, url: string): unknown {
+  if (!isCertificateError(err)) return err
+  let host = url
+  try {
+    host = new URL(url).host
+  } catch {
+    /* keep the address as given */
+  }
+  return new Error(`Couldn't connect to ${host}: its certificate isn't trusted. Your network may inspect HTTPS (a company proxy or antivirus). Add its certificate in Settings → Network.`, { cause: err })
 }

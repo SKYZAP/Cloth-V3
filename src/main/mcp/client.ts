@@ -1,5 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { RequestInit as UndiciRequestInit } from 'undici'
+import { fetchWithWebCa, webCaBundlePath } from '../web/transport'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -88,6 +90,10 @@ export class McpClientService {
       const before = new Map(prev.mcpClients.map((c) => [c.id, JSON.stringify(c)]))
       for (const c of next.mcpClients) if (before.get(c.id) !== undefined && before.get(c.id) !== JSON.stringify(c)) void this.stop(c.id)
       for (const id of before.keys()) if (!next.mcpClients.some((c) => c.id === id)) void this.stop(id)
+      // Servers added, changed or removed anywhere (a chat's add_mcp_server, setup's import, the phone): pages showing them reload.
+      if (JSON.stringify(next.mcpClients) !== JSON.stringify(prev.mcpClients)) this.changed()
+      // A new certificate applies on the next start: running servers restart with it when a chat uses them.
+      if (next.webCaCertPath !== prev.webCaCertPath) for (const id of [...this.conns.keys()]) void this.stop(id)
     })
   }
 
@@ -164,7 +170,7 @@ export class McpClientService {
           command: config.command,
           args: config.args,
           cwd,
-          env: { ...(process.env as Record<string, string>), ...config.env },
+          env: { ...(process.env as Record<string, string>), ...this.certEnv(), ...config.env },
           stderr: 'pipe'
         })
         stdio.stderr?.on('data', (d: Buffer) => (c.stderr = (c.stderr + d.toString()).slice(-4000)))
@@ -225,13 +231,16 @@ export class McpClientService {
       throw new Error(`${config.name}: “${config.url ?? ''}” isn't a web address`)
     }
     const requestInit = { headers: config.headers ?? {} }
-    const streamable = new StreamableHTTPClientTransport(url, { requestInit })
+    // Through the certificate set in Settings → Web search, as web search does (networks that inspect HTTPS need it).
+    const ca = this.settings.get().webCaCertPath
+    const viaCa = ((u: string | URL, init?: RequestInit) => fetchWithWebCa(u, init as UndiciRequestInit, ca)) as unknown as typeof fetch
+    const streamable = new StreamableHTTPClientTransport(url, { requestInit, fetch: viaCa })
     try {
       await Promise.race([first.connect(streamable), timeout])
       return { client: first, transport: streamable }
     } catch (err) {
       await streamable.close().catch(() => undefined)
-      const sse = new SSEClientTransport(url, { requestInit, eventSourceInit: { fetch: (u, init) => fetch(u, { ...init, headers: { ...(init?.headers as Record<string, string>), ...requestInit.headers } }) } })
+      const sse = new SSEClientTransport(url, { requestInit, fetch: viaCa, eventSourceInit: { fetch: (u, init) => viaCa(u, { ...init, headers: { ...(init?.headers as Record<string, string>), ...requestInit.headers } }) } })
       const client = new Client({ name: 'cloth', version: '1.0.0' })
       try {
         await Promise.race([client.connect(sse), timeout])
@@ -240,6 +249,23 @@ export class McpClientService {
         await sse.close().catch(() => undefined)
         throw new Error(`${config.name}: couldn't connect to ${url.href} (${errorMessage(err)})`)
       }
+    }
+  }
+
+  /**
+   * The certificate set in Settings → Web search, for servers Cloth starts, as one bundle with everything the computer
+   * already trusts: Node (npx and the servers it runs) adds it to its own roots, keeping any NODE_EXTRA_CA_CERTS that was
+   * set before; Python tools (uvx, pip, requests) and curl-style tools take it as their whole list.
+   */
+  private certEnv(): Record<string, string> {
+    const ca = this.settings.get().webCaCertPath.trim()
+    if (!ca) return {}
+    try {
+      const bundle = webCaBundlePath(ca, join(this.ctx.dataDir, 'web-certificates'))
+      return { NODE_EXTRA_CA_CERTS: bundle, SSL_CERT_FILE: bundle, REQUESTS_CA_BUNDLE: bundle, CURL_CA_BUNDLE: bundle }
+    } catch (err) {
+      this.ctx.log('mcp-client', 'the certificate set for web search could not be read', errorMessage(err))
+      return {}
     }
   }
 

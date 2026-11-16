@@ -1,5 +1,7 @@
 import type { DesignDraft, DesignInput, DesignSystem } from './design'
 import type {
+  CertificateInfo,
+  NetworkCheck,
   NudgeInput,
   PendingNudge,
   AppInfo,
@@ -76,6 +78,8 @@ export interface ClothApi {
   app: {
     info(): Promise<AppInfo>
     pickPaths(opts: { directory?: boolean; multiple?: boolean; title?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string[]>
+    /** Read a certificate file for Settings → Network: who it's for and when it expires, or why it can't be used. */
+    certificateInfo(path: string): Promise<CertificateInfo>
     openPath(path: string): Promise<void>
     /** Reveal a file in Explorer / Finder. */
     showInFolder(path: string): Promise<void>
@@ -88,6 +92,12 @@ export interface ClothApi {
   settings: {
     get(): Promise<Settings>
     update(patch: Partial<Settings>): Promise<Settings>
+  }
+  network: {
+    /** Connect to a few sites and say whether HTTPS is inspected on the way, and by whom. */
+    check(): Promise<NetworkCheck>
+    /** Trust a certificate from Windows' store or the macOS Keychain (found by the check): saved and set in Settings → Network. */
+    useSystemCertificate(fingerprint: string): Promise<Settings>
   }
   providers: {
     presets(): Promise<ProviderPreset[]>

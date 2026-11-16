@@ -1,3 +1,4 @@
+import { certificateInfo, checkNetwork, saveSystemCertificate } from './web/trust'
 import { runOpenSpec } from './agent/openspec'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -53,6 +54,7 @@ export function createApi(s: Services): ClothApi {
         const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
         return res.canceled ? [] : res.filePaths
       },
+      certificateInfo: async (path) => certificateInfo(path),
       showInFolder: async (path) => shell.showItemInFolder(path),
       openPath: async (path) => {
         await shell.openPath(path)
@@ -73,6 +75,10 @@ export function createApi(s: Services): ClothApi {
     settings: {
       get: async () => maskSettings(s.settings.get()),
       update: async (patch) => maskSettings(s.settings.update(restoreSettings(s, patch)))
+    },
+    network: {
+      check: () => checkNetwork(),
+      useSystemCertificate: async (fingerprint) => maskSettings(s.settings.update({ webCaCertPath: saveSystemCertificate(fingerprint, s.ctx.dataDir) }))
     },
     providers: {
       presets: async () => s.providers.presets(),
