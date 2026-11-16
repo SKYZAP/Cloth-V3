@@ -29,6 +29,65 @@ export function budget(contextWindow: number): { reserve: number; keep: number; 
   return { reserve: contextWindow - threshold, keep, threshold }
 }
 
+/** A reply cut off by the output limit before it said or did anything: nothing but (maybe) reasoning. */
+export function cutOffEmpty(m: AgentMessage | undefined): boolean {
+  if (!m || m.role !== 'assistant' || m.stopReason !== 'length') return false
+  return !m.content.some((c) => (c.type === 'text' && c.text.trim()) || c.type === 'toolCall')
+}
+
+/** The latest step's tool results: the run of results at the end of the history. */
+export function latestResults(messages: AgentMessage[]): AgentMessage[] {
+  let i = messages.length
+  while (i > 0 && messages[i - 1]!.role === 'toolResult') i--
+  return messages.slice(i)
+}
+
+/**
+ * The latest step's tool results trimmed so together they take at most `room` tokens: the last resort when, even after
+ * summarising, the request would leave the model no room to answer (summarising always keeps the latest step whole, so a
+ * few huge GitHub or web responses can fill the window on their own). Results under their fair share stay whole; bigger
+ * ones keep their start and end around a note of what was left out. For the request only: the chat keeps the full
+ * results. Returns `messages` itself when nothing needed trimming.
+ */
+export function fitToolResults(messages: AgentMessage[], room: number): AgentMessage[] {
+  const latest = latestResults(messages)
+  const sizes = latest.map((m) => estimateTokens(m))
+  if (!latest.length || sizes.reduce((a, b) => a + b, 0) <= room) return messages
+  // Fair share: what's left after the small ones, split between the big ones.
+  let cap = Math.max(500, room / latest.length)
+  for (let pass = 0; pass < latest.length; pass++) {
+    const small = sizes.filter((s) => s <= cap)
+    const big = sizes.length - small.length
+    if (!big) break
+    const next = Math.max(500, (room - small.reduce((a, b) => a + b, 0)) / big)
+    if (Math.abs(next - cap) < 1) break
+    cap = next
+  }
+  const first = messages.length - latest.length
+  let changed = false
+  const out = messages.map((m, i) => {
+    if (i < first || m.role !== 'toolResult') return m
+    const tokens = sizes[i - first]!
+    if (tokens <= cap) return m
+    const chars = m.content.reduce((n, c) => n + (c.type === 'text' ? c.text.length : 0), 0)
+    if (!chars) return m
+    // Characters to keep, scaled from the estimate, so the trimmed result estimates at about the cap.
+    const keepChars = Math.max(2000, Math.floor((chars * cap) / tokens))
+    changed = true
+    const content = m.content.map((c) => {
+      if (c.type !== 'text') return c
+      const keep = Math.min(c.text.length, Math.floor((keepChars * c.text.length) / chars))
+      if (keep >= c.text.length) return c
+      const head = c.text.slice(0, Math.floor(keep * 0.7))
+      const tail = c.text.slice(c.text.length - (keep - head.length))
+      const cut = c.text.length - head.length - tail.length
+      return { ...c, text: `${head}\n\n[… ${cut.toLocaleString('en')} characters left out here: this result was too long for the model's context window. If the missing part matters, ask for less at a time (a narrower query, fewer fields, one page or file at a time).]\n\n${tail}` }
+    })
+    return { ...m, content }
+  })
+  return changed ? out : messages
+}
+
 /** Tokens the history will cost on the next request (last reported usage + anything after it). */
 export function estimateHistory(messages: AgentMessage[], notBefore = 0): number {
   for (let i = messages.length - 1; i >= 0; i--) {

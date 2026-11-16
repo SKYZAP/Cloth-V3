@@ -43,7 +43,8 @@ import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { computerOffered, type ComputerController } from '../computer/tool'
 import { pruneScreenshots } from '../computer/prune'
-import { budget, compactedHistory, estimateHistory, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
+import { budget, compactedHistory, cutOffEmpty, estimateHistory, fitToolResults, latestResults, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
+import { estimateTokens } from '@earendil-works/pi-coding-agent'
 import type { UsageService } from '../core/usage'
 import type { HubAdmin } from './admin'
 import { OPENSPEC_SECTION, openspecSection } from './openspec'
@@ -1963,26 +1964,53 @@ export class ChatService {
     // outgrow the context too. The first call is covered by the check above.
     const model = session.model
     let retryAbove = 0
+    // A reply the output limit cut off before it said or did anything (the context left it no room) gets one more go,
+    // with no new message: the request below drops it and makes room. Without this the run just stopped, silently.
+    let retriedCutOff = false
+    agent.finishTurn = ({ message }) => {
+      if (retriedCutOff || !cutOffEmpty(message)) return
+      retriedCutOff = true
+      this.ctx.log('chat', 'reply cut off before it started; continuing once', id)
+      return { action: 'continue' }
+    }
     agent.prepareRequest = async ({ context }, signal) => {
-      if (!this.settings.get().autoCompact || context.messages.findLast((m) => m.role !== 'system')?.role !== 'toolResult') return
+      let messages = context.messages
+      let changed = false
+      if (cutOffEmpty(messages.at(-1))) {
+        messages = messages.slice(0, -1)
+        agent.state.messages = messages.slice()
+        changed = true
+      }
       const window = this.contextWindow(model, this.get(id).contextLimit)
       const { threshold } = budget(window)
-      const tokens = estimateHistory(context.messages, this.ctx.kv.get<number>('compactedAt:' + id, 0))
-      if (tokens <= Math.max(threshold, retryAbove)) return
+      const since = () => this.ctx.kv.get<number>('compactedAt:' + id, 0)
+      // Last resort, after summarising: the latest step's results are trimmed for the request (the chat keeps them whole)
+      // when they alone would leave the model no room to answer. Summarising keeps that step whole, so it can't help.
+      const send = (ms: AgentMessage[]) => {
+        const total = estimateHistory(ms, since())
+        const latest = latestResults(ms).reduce((n, m) => n + estimateTokens(m), 0)
+        const fitted = total > threshold && latest ? fitToolResults(ms, Math.max(Math.round(window / 10), threshold - (total - latest))) : ms
+        if (fitted !== ms) this.ctx.log('chat', `tool results trimmed to fit the context window (${total} tokens, limit ${threshold})`, id)
+        return changed || fitted !== ms ? { context: { ...context, messages: fitted === ms ? ms.slice() : fitted } } : undefined
+      }
+      if (!this.settings.get().autoCompact || messages.findLast((m) => m.role !== 'system')?.role !== 'toolResult') return send(messages)
+      const tokens = estimateHistory(messages, since())
+      if (tokens <= Math.max(threshold, retryAbove)) return send(messages)
       try {
         // The latest step (its tool calls and their results) always stays whole.
-        const kept = await this.summariseHistory(id, model, context.messages, { signal, splitTurns: true })
+        const kept = await this.summariseHistory(id, model, messages, { signal, splitTurns: true })
         agent.state.messages = kept
         startIndex = Math.max(0, kept.findLastIndex((m) => m.role === 'user'))
-        // Still over the line (one huge result): leave it until it has grown by another tenth of the window.
-        const after = estimateHistory(kept, this.ctx.kv.get<number>('compactedAt:' + id, 0))
+        // Still over the line (the request is trimmed to fit): don't summarise again until it has grown by another tenth.
+        const after = estimateHistory(kept, since())
         retryAbove = after > threshold ? after + Math.round(window / 10) : 0
-        return { context: { ...context, messages: kept.slice() } }
+        changed = true
+        return send(kept)
       } catch (err) {
         // The turn carries on with the full history; the error was shown like any failed summarising.
         this.ctx.log('chat', 'mid-turn compaction failed', errorMessage(err))
         retryAbove = tokens + Math.round(window / 10)
-        return
+        return send(messages)
       }
     }
     const partials = new Map<string, ToolDetails>()
