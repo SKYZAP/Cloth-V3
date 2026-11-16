@@ -28,7 +28,7 @@ describe('chat themes', () => {
   it('makes, adjusts, applies and deletes themes, and sets the strength', () => {
     const { services } = makeServices()
     const themes = new ChatThemes(services.settings)
-    expect(themes.list()).toMatchObject({ active: 'crimson-flow', strength: 0.55 })
+    expect(themes.list()).toMatchObject({ active: 'crimson-flow', strength: 0.2 })
 
     const ocean = themes.create({ name: 'Ocean', colors: ['#000814', '#001d3d', '#003566', '#4cc9f0'] }, null, true)
     expect(services.settings.get().chatTheme).toBe(ocean.id)

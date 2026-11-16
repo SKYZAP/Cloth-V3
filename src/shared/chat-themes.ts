@@ -46,7 +46,7 @@ export const DEFAULT_CHAT_THEME = 'crimson-flow'
 export const NO_THEME = 'none'
 /** How much of the background shows through behind the chat (Settings › Chat), whatever the theme. */
 export const STRENGTH_RANGE = [0.1, 1] as const
-export const DEFAULT_STRENGTH = 0.55
+export const DEFAULT_STRENGTH = 0.2
 export const clampStrength = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) ? Math.min(STRENGTH_RANGE[1], Math.max(STRENGTH_RANGE[0], n)) : DEFAULT_STRENGTH)
 
 const RANGES = {

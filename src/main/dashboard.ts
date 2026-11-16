@@ -59,8 +59,8 @@ export class DashboardService {
     const previous = span ? this.totals(from - span, from) : null
 
     // Timeline
-    const tl = this.q<ModelAgg & { b: number }>(
-      `SELECT CAST((at + ?) / ? AS INTEGER) * ? - ? AS b, ${MODEL_COLS} FROM usage_events WHERE at >= ? AND kind IN ('llm','embed') GROUP BY b, provider_id, model_id, kind`,
+    const tl = this.q<ModelAgg & { b: number; source: UsageSource }>(
+      `SELECT CAST((at + ?) / ? AS INTEGER) * ? - ? AS b, source, ${MODEL_COLS} FROM usage_events WHERE at >= ? AND kind IN ('llm','embed') GROUP BY b, source, provider_id, model_id, kind`,
       shift,
       bucketSize,
       bucketSize,
@@ -69,7 +69,7 @@ export class DashboardService {
     )
     const startBucket = Math.floor((from + shift) / bucketSize) * bucketSize - shift
     const buckets = new Map<number, DashboardStats['timeline'][number]>()
-    for (let t = startBucket; t <= now; t += bucketSize) buckets.set(t, { t, input: 0, output: 0, calls: 0, errors: 0, cost: 0 })
+    for (let t = startBucket; t <= now; t += bucketSize) buckets.set(t, { t, input: 0, output: 0, calls: 0, errors: 0, cost: 0, bySource: {}, byModel: {} })
     if (buckets.size > 400) {
       // "all" over a long history: keep the last ~400 buckets.
       for (const k of [...buckets.keys()].slice(0, buckets.size - 400)) buckets.delete(k)
@@ -79,6 +79,13 @@ export class DashboardService {
       if (!b) continue
       b.input += r.input + r.cache
       b.output += r.output
+      // The same tokens split by where they came from and which model ran them, for "stack by" on the chart.
+      const tokens = r.input + r.cache + r.output
+      b.bySource[r.source] = (b.bySource[r.source] ?? 0) + tokens
+      if (r.kind === 'llm') {
+        const key = `${r.provider_id ?? ''}/${r.model_id ?? 'unknown'}`
+        b.byModel[key] = (b.byModel[key] ?? 0) + tokens
+      }
       if (r.kind === 'llm') {
         b.calls += r.calls
         b.errors += r.errors

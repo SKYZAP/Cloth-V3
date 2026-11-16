@@ -41,6 +41,13 @@ describe('usage log and dashboard', () => {
       expect(s.bucket).toBe('hour')
       expect(s.timeline.length).toBeGreaterThanOrEqual(24)
       expect(s.timeline.reduce((n, b) => n + b.calls, 0)).toBe(2)
+      // The same tokens split by source and by model, for stacking the chart.
+      const tokens = s.timeline.reduce((n, b) => n + b.input + b.output, 0)
+      const bySource = s.timeline.reduce((n, b) => n + Object.values(b.bySource).reduce((a, x) => a + (x ?? 0), 0), 0)
+      const byModel = s.timeline.reduce((n, b) => n + (b.byModel[`${provider.id}/priced-model`] ?? 0), 0)
+      expect(bySource).toBe(tokens)
+      expect(byModel).toBe(tokens)
+      expect(s.timeline.some((b) => (b.bySource.skills ?? 0) > 0)).toBe(true)
       expect(s.hours.reduce((a, b) => a + b, 0)).toBe(5)
       expect(s.recent[0].kind).toBe('skill')
       expect(s.previous?.calls).toBe(0)

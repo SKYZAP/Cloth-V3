@@ -30,6 +30,7 @@ import { compact, duration, timeAgo } from '@/lib/format'
 import { Badge, Button, IconButton, Segmented, Spinner, confirmAction, PageTitle } from '@/components/ui'
 import type { OnboardingStep } from '@shared/onboarding'
 import { Tooltip } from '@/components/Tooltip'
+import { INPUT, OTHER, OUTPUT, SERIES, SOURCE, TOOL_KIND, VIA, assignModelSlots, heat, modelColor } from '@/lib/chart-colors'
 
 const RANGES: { value: UsageRange; label: string }[] = [
   { value: '24h', label: '24h' },
@@ -39,26 +40,22 @@ const RANGES: { value: UsageRange; label: string }[] = [
   { value: 'all', label: 'All' }
 ]
 
-const SOURCE: Record<UsageSource, { label: string; color: string }> = {
-  chat: { label: 'Chat', color: '#bdbdc5' },
-  workflow: { label: 'Flows', color: '#fb923c' },
-  skills: { label: 'Skill tests', color: '#e0a43a' },
-  knowledge: { label: 'Knowledge', color: '#6cb2ec' },
-  mcp: { label: 'MCP clients', color: '#5ccb89' },
-  builder: { label: 'Flow builder', color: '#c9a3f5' },
-  tools: { label: 'Tools page', color: '#a3e635' },
-  other: { label: 'Other', color: '#6c6c76' }
-}
+/** Model calls keyed the way the timeline splits them, and the colour slot each model keeps. */
+const modelKey = (m: { providerId: string; modelId: string }) => `${m.providerId}/${m.modelId}`
 
-const VIA: Record<string, { label: string; color: string }> = {
-  slash: { label: '/ command', color: '#c9a3f5' },
-  tool: { label: 'agent', color: '#e0a43a' },
-  mcp: { label: 'MCP', color: '#5ccb89' },
-  workflow: { label: 'flow', color: '#fb923c' }
+/** Gives models seen for the first time a colour slot and saves it, so a model's colour never moves. */
+function useModelSlots(stats: DashboardStats | null): Record<string, number> {
+  const known = useApp((s) => s.settings?.chartModelSlots) ?? NO_SLOTS
+  const update = useApp((s) => s.updateSettings)
+  const ranked = stats ? [...stats.models].sort((a, b) => b.input + b.output - (a.input + a.output)).map(modelKey) : []
+  const next = assignModelSlots(known, ranked)
+  const added = Object.keys(next).length !== Object.keys(known).length
+  useEffect(() => {
+    if (added) void update({ chartModelSlots: next })
+  }, [added, ranked.join('|')])
+  return next
 }
-
-const INPUT = '#4b4b56'
-const OUTPUT = '#bdbdc5'
+const NO_SLOTS: Record<string, number> = {}
 
 export function DashboardPage() {
   const [range, setRangeState] = useState<UsageRange>(() => {
@@ -95,6 +92,7 @@ export function DashboardPage() {
   }
 
   const empty = stats && !stats.totals.calls && !stats.totals.toolCalls && !stats.totals.skillUses && !stats.totals.embedTokens
+  const slots = useModelSlots(stats)
 
   return (
     <div className="flex h-full flex-col">
@@ -142,7 +140,7 @@ export function DashboardPage() {
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
               <Panel className="xl:col-span-8" delay={0.12}>
-                <Timeline stats={stats} />
+                <Timeline stats={stats} slots={slots} />
               </Panel>
               <div className="flex flex-col gap-4 xl:col-span-4">
                 <Panel className="flex-1" delay={0.16}>
@@ -155,7 +153,7 @@ export function DashboardPage() {
             </div>
 
             <Panel delay={0.22}>
-              <Models stats={stats} onPricing={() => setPage('providers')} />
+              <Models stats={stats} slots={slots} onPricing={() => setPage('providers')} />
             </Panel>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -287,7 +285,7 @@ function Kpis({ t, prev, onPricing }: { t: DashboardTotals; prev: DashboardTotal
           {compact(t.inputTokens + t.cacheTokens)} in · {compact(t.outputTokens)} out{t.embedTokens ? ` · ${compact(t.embedTokens)} embed` : ''}
         </>
       ),
-      foot: <SplitBar parts={[{ v: t.inputTokens + t.cacheTokens, c: INPUT }, { v: t.outputTokens, c: OUTPUT }, { v: t.embedTokens, c: '#6cb2ec' }]} />
+      foot: <SplitBar parts={[{ v: t.inputTokens + t.cacheTokens, c: INPUT }, { v: t.outputTokens, c: OUTPUT }, { v: t.embedTokens, c: SERIES[2] }]} />
     },
     {
       icon: Coins,
@@ -368,10 +366,56 @@ function SplitBar({ parts }: { parts: { v: number; c: string }[] }) {
 
 type Metric = 'tokens' | 'cost' | 'calls'
 
-function Timeline({ stats }: { stats: DashboardStats }) {
+type StackBy = 'io' | 'source' | 'model'
+
+/** One coloured part of a bar: a series' share of the bucket. */
+interface Part {
+  key: string
+  label: string
+  color: string
+}
+
+function Timeline({ stats, slots }: { stats: DashboardStats; slots: Record<string, number> }) {
   const [metric, setMetric] = useState<Metric>('tokens')
+  const [stackBy, setStackByState] = useState<StackBy>(() => {
+    try {
+      return (localStorage.getItem('cloth.dashboard.stackBy') as StackBy) || 'source'
+    } catch {
+      return 'source'
+    }
+  })
+  const setStackBy = (s: StackBy) => {
+    try {
+      localStorage.setItem('cloth.dashboard.stackBy', s)
+    } catch {
+      /* ignore */
+    }
+    setStackByState(s)
+  }
   const [hover, setHover] = useState<number | null>(null)
   const data = stats.timeline
+  // The series a tokens bar splits into, largest first, so the biggest part sits on the baseline. Models past the eight
+  // colour slots share Other.
+  const names = new Map(stats.models.map((m) => [modelKey(m), m.modelId]))
+  const parts: Part[] = (() => {
+    if (stackBy === 'io') return [{ key: 'input', label: 'input', color: INPUT }, { key: 'output', label: 'output', color: OUTPUT }]
+    const sum = new Map<string, number>()
+    for (const b of data) for (const [k, n] of Object.entries(stackBy === 'source' ? b.bySource : b.byModel)) sum.set(k, (sum.get(k) ?? 0) + (n ?? 0))
+    const keys = [...sum.keys()].sort((a, b) => sum.get(b)! - sum.get(a)!)
+    if (stackBy === 'source') return keys.map((k) => ({ key: k, label: SOURCE[k as UsageSource]?.label ?? k, color: SOURCE[k as UsageSource]?.color ?? OTHER }))
+    const own = keys.filter((k) => k in slots).map((k) => ({ key: k, label: names.get(k) ?? k.split('/').pop() ?? k, color: modelColor(slots, k) }))
+    // Other: models past the colour slots, and embeddings (counted in the total, not a chat model's).
+    return data.some((b) => otherTokens(b) > 0) ? [...own, { key: '_other', label: 'Other & embeddings', color: OTHER }] : own
+  })()
+  function otherTokens(b: DashboardStats['timeline'][number]): number {
+    return Math.max(0, b.input + b.output - Object.entries(b.byModel).reduce((n, [k, v]) => n + (k in slots ? v : 0), 0))
+  }
+  const partValue = (b: DashboardStats['timeline'][number], key: string): number => {
+    if (stackBy === 'io') return key === 'input' ? b.input : b.output
+    if (stackBy === 'source') return b.bySource[key as UsageSource] ?? 0
+    if (key === '_other') return otherTokens(b)
+    return b.byModel[key] ?? 0
+  }
   const value = (b: DashboardStats['timeline'][number]) => (metric === 'tokens' ? b.input + b.output : metric === 'cost' ? b.cost : b.calls)
   const max = Math.max(...data.map(value), 0)
   const nice = niceMax(max)
@@ -411,16 +455,28 @@ function Timeline({ stats }: { stats: DashboardStats }) {
         </span>
         <div className="flex-1" />
         {metric === 'tokens' && (
-          <div className="flex items-center gap-3 text-caption text-dim">
-            <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm" style={{ background: INPUT }} /> input
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm" style={{ background: OUTPUT }} /> output
-            </span>
-          </div>
+          <Segmented
+            value={stackBy}
+            onChange={setStackBy}
+            items={[
+              { value: 'source', label: 'By source' },
+              { value: 'model', label: 'By model' },
+              { value: 'io', label: 'In / out' }
+            ]}
+          />
         )}
       </div>
+      {metric === 'tokens' && parts.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 px-4 text-caption text-dim">
+          {parts.map((p) => (
+            <span key={p.key} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: p.color }} />
+              <span className={clsx(stackBy === 'model' && p.key !== '_other' && 'font-mono')}>{p.label}</span>
+              {h && <span className="font-mono tabular-nums text-muted">{compact(partValue(h, p.key))}</span>}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="relative mt-3 flex-1 px-4 pb-3">
         <div className="relative h-[210px]">
           {[1, 0.5, 0].map((f) => (
@@ -433,23 +489,23 @@ function Timeline({ stats }: { stats: DashboardStats }) {
             {data.map((b, i) => {
               const v = value(b)
               const hPct = nice ? (v / nice) * 100 : 0
-              const inShare = metric === 'tokens' && v ? b.input / v : 0
               return (
                 <div key={b.t} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setHover(i)} onClick={() => setHover(hover === i ? null : i)}>
                   <div className={clsx('absolute inset-0 rounded-sm transition-colors', hover === i && 'bg-elev-2/60')} />
                   <motion.div
-                    className="relative flex w-full flex-col-reverse overflow-hidden rounded-t-[3px]"
+                    className="relative flex w-full flex-col-reverse gap-px overflow-hidden rounded-t-[3px]"
                     initial={{ height: 0 }}
                     animate={{ height: `${Math.max(v > 0 ? 1.5 : 0, hPct)}%` }}
                     transition={{ duration: 0.6, delay: 0.15 + i * 0.012, ease: [0.22, 1, 0.36, 1] }}
                   >
                     {metric === 'tokens' ? (
-                      <>
-                        <div style={{ height: `${inShare * 100}%`, background: INPUT }} />
-                        <div className="flex-1" style={{ background: OUTPUT }} />
-                      </>
+                      // Each part's share of the bar (bySource/byModel split the same tokens as input + output).
+                      parts.map((p) => {
+                        const n = partValue(b, p.key)
+                        return n > 0 && v > 0 ? <div key={p.key} className="shrink-0" style={{ flexBasis: `${(n / v) * 100}%`, background: p.color }} /> : null
+                      })
                     ) : (
-                      <div className="h-full" style={{ background: metric === 'cost' ? '#e0a43a' : OUTPUT }} />
+                      <div className="h-full" style={{ background: metric === 'cost' ? SERIES[3] : OUTPUT }} />
                     )}
                   </motion.div>
                 </div>
@@ -490,7 +546,7 @@ function Sources({ stats }: { stats: DashboardStats }) {
             <motion.div
               key={s.source}
               title={SOURCE[s.source]?.label}
-              style={{ background: SOURCE[s.source]?.color ?? '#555' }}
+              style={{ background: SOURCE[s.source]?.color ?? OTHER }}
               initial={{ width: 0 }}
               animate={{ width: `${total ? (s.tokens / total) * 100 : 0}%` }}
               transition={{ duration: 0.7, delay: 0.2 + i * 0.06, ease: [0.22, 1, 0.36, 1] }}
@@ -501,7 +557,7 @@ function Sources({ stats }: { stats: DashboardStats }) {
           {!stats.sources.length && <div className="py-3 text-caption text-dim">No model usage yet.</div>}
           {stats.sources.map((s) => (
             <div key={s.source} className="flex items-center gap-2 text-caption">
-              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SOURCE[s.source]?.color ?? '#555' }} />
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SOURCE[s.source]?.color ?? OTHER }} />
               <span className="flex-1 text-muted">{SOURCE[s.source]?.label ?? s.source}</span>
               <span className="font-mono text-caption text-dim">{s.calls} calls</span>
               <span className="w-14 text-right font-mono text-caption text-muted tabular-nums">{compact(s.tokens)}</span>
@@ -531,7 +587,7 @@ function Hours({ hours }: { hours: number[] }) {
                 initial={{ opacity: 0, scale: 0.6 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.25 + h * 0.015 }}
-                style={{ background: n ? `rgb(189 189 197 / ${0.14 + 0.86 * (n / max)})` : 'var(--color-elev-2)' }}
+                style={{ background: n ? heat(n / max) : 'var(--color-elev-2)' }}
               />
           ))}
         </div>
@@ -549,7 +605,7 @@ function Hours({ hours }: { hours: number[] }) {
 
 // ─── Models ─────────────────────────────────────────────────────────────────
 
-function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void }) {
+function Models({ stats, slots, onPricing }: { stats: DashboardStats; slots: Record<string, number>; onPricing(): void }) {
   const maxTokens = Math.max(...stats.models.map((m) => m.input + m.output), 0)
   return (
     <div className="pb-2">
@@ -576,8 +632,12 @@ function Models({ stats, onPricing }: { stats: DashboardStats; onPricing(): void
                 return (
                   <tr key={`${m.providerId}/${m.modelId}`} className="border-b border-line/60 last:border-0 hover:bg-elev/60">
                     <td className="px-4 py-2.5">
-                      <div className="font-mono text-caption text-fg">{m.modelId}</div>
-                      <div className="text-caption text-dim">{m.provider}</div>
+                      <div className="flex items-center gap-2 font-mono text-caption text-fg">
+                        {/* The model's colour in "Usage over time" when stacked by model. */}
+                        <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: modelColor(slots, modelKey(m)) }} aria-hidden="true" />
+                        {m.modelId}
+                      </div>
+                      <div className="pl-4 text-caption text-dim">{m.provider}</div>
                     </td>
                     <td className="px-2 py-2.5 text-right font-mono tabular-nums">{m.calls.toLocaleString()}</td>
                     <td className="px-2 py-2.5">
@@ -645,7 +705,21 @@ function Tools({ stats }: { stats: DashboardStats }) {
   const max = stats.tools[0]?.calls ?? 0
   return (
     <div className="pb-2">
-      <Heading icon={Wrench} title="Most used tools" right={<span className="text-caption text-dim">{stats.totals.toolCalls.toLocaleString()} calls</span>} />
+      <Heading
+        icon={Wrench}
+        title="Most used tools"
+        right={
+          <div className="flex items-center gap-2.5 text-micro text-dim">
+            {Object.entries(TOOL_KIND).map(([k, v]) => (
+              <span key={k} className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: v.color }} />
+                {v.label}
+              </span>
+            ))}
+            <span className="ml-1 text-caption">{stats.totals.toolCalls.toLocaleString()} calls</span>
+          </div>
+        }
+      />
       {!stats.tools.length && <div className="px-4 pb-3 text-caption text-dim">No tool calls in this period.</div>}
       {stats.tools.slice(0, 8).map((t, i) => (
         <Ranked
@@ -653,7 +727,7 @@ function Tools({ stats }: { stats: DashboardStats }) {
           rank={i + 1}
           name={t.name}
           sub={t.kind.split(',').map((k) => (
-            <Badge key={k} tone={k === 'custom' ? 'info' : k === 'mcp' ? 'ok' : 'dim'}>
+            <Badge key={k} tone="dim">
               {k === 'builtin' ? 'built-in' : k}
             </Badge>
           ))}
@@ -665,7 +739,7 @@ function Tools({ stats }: { stats: DashboardStats }) {
             </span>
           }
         >
-          <Bar value={t.calls} max={max} delay={0.2 + i * 0.05} color={i === 0 ? OUTPUT : '#55555f'} />
+          <Bar value={t.calls} max={max} delay={0.2 + i * 0.05} color={TOOL_KIND[t.kind.split(',')[0] ?? '']?.color ?? OTHER} />
         </Ranked>
       ))}
     </div>
@@ -706,7 +780,7 @@ function Skills({ stats }: { stats: DashboardStats }) {
               transition={{ duration: 0.7, delay: 0.2 + i * 0.05, ease: [0.22, 1, 0.36, 1] }}
             >
               {Object.entries(s.via).map(([k, n]) => (
-                <div key={k} title={`${VIA[k]?.label ?? k}: ${n}`} style={{ width: `${(n / s.uses) * 100}%`, background: VIA[k]?.color ?? '#555' }} />
+                <div key={k} title={`${VIA[k]?.label ?? k}: ${n}`} style={{ width: `${(n / s.uses) * 100}%`, background: VIA[k]?.color ?? OTHER }} />
               ))}
             </motion.div>
           </div>
@@ -824,7 +898,7 @@ function Recent({ stats }: { stats: DashboardStats }) {
               <span className="min-w-0 truncate font-mono text-caption text-fg">{r.label}</span>
               <span className="min-w-0 flex-1 truncate text-caption text-dim">{r.detail}</span>
               <span className="flex shrink-0 items-center gap-1 text-micro text-dim">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE[r.source]?.color ?? '#555' }} />
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: SOURCE[r.source]?.color ?? OTHER }} />
                 {SOURCE[r.source]?.label ?? r.source}
               </span>
               <span className="w-14 shrink-0 text-right text-micro text-dim">{timeAgo(r.at)}</span>

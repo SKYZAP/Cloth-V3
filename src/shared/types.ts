@@ -1291,6 +1291,8 @@ export interface Settings {
   chatThemes: import('./chat-themes').ChatTheme[]
   /** How much of the background shows through behind the chat: 0.1 (faint) to 1. */
   chatThemeStrength: number
+  /** Dashboard: the chart colour slot each model got first ("providerId/modelId" → slot), kept so colours never move. */
+  chartModelSlots: Record<string, number>
   /** Subagents (the chat agent's `task` tool). */
   subagents: SubagentSettings
   /** Tiers the chat agent picks from when it delegates (cheapest first). */
@@ -1512,7 +1514,8 @@ export interface DashboardStats {
   /** Same totals for the preceding period of equal length (null for "all"). */
   previous: DashboardTotals | null
   bucket: 'hour' | 'day'
-  timeline: { t: number; input: number; output: number; calls: number; errors: number; cost: number }[]
+  /** Per bucket; bySource and byModel split the same tokens (by UsageSource, and by "providerId/modelId" for model calls). */
+  timeline: { t: number; input: number; output: number; calls: number; errors: number; cost: number; bySource: Partial<Record<UsageSource, number>>; byModel: Record<string, number> }[]
   models: {
     providerId: string
     provider: string

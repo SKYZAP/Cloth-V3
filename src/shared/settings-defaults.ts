@@ -38,7 +38,8 @@ export const DEFAULT_SETTINGS: Settings = {
   swatchPort: 7841,
   chatTheme: 'crimson-flow',
   chatThemes: [],
-  chatThemeStrength: 0.55,
+  chatThemeStrength: 0.2,
+  chartModelSlots: {},
   subagents: {
     enabledByDefault: true,
     model: null,

@@ -59,6 +59,22 @@
   --color-warn: #f6b84d;
   --color-info: #6cb2ec;
 
+  /* Chart series (lib/chart-colors.ts): Cloth's hues stepped for the dark panel, in an order that keeps every
+     neighbouring pair apart for colour-blind viewers (validated against the panel; the first four also as a set).
+     Fixed order, never cycled: a ninth series folds into Other. Never used for status (ok/warn/danger above). */
+  --color-series-1: #d93a52;
+  --color-series-2: #3f87d4;
+  --color-series-3: #1f9c84;
+  --color-series-4: #c4831d;
+  --color-series-5: #c85a8e;
+  --color-series-6: #4f9a32;
+  --color-series-7: #8f70db;
+  --color-series-8: #b8602a;
+  --color-series-other: #5d5d68;
+  /* Tokens are one measure split in two: two steps of one blue, not two identities. */
+  --color-series-input: #2b5e93;
+  --color-series-output: #6ea6e6;
+
   /* Skills: the slash command in the message box, sent messages and the setup sidebar. */
   --color-skill: #dac1f8;
   --color-skill-dot: #c9a3f5;
