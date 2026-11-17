@@ -202,6 +202,8 @@ function stateLine(c: McpClientConfig, servers: ExternalServers): { text: string
       return { text: 'Running', tone: 'ok' }
     case 'starting':
       return { text: 'Starting…', tone: 'warn' }
+    case 'auth':
+      return { text: 'Needs you to sign in', tone: 'warn' }
     case 'error':
       return { text: `${c.transport === 'http' ? 'Couldn’t connect' : 'Couldn’t start'}: ${(st?.error ?? 'unknown error').split('\n')[0]}`, tone: 'bad' }
     default:
@@ -286,6 +288,11 @@ function ServerRow({ config: c, servers, onOpen }: { config: McpClientConfig; se
         {state === 'error' && c.enabled && (
           <Button size="sm" icon={<RotateCw size={12} />} onClick={() => servers.restart(c.id)}>
             Try again
+          </Button>
+        )}
+        {state === 'auth' && c.enabled && (
+          <Button size="sm" variant="primary" onClick={() => servers.signIn(c.id)}>
+            Sign in
           </Button>
         )}
         <span className="max-[820px]:hidden">

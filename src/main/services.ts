@@ -98,6 +98,8 @@ export function createServices(opts: {
   convertFlows?: boolean
   /** Self-update from GitHub releases (default: none, which can't update). */
   updates?: Partial<UpdateDeps>
+  /** Opens a web page in the system browser (MCP sign-ins). */
+  openUrl?: (url: string) => void
 }): Services {
   const db = openDb(opts.dbFile ?? join(opts.dataDir, 'cloth.db'))
   const ctx: Ctx = {
@@ -129,7 +131,7 @@ export function createServices(opts: {
   const rulesDir = globalRulesDir(opts.dataDir)
   mkdirSync(rulesDir, { recursive: true })
   const images = new ImageService(ctx, providers, settings)
-  const mcpClients = new McpClientService(ctx, settings, approvals)
+  const mcpClients = new McpClientService(ctx, settings, approvals, opts.openUrl)
   const agents = new AgentService(ctx, providers, settings)
   const swatches = new SwatchService(ctx, settings)
   const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents, swatches })

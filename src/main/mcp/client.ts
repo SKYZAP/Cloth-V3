@@ -7,6 +7,9 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import { McpOAuth } from './oauth'
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai'
@@ -43,6 +46,36 @@ interface Conn {
 
 const CONNECT_TIMEOUT = 90_000
 const CALL_TIMEOUT = 5 * 60_000
+
+/** The server wants a sign-in, and this start wasn't allowed to open the browser. */
+class NeedsSignIn extends Error {}
+
+/**
+ * The parts of a config that decide how Cloth reaches a server. Changing anything else (Ask me first / Run
+ * without asking, On in new chats) applies to the running server without restarting it.
+ */
+export function connectionKey(c: McpClientConfig): string {
+  return JSON.stringify([c.transport ?? 'stdio', c.command, c.args, c.env, c.url ?? '', c.headers ?? {}, c.oauth ?? {}])
+}
+
+/**
+ * `${VAR}` and `${VAR:-default}` filled from Cloth's environment, as Claude Code, Cursor and VS Code do in
+ * their MCP configs (so imported servers keep reading API keys from the environment). An unset variable
+ * with no default stays as written.
+ */
+export function expandVars(text: string, env: Record<string, string | undefined> = process.env): string {
+  return text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (all, name: string, fallback?: string) => env[name] ?? fallback ?? all)
+}
+
+const expandMap = (m: Record<string, string> | undefined) => Object.fromEntries(Object.entries(m ?? {}).map(([k, v]) => [k, expandVars(v)]))
+
+function within<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(message)), ms)))
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
+
+const isUnauthorized = (err: unknown) => err instanceof UnauthorizedError || (err instanceof Error && err.name === 'UnauthorizedError')
 
 /** Tool names models accept: letters, digits, _ and -, at most 64 characters. */
 import { mcpToolName } from '@shared/types'
@@ -83,12 +116,22 @@ export class McpClientService {
   constructor(
     private ctx: Ctx,
     private settings: SettingsService,
-    private approvals?: ApprovalService
+    private approvals?: ApprovalService,
+    private openUrl: (url: string) => void = (url) => this.ctx.log('mcp-client', 'open this address to sign in:', url)
   ) {
-    // A server whose command changed restarts; a removed or disabled one stops.
+    // A server whose connection changed restarts; a removed or disabled one stops. Other changes (whether to
+    // ask before its tools run, on in new chats) apply to the running server as they are.
     settings.onChange((next, prev) => {
-      const before = new Map(prev.mcpClients.map((c) => [c.id, JSON.stringify(c)]))
-      for (const c of next.mcpClients) if (before.get(c.id) !== undefined && before.get(c.id) !== JSON.stringify(c)) void this.stop(c.id)
+      const before = new Map(prev.mcpClients.map((c) => [c.id, c]))
+      for (const c of next.mcpClients) {
+        const old = before.get(c.id)
+        if (!old) continue
+        if (connectionKey(old) !== connectionKey(c) || !c.enabled) void this.stop(c.id)
+        else {
+          const conn = this.conns.get(c.id)
+          if (conn) conn.config = c
+        }
+      }
       for (const id of before.keys()) if (!next.mcpClients.some((c) => c.id === id)) void this.stop(id)
       // Servers added, changed or removed anywhere (a chat's add_mcp_server, setup's import, the phone): pages showing them reload.
       if (JSON.stringify(next.mcpClients) !== JSON.stringify(prev.mcpClients)) this.changed()
@@ -115,7 +158,8 @@ export class McpClientService {
       const conn = this.conns.get(c.id)
       const tools = (conn?.tools ?? []).map((t) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema }))
       const knownTools = conn?.state === 'ready' ? tools.map(brief) : this.ctx.kv.get<McpClientStatus['knownTools']>(knownKey(c.id), [])
-      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, tools, knownTools }
+      const signedIn = c.transport === 'http' && McpOAuth.signedIn(this.ctx, c.id)
+      return { id: c.id, state: c.enabled ? (conn?.state ?? 'off') : 'off', error: conn?.error ?? null, signedIn, tools, knownTools }
     })
   }
 
@@ -130,14 +174,28 @@ export class McpClientService {
     await Promise.all(ids.map((id) => this.start(id).catch(() => undefined)))
   }
 
-  async start(id: string): Promise<McpClientStatus> {
+  /** Sign in to a server that wants it (opens the browser), then connect. */
+  async signIn(id: string): Promise<McpClientStatus> {
+    await this.stop(id)
+    return this.start(id, true)
+  }
+
+  /** Forget a server's sign-in and disconnect; it asks to sign in again on its next start. */
+  async signOut(id: string): Promise<void> {
+    McpOAuth.clear(this.ctx, id)
+    await this.stop(id)
+  }
+
+  /** Start a server. `interactive`: it may open the browser to sign in (the MCP page's Sign in), not just report that it wants one. */
+  async start(id: string, interactive = false): Promise<McpClientStatus> {
     const config = this.configs().find((c) => c.id === id)
     if (!config) throw new Error('Unknown MCP server')
     let conn = this.conns.get(id)
-    if (conn && JSON.stringify(conn.config) !== JSON.stringify(config)) {
+    if (conn && connectionKey(conn.config) !== connectionKey(config)) {
       await this.stop(id)
       conn = undefined
     }
+    if (conn) conn.config = config
     if (conn?.state === 'ready') return this.statusOf(id)
     if (conn?.starting) {
       await conn.starting
@@ -152,13 +210,17 @@ export class McpClientService {
     c.starting = (async () => {
       let transport: Transport
       let client = new Client({ name: 'cloth', version: '1.0.0' })
-      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${config.name} did not ${config.transport === 'http' ? 'answer' : 'start'} within ${CONNECT_TIMEOUT / 1000}s`)), CONNECT_TIMEOUT).unref?.())
       if (config.transport === 'http') {
-        transport = await this.connectHttp(config, client, timeout).then(
+        transport = await this.connectHttp(config, interactive).then(
           (r) => ((client = r.client), r.transport),
           (err) => {
-            c.state = 'error'
-            c.error = errorMessage(err).slice(0, 600)
+            if (err instanceof NeedsSignIn) {
+              c.state = 'auth'
+              c.error = err.message
+            } else {
+              c.state = 'error'
+              c.error = errorMessage(err).slice(0, 600)
+            }
             throw err
           }
         )
@@ -167,24 +229,25 @@ export class McpClientService {
         const cwd = join(this.ctx.dataDir, 'mcp-servers', config.name.replace(/[^a-zA-Z0-9_-]+/g, '_'))
         await mkdir(cwd, { recursive: true })
         const stdio = new StdioClientTransport({
-          command: config.command,
-          args: config.args,
+          command: expandVars(config.command),
+          args: config.args.map((a) => expandVars(a)),
           cwd,
-          env: { ...(process.env as Record<string, string>), ...this.certEnv(), ...config.env },
+          env: { ...(process.env as Record<string, string>), ...this.certEnv(), ...expandMap(config.env) },
           stderr: 'pipe'
         })
         stdio.stderr?.on('data', (d: Buffer) => (c.stderr = (c.stderr + d.toString()).slice(-4000)))
         transport = stdio
       }
       try {
-        if (config.transport !== 'http') await Promise.race([client.connect(transport), timeout])
-        const tools: McpTool[] = []
-        let cursor: string | undefined
-        do {
-          const page = await client.listTools(cursor ? { cursor } : undefined)
-          tools.push(...(page.tools as McpTool[]))
-          cursor = page.nextCursor
-        } while (cursor)
+        if (config.transport !== 'http') await within(client.connect(transport), CONNECT_TIMEOUT, `${config.name} did not start within ${CONNECT_TIMEOUT / 1000}s`)
+        const tools = await listAllTools(client)
+        // Servers that change their tools while running say so; the chat gets the new list on its next turn.
+        client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+          if (c.client !== client) return
+          c.tools = await listAllTools(client).catch(() => c.tools)
+          this.ctx.kv.set(knownKey(id), c.tools.map((t) => brief({ name: t.name, description: t.description ?? '' })))
+          this.changed()
+        })
         c.client = client
         c.transport = transport
         c.tools = tools
@@ -208,11 +271,11 @@ export class McpClientService {
         this.changed()
       }
     })().catch((err) => {
-      // A remote server that couldn't be reached at all.
-      c.state = 'error'
+      // A remote server that couldn't be reached at all, or one waiting for a sign-in.
+      if (c.state !== 'auth') c.state = 'error'
       c.error = c.error ?? errorMessage(err).slice(0, 600)
       c.starting = null
-      this.ctx.log('mcp-client', `${config.name} failed to connect`, c.error)
+      if (c.state === 'error') this.ctx.log('mcp-client', `${config.name} failed to connect`, c.error)
       this.changed()
     })
     await c.starting
@@ -221,32 +284,67 @@ export class McpClientService {
 
   /**
    * Connect to a server at a web address: Streamable HTTP first (the current MCP transport), then the older
-   * HTTP+SSE transport for servers that only speak that. Returns the client and transport that worked.
+   * HTTP+SSE transport for servers that only speak that. Servers that want a sign-in get one through OAuth
+   * (McpOAuth): with `interactive` the browser opens and the connection is retried once the user is back,
+   * otherwise it fails with NeedsSignIn. Returns the client and transport that worked.
    */
-  private async connectHttp(config: McpClientConfig, first: Client, timeout: Promise<never>): Promise<{ client: Client; transport: Transport }> {
+  private async connectHttp(config: McpClientConfig, interactive: boolean): Promise<{ client: Client; transport: Transport }> {
     let url: URL
     try {
-      url = new URL(String(config.url ?? '').trim())
+      url = new URL(expandVars(String(config.url ?? '').trim()))
     } catch {
       throw new Error(`${config.name}: “${config.url ?? ''}” isn't a web address`)
     }
-    const requestInit = { headers: config.headers ?? {} }
+    const headers = expandMap(config.headers)
+    const requestInit = { headers }
     // Through the certificate set in Settings → Web search, as web search does (networks that inspect HTTPS need it).
     const ca = this.settings.get().webCaCertPath
     const viaCa = ((u: string | URL, init?: RequestInit) => fetchWithWebCa(u, init as UndiciRequestInit, ca)) as unknown as typeof fetch
-    const streamable = new StreamableHTTPClientTransport(url, { requestInit, fetch: viaCa })
-    try {
-      await Promise.race([first.connect(streamable), timeout])
-      return { client: first, transport: streamable }
-    } catch (err) {
-      await streamable.close().catch(() => undefined)
-      const sse = new SSEClientTransport(url, { requestInit, fetch: viaCa, eventSourceInit: { fetch: (u, init) => viaCa(u, { ...init, headers: { ...(init?.headers as Record<string, string>), ...requestInit.headers } }) } })
+    const oauth = new McpOAuth(this.ctx, config, this.openUrl, interactive)
+    const slow = `${config.name} did not answer within ${CONNECT_TIMEOUT / 1000}s`
+    const streamable = () => new StreamableHTTPClientTransport(url, { requestInit, fetch: viaCa, authProvider: oauth })
+    const sse = () =>
+      new SSEClientTransport(url, {
+        requestInit,
+        fetch: viaCa,
+        authProvider: oauth,
+        eventSourceInit: { fetch: (u, init) => viaCa(u, { ...init, headers: { ...(init?.headers as Record<string, string>), ...headers } }) }
+      })
+    const connect = async (transport: StreamableHTTPClientTransport | SSEClientTransport) => {
       const client = new Client({ name: 'cloth', version: '1.0.0' })
       try {
-        await Promise.race([client.connect(sse), timeout])
-        return { client, transport: sse }
-      } catch {
-        await sse.close().catch(() => undefined)
+        await within(client.connect(transport), CONNECT_TIMEOUT, slow)
+      } catch (err) {
+        await transport.close().catch(() => undefined)
+        throw err
+      }
+      return { client, transport: transport as Transport }
+    }
+    const attempt = async (make: () => StreamableHTTPClientTransport | SSEClientTransport) => {
+      const transport = make()
+      try {
+        return await connect(transport)
+      } catch (err) {
+        if (!isUnauthorized(err) && !oauth.needsSignIn) throw err
+        if (!interactive) throw new NeedsSignIn(`Sign in to ${config.name} to use its tools.`)
+        // The browser is open on the server's sign-in page; finish once it comes back with a code, then connect again.
+        try {
+          await transport.finishAuth(await oauth.waitForCode())
+        } finally {
+          oauth.close()
+        }
+        return connect(make())
+      }
+    }
+    try {
+      return await attempt(streamable)
+    } catch (err) {
+      // A sign-in that failed or was declined isn't a sign the server speaks the older transport.
+      if (err instanceof NeedsSignIn || isUnauthorized(err) || oauth.needsSignIn || interactive) throw err
+      try {
+        return await attempt(sse)
+      } catch (err2) {
+        if (err2 instanceof NeedsSignIn) throw err2
         throw new Error(`${config.name}: couldn't connect to ${url.href} (${errorMessage(err)})`)
       }
     }
@@ -367,7 +465,9 @@ export class McpClientService {
    * Servers set to "ask" need the user's go-ahead per call in every permission mode (until "Always
    * allow here"); runs outside chats that approve everything up front don't ask.
    */
-  private async approve(server: McpClientConfig, tool: string, params: unknown, scope: ToolScope, toolCallId: string, signal?: AbortSignal): Promise<void> {
+  private async approve(saved: McpClientConfig, tool: string, params: unknown, scope: ToolScope, toolCallId: string, signal?: AbortSignal): Promise<void> {
+    // The setting as it is now: it can change while the chat runs, without restarting the server.
+    const server = this.configs().find((c) => c.id === saved.id) ?? saved
     if (server.approval === 'auto' || (!scope.permissions && scope.autoApprove?.() === 'all')) return
     const session = scope.sessionId
     if (!session) return
@@ -382,4 +482,15 @@ export class McpClientService {
       this.trusted.set(session, set)
     }
   }
+}
+
+async function listAllTools(client: Client): Promise<McpTool[]> {
+  const tools: McpTool[] = []
+  let cursor: string | undefined
+  do {
+    const page = await client.listTools(cursor ? { cursor } : undefined)
+    tools.push(...(page.tools as McpTool[]))
+    cursor = page.nextCursor
+  } while (cursor)
+  return tools
 }

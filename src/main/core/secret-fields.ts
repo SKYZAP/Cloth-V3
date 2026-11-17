@@ -36,9 +36,10 @@ export function mapUrlSecrets(url: string, fn: Fn): string {
   return changed ? u.toString() : url
 }
 
-export function mapClient<T extends Pick<McpClientConfig, 'env' | 'headers' | 'url'>>(c: T, fn: Fn): T {
+export function mapClient<T extends Pick<McpClientConfig, 'env' | 'headers' | 'url'> & { oauth?: McpClientConfig['oauth'] }>(c: T, fn: Fn): T {
   return {
     ...c,
+    ...(c.oauth?.clientSecret ? { oauth: { ...c.oauth, clientSecret: fn(c.oauth.clientSecret, 'client_secret') } } : {}),
     ...(c.env ? { env: mapSecrets(c.env, fn) } : {}),
     ...(c.headers ? { headers: mapSecrets(c.headers, fn) } : {}),
     ...(c.url ? { url: mapUrlSecrets(c.url, fn) } : {})
@@ -65,6 +66,8 @@ function secretsOf(c: Pick<McpClientConfig, 'env' | 'headers' | 'url'>): Map<str
   const add = (k: string, v: string) => isSecretName(k) && v && out.set(k.toLowerCase(), [...(out.get(k.toLowerCase()) ?? []), v])
   for (const [k, v] of Object.entries(c.headers ?? {})) add(k, v)
   for (const [k, v] of Object.entries(c.env ?? {})) add(k, v)
+  const secret = (c as { oauth?: McpClientConfig['oauth'] }).oauth?.clientSecret
+  if (secret) add('client_secret', secret)
   if (c.url)
     try {
       for (const [k, v] of new URL(c.url).searchParams) add(k, v)

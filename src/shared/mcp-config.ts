@@ -1,7 +1,7 @@
 import type { McpClientConfig } from './types'
 
 /** A server as the standard JSON config describes it (Claude Desktop, Cursor, VS Code, Claude Code). */
-export type McpServerEntry = Pick<McpClientConfig, 'name' | 'transport' | 'command' | 'args' | 'env' | 'url' | 'headers'>
+export type McpServerEntry = Pick<McpClientConfig, 'name' | 'transport' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'oauth'>
 
 const NAME = /^[a-zA-Z0-9_-]{1,32}$/
 
@@ -9,7 +9,7 @@ const NAME = /^[a-zA-Z0-9_-]{1,32}$/
 export function mcpServerJson(c: McpServerEntry): string {
   const body: Record<string, unknown> =
     c.transport === 'http'
-      ? { type: 'http', url: c.url ?? '', ...(c.headers && Object.keys(c.headers).length ? { headers: c.headers } : {}) }
+      ? { type: 'http', url: c.url ?? '', ...(c.headers && Object.keys(c.headers).length ? { headers: c.headers } : {}), ...(c.oauth && Object.keys(c.oauth).length ? { oauth: c.oauth } : {}) }
       : { type: 'stdio', command: c.command, args: c.args, ...(Object.keys(c.env ?? {}).length ? { env: c.env } : {}) }
   return JSON.stringify({ [c.name]: body }, null, 2)
 }
@@ -45,7 +45,9 @@ export function parseMcpServers(text: string): { servers: McpServerEntry[]; erro
       if (!/^https?:\/\/\S+$/i.test(url)) return fail(`“${name}” needs a "url" starting with https:// (or http:// on this computer).`)
       const headers = strings(raw.headers)
       if (headers === null) return fail(`“${name}”: "headers" should map names to text, like { "Authorization": "Bearer …" }.`)
-      out.push({ name, transport: 'http', url, headers, command: '', args: [], env: {} })
+      const oauth = oauthOf(raw.oauth)
+      if (oauth === null) return fail(`“${name}”: "oauth" should be like { "clientId": "…", "callbackPort": 8080 }.`)
+      out.push({ name, transport: 'http', url, headers, command: '', args: [], env: {}, ...(oauth ? { oauth } : {}) })
     } else if (type === 'stdio') {
       if (typeof raw.command !== 'string' || !raw.command.trim()) return fail(`“${name}” needs a "command", like "npx".`)
       const args = raw.args === undefined ? [] : Array.isArray(raw.args) && raw.args.every((a) => typeof a === 'string' || typeof a === 'number') ? raw.args.map(String) : null
@@ -57,6 +59,18 @@ export function parseMcpServers(text: string): { servers: McpServerEntry[]; erro
   }
   if (!out.length) return fail('No servers found. Write one like { "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"] } }.')
   return { servers: out, error: null }
+}
+
+/** A server's "oauth" block (Claude Code writes clientId and callbackPort); undefined when absent, null when malformed. */
+export function oauthOf(v: unknown): McpClientConfig['oauth'] | null | undefined {
+  if (v === undefined || v === null) return undefined
+  if (!isObject(v)) return null
+  const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined)
+  const port = typeof v.callbackPort === 'number' ? v.callbackPort : typeof v.callbackPort === 'string' && /^\d+$/.test(v.callbackPort) ? Number(v.callbackPort) : undefined
+  if (port !== undefined && (port < 1 || port > 65535)) return null
+  const out = { clientId: str(v.clientId ?? v.client_id), clientSecret: str(v.clientSecret ?? v.client_secret), callbackPort: port, scope: str(v.scope ?? (Array.isArray(v.scopes) ? v.scopes.join(' ') : undefined)) }
+  const kept = Object.fromEntries(Object.entries(out).filter(([, x]) => x !== undefined))
+  return Object.keys(kept).length ? (kept as McpClientConfig['oauth']) : undefined
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

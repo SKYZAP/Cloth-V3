@@ -122,8 +122,8 @@ function OnboardingDialog({ initial, saved }: { initial: OnboardingStep; saved: 
   const common = { advance, back, skip: () => advance('skipped') }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 backdrop-blur-[2px]">
-      <div role="dialog" aria-modal="true" aria-labelledby="onboarding-title" className="grid h-[min(620px,calc(100vh-48px))] w-[min(900px,100%)] grid-cols-[208px_1fr] overflow-hidden rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60">
-        <aside className="flex flex-col gap-0.5 border-r border-line bg-card px-3 py-5">
+      <div role="dialog" aria-modal="true" aria-labelledby="onboarding-title" className="grid h-[min(620px,calc(100vh-48px))] w-[min(900px,100%)] grid-cols-[208px_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl border border-line-strong bg-panel shadow-2xl shadow-black/60">
+        <aside className="flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-line bg-card px-3 py-5">
           <div className="flex items-center gap-2 px-2 pb-4 text-ui font-semibold">
             <Logo size={18} />
             Set up Cloth
@@ -213,7 +213,7 @@ async function startIn(mode: Mode): Promise<void> {
 function Pane({ n, title, lede, children, footer }: { n?: number; title: string; lede?: ReactNode; children: ReactNode; footer: ReactNode }) {
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-8 pt-7 pb-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-8 pt-7 pb-5 [&>*]:shrink-0">
         <div className="flex flex-col gap-1.5 pr-8">
           {n != null && <span className="font-mono text-caption text-dim">Step {n} of {NUMBERED.length}</span>}
           <h2 id="onboarding-title" className="text-title font-semibold tracking-tight">

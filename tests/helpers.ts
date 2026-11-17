@@ -8,7 +8,7 @@ import type { PtySpawn } from '../src/main/panel/terminals'
 
 export const REPO = resolve(__dirname, '..')
 
-export function makeServices(extra: { docker?: DockerRun; pty?: PtySpawn } = {}) {
+export function makeServices(extra: { docker?: DockerRun; pty?: PtySpawn; openUrl?: (url: string) => void } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'cloth-test-'))
   const events: { channel: string; payload: unknown }[] = []
   const services = createServices({
@@ -19,7 +19,8 @@ export function makeServices(extra: { docker?: DockerRun; pty?: PtySpawn } = {})
     sidecarsDir: join(REPO, 'sidecars'),
     examplesDir: join(REPO, 'resources', 'examples'),
     docker: extra.docker,
-    pty: extra.pty
+    pty: extra.pty,
+    openUrl: extra.openUrl
   })
   // Tests script every model reply; the background title request would take one of them.
   services.settings.update({ aiTitles: false })

@@ -493,6 +493,10 @@ export interface ClothApi {
     clientPresets(): Promise<import('./types').McpPreset[]>
     startClient(id: string): Promise<import('./types').McpClientStatus>
     stopClient(id: string): Promise<void>
+    /** Sign in to a server that asks for it (OAuth in the browser), then connect. */
+    signInClient(id: string): Promise<import('./types').McpClientStatus>
+    /** Forget the server's sign-in and disconnect. */
+    signOutClient(id: string): Promise<void>
     /** Recent calls Cloth made to external servers, newest first. */
     externalCalls(): Promise<import('./types').McpCallLog[]>
     /** Call one of a server's tools directly (the Tools page's Try it). */

@@ -1680,6 +1680,12 @@ export interface McpClientConfig {
   /** http: the server's address, and headers sent with every request (e.g. Authorization). */
   url?: string
   headers?: Record<string, string>
+  /**
+   * http: OAuth sign-in. Servers that support it (Datadog, Linear, Notion, …) need nothing here: Cloth discovers
+   * the sign-in and registers itself. Set a client id (and secret) for servers that need one made by hand, and a
+   * fixed callback port when that client only accepts one redirect address.
+   */
+  oauth?: { clientId?: string; clientSecret?: string; callbackPort?: number; scope?: string }
   /** Connect at all. */
   enabled: boolean
   /** Available in chats that haven't chosen their servers. */
@@ -1706,8 +1712,11 @@ export function mcpToolName(server: string, tool: string): string {
 
 export interface McpClientStatus {
   id: string
-  state: 'off' | 'starting' | 'ready' | 'error'
+  /** 'auth': the server wants the user to sign in (Sign in on the MCP page opens the browser). */
+  state: 'off' | 'starting' | 'ready' | 'error' | 'auth'
   error: string | null
+  /** Cloth holds a sign-in (OAuth tokens) for this server. */
+  signedIn?: boolean
   tools: { name: string; description: string; inputSchema?: Record<string, unknown> }[]
   /** The tools it listed when it last ran (kept between runs), so a server not running yet still shows what it offers. */
   knownTools: { name: string; description: string }[]

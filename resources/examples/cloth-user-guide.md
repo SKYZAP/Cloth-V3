@@ -64,7 +64,7 @@ The Chat page has the chat list on the left, the conversation in the middle, and
 
 ### The composer
 
-- The model chip picks the model and **reasoning effort** for this chat. The figure next to it is what the chat has spent so far, including agents it handed work to.
+- The model chip picks the model and **reasoning effort** for this chat. The figure next to it is what the chat has spent so far, including agents it handed work to. New chats start on the model you picked last, with the effort you last used for that model, and in Auto or Manual as you last set it.
 - The **agent** picker sets which agent answers in this chat (Cloth by default, or one of your agents).
 - Type **/** to invoke a skill directly; it shows as a chip and its instructions go with that message.
 - Type **@** and an agent's name to hand the message to that agent.
@@ -227,6 +227,9 @@ Pick an engine in **Settings › Web search**.
 The **MCP servers** page connects Cloth to outside MCP servers and runs Cloth's own.
 
 - **External servers** give chats and agents more tools. Add them by command or address; their secrets are stored encrypted. Each chat or agent can switch them on, or narrow them to some tools.
+- Servers at a web address that sign in through the browser (Datadog, Linear, Notion and others) need no token: when one asks, the server shows **Sign in**, which opens its sign-in page. Cloth keeps the sign-in and refreshes it; **Sign out** forgets it. For servers that need a client made by hand, add `"oauth": { "clientId": "…", "callbackPort": 8080 }` to its JSON.
+- Configs can read environment variables as `${VAR}` or `${VAR:-default}`, as in Claude Code and Cursor.
+- Changing **Ask me first** or **Run without asking**, or **In new chats**, applies straight away without restarting the server.
 - **Cloth's MCP server** at `http://127.0.0.1:7811/mcp` lets other apps use Cloth: `skill_list`, `skill_use`, `skill_create`, `rag_search`, `rag_collections`, `rag_index`, `tool_create` and `web_search`. An activity log shows each call.
 - Claude Code: `claude mcp add --transport http cloth http://127.0.0.1:7811/mcp`. Cursor: add the URL under `mcpServers` in `~/.cursor/mcp.json`. Clients that only speak stdio can bridge with `npx mcp-remote <url>`.
 - Turn on **Require bearer token** to demand `Authorization: Bearer <token>`.

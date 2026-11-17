@@ -5,6 +5,7 @@ import { basename, extname, join, resolve } from 'node:path'
 import type { McpClientConfig } from '@shared/types'
 import type { BestPracticeCadence, FolderScan, ImportResult, ImportSelection, ImportSource, ImportSourceId, LanguageId, LanguageServerInfo } from '@shared/onboarding'
 import { LANGUAGES } from '@shared/onboarding'
+import { oauthOf } from '@shared/mcp-config'
 import { newId } from './core/context'
 import { findOnPath, PATH_SERVERS } from './agent/lsp'
 import { parseSkillMd, slugify } from './skills/skills'
@@ -130,7 +131,7 @@ export function languageServers(ids: LanguageId[]): LanguageServerInfo[] {
 
 interface RawMcp {
   name: string
-  config: Pick<McpClientConfig, 'transport' | 'command' | 'args' | 'env' | 'url' | 'headers'>
+  config: Pick<McpClientConfig, 'transport' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'oauth'>
 }
 
 const readJson = (file: string): Record<string, unknown> | null => {
@@ -153,7 +154,8 @@ function mcpFromJson(obj: Record<string, unknown> | null): RawMcp[] {
   for (const [name, raw] of Object.entries(servers as Record<string, Record<string, unknown>>)) {
     if (!raw || typeof raw !== 'object') continue
     const url = typeof raw.url === 'string' ? raw.url : typeof raw.serverUrl === 'string' ? raw.serverUrl : null
-    if (url) out.push({ name, config: { transport: 'http', command: '', args: [], env: {}, url, headers: stringMap(raw.headers) } })
+    const oauth = oauthOf(raw.oauth) ?? undefined
+    if (url) out.push({ name, config: { transport: 'http', command: '', args: [], env: {}, url, headers: stringMap(raw.headers), ...(oauth ? { oauth } : {}) } })
     else if (typeof raw.command === 'string') out.push({ name, config: { transport: 'stdio', command: raw.command, args: strings(raw.args), env: stringMap(raw.env) } })
   }
   return out

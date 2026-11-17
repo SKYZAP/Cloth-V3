@@ -14,7 +14,8 @@ export const STATE: Record<McpClientStatus['state'], { label: string; dot: strin
   off: { label: 'Stopped', dot: 'bg-line-strong' },
   starting: { label: 'Starting…', dot: 'bg-warn animate-pulse motion-reduce:animate-none' },
   ready: { label: 'Running', dot: 'bg-ok' },
-  error: { label: 'Failed', dot: 'bg-danger' }
+  error: { label: 'Failed', dot: 'bg-danger' },
+  auth: { label: 'Needs sign-in', dot: 'bg-warn' }
 }
 
 const quote = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
@@ -93,9 +94,12 @@ export function useExternalServers() {
     return true
   }
   const restart = (id: string) => void attempt(() => api.mcp.stopClient(id).then(() => api.mcp.startClient(id))).then(load)
+  /** Opens the server's sign-in in the browser; it connects once the user is back. */
+  const signIn = (id: string) => void attempt(() => api.mcp.signInClient(id)).then(load)
+  const signOut = (id: string) => void attempt(() => api.mcp.signOutClient(id)).then(load)
   const stateOf = (c: McpClientConfig): McpClientStatus['state'] => (c.enabled ? (status.find((s) => s.id === c.id)?.state ?? 'off') : 'off')
   const unused = presets.filter((p) => !configs.some((c) => c.name === p.name))
-  return { configs, status, presets, unused, patch, add, remove, restart, stateOf }
+  return { configs, status, presets, unused, patch, add, remove, restart, signIn, signOut, stateOf }
 }
 
 export type ExternalServers = ReturnType<typeof useExternalServers>
@@ -110,7 +114,19 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
   const tools = live ? st.tools : (st?.knownTools ?? [])
   const q = filter.trim().toLowerCase()
   const shown = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tools
-  const label = !c.enabled ? 'Turned off. Chats can’t use it.' : state === 'ready' ? 'Running' : state === 'starting' ? 'Starting…' : state === 'error' ? (c.transport === 'http' ? 'Couldn’t connect' : 'Couldn’t start') : 'Not running. It starts when a chat uses it.'
+  const label = !c.enabled
+    ? 'Turned off. Chats can’t use it.'
+    : state === 'ready'
+      ? 'Running'
+      : state === 'starting'
+        ? 'Starting…'
+        : state === 'auth'
+          ? `Sign in to ${c.name} to use its tools`
+          : state === 'error'
+            ? c.transport === 'http'
+              ? 'Couldn’t connect'
+              : 'Couldn’t start'
+            : 'Not running. It starts when a chat uses it.'
   return (
     <div className="grid min-w-0 gap-6">
       <div className="grid gap-3">
@@ -119,14 +135,30 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
             <span className={clsx('h-2 w-2 shrink-0 rounded-full', c.enabled ? STATE[state].dot : 'bg-line-strong')} aria-hidden="true" />
             <span role="status">{label}</span>
           </span>
-          <Button size="sm" disabled={!c.enabled || state === 'starting'} onClick={() => servers.restart(c.id)}>
-            {state === 'ready' ? 'Restart' : state === 'error' ? 'Try again' : 'Start now'}
-          </Button>
+          {state === 'auth' ? (
+            <Button size="sm" variant="primary" disabled={!c.enabled} onClick={() => servers.signIn(c.id)}>
+              Sign in
+            </Button>
+          ) : (
+            <Button size="sm" disabled={!c.enabled || state === 'starting'} onClick={() => servers.restart(c.id)}>
+              {state === 'ready' ? 'Restart' : state === 'error' ? 'Try again' : 'Start now'}
+            </Button>
+          )}
         </div>
+        {state === 'auth' && <p className="text-caption text-muted">Sign in opens {c.name}’s sign-in page in your browser. Cloth keeps the sign-in, so you only do this once.</p>}
+        {state === 'starting' && c.transport === 'http' && !st?.signedIn && <p className="text-caption text-muted">If your browser opened a sign-in page, finish signing in there.</p>}
         {st?.state === 'error' && st.error && (
           <div role="alert" className="rounded-[10px] border border-danger-line bg-danger-soft px-3 py-2 text-caption">
             <div className="selectable font-mono text-caption text-danger-hi">{st.error}</div>
             <div className="mt-1.5 text-muted">{c.transport === 'http' ? 'Check the address and token under Connection, then try again.' : 'Check the program and its arguments under Connection, then try again.'}</div>
+          </div>
+        )}
+        {c.transport === 'http' && st?.signedIn && (
+          <div className="flex flex-wrap items-center gap-3 text-caption text-muted">
+            <span className="flex-1">Signed in through {c.name}’s own sign-in page.</span>
+            <Button size="sm" variant="ghost" onClick={() => servers.signOut(c.id)}>
+              Sign out
+            </Button>
           </div>
         )}
       </div>
@@ -207,7 +239,7 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
             ]}
           />
           {asJson ? (
-            <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, next)} />
+            <ServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={([next]) => servers.patch(c.id, { oauth: undefined, ...next })} />
           ) : (
             <GuidedServerForm initial={c} taken={servers.configs.filter((x) => x.id !== c.id).map((x) => x.name)} onSave={(next) => servers.patch(c.id, next)} />
           )}
@@ -267,7 +299,7 @@ export function ServerForm({ initial, taken, onSave, onCancel }: { initial?: Mcp
           <span className="text-dim">Adds {kinds.join(', ')}.</span>
         ) : (
           <span className="text-dim">
-            A program: <code className="font-mono">{'"type": "stdio"'}</code> with <code className="font-mono">command</code>, <code className="font-mono">args</code> and <code className="font-mono">env</code>. A web address: <code className="font-mono">{'"type": "http"'}</code> with <code className="font-mono">url</code> and <code className="font-mono">headers</code>. Paste a whole <code className="font-mono">mcpServers</code> block to add several.
+            A program: <code className="font-mono">{'"type": "stdio"'}</code> with <code className="font-mono">command</code>, <code className="font-mono">args</code> and <code className="font-mono">env</code>. A web address: <code className="font-mono">{'"type": "http"'}</code> (or <code className="font-mono">"sse"</code>) with <code className="font-mono">url</code> and <code className="font-mono">headers</code>; servers that sign in through the browser need nothing else, and <code className="font-mono">oauth</code> takes a <code className="font-mono">clientId</code> and <code className="font-mono">callbackPort</code> when one needs them. <code className="font-mono">{'${VAR}'}</code> reads an environment variable. Paste a whole <code className="font-mono">mcpServers</code> block to add several.
           </span>
         )}
       </div>

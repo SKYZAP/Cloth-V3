@@ -256,6 +256,9 @@ const SETUP_KEYS: (keyof AgentSetup)[] = ['skillsEnabled', 'skillsOff', 'skillsA
 export const SHARED_KEYS = ['skillsEnabled', 'skillsOff', 'skillsAlways', 'webEnabled', 'customTools', 'subagents', 'codeIntel', 'imagesEnabled', 'knowledgeEnabled', 'collectionIds', 'mcpServers', 'disabledTools', 'autoTiers', 'contextLimit'] as const satisfies readonly (keyof SessionConfig)[]
 type SharedSetup = Partial<Pick<SessionConfig, (typeof SHARED_KEYS)[number]>>
 const SHARED_KV = 'chat.sharedSetup'
+/** The reasoning effort last picked for each model ("providerId::modelId"), so a chat on that model starts on it. */
+const EFFORT_KV = 'chat.effortByModel'
+const modelKey = (m: ModelRef) => `${m.providerId}::${m.modelId}`
 const pickShared = (o: Partial<SessionConfig>): SharedSetup => Object.fromEntries(SHARED_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) as SharedSetup
 
 /** An agent's switches as a tool scope (its folder access capped at what the caller has). */
@@ -1183,8 +1186,41 @@ export class ChatService {
     full.permissions = resolvePermissions([config, fromProject], full, isPermissions(s.defaultPermissions) ? s.defaultPermissions : 'manual')
     full.access = full.permissions === 'plan' ? (full.access ?? 'manual') : full.permissions
     if (!full.model) full.model = s.defaultModel
+    // Its effort: asked for, else the project's, else the one last picked for its model.
+    if (config.thinking === undefined && fromProject.thinking === undefined && full.model) full.thinking = this.effortFor(full.model) ?? full.thinking
     this.ctx.db.prepare('INSERT INTO sessions (id, title, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, 'New chat', JSON.stringify(full), now, now)
     return this.get(id)
+  }
+
+  /** The effort last picked for a model, if any. */
+  effortFor(model: ModelRef): SessionConfig['thinking'] | undefined {
+    return this.ctx.kv.get<Record<string, SessionConfig['thinking']>>(EFFORT_KV, {})[modelKey(model)]
+  }
+
+  /**
+   * What the user picks in a chat carries over to the chats they start next: the model becomes the default chat
+   * model (Settings › Models › Chat), Auto or Manual the mode new chats start in, and the effort is kept for that
+   * model. Plan mode doesn't carry over: it's for one task. A chat that moves to another model gets the effort last
+   * used with it. Returns the patch to apply, with that effort filled in.
+   */
+  rememberPicks(id: string, patch: SessionInput): SessionInput {
+    const s = this.settings.get()
+    const cur = this.get(id)
+    const out = { ...patch }
+    if (patch.model) {
+      if (modelKey(patch.model) !== (s.defaultModel ? modelKey(s.defaultModel) : '')) this.settings.update({ defaultModel: patch.model })
+      if (patch.thinking === undefined) {
+        const kept = this.effortFor(patch.model)
+        if (kept && kept !== cur.thinking) out.thinking = kept
+      }
+    }
+    const thinking = patch.thinking
+    const model = patch.model ?? cur.model
+    if (thinking && model) this.ctx.kv.set(EFFORT_KV, { ...this.ctx.kv.get<Record<string, unknown>>(EFFORT_KV, {}), [modelKey(model)]: thinking })
+    // OpenSpec switches its chat to Auto by itself; that isn't a pick.
+    const access = patch.openspec ? undefined : patch.permissions === 'auto' || patch.permissions === 'manual' ? patch.permissions : patch.access
+    if ((access === 'auto' || access === 'manual') && access !== s.defaultPermissions) this.settings.update({ defaultPermissions: access })
+    return out
   }
 
   /** Change a chat. With `share`, setup changes (tools, skills, servers, knowledge, context limit) also become every other chat's. */

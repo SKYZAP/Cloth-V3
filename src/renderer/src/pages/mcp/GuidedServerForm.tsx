@@ -121,7 +121,7 @@ export function GuidedServerForm({
           <Field label="Address">
             <Input type="url" inputMode="url" spellCheck={false} autoComplete="off" placeholder="http://localhost:4401/mcp" value={url} onChange={(e) => setUrl(e.target.value)} />
           </Field>
-          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={tokenHint ?? 'Sent as a Bearer token.'}>
+          <Field label={focusToken ? 'Access token' : 'Access token (optional)'} hint={tokenHint ?? 'Sent as a Bearer token. Leave it empty for servers that sign in through the browser (Datadog, Linear, Notion…): Cloth asks you to sign in when it connects.'}>
             <div className="relative">
               <Input ref={tokenBox} type={showToken ? 'text' : 'password'} spellCheck={false} autoComplete="off" placeholder={focusToken ? 'Paste its access token' : 'Paste a token if the server needs one'} value={token} onChange={(e) => setToken(e.target.value)} className="pr-9" />
               <button

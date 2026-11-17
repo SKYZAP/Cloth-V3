@@ -132,6 +132,7 @@ else {
     // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
     const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({
+      openUrl: (url) => void shell.openExternal(url),
       dataDir: app.getPath('userData'),
       sidecarsDir: resources ?? join(app.getAppPath(), 'sidecars'),
       examplesDir: resources ? join(resources, 'examples') : join(app.getAppPath(), 'resources', 'examples'),

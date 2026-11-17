@@ -229,8 +229,8 @@ export function createApi(s: Services): ClothApi {
       sharedSkills: async () => s.chat.sharedSkills(),
       setSharedSkills: async (names, mode) => s.chat.setSharedSkills(names, mode),
       update: async (id, patch) => {
-        // Changes made in a chat's Setup are the setup for every chat.
-        const next = s.chat.update(id, patch, { share: true })
+        // Changes made in a chat's Setup are the setup for every chat; its model, effort and mode carry over to new chats.
+        const next = s.chat.update(id, s.chat.rememberPicks(id, patch), { share: true })
         // A different model: fetch its current context size before the meter asks for it.
         if (patch.model) await s.providers.refreshModel(patch.model, { force: true }).catch(() => undefined)
         return next
@@ -431,6 +431,8 @@ export function createApi(s: Services): ClothApi {
       clientPresets: async () => presetsWithTokens(MCP_PRESETS, readEnvFile()).map((p) => mapClient(p, masker)),
       startClient: (id) => s.mcpClients.start(id),
       stopClient: (id) => s.mcpClients.stop(id),
+      signInClient: (id) => s.mcpClients.signIn(id),
+      signOutClient: (id) => s.mcpClients.signOut(id),
       externalCalls: async () => s.mcpClients.calls()
     },
     swatches: {

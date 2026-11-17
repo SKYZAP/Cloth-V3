@@ -2,7 +2,7 @@ import type { UsageService } from '../core/usage'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { serveMcp } from './http'
 import { z } from 'zod'
 import type { McpApp, McpCallLog, McpStatus } from '@shared/types'
 import { createServer as createNetServer } from 'node:net'
@@ -168,13 +168,7 @@ export class McpHost {
       const hello = msg?.method === 'initialize' && typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined
       const app = this.appFor(ua, hello)
       const server = this.buildServer(app, ua)
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
-      res.on('close', () => {
-        void transport.close()
-        void server.close()
-      })
-      await server.connect(transport)
-      await transport.handleRequest(req, res, body)
+      await serveMcp(server, req, res, body)
     } catch (err) {
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32603, message: errorMessage(err) }, id: null }))
     }
