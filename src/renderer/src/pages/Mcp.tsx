@@ -296,7 +296,7 @@ function ServerRow({ config: c, servers, onOpen }: { config: McpClientConfig; se
           </Button>
         )}
         <span className="max-[820px]:hidden">
-          <Switch checked={c.defaultOn && c.enabled} disabled={!c.enabled} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} label="In new chats" />
+          <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label={c.enabled ? 'On' : 'Off'} ariaLabel={`Use ${c.name} in chats`} />
         </span>
         <button onClick={onOpen} aria-label={`${c.name} settings`} title="Settings and tools" className="flex h-8 w-8 items-center justify-center rounded-lg text-dim hover:bg-elev-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crimson-line">
           <ChevronRight size={16} />

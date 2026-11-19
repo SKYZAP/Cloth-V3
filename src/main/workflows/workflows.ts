@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { existsSync, mkdirSync, statSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync, watch as fsWatch, type FSWatcher } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, sep } from 'node:path'
 import { join } from 'node:path'
@@ -190,13 +190,21 @@ export class WorkflowService {
     }
   }
 
+  /** The folder an automation with an empty container folder works in (created when missing). */
+  emptyFolder(id: string): string {
+    const dir = join(this.ctx.dataDir, 'automations', id, 'files')
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
+
   /** Saves an automation and rebuilds its one-step graph from it. */
   saveAutomation(id: string, input: AutomationInput): Workflow {
     const cur = this.get(id)
     const automation = cleanAutomation(input.automation ?? cur.automation)
     if (!automation) throw new Error('This flow is not an automation')
     if (!automation.prompt.trim()) throw new Error('Say what the automation should do')
-    const workspace = input.workspace === undefined ? cur.workspace : input.workspace
+    // An empty folder in a container: the automation gets a folder of its own, made now and kept between runs.
+    const workspace = automation.commands?.mode === 'container' && automation.commands.empty ? this.emptyFolder(id) : input.workspace === undefined ? cur.workspace : input.workspace
     if (automation.watch?.kind === 'files' && !workspace) throw new Error('Choose the folder to watch')
     if (automation.watch?.kind === 'url' && !/^https?:\/\/\S+$/i.test(automation.watch.url)) throw new Error('Give the address of the page to watch, starting with https://')
     if (automation.watch?.kind === 'mcp' && (!automation.watch.serverId || !automation.watch.tool)) throw new Error('Pick the server and tool to check')
@@ -273,6 +281,8 @@ export class WorkflowService {
   remove(id: string): void {
     this.unschedule(id)
     this.ctx.db.prepare('DELETE FROM workflows WHERE id = ?').run(id)
+    // Its own folder (an empty container folder), if it had one.
+    rmSync(join(this.ctx.dataDir, 'automations', id), { recursive: true, force: true })
   }
 
   /** Every flow's last runs and upcoming schedule, and the latest runs overall. */
@@ -971,7 +981,7 @@ function cleanWatch(w: AutomationWatch | null | undefined): AutomationWatch | nu
 
 function cleanCommands(c: AutomationCommands | null | undefined): AutomationCommands | null {
   if (!c) return null
-  if (c.mode === 'container') return { mode: 'container', image: String(c.image ?? '').trim() || 'node:22', network: c.network !== false }
+  if (c.mode === 'container') return { mode: 'container', image: String(c.image ?? '').trim() || 'node:22', network: c.network !== false, ...(c.empty ? { empty: true } : {}) }
   if (c.mode === 'allowlist') return { mode: 'allowlist', allow: [...new Set((Array.isArray(c.allow) ? c.allow : []).map((x) => String(x).trim().replace(/\s+/g, ' ')).filter(Boolean))] }
   return null
 }

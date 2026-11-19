@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { Bell, BookOpen, Bot, CircleAlert, CircleCheck, CircleMinus, Eye, FolderOpen, Loader2, Play, RefreshCw, ShieldCheck, SquareTerminal, Wrench } from 'lucide-react'
+import { Bell, BookOpen, Bot, Box, CircleAlert, CircleCheck, CircleMinus, Eye, FolderOpen, Loader2, Play, RefreshCw, ShieldCheck, SquareTerminal, Wrench } from 'lucide-react'
 import type { Agent, Automation, AutomationCommands, AutomationWatch, ContainerStatus, Workflow, WorkflowRun } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { effortLabel } from '@shared/effort'
@@ -118,6 +118,8 @@ export function AutomationDetail({
   const cron = cronOf(schedule)
   const upcoming = nextRuns(cron)
   const automation: Automation = { prompt, agentId, ...picked, watch, commands }
+  /** It works in an empty folder of its own inside a container (Cloth makes the folder when it's saved). */
+  const emptyBox = commands?.mode === 'container' && !!commands.empty
   const snapshot = JSON.stringify({ n: name.trim(), a: automation, c: cron, w: workspace, on })
   const savedSnapshot = useRef<string | null>(null)
   if (savedSnapshot.current === null) savedSnapshot.current = snapshot
@@ -126,13 +128,13 @@ export function AutomationDetail({
     ? 'Say what it should do first.'
     : !upcoming.ok
       ? 'The custom schedule isn’t a valid cron expression.'
-      : watch?.kind === 'files' && !workspace
+      : watch?.kind === 'files' && !workspace && !emptyBox
         ? 'Choose the folder to watch.'
         : watch?.kind === 'url' && !/^https?:\/\/\S+$/i.test(watch.url)
           ? 'Give the address of the page to watch, starting with https://.'
           : watch?.kind === 'mcp' && (!watch.serverId || !watch.tool)
             ? 'Pick the server and tool to check.'
-            : commands && !workspace
+            : commands && !workspace && !emptyBox
               ? 'Choose a folder for its commands to run in.'
               : commands?.mode === 'allowlist' && !commands.allow.length
                 ? 'List the commands it may run.'
@@ -234,7 +236,22 @@ export function AutomationDetail({
   const commandsLabel = !commands ? null : commands.mode === 'container' ? `In a container (${commands.image})` : `Only: ${commands.allow.join(', ')}`
   const pickFolder = async () => {
     const [dir] = await api.app.pickPaths({ directory: true, title: 'Folder the automation works in' })
-    if (dir) setWorkspace(dir)
+    if (!dir) return
+    setWorkspace(dir)
+    // Leaving the empty container folder: commands go on in a container, on a copy of the folder picked.
+    if (emptyBox && commands?.mode === 'container') setCommands({ mode: 'container', image: commands.image, network: commands.network })
+  }
+  const where: 'none' | 'folder' | 'empty' = emptyBox ? 'empty' : workspace ? 'folder' : 'none'
+  const setWhere = (next: 'none' | 'folder' | 'empty') => {
+    if (next === 'folder') return void pickFolder()
+    if (next === 'none') {
+      setWorkspace(null)
+      if (commands) setCommands(null)
+      if (watch?.kind === 'files') setWatch(null)
+      return
+    }
+    setWorkspace(null)
+    setCommands({ mode: 'container', image: commands?.mode === 'container' ? commands.image : 'node:22', network: commands?.mode === 'container' ? commands.network : true, empty: true })
   }
 
   const remove = async () => {
@@ -379,21 +396,41 @@ export function AutomationDetail({
             <UseRow id="knowledge" icon={BookOpen} label="Knowledge" open={open} setOpen={setOpen} value={<Tags items={knowledgeItems.map((i) => i.label)} />}>
               <AccessPicker items={items} value={picked} onChange={setPicked} folder={!!workspace} commands={!!commands} title="Knowledge" />
             </UseRow>
-            <UseRow id="folder" icon={FolderOpen} label="Folder" open={open} setOpen={setOpen} value={workspace ? <Tag mono title={workspace}>{workspace}</Tag> : <None />}>
-              <div className="flex flex-wrap items-center gap-2 text-ui">
-                <Button className={FOCUS} icon={<FolderOpen size={13} aria-hidden="true" />} onClick={() => void pickFolder()}>
-                  {workspace ? `Change from ${folderName(workspace)}` : 'Choose a folder'}
-                </Button>
-                {workspace && (
-                  <Button variant="ghost" className={FOCUS} onClick={() => setWorkspace(null)}>
-                    Use no folder
-                  </Button>
+            <UseRow id="folder" icon={FolderOpen} label="Folder" open={open} setOpen={setOpen} value={emptyBox ? <Tag>Empty folder in a container</Tag> : workspace ? <Tag mono title={workspace}>{workspace}</Tag> : <None />}>
+              <div className="grid gap-2.5">
+                <div role="radiogroup" aria-label="Where it works" className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+                  {(
+                    [
+                      { v: 'none', label: 'No folder', sub: 'It works only through its tools, servers and knowledge.', icon: CircleMinus },
+                      { v: 'folder', label: workspace && !emptyBox ? `Folder: ${folderName(workspace)}` : 'A folder on this PC', sub: workspace && !emptyBox ? 'Click to choose another.' : 'Pick one. It reads and edits the files there.', icon: FolderOpen },
+                      { v: 'empty', label: 'An empty folder in a container', sub: 'Starts with nothing; files you keep from a run are there next time. Needs Docker.', icon: Box }
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.v}
+                      role="radio"
+                      aria-checked={where === o.v}
+                      onClick={() => setWhere(o.v)}
+                      className={clsx(FOCUS, 'grid content-start gap-0.5 rounded-[11px] border p-3 text-left', where === o.v ? 'border-crimson-line bg-elev-2' : 'border-line hover:border-line-strong')}
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 text-ui font-semibold">
+                        <o.icon size={14} aria-hidden="true" className="shrink-0" />
+                        <span className={o.v === 'folder' ? 'truncate' : undefined}>{o.label}</span>
+                      </span>
+                      <span className="text-caption text-dim">{o.sub}</span>
+                    </button>
+                  ))}
+                </div>
+                {emptyBox && docker && !docker.available && <p className="text-caption text-warn">{docker.error ?? 'Docker isn’t available.'} Runs will fail until it is.</p>}
+                {emptyBox && workspace && (
+                  <button className={clsx(FOCUS, 'justify-self-start text-caption text-info hover:underline')} onClick={() => void api.app.openPath(workspace)}>
+                    Open its folder
+                  </button>
                 )}
-                <span className="text-dim">{workspace ? '' : 'Optional; file tools and commands need one.'}</span>
               </div>
             </UseRow>
             <UseRow id="commands" icon={SquareTerminal} label="Commands" open={open} setOpen={setOpen} value={commandsLabel ? <Tag mono title={commandsLabel}>{commandsLabel}</Tag> : <None />}>
-              <CommandsPicker value={commands} onChange={setCommands} folder={!!workspace} docker={docker} />
+              <CommandsPicker value={commands} onChange={setCommands} folder={!!workspace || emptyBox} docker={docker} />
             </UseRow>
             <div className="grid grid-cols-[28px_120px_minmax(0,1fr)] items-center gap-2.5 border-t border-line px-3.5 py-2.5 max-[700px]:grid-cols-[28px_minmax(0,1fr)] mobile:grid-cols-[28px_minmax(0,1fr)]">
               <Tile icon={Bell} />

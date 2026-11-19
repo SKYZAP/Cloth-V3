@@ -10,9 +10,9 @@ The first time Cloth opens, a short setup walks you through:
 
 - **Model:** add a provider or pick a local model to chat with.
 - **Main working folder:** new chats start in it (not chats in a project or a container).
-- **Languages:** the ones you pick decide which language servers Cloth may start (for example gopls, rust-analyzer and clangd), with optional best-practice skills for them.
+- **Languages:** the ones you pick decide which language servers Cloth may start (gopls for Go, rust-analyzer for Rust, clangd for C/C++ and jdtls for Java), with optional best-practice skills for them. A missing server has an **Install** button. Change languages later in **Settings → Languages**.
 - **Tools check:** which programs Cloth found on your computer (Git, GitHub CLI, Docker, Node.js, Python and others).
-- **Import:** copy skills, agents and MCP servers from Claude Code, Claude Desktop, Cursor and Codex. Imported MCP servers arrive switched off, and their secrets never reach the app window.
+- **Import:** copy skills, agents and MCP servers from Claude Code, Claude Desktop, Cursor and Codex. Imported MCP servers arrive switched on and start right away; their tools ask before running, and their secrets never reach the app window.
 - **Ways to work:** which way of working suits you (see below).
 
 **Set up later** leaves a card on the Dashboard. **Settings › Data & about › Run setup again** starts it over.
@@ -20,7 +20,7 @@ The first time Cloth opens, a short setup walks you through:
 ## Which way to work
 
 - **Chat:** quick, simple fixes. A bug, a rename, a question about the code; the agent works directly and shows each change.
-- **OpenSpec:** fixes that need a plan first. It writes a short proposal and task list, implements it once agreed, and opens a pull request.
+- **OpenSpec:** fixes that need a plan first. It writes a short proposal and task list, implements it once agreed, and commits it to a branch for you to review.
 - **Spec → Ship:** large features and risky changes. It works in stages (questions, spec, tickets, build and review) and you sign off between them.
 - **Boards:** a defined goal broken into tickets that agents pick up and move across the board. Best when you know the finish line.
 
@@ -87,8 +87,10 @@ Give a chat a folder (the folder icon, or a project) and the agent can work ther
 
 - **Files: Read only** gives `read`, `ls`, `find` and `grep`. **Read and write** adds `write` and `edit`.
 - **AST tools:** `ast_grep` searches code by structure with ast-grep patterns, such as `console.log($$ARGS)`; `ast_edit` rewrites every match (for example to `logger.debug($$ARGS)`), with one approval and one Undo. Languages: TypeScript, TSX, JavaScript, HTML, CSS, Python, Go, Rust and Java.
-- **Code intel** starts bundled language servers when first needed (TypeScript and Python, plus the languages you picked in setup). The `lsp` tool gives diagnostics, go to definition, find references, hover types, outlines and project-wide rename. New type errors after a change go straight back to the agent.
-- **Shell** runs commands in the folder: PowerShell 7 (or Windows PowerShell) on Windows, your login shell on macOS and Linux. On macOS the agent uses your login shell's PATH.
+- **Code intel** starts language servers when first needed: bundled ones for TypeScript and Python, plus gopls, rust-analyzer, clangd or jdtls (Java) for the languages you picked. **Settings → Languages** installs, updates or removes Cloth's own copy of each (rust-analyzer and clangd from their official releases, jdtls from Eclipse, gopls built with your Go toolchain); a copy already on PATH works too, and Cloth's own copy is used first. jdtls needs Java 21 or newer and keeps its project data in Cloth's data folder; the first check in a Maven or Gradle project waits while it imports. The `lsp` tool gives diagnostics, go to definition, find references, hover types, outlines and project-wide rename. New type errors after a change go straight back to the agent.
+- **Shell** runs commands in the folder: PowerShell 7 (or Windows PowerShell) on Windows, your login shell on macOS and Linux. On macOS the agent uses your login shell's PATH. With Git for Windows installed, Windows chats also get a **bash** tool (Git Bash) beside PowerShell; WSL's bash is never used.
+  - `cd` carries over: the next command starts where the last one ended, as long as it stays inside the chat's folder. A command that leaves the folder sends the next one back to the folder itself. Approvals show the folder each command runs in.
+  - **Background commands:** the agent starts dev servers, watchers and long builds with `run_in_background`, then reads their new output (`shell_output`) and stops them (`shell_stop`). Each one opens as a tab in the chat's **Terminal** panel with its live output: **Stop** on the tab ends it (the output stays to read), and closing the tab ends it too. They also stop when you stop or delete the chat or quit Cloth. They ask for approval like any other command.
 - **Coding rules** (Settings › Coding rules) and a folder's `AGENTS.md` or `CLAUDE.md` are part of every agent's instructions there. ast-grep rule files (the folder's `sgconfig.yml`, and a global rules folder) are checked on every file the agent changes.
 - Every change is checkpointed. Trace cards list the files changed with +/− counts; **Undo** restores them.
 - File paths in replies are links: click one to open the file in the side panel.
@@ -132,7 +134,7 @@ A mode for building features properly. It asks clarifying questions, writes a sp
 
 ### OpenSpec mode
 
-Takes a change from proposal to pull request with the OpenSpec command-line tool, which ships with Cloth. A progress strip and step cards show where it is, and you can pause after Propose to review the proposal.
+Takes a change from proposal to a committed local branch with the OpenSpec command-line tool (it pushes and opens a pull request only when you ask for one), which ships with Cloth. A progress strip and step cards show where it is, and you can pause after Propose to review the proposal.
 
 ### Containers
 
@@ -147,8 +149,9 @@ With computer use on, the agent sees the screen and controls the mouse and keybo
 **Boards** drives tracker tickets through agent stages: New, Requirements, Review, Building and PR open.
 
 - Connect **Plane** or **Jira**, or use a **Cloth board**: an offline board in Cloth's own storage, with no account or token.
-- A **planner** researches what the ticket depends on (web and docs) and writes requirements into it. A **reviewer** checks them against the goal. An **implementer** builds in its own worktree.
-- Per project, choose what agents may do: no commits (changes stay in a worktree for you to apply), commit locally, or commit and open a PR. Also: whether to sync ticket changes back to the tracker, whether to approve requirements before building, how many review rounds, and how many check fixes to try.
+- A **planner** researches what the ticket depends on (web and docs) and writes requirements into it. A **reviewer** checks them against the goal. An **implementer** builds in its own copy of the code: a git worktree when the code folder is a git repository, otherwise a plain copy. Git is optional.
+- **Edit project** sets a project's name, the agent for each step (Requirements, Review, Build: any of your agents, or the built-in ones) and its code folder. On a Cloth board it also deletes the project with its tickets.
+- Per project, choose what agents may do: no commits (changes wait in their copy for you to apply), commit locally, or commit and open a PR. Commits and PRs need a git repository. Also: whether to sync ticket changes back to the tracker, whether to approve requirements before building, how many review rounds, and how many check fixes to try.
 - When a PR fails its checks, the implementer reads the CI logs, finds the cause and pushes a fix to the same PR.
 - Each feature lands as one conventional commit, with PRs titled `[Cloth][KEY] Title`.
 - **Open in chat** starts a chat for a ticket with its requirements and PR in the message box.
@@ -169,6 +172,7 @@ An **automation** is a task an agent does on its own: a prompt with the tools, k
 
 - **New** drafts one from a description, such as "Every weekday at 8:30, run the tests in my project folder and explain any failures."
 - **When it runs:** only when you run it, or on a schedule. It can also run when files in its folder change, a web page changes, or an MCP check changes.
+- **Folder:** none, a folder on this PC, or an empty folder in a container (it starts with nothing, needs Docker, and keeps the files you keep from its runs).
 - **Reports:** it reports in a chat (one per run, in the Automation project), with a desktop notification, or as a note in one of its knowledge collections.
 - Risky actions are refused, since nobody is there to approve them.
 - **Export as app** packages an automation as its own Windows installer to share.
@@ -226,10 +230,10 @@ Pick an engine in **Settings › Web search**.
 
 The **MCP servers** page connects Cloth to outside MCP servers and runs Cloth's own.
 
-- **External servers** give chats and agents more tools. Add them by command or address; their secrets are stored encrypted. Each chat or agent can switch them on, or narrow them to some tools.
+- **External servers** give chats and agents more tools. Add them by command or address; their secrets are stored encrypted. A server that is **On** is available in every chat and agent; a chat can still turn it off for itself, or narrow it to some tools, in Setup → MCP. **Off** means no chat gets it and it isn't started. Servers added anywhere (a chat, setup's import) show on the page at once.
 - Servers at a web address that sign in through the browser (Datadog, Linear, Notion and others) need no token: when one asks, the server shows **Sign in**, which opens its sign-in page. Cloth keeps the sign-in and refreshes it; **Sign out** forgets it. For servers that need a client made by hand, add `"oauth": { "clientId": "…", "callbackPort": 8080 }` to its JSON.
 - Configs can read environment variables as `${VAR}` or `${VAR:-default}`, as in Claude Code and Cursor.
-- Changing **Ask me first** or **Run without asking**, or **In new chats**, applies straight away without restarting the server.
+- Changing **Ask me first** or **Run without asking** applies straight away without restarting the server.
 - **Cloth's MCP server** at `http://127.0.0.1:7811/mcp` lets other apps use Cloth: `skill_list`, `skill_use`, `skill_create`, `rag_search`, `rag_collections`, `rag_index`, `tool_create` and `web_search`. An activity log shows each call.
 - Claude Code: `claude mcp add --transport http cloth http://127.0.0.1:7811/mcp`. Cursor: add the URL under `mcpServers` in `~/.cursor/mcp.json`. Clients that only speak stdio can bridge with `npx mcp-remote <url>`.
 - Turn on **Require bearer token** to demand `Authorization: Bearer <token>`.

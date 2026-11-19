@@ -211,6 +211,8 @@ export interface ClothApi {
     writeTerminal(id: string, data: string): Promise<void>
     resizeTerminal(id: string, cols: number, rows: number): Promise<void>
     closeTerminal(id: string): Promise<void>
+    /** Stop a background command's process (run_in_background); its tab stays with the output. */
+    stopTerminal(id: string): Promise<void>
     gitStatus(sessionId: string): Promise<GitStatus>
     /** OpenSpec in the chat's folder: whether it is set up, its changes and its specs (`openspec list --json`). */
     openspec(sessionId: string): Promise<{ initialised: boolean; changes: unknown; specs: unknown; error: string | null }>
@@ -308,9 +310,13 @@ export interface ClothApi {
   onboarding: {
     scanFolder(path: string): Promise<import('./onboarding').FolderScan>
     languageServers(ids: import('./onboarding').LanguageId[]): Promise<import('./onboarding').LanguageServerInfo[]>
+    /** Install (or update) Cloth's own copy of a language's server; progress arrives on the 'languageServers' channel. */
+    installLanguageServer(id: import('./onboarding').LanguageId): Promise<import('./onboarding').LanguageServerInfo>
+    /** Remove Cloth's own copy (one on PATH is left alone). */
+    removeLanguageServer(id: import('./onboarding').LanguageId): Promise<import('./onboarding').LanguageServerInfo>
     /** Skills, agents and MCP servers other coding tools on this PC have (MCP secrets stay in the main process). */
     importSources(): Promise<import('./onboarding').ImportSource[]>
-    /** Copies what was picked; MCP servers arrive switched off. */
+    /** Copies what was picked; MCP servers arrive switched on (their tools ask before running) and start at once. */
     importItems(sel: import('./onboarding').ImportSelection): Promise<import('./onboarding').ImportResult>
     /** Creates or updates the best-practice collection and its automation, and runs it once. */
     bestPractices(input: { languages: import('./onboarding').LanguageId[]; frameworks: string[]; cadence: import('./onboarding').BestPracticeCadence }): Promise<{ collectionId: string; workflowId: string }>
@@ -322,6 +328,10 @@ export interface ClothApi {
     connect(input: import('./boards').TrackerConnectInput): Promise<import('./boards').BoardOverview>
     /** A new project on a Cloth board, shown at once. */
     createProject(name: string): Promise<import('./boards').BoardOverview>
+    /** Cloth board only: rename a project (ticket keys stay). */
+    renameProject(id: string, name: string): Promise<import('./boards').BoardOverview>
+    /** Cloth board only: delete a project with its tickets; agents on them stop. */
+    deleteProject(id: string): Promise<import('./boards').BoardOverview>
     /** Change a ticket's goal (written to the ticket when Cloth may update it). */
     setGoal(ticketId: string, goal: string): Promise<import('./boards').BoardOverview>
     /** Copy a ticket's finished changes (built without a PR) into the code folder, uncommitted, and mark it done. */
@@ -552,4 +562,6 @@ export type EventMap = {
   swatches: import('./swatches').SwatchEvent
   /** The chat background or the saved themes changed (the agent's chat_theme tool, or Settings). */
   themes: { type: 'changed' }
+  /** A language server install's progress (fraction null = no percentage to show). */
+  languageServers: { id: import('./onboarding').LanguageId; text: string; fraction: number | null }
 }

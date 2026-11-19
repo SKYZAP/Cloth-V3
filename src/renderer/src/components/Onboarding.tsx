@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { LanguageServerStatus, useLanguageServers } from './LanguageServers'
 import clsx from 'clsx'
 import { ArrowSquareOut, CaretDown, Check, CheckCircle, Circle, FolderSimple, Info, Warning, X, XCircle } from '@phosphor-icons/react'
 import type { Dependency, DependencyReport } from '@shared/deps'
@@ -12,7 +13,6 @@ import {
   type ImportSelection,
   type ImportSource,
   type LanguageId,
-  type LanguageServerInfo,
   type OnboardingState,
   type OnboardingStep
 } from '@shared/onboarding'
@@ -603,16 +603,13 @@ function LanguagesStep({
   const settings = useApp((s) => s.settings)!
   const updateSettings = useApp((s) => s.updateSettings)
   const toast = useApp((s) => s.toast)
-  const [servers, setServers] = useState<LanguageServerInfo[]>([])
+  const ls = useLanguageServers([...langs])
   const [library, setLibrary] = useState(true)
   const [cadence, setCadence] = useState<BestPracticeCadence>('monthly')
   const [busy, setBusy] = useState(false)
   const picked = LANGUAGES.filter((l) => langs.has(l.id))
   const offered = [...new Set(picked.flatMap((l) => l.frameworks))]
 
-  useEffect(() => {
-    void api.onboarding.languageServers([...langs]).then(setServers).catch(() => setServers([]))
-  }, [langs])
   const toggle = <T,>(set: Set<T>, v: T, apply: (s: Set<T>) => void) => {
     const next = new Set(set)
     if (next.has(v)) next.delete(v)
@@ -689,20 +686,15 @@ function LanguagesStep({
         <div className="flex flex-col gap-2 rounded-lg border border-line bg-card p-3">
           <div className="text-ui font-semibold">Code intelligence</div>
           <div className="text-caption text-dim">Go to definition, references and type errors after every edit the agent makes.</div>
-          <div className="flex flex-wrap gap-1.5">
-            {picked.map((l) => {
-              const sv = servers.find((s) => s.id === l.id)
-              if (!sv) return <Pill key={l.id}>{l.name}: checking…</Pill>
-              if (sv.status === 'bundled') return <Pill key={l.id} tone="ok">{l.name}: included</Pill>
-              if (sv.status === 'found') return <Pill key={l.id} tone="ok">{l.name}: {sv.program} found</Pill>
-              if (sv.status === 'missing')
-                return (
-                  <button key={l.id} type="button" onClick={() => sv.url && void api.app.openExternal(sv.url)} className="inline-flex items-center gap-1 rounded-full border border-warn/40 px-2 text-micro font-medium text-warn hover:bg-warn/10">
-                    {l.name}: install {sv.program} <ArrowSquareOut size={10} />
-                  </button>
-                )
-              return <Pill key={l.id}>{l.name}: not available yet</Pill>
-            })}
+          <div className="flex flex-col divide-y divide-line">
+            {picked.map((l) => (
+              <div key={l.id} className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+                <span className="w-24 shrink-0 text-ui">{l.name}</span>
+                <div className="min-w-0 flex-1">
+                  <LanguageServerStatus compact info={ls.servers?.find((s) => s.id === l.id)} progress={ls.busy[l.id]} onInstall={() => void ls.install(l.id)} />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -998,7 +990,7 @@ function ImportStep({ advance, back, skip }: StepProps) {
       )}
       {sources && sources.some((s) => s.mcp.length) && (
         <Note tone="warn" icon={<Warning size={15} className="text-warn" />}>
-          <b className="font-semibold text-fg">MCP servers arrive switched off.</b> They can run programs on this PC, so turn each on from the MCP page once you’ve checked it. Skills and agents are ready to use straight away.
+          <b className="font-semibold text-fg">Everything is ready to use straight away.</b> MCP servers start right after import and every chat can use them. Each of their tools asks before it runs until you change that on the MCP page.
         </Note>
       )}
     </Pane>
@@ -1018,7 +1010,7 @@ function ReviewRow({ kind, name, detail, imported, on, onToggle, mono }: { kind:
 
 const MODES: { id: Mode; name: string; when: string; what: string; example: string; level: number; tint: string }[] = [
   { id: 'chat', name: 'Chat', when: 'Quick, simple fixes.', what: 'A bug, a rename, a question about the code. The agent works directly and shows each change.', example: '“Why does the login form submit twice?”', level: 1, tint: 'text-fg' },
-  { id: 'ospec', name: 'OpenSpec', when: 'Fixes that need a plan first.', what: 'Writes a short proposal and task list, implements it once it’s agreed, and opens a pull request.', example: '“Add rate limiting to the public API”', level: 2, tint: 'text-ospec' },
+  { id: 'ospec', name: 'OpenSpec', when: 'Fixes that need a plan first.', what: 'Writes a short proposal and task list, implements it once it’s agreed, and commits it to a branch for you to review.', example: '“Add rate limiting to the public API”', level: 2, tint: 'text-ospec' },
   { id: 'ship', name: 'Spec → Ship', when: 'Large features and risky changes.', what: 'In stages: questions, spec, tickets, build and review. You sign off between stages.', example: '“Add team accounts with roles and billing”', level: 3, tint: 'text-mode' },
   { id: 'boards', name: 'Boards', when: 'A defined goal broken into tickets.', what: 'A board of tickets that agents pick up and move across. Best when you know the finish line.', example: '“Ship the new settings page: 9 tickets”', level: 0, tint: 'text-agent' }
 ]

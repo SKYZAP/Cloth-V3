@@ -371,7 +371,7 @@ export interface ChatSession {
   projectId: string | null
   /** Work in a Linux container on a private copy of the workspace (null = directly on this PC). */
   container: ContainerSettings | null
-  /** External MCP servers whose tools this chat may use (by id); null = the ones on by default. */
+  /** External MCP servers whose tools this chat may use; null = every switched-on server (see shared/mcp-select). */
   mcpServers: string[] | null
   /** Tools switched off for this chat, by name (built-in, custom and mcp__server__tool). */
   disabledTools: string[]
@@ -418,7 +418,7 @@ export interface AgentSetup {
   knowledgeEnabled: boolean
   /** Empty = every collection. */
   collectionIds: string[]
-  /** null = the servers that are on by default. */
+  /** null = every switched-on server (see shared/mcp-select). */
   mcpServers: string[] | null
   disabledTools: string[]
   /** The most it may do in the chat's folder (a chat with less access keeps its own). */
@@ -654,7 +654,7 @@ export function routeStages(route?: WorkflowRoute | null): Exclude<WorkflowStage
   return route === 'quick' ? ['grill', 'build', 'review'] : WORKFLOW_STAGES
 }
 
-/** OpenSpec mode's steps, in order: the openspec CLI takes a change from proposal to pull request on its own. */
+/** OpenSpec mode's steps, in order: the openspec CLI takes a change from proposal to a committed local branch on its own (a pull request only when asked). */
 export type OpenSpecStep = 'setup' | 'propose' | 'validate' | 'apply' | 'verify' | 'archive' | 'ship' | 'done'
 export const OPENSPEC_STEPS: Exclude<OpenSpecStep, 'done'>[] = ['setup', 'propose', 'validate', 'apply', 'verify', 'archive', 'ship']
 export const OPENSPEC_STEP_LABEL: Record<OpenSpecStep, string> = { setup: 'Set up', propose: 'Propose', validate: 'Validate', apply: 'Apply', verify: 'Verify', archive: 'Archive', ship: 'Ship', done: 'Done' }
@@ -672,7 +672,7 @@ export interface OpenSpecRun {
   proposalApproved?: boolean
   /** tasks.md progress, as last reported. */
   tasks?: { done: number; total: number } | null
-  /** The pull request it opened. */
+  /** The pull request it opened, when the person asked for one. */
   pr?: string | null
   startedAt: number
 }
@@ -974,6 +974,21 @@ export interface ContextSlice {
   tokens: number
 }
 
+/** A command a chat started with run_in_background: a dev server, a watcher, a long build. */
+export interface BackgroundCommand {
+  id: string
+  sessionId: string
+  command: string
+  /** The folder it runs in, relative to the chat's folder ('.' for the folder itself). */
+  cwd: string
+  /** The shell tool that started it (bash, powershell). */
+  shell: string
+  status: 'running' | 'exited' | 'failed' | 'stopped'
+  exitCode: number | null
+  startedAt: number
+  endedAt: number | null
+}
+
 export type ChatEvent =
   | { sessionId: string; type: 'start' }
   | { sessionId: string; type: 'message'; message: UiMessage }
@@ -1111,7 +1126,11 @@ export type AutomationWatch =
   | { kind: 'url'; url: string; everyMinutes: number }
   | { kind: 'mcp'; serverId: string; tool: string; args: Record<string, unknown>; everyMinutes: number }
 
-export type AutomationCommands = { mode: 'container'; image: string; network: boolean } | { mode: 'allowlist'; allow: string[] }
+/**
+ * container: a Linux container on a copy of its folder; with `empty`, on a folder of its own that starts empty
+ * (kept between runs, under Cloth's data folder) instead of one on this PC.
+ */
+export type AutomationCommands = { mode: 'container'; image: string; network: boolean; empty?: boolean } | { mode: 'allowlist'; allow: string[] }
 
 /** A command an allowlisted automation may run: it starts with an allowed command and chains nothing else. */
 export function commandAllowed(command: string, allow: string[]): boolean {
@@ -1602,6 +1621,9 @@ export interface TerminalInfo {
   container: boolean
   running: boolean
   exitCode: number | null
+  /** A command the agent started with run_in_background: output only, and Stop ends it. */
+  background?: boolean
+  command?: string
 }
 
 export type TerminalEvent = { type: 'data'; id: string; data: string } | { type: 'exit'; id: string; code: number | null } | { type: 'opened'; terminal: TerminalInfo } | { type: 'closed'; id: string; sessionId: string }
@@ -1686,9 +1708,9 @@ export interface McpClientConfig {
    * fixed callback port when that client only accepts one redirect address.
    */
   oauth?: { clientId?: string; clientSecret?: string; callbackPort?: number; scope?: string }
-  /** Connect at all. */
+  /** On: every chat, agent and automation may use it (a chat can still turn it off for itself). Off: never started. */
   enabled: boolean
-  /** Available in chats that haven't chosen their servers. */
+  /** No longer used (every switched-on server is in every chat); kept so older settings still load. */
   defaultOn: boolean
   /** Ask before each tool call, or let calls run. */
   approval: 'ask' | 'auto'

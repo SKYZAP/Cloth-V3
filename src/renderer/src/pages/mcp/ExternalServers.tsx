@@ -68,29 +68,30 @@ export function useExternalServers() {
   useEffect(() => {
     load()
     void api.mcp.clientPresets().then(setPresets)
-  }, [])
-  useEvent('mcpClients', () => {
-    load()
-    // The server list may have changed somewhere else (another window, the phone): pick it up.
+    // Servers may have been added while this page was closed.
     void api.settings.get().then((fresh) => useApp.setState({ settings: fresh }))
-  })
+  }, [])
+  // The list itself comes from the settings (refreshed app-wide on 'mcpClients'); this reloads the live status.
+  useEvent('mcpClients', load)
   const configs = settings?.mcpClients ?? []
+  /** The server list as it is now: several adds in a row (a pasted config) each build on the last. */
+  const current = () => useApp.getState().settings?.mcpClients ?? []
 
   const save = async (next: McpClientConfig[]) => {
     await updateSettings({ mcpClients: next })
     load()
   }
-  const patch = (id: string, p: Partial<McpClientConfig>) => void save(configs.map((c) => (c.id === id ? { ...c, ...p } : c)))
+  const patch = (id: string, p: Partial<McpClientConfig>) => void save(current().map((c) => (c.id === id ? { ...c, ...p } : c)))
   /** Adds a server and starts it right away, so problems show up here rather than in a chat. Returns its id. */
   const add = async (c: Omit<McpClientConfig, 'id'>) => {
     const id = newId()
-    await save([...configs, { ...c, id }])
+    await save([...current(), { ...c, id }])
     void attempt(() => api.mcp.startClient(id)).then(load)
     return id
   }
   const remove = async (c: McpClientConfig) => {
     if (!(await confirmAction(`Chats stop getting the “${c.name}” tools.`, { title: `Remove ${c.name}?`, confirmLabel: 'Remove', danger: true }))) return false
-    await save(configs.filter((x) => x.id !== c.id))
+    await save(current().filter((x) => x.id !== c.id))
     return true
   }
   const restart = (id: string) => void attempt(() => api.mcp.stopClient(id).then(() => api.mcp.startClient(id))).then(load)
@@ -165,9 +166,9 @@ export function ServerDetail({ config: c, servers, onRemoved }: { config: McpCli
 
       <div className="grid gap-3">
         <h3 className="text-ui font-semibold">In chats</h3>
-        <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="Let chats use it" />
         <div className="grid gap-1">
-          <Switch checked={c.defaultOn} disabled={!c.enabled} onChange={(defaultOn) => servers.patch(c.id, { defaultOn })} label="On in new chats" />
+          <Switch checked={c.enabled} onChange={(enabled) => servers.patch(c.id, { enabled })} label="On" ariaLabel={`Use ${c.name} in chats`} />
+          <span className="text-caption text-dim">{c.enabled ? 'Every chat can use its tools. A chat can still turn it off for itself in Setup → MCP.' : 'Off everywhere: no chat or automation gets its tools, and it isn’t started.'}</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-ui">
           <span>Before a tool runs</span>

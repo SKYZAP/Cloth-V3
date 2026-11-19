@@ -18,6 +18,7 @@ import { errorMessage, type Ctx } from '../core/context'
 import type { SettingsService } from '../core/settings'
 import type { ApprovalService } from '../agent/workspace'
 import { inPlanMode, type ToolDetails, type ToolScope } from '../agent/tools'
+import { pickedServers } from '@shared/mcp-select'
 
 interface McpTool {
   name: string
@@ -163,10 +164,9 @@ export class McpClientService {
     })
   }
 
-  /** The servers a chat uses: its own choice, or the ones on by default. */
+  /** The servers a chat uses: every switched-on server, less the ones it turned off (see shared/mcp-select). */
   chatServers(chosen: string[] | null): string[] {
-    const enabled = this.configs().filter((c) => c.enabled)
-    return (chosen ?? enabled.filter((c) => c.defaultOn).map((c) => c.id)).filter((id) => enabled.some((c) => c.id === id))
+    return pickedServers(chosen, this.configs().filter((c) => c.enabled).map((c) => c.id))
   }
 
   /** Start the given servers if they aren't running (errors are kept in their status, not thrown). */

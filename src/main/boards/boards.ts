@@ -30,6 +30,7 @@ import { canonicalPath } from '../agent/worktrees'
 import { git, repoRoot } from '../panel/git'
 import { defaultStateMap, makeTracker, type RawTicket, type Tracker, type TrackerConfig } from './trackers'
 import { LOCAL_STATE_MAP, localTracker, type LocalTracker } from './local'
+import { applyCopy, changeCount, changesIn, copyFolder, inGitRepo, loadSnapshot, saveSnapshot } from './copy'
 
 /*
  * Boards keeps one tracker connection, the chosen project, each project's settings, and a pipeline record
@@ -246,6 +247,14 @@ never write a dependency into package.json by hand.
 Don't commit or push: Cloth does that when you finish. End with only a fenced JSON block:
 {"summary": "what you changed, in one to three sentences", "testing": ["each command you ran and its result"]}`
 
+const IMPLEMENTER_COPY = `You implement a software ticket in this workspace, a private copy of the project's code folder. Meet every requirement,
+stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
+The project's dependencies are installed. To add a package, install it with the project's package manager
+(\`npm install name@version\` or the like) so the lockfile updates too, after checking the version exists (\`npm view name versions\`);
+never write a dependency into package.json by hand.
+Your changes stay in this copy until the person reviews and applies them.
+End with a short summary of what you changed.`
+
 const IMPLEMENTER_NO_GIT = `You implement a software ticket in this workspace, a separate git worktree. Meet every requirement,
 stay inside them, follow the code's existing conventions, and run the project's tests or type checks when you can.
 The project's dependencies are installed. To add a package, install it with the project's package manager
@@ -438,6 +447,50 @@ export class BoardService {
     return this.overview()
   }
 
+  /** Rename a project on a Cloth board. Its ticket keys stay as they are. */
+  async renameProject(id: string, name: string): Promise<BoardOverview> {
+    const local = this.local()
+    if (!local) throw new Error('Rename projects in Plane or Jira itself')
+    const next = name.trim()
+    if (!next) throw new Error('Enter a name for the project')
+    if (this.projects.some((p) => p.id !== id && p.name.trim().toLowerCase() === next.toLowerCase())) throw new Error(`There is already a project called “${next}”`)
+    await local.renameProject(id, next)
+    this.projects = this.projects.map((p) => (p.id === id ? { ...p, name: next } : p))
+    this.changed()
+    return this.overview()
+  }
+
+  /** Delete a project from a Cloth board with its tickets: agents on them stop and copies holding their changes go. */
+  async deleteProject(id: string): Promise<BoardOverview> {
+    const local = this.local()
+    if (!local) throw new Error('Delete projects in Plane or Jira itself')
+    if (!this.projects.some((p) => p.id === id)) throw new Error('That project is no longer on the board')
+    const s = this.settingsFor(id)
+    const prefix = `${this.storedConn()?.kind ?? 'none'}:`
+    const pipes = this.pipes()
+    for (const [k, pipe] of Object.entries(pipes)) {
+      if (pipe.projectId !== id || !k.startsWith(prefix)) continue
+      const ticketId = k.slice(prefix.length)
+      this.running.get(ticketId)?.abort()
+      this.queue = this.queue.filter((q) => q !== ticketId)
+      if (pipe.local?.dir && (pipe.local.mode === 'none' || pipe.local.mode === 'copy')) await this.dropWorktree(pipe.local.dir, s)
+      delete pipes[k]
+    }
+    this.ctx.kv.set(K_PIPES, pipes)
+    const all = this.ctx.kv.get<Record<string, BoardProjectSettings>>(K_SETTINGS, {})
+    delete all[this.skey(id)]
+    this.ctx.kv.set(K_SETTINGS, all)
+    await local.deleteProject(id)
+    this.projects = this.projects.filter((p) => p.id !== id)
+    this.raw.delete(id)
+    this.states.delete(id)
+    // A board always has somewhere to put tickets.
+    if (!this.projects.length) this.projects = [await local.createProject!('My board')]
+    if (this.projectId() === id || !this.project()) this.ctx.kv.set(K_PROJECT, this.projects[0].id)
+    await this.sync()
+    return this.overview()
+  }
+
   async selectProject(id: string): Promise<BoardOverview> {
     if (!this.projects.some((p) => p.id === id)) throw new Error('That project is no longer in the tracker')
     this.ctx.kv.set(K_PROJECT, id)
@@ -578,7 +631,8 @@ export class BoardService {
         tickets.push({ id: t.id, key: t.key, title: t.title, priority: t.priority, stateId: t.stateId, stateName: state?.name ?? '', stage, url: t.url, description: t.description, pipeline: pipe ? this.publicPipe(pipe) : null, ...(local ? { comments: local.comments(p.id, t.id) } : {}) })
       }
     const chatProjectId = p ? (Object.entries(this.links()).find(([, l]) => l.projectId === p.id)?.[0] ?? null) : null
-    return { connection: conn, projects: this.projects, projectId: p?.id ?? null, states, settings, tickets, syncedAt: this.syncedAt, chatProjectId, error: this.syncError }
+    const repoGit = settings?.repo && existsSync(settings.repo) ? inGitRepo(settings.repo) : null
+    return { connection: conn, projects: this.projects, projectId: p?.id ?? null, states, settings, repoGit, tickets, syncedAt: this.syncedAt, chatProjectId, error: this.syncError }
   }
 
   private publicPipe(p: StoredPipe): TicketPipeline {
@@ -686,6 +740,12 @@ export class BoardService {
     const local = pipe?.local
     if (!pipe || pipe.stage !== 'pr' || !local) throw new Error('This ticket has no finished changes to apply')
     if (!s.repo || !existsSync(s.repo)) throw new Error('Pick the code folder for this project in Project settings first')
+    if (local.mode === 'copy') {
+      if (!local.dir || !existsSync(local.dir)) throw new Error('The copy holding these changes is gone, so there is nothing to apply')
+      const files = await applyCopy(local.dir, s.repo, await loadSnapshot(this.snapshotFile(local.dir)))
+      await this.close(p, t, s, { ...local, applied: true }, `Cloth applied the changes to ${s.repo} (${files} file${files === 1 ? '' : 's'}).`)
+      return this.overview()
+    }
     const root = await repoRoot(s.repo)
     if (!root) throw new Error(`${s.repo} isn't a git repository`)
     let patch: string
@@ -739,7 +799,7 @@ export class BoardService {
   }
 
   private async close(p: BoardProject, t: RawTicket, s: BoardProjectSettings, local: NonNullable<StoredPipe['local']>, comment: string): Promise<void> {
-    if (local.mode === 'none' && local.dir) await this.dropWorktree(local.dir, s)
+    if ((local.mode === 'none' || local.mode === 'copy') && local.dir) await this.dropWorktree(local.dir, s)
     this.update(t.id, { status: 'done', local, note: undefined, activity: undefined })
     await this.note(p, t, s, comment)
     await this.moveTo(p, t, s, 'merged')
@@ -749,6 +809,7 @@ export class BoardService {
     const root = s.repo && existsSync(s.repo) ? await repoRoot(s.repo) : null
     if (root) await git(root, ['worktree', 'remove', '--force', dir]).catch(() => undefined)
     await rm(dir, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 }).catch(() => undefined)
+    await rm(this.snapshotFile(dir), { force: true }).catch(() => undefined)
     if (root) await git(root, ['worktree', 'prune']).catch(() => undefined)
   }
 
@@ -759,7 +820,7 @@ export class BoardService {
     const { p, t, s, pipe } = this.find(ticketId)
     this.running.get(ticketId)?.abort()
     this.queue = this.queue.filter((q) => q !== ticketId)
-    if (pipe?.local?.mode === 'none' && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
+    if ((pipe?.local?.mode === 'none' || pipe?.local?.mode === 'copy') && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
     if (pipe) this.update(ticketId, { status: 'done', activity: undefined })
     await local.setState(p, t, 'merged')
     t.stateId = 'merged'
@@ -774,7 +835,7 @@ export class BoardService {
     const { p, s, pipe } = this.find(ticketId)
     this.running.get(ticketId)?.abort()
     this.queue = this.queue.filter((q) => q !== ticketId)
-    if (pipe?.local?.mode === 'none' && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
+    if ((pipe?.local?.mode === 'none' || pipe?.local?.mode === 'copy') && pipe.local.dir) await this.dropWorktree(pipe.local.dir, s)
     const pipes = this.pipes()
     delete pipes[this.pkey(ticketId)]
     this.ctx.kv.set(K_PIPES, pipes)
@@ -951,7 +1012,8 @@ export class BoardService {
       throw Object.assign(new Error('no repo'), { quiet: true })
     }
     const root = await repoRoot(s.repo)
-    if (!root) throw new Error(`${s.repo} isn't a git repository`)
+    // Not a git repository: build in a copy of the folder instead of a worktree (nothing is committed).
+    if (!root) return this.buildInCopy(p, t, s, pipe, signal)
     const base = (await gitRun(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
     // Without commits the worktree is detached: no branch is made, and the changes stay uncommitted in it.
     const branch = s.git === 'none' ? undefined : (pipe.branch ?? `boards/${t.key.toLowerCase()}`)
@@ -1030,6 +1092,43 @@ export class BoardService {
     this.update(t.id, { status: s.autoMerge ? 'running' : 'needsYou', note: s.autoMerge ? undefined : 'Waiting for you to review and merge.' })
   }
 
+  /** Where a ticket's copy keeps the snapshot it was made from (beside the copy, never inside it). */
+  private snapshotFile(dir: string): string {
+    return `${dir}.snapshot.json`
+  }
+
+  /** Build in a copy of a code folder that isn't a git repository; the changes wait there to be applied. */
+  private async buildInCopy(p: BoardProject, t: RawTicket, s: BoardProjectSettings, pipe: StoredPipe, signal: AbortSignal): Promise<void> {
+    const repo = s.repo!
+    const dir = join(this.ctx.dataDir, 'boards', 'worktrees', `${this.storedConn()?.kind ?? 'none'}-${t.key.toLowerCase()}`)
+    this.update(t.id, { branch: undefined, activity: 'Copying the code folder' })
+    const snap = await copyFolder(repo, dir)
+    await saveSnapshot(this.snapshotFile(dir), snap)
+    const { model, system, saved } = this.model(pipe.agents.implementer)
+    const deps = await this.installDeps(dir, dir, t.key, (a) => this.update(t.id, { activity: a }))
+    if (signal.aborted) return
+    this.update(t.id, { activity: 'Starting' })
+    const research = pipe.research?.notes.length || pipe.research?.assumptions.length ? `\n\nWhat the planner found out:\n${[...(pipe.research?.notes ?? []), ...(pipe.research?.assumptions ?? []).map((a) => `Assumed: ${a}`)].map((r) => `- ${r}`).join('\n')}` : ''
+    const res = await this.deps.runtime.run({
+      model,
+      prompt: `Ticket ${t.key}: ${t.title}\n\nGoal: ${pipe.goal}\n\nRequirements:\n${pipe.requirements.map((r) => `- ${r}`).join('\n')}\n\nOut of scope:\n${pipe.outOfScope.map((r) => `- ${r}`).join('\n') || '(none)'}${research}${deps}`,
+      systemPrompt: [system, IMPLEMENTER_COPY].filter(Boolean).join('\n\n'),
+      scope: this.writeScope(dir, s, saved),
+      thinking: saved?.thinking ?? undefined,
+      maxTurns: 80,
+      signal,
+      onEvent: (_turn, progress) => this.update(t.id, { files: progress.files.length, ...(progress.current ? { activity: progress.current.summary || progress.current.tool } : {}) })
+    })
+    if (signal.aborted) return
+    const report = parseJson<{ summary?: unknown; testing?: unknown }>(res.text)
+    this.update(t.id, { built: { summary: String(report?.summary ?? '').trim(), testing: Array.isArray(report?.testing) ? report.testing.map(String).filter(Boolean) : [] } })
+    const files = changeCount(await changesIn(dir, snap))
+    if (!files) throw new Error('The implementer finished without changing anything. Resume to try again.')
+    this.update(t.id, { stage: 'pr', status: 'needsYou', files, local: { mode: 'copy', base: '', dir }, note: 'The changes are ready in their own copy of the code. Apply them to your code folder, or open that copy to look first.', activity: undefined })
+    await this.moveTo(p, t, s, 'pr')
+    await this.note(p, t, s, `Cloth built this ticket. ${files} file${files === 1 ? '' : 's'} changed, in a copy of ${repo} at ${dir}.`)
+  }
+
   /** The ticket's worktree on `branch` (made from `start` when the branch doesn't exist yet). */
   private async worktree(root: string, branch: string | null, start: string, key: string): Promise<string> {
     // Named by board kind too: a Cloth board's CL-1 and a Plane board's CL-1 are different tickets.
@@ -1057,7 +1156,7 @@ export class BoardService {
     const c = dir && installCommand(dir)
     if (!dir || !c) return ''
     // node_modules mustn't reach the commit (`git add -A`) even where the project doesn't ignore it.
-    if ((await git(dir, ['check-ignore', '-q', 'node_modules'])).code !== 0) {
+    if (inGitRepo(dir) && (await git(dir, ['check-ignore', '-q', 'node_modules'])).code !== 0) {
       const exclude = (await gitRun(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'])).trim()
       await mkdir(dirname(exclude), { recursive: true })
       await appendFile(exclude, '\nnode_modules/\n')

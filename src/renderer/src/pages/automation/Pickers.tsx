@@ -185,6 +185,22 @@ export function WatchPicker({ value, onChange, folder, configs, status }: { valu
 export function CommandsPicker({ value, onChange, folder, docker }: { value: AutomationCommands | null; onChange(c: AutomationCommands | null): void; folder: boolean; docker: ContainerStatus | null }) {
   const [allowText, setAllowText] = useState(() => (value?.mode === 'allowlist' ? value.allow.join('\n') : ''))
   const mode = value?.mode ?? 'off'
+  // Its empty folder only exists inside the container: commands always run there.
+  if (value?.mode === 'container' && value.empty)
+    return (
+      <div className="grid gap-2.5 rounded-[12px] border border-line bg-panel p-3.5">
+        <p className="text-ui text-muted">Commands run in the container with its empty folder. To change this, choose another option under Folder.</p>
+        <label className="flex flex-wrap items-center gap-2 text-ui text-muted">
+          Image
+          <Input value={value.image} onChange={(e) => onChange({ ...value, image: e.target.value })} spellCheck={false} autoComplete="off" className="w-44 font-mono" />
+          <span className="text-dim">The Linux system it runs in, such as node:22 or python:3.12.</span>
+        </label>
+        <label className="flex min-h-8 cursor-pointer items-center gap-2 text-ui">
+          <input type="checkbox" className="accent-crimson" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
+          Can reach the internet (to install packages)
+        </label>
+      </div>
+    )
   const options: { v: 'off' | 'container' | 'allowlist'; label: string; sub: string; icon?: typeof Box }[] = [
     { v: 'off', label: 'No', sub: 'It can’t run commands.' },
     { v: 'container', label: 'In a container', sub: 'On a copy of its folder. You apply its changes after.', icon: Box },

@@ -271,7 +271,8 @@ describe('approvals by mode', () => {
     const tools = (o: Partial<Parameters<typeof buildWorkspaceTools>[0]>) =>
       buildWorkspaceTools({ root, sessionId: null, access: 'write', shell: true, approvals: null, checkpoints: null, autoApprove: () => 'all', checkRisk: true, ...o })
     const shellExec = async (command: string, _cwd: string, options: { onData: (b: Buffer) => void }) => {
-      ran.push(command)
+      // The shell tool adds a tail that reports the folder the command ended in.
+      ran.push(command.split('\n__cloth_rc=')[0])
       options.onData(Buffer.from('ok'))
       return { exitCode: 0 }
     }

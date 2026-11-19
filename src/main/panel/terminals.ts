@@ -21,8 +21,19 @@ const nodePty: PtySpawn = async (file, args, options) => (await import('@lydell/
 
 interface Term {
   info: TerminalInfo
-  pty: Pty
+  /** Its number in the chat's tab titles (shells only). */
+  n?: number
+  /** null for a background command's tab: output only, no shell to type into. */
+  pty: Pty | null
   buffer: string
+  /** Stops a background command (its tab's Stop, or closing the tab). */
+  stop?: () => void
+}
+
+/** Where a background command's output goes: its tab in the chat's Terminals panel. */
+export interface TerminalSink {
+  data(text: string): void
+  exit(code: number | null): void
 }
 
 export interface TerminalTarget {
@@ -56,7 +67,6 @@ function hostShell(): { file: string; args: string[] } {
 /** Interactive shells for the chat side panel: in the chat's folder, or inside its container. */
 export class TerminalService {
   private terms = new Map<string, Term>()
-  private counter = new Map<string, number>()
 
   constructor(
     private ctx: Ctx,
@@ -69,8 +79,10 @@ export class TerminalService {
   }
 
   async create(target: TerminalTarget, size: { cols: number; rows: number }): Promise<TerminalInfo> {
-    const n = (this.counter.get(target.sessionId) ?? 0) + 1
-    this.counter.set(target.sessionId, n)
+    // The lowest number no open terminal of the chat has: closing terminal 1 and opening another gives terminal 1 again.
+    const used = new Set([...this.terms.values()].filter((t) => t.info.sessionId === target.sessionId && t.n).map((t) => t.n))
+    let n = 1
+    while (used.has(n)) n++
     const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Cloth' } as Record<string, string>
     const cols = Math.max(20, Math.min(500, Math.floor(size.cols) || 80))
     const rows = Math.max(5, Math.min(200, Math.floor(size.rows) || 24))
@@ -95,7 +107,7 @@ export class TerminalService {
     }
     const proc = await this.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env, useConpty: true })
     const info: TerminalInfo = { id: newId('term_'), sessionId: target.sessionId, title, cwd: target.container ? '/workspace' : cwd, container: !!target.container, running: true, exitCode: null }
-    const term: Term = { info, pty: proc, buffer: '' }
+    const term: Term = { info, pty: proc, buffer: '', n }
     this.terms.set(info.id, term)
     proc.onData((data) => {
       term.buffer = (term.buffer + data).slice(-SCROLLBACK)
@@ -111,6 +123,41 @@ export class TerminalService {
     return info
   }
 
+  /**
+   * A command the agent runs in the background, as a tab in the chat's Terminals panel: its output streams in,
+   * Stop ends it and closing the tab ends it too. A finished one stays until closed, so its output can be read.
+   */
+  attach(input: { sessionId: string; command: string; cwd: string; container: boolean; stop(): void }): TerminalSink {
+    const first = input.command.split('\n')[0].trim()
+    const title = first.length > 28 ? `${first.slice(0, 27)}…` : first
+    const info: TerminalInfo = { id: newId('term_'), sessionId: input.sessionId, title, cwd: input.cwd, container: input.container, running: true, exitCode: null, background: true, command: input.command }
+    const term: Term = { info, pty: null, buffer: '', stop: input.stop }
+    this.terms.set(info.id, term)
+    // Plain output, not a terminal's: line feeds need a carriage return to start the next line.
+    const push = (text: string) => {
+      const data = text.replace(/\r?\n/g, '\r\n')
+      term.buffer = (term.buffer + data).slice(-SCROLLBACK)
+      if (this.terms.has(info.id)) this.ctx.emit('terminal', { type: 'data', id: info.id, data })
+    }
+    this.ctx.emit('terminal', { type: 'opened', terminal: info })
+    push(`\x1b[90mRunning in the background${input.cwd && input.cwd !== '.' ? ` in ${input.cwd}` : ''}:\x1b[0m\n\x1b[1m$ ${input.command}\x1b[0m\n`)
+    return {
+      data: push,
+      exit: (code) => {
+        if (!info.running) return
+        info.running = false
+        info.exitCode = code
+        if (this.terms.has(info.id)) this.ctx.emit('terminal', { type: 'exit', id: info.id, code })
+      }
+    }
+  }
+
+  /** Stop a background command's process; its tab stays with the output. */
+  stop(id: string): void {
+    const t = this.terms.get(id)
+    if (t?.info.running) t.stop?.()
+  }
+
   /** What the terminal printed so far (to replay into a newly shown view). */
   buffer(id: string): string {
     return this.terms.get(id)?.buffer ?? ''
@@ -118,12 +165,12 @@ export class TerminalService {
 
   write(id: string, data: string): void {
     const t = this.terms.get(id)
-    if (t?.info.running) t.pty.write(data)
+    if (t?.info.running) t.pty?.write(data)
   }
 
   resize(id: string, cols: number, rows: number): void {
     const t = this.terms.get(id)
-    if (!t?.info.running) return
+    if (!t?.info.running || !t.pty) return
     try {
       t.pty.resize(Math.max(20, Math.min(500, Math.floor(cols))), Math.max(5, Math.min(200, Math.floor(rows))))
     } catch {
@@ -137,7 +184,8 @@ export class TerminalService {
     this.terms.delete(id)
     if (t.info.running) {
       try {
-        t.pty.kill()
+        if (t.pty) t.pty.kill()
+        else t.stop?.()
       } catch {
         /* already gone */
       }

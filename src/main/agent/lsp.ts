@@ -1,19 +1,27 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { delimiter, dirname, extname, join, relative, sep } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, delimiter, dirname, extname, join, relative, sep } from 'node:path'
 import type { LanguageId } from '@shared/onboarding'
+import { installedJdtls, installedProgram, jdtlsJavaArgs } from './lsp-install'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { StreamMessageReader, StreamMessageWriter, createMessageConnection, type MessageConnection } from 'vscode-jsonrpc/node'
 
 /**
  * Code intelligence over the Language Server Protocol. Servers are bundled and start lazily per
- * workspace + language: TypeScript 7's native `tsc --lsp` (TS/JS) and Pyright (Python).
+ * workspace + language: TypeScript 7's native `tsc --lsp` (TS/JS) and Pyright (Python). gopls,
+ * rust-analyzer, clangd and jdtls (Java) run from PATH when installed.
  */
 
 const require = createRequire(import.meta.url)
 const IDLE_MS = 10 * 60_000
+/** jdtls answers `initialize` slowly on a cold JVM, then imports Maven/Gradle projects before it reports problems. */
+const JAVA_START_MS = 120_000
+const JAVA_IMPORT_MS = 5 * 60_000
+const JAVA_MIN = 21
 
 export interface Diagnostic {
   range: Range
@@ -52,13 +60,15 @@ interface DocumentSymbol {
   containerName?: string
 }
 
-type ServerId = 'typescript' | 'python' | 'go' | 'rust' | 'cpp'
+type ServerId = 'typescript' | 'python' | 'go' | 'rust' | 'cpp' | 'java'
 
 /** Servers Cloth doesn't ship: run from PATH when found, and only for languages the user works in. */
-export const PATH_SERVERS: Record<'go' | 'rust' | 'cpp', { program: string; args: string[]; language: LanguageId; url: string }> = {
+export const PATH_SERVERS: Record<'go' | 'rust' | 'cpp' | 'java', { program: string; args: string[]; language: LanguageId; url: string }> = {
   go: { program: 'gopls', args: [], language: 'go', url: 'https://pkg.go.dev/golang.org/x/tools/gopls' },
   rust: { program: 'rust-analyzer', args: [], language: 'rust', url: 'https://rust-analyzer.github.io/book/installation.html' },
-  cpp: { program: 'clangd', args: [], language: 'cpp', url: 'https://clangd.llvm.org/installation' }
+  cpp: { program: 'clangd', args: [], language: 'cpp', url: 'https://clangd.llvm.org/installation' },
+  // Eclipse JDT Language Server. Its launcher also needs Java 21+, and Python to run the launcher script.
+  java: { program: 'jdtls', args: [], language: 'java', url: 'https://github.com/eclipse-jdtls/eclipse.jdt.ls#installation' }
 }
 
 /** A program's full path when it's on PATH (with Windows' PATHEXT), else null. */
@@ -92,7 +102,8 @@ const LANGUAGE_IDS: Record<string, { server: ServerId; languageId: string }> = {
   '.cc': { server: 'cpp', languageId: 'cpp' },
   '.cpp': { server: 'cpp', languageId: 'cpp' },
   '.cxx': { server: 'cpp', languageId: 'cpp' },
-  '.hpp': { server: 'cpp', languageId: 'cpp' }
+  '.hpp': { server: 'cpp', languageId: 'cpp' },
+  '.java': { server: 'java', languageId: 'java' }
 }
 
 export function lspLanguage(file: string): { server: ServerId; languageId: string } | null {
@@ -102,7 +113,30 @@ export function lspLanguage(file: string): { server: ServerId; languageId: strin
 /** Paths inside app.asar can't be executed; electron-builder unpacks these packages next to it. */
 const unpacked = (p: string) => p.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
 
-function command(id: ServerId): { cmd: string; args: string[]; env?: NodeJS.ProcessEnv } {
+/** The java that jdtls' launcher will use (JAVA_HOME first, then PATH) and its major version, if it could be read. */
+export function findJava(env: NodeJS.ProcessEnv = process.env): { path: string; major: number | null } | null {
+  const home = env.JAVA_HOME && join(env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
+  const path = home && existsSync(home) ? home : findOnPath('java')
+  if (!path) return null
+  const out = spawnSync(path, ['-version'], { encoding: 'utf8', timeout: 10_000, windowsHide: true })
+  return { path, major: javaMajor(`${out.stderr ?? ''}${out.stdout ?? ''}`) }
+}
+
+/** `openjdk version "21.0.7"` -> 21; `java version "1.8.0_402"` -> 8. */
+export function javaMajor(versionText: string): number | null {
+  const m = /version "(\d+)(?:\.(\d+))?/.exec(versionText)
+  if (!m) return null
+  return m[1] === '1' && m[2] ? Number(m[2]) : Number(m[1])
+}
+
+/** jdtls' per-project workspace (index, build state): in Cloth's data folder, never in the user's project. */
+export function jdtlsDataDir(base: string, root: string): string {
+  const key = process.platform === 'win32' ? root.toLowerCase() : root
+  const name = basename(root).replace(/[^\w.-]/g, '_').slice(0, 40) || 'project'
+  return join(base, 'jdtls', `${name}-${createHash('sha256').update(key).digest('hex').slice(0, 12)}`)
+}
+
+function command(id: ServerId, root: string, dataDir: string): { cmd: string; args: string[]; env?: NodeJS.ProcessEnv } {
   if (id === 'typescript') {
     const exe = process.platform === 'win32' ? 'tsc.exe' : 'tsc'
     // Packaged app: the native compiler ships as an extra resource together with its lib/*.d.ts
@@ -120,8 +154,20 @@ function command(id: ServerId): { cmd: string; args: string[]; env?: NodeJS.Proc
   }
   if (id !== 'python') {
     const { program, args } = PATH_SERVERS[id]
-    const cmd = findOnPath(program)
-    if (!cmd) throw new Error(`${program} isn't installed (install it to get code intelligence for this language)`)
+    // Cloth's own copy (Settings → Languages, or setup) comes first, then one on PATH.
+    const servers = join(dataDir, 'servers')
+    const managedJdtls = id === 'java' ? installedJdtls(servers) : null
+    const cmd = id === 'java' ? (managedJdtls ? 'java' : findOnPath(program)) : (installedProgram(servers, id) ?? findOnPath(program))
+    if (!cmd) throw new Error(`${program} isn't installed. Install it from Settings → Languages to get code intelligence for this language.`)
+    if (id === 'java') {
+      const java = findJava()
+      if (!java) throw new Error(`jdtls needs Java ${JAVA_MIN} or newer, and no Java was found (install a JDK ${JAVA_MIN}+ and put it on PATH or set JAVA_HOME)`)
+      if (java.major !== null && java.major < JAVA_MIN) throw new Error(`jdtls needs Java ${JAVA_MIN} or newer, but ${java.path} is Java ${java.major} (install a JDK ${JAVA_MIN}+ and put it first on PATH or set JAVA_HOME)`)
+      const data = jdtlsDataDir(dataDir, root)
+      mkdirSync(data, { recursive: true })
+      if (managedJdtls) return { cmd: java.path, args: jdtlsJavaArgs(managedJdtls, data) }
+      return { cmd, args: [...args, '-data', data] }
+    }
     // .cmd/.bat shims need a shell on Windows.
     return { cmd, args }
   }
@@ -143,24 +189,42 @@ class LspServer {
   private waiters = new Set<() => void>()
   private pull = false
   private dead: string | null = null
+  /** False while jdtls is still importing the project (its diagnostics until then are incomplete). */
+  ready = true
+  private readyWaiters = new Set<() => void>()
   lastUsed = Date.now()
 
   constructor(
     readonly id: ServerId,
-    readonly root: string
-  ) {}
+    readonly root: string,
+    private dataDir: string
+  ) {
+    if (id === 'java') this.ready = false
+  }
 
   async start(): Promise<void> {
-    const { cmd, args, env } = command(this.id)
+    const { cmd, args, env } = command(this.id, this.root, this.dataDir)
     const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd)
-    this.proc = spawn(shell ? `"${cmd}"` : cmd, args, { cwd: this.root, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell })
-    this.proc.on('exit', (code) => (this.dead = `language server exited (${code})`))
-    this.proc.on('error', (err) => (this.dead = err.message))
+    // Through a shell the arguments become one command line: quote those with spaces (the jdtls data folder).
+    const argv = shell ? args.map((a) => (/\s/.test(a) ? `"${a}"` : a)) : args
+    this.proc = spawn(shell ? `"${cmd}"` : cmd, argv, { cwd: this.root, env: env ?? process.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell })
+    this.proc.on('exit', (code) => {
+      this.dead = `language server exited (${code})`
+      this.markReady()
+    })
+    this.proc.on('error', (err) => {
+      this.dead = err.message
+      this.markReady()
+    })
     this.proc.stderr?.resume()
     this.conn = createMessageConnection(new StreamMessageReader(this.proc.stdout!), new StreamMessageWriter(this.proc.stdin!))
     this.conn.onNotification('textDocument/publishDiagnostics', (p: { uri: string; version?: number; diagnostics: Diagnostic[] }) => {
       this.pushed.set(uriKey(p.uri), { version: p.version ?? null, items: p.diagnostics })
       for (const w of this.waiters) w()
+    })
+    // jdtls reports `Started` / `ServiceReady` once the Maven/Gradle import is done.
+    this.conn.onNotification('language/status', (p: { type?: string }) => {
+      if (p.type === 'Started' || p.type === 'ServiceReady') this.markReady()
     })
     // Answer server->client requests (configuration, capability registration, progress) with defaults.
     this.conn.onRequest(() => null)
@@ -185,8 +249,8 @@ class LspServer {
           workspace: { workspaceFolders: true, symbol: {} }
         }
       }),
-      30_000,
-      'starting the language server'
+      this.id === 'java' ? JAVA_START_MS : 30_000,
+      this.id === 'java' ? 'starting jdtls' : 'starting the language server'
     ).catch((err) => {
       // Don't leave a half-started server running.
       this.proc.kill()
@@ -194,6 +258,34 @@ class LspServer {
     })) as { capabilities: { diagnosticProvider?: unknown } }
     this.pull = !!init.capabilities.diagnosticProvider
     this.conn.sendNotification('initialized', {})
+    if (!this.ready) setTimeout(() => this.markReady(), JAVA_IMPORT_MS).unref()
+  }
+
+  /** The project import finished (or we stopped waiting): re-send open files so they're checked against the imported project. */
+  private markReady(): void {
+    if (this.ready) return
+    this.ready = true
+    if (!this.dead) {
+      for (const [key, doc] of this.docs) {
+        doc.version++
+        this.pushed.delete(key)
+        this.conn.sendNotification('textDocument/didChange', { textDocument: { uri: doc.uri, version: doc.version }, contentChanges: [{ text: doc.text }] })
+      }
+    }
+    for (const w of this.readyWaiters) w()
+    this.readyWaiters.clear()
+  }
+
+  /** Wait (up to ms) for jdtls to finish importing the project. */
+  private untilReady(ms: number): Promise<void> {
+    if (this.ready) return Promise.resolve()
+    return new Promise((resolve) => {
+      const t = setTimeout(resolve, ms)
+      this.readyWaiters.add(() => {
+        clearTimeout(t)
+        resolve()
+      })
+    })
   }
 
   private async timed<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
@@ -225,8 +317,14 @@ class LspServer {
     return uri
   }
 
+  /** timeoutMs counts from when the server is ready: a first Java request also waits out the project import. */
   async diagnostics(abs: string, timeoutMs = 10_000): Promise<Diagnostic[]> {
-    const uri = await this.sync(abs)
+    let uri = await this.sync(abs)
+    if (!this.ready) {
+      await this.untilReady(JAVA_IMPORT_MS)
+      if (this.dead) throw new Error(this.dead)
+      uri = await this.sync(abs)
+    }
     if (this.pull) {
       const res = (await this.timed(this.conn.sendRequest('textDocument/diagnostic', { textDocument: { uri } }), timeoutMs, 'waiting for diagnostics')) as { items?: Diagnostic[] }
       return res.items ?? []
@@ -279,21 +377,27 @@ export class LspManager {
   private servers = new Map<string, Promise<LspServer>>()
   private timer: NodeJS.Timeout | null = null
 
-  /** languages: the ones the user works in (settings.languages); empty = any server found on PATH may run. */
-  constructor(private languages: () => LanguageId[] = () => []) {}
+  /**
+   * languages: the ones the user works in (settings.languages); empty = any server found on PATH may run.
+   * dataDir: where servers keep per-project state (jdtls' workspaces), normally `<Cloth data>/lsp`.
+   */
+  constructor(
+    private languages: () => LanguageId[] = () => [],
+    private dataDir: string = join(tmpdir(), 'cloth-lsp')
+  ) {}
 
   server(root: string, file: string): Promise<LspServer> {
     const lang = lspLanguage(file)
-    if (!lang) throw new Error(`No language server for ${extname(file) || 'this file type'} (supported: TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed)`)
+    if (!lang) throw new Error(`No language server for ${extname(file) || 'this file type'} (supported: TypeScript/JavaScript, Python, and Go, Rust, C/C++ or Java when their server is installed)`)
     if (lang.server !== 'typescript' && lang.server !== 'python') {
       const picked = this.languages()
       const { language } = PATH_SERVERS[lang.server]
-      if (picked.length && !picked.includes(language)) throw new Error(`Code intelligence for ${extname(file)} files is off: add the language in Settings → General → Languages`)
+      if (picked.length && !picked.includes(language)) throw new Error(`Code intelligence for ${extname(file)} files is off: add the language in Settings → Languages`)
     }
     const key = `${lang.server}|${process.platform === 'win32' ? root.toLowerCase() : root}`
     let s = this.servers.get(key)
     if (!s) {
-      const server = new LspServer(lang.server, root)
+      const server = new LspServer(lang.server, root, this.dataDir)
       s = server.start().then(() => server)
       s.catch(() => this.servers.delete(key))
       this.servers.set(key, s)
@@ -312,6 +416,24 @@ export class LspManager {
         }
       }).catch(() => undefined)
     }
+  }
+
+  /** Where Cloth installs language servers of its own (lsp-install.ts). */
+  get serversDir(): string {
+    return join(this.dataDir, 'servers')
+  }
+
+  /** Stop every running server for a language (before its copy is replaced or removed). Waits for them to exit. */
+  async stopServer(id: ServerId): Promise<void> {
+    const stopping: Promise<void>[] = []
+    for (const [key, p] of [...this.servers]) {
+      if (!key.startsWith(`${id}|`)) continue
+      this.servers.delete(key)
+      stopping.push(p.then((s) => s.dispose()).catch(() => undefined))
+    }
+    await Promise.all(stopping)
+    // Let the processes exit and release their files (Windows keeps a running .exe locked).
+    if (stopping.length) await new Promise((r) => setTimeout(r, 1500))
   }
 
   disposeAll(): void {

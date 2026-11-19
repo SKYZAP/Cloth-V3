@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
@@ -349,6 +349,55 @@ describe('the Cloth board', () => {
     expect(existsSync(dir)).toBe(false)
     services.boards.stop()
   }, 60_000)
+
+  it('builds in a copy when the code folder is not a git repository, and applies only when nothing clashes', async () => {
+    const { services, projectId } = await board()
+    const repo = mkdtempSync(join(tmpdir(), 'cloth-board-plain-'))
+    writeFileSync(join(repo, 'readme.md'), 'hello\n')
+    mkdirSync(join(repo, 'node_modules', 'x'), { recursive: true })
+    writeFileSync(join(repo, 'node_modules', 'x', 'index.js'), '')
+    services.boards.saveSettings(projectId, { repo })
+    expect(services.boards.overview().repoGit).toBe(false)
+    faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
+    faux.setResponses(buildResponses())
+    await services.boards.createTicket({ title: 'Add notes', goal: 'Notes exist.', auto: true })
+    const t = await settle(services, 'Add notes')
+    expect(t.pipeline?.note ?? '').not.toMatch(/error/i)
+    expect(t.pipeline).toMatchObject({ status: 'needsYou', files: 1, local: { mode: 'copy' } })
+    const dir = t.pipeline!.local!.dir!
+    expect(readFileSync(join(dir, 'notes.txt'), 'utf8')).toBe('from the agent\n')
+    // Installed folders aren't copied, and the code folder is untouched until the changes are applied.
+    expect(existsSync(join(dir, 'node_modules', 'x'))).toBe(false)
+    expect(existsSync(join(repo, 'notes.txt'))).toBe(false)
+
+    // The same file made in the code folder meanwhile: nothing is applied.
+    writeFileSync(join(repo, 'notes.txt'), 'mine\n')
+    await expect(services.boards.applyChanges(t.id)).rejects.toThrow(/notes\.txt/)
+    expect(readFileSync(join(repo, 'notes.txt'), 'utf8')).toBe('mine\n')
+    rmSync(join(repo, 'notes.txt'))
+    expect((await services.boards.applyChanges(t.id)).tickets).toEqual([])
+    expect(readFileSync(join(repo, 'notes.txt'), 'utf8')).toBe('from the agent\n')
+    expect(existsSync(dir)).toBe(false)
+    services.boards.stop()
+  }, 60_000)
+
+  it('renames and deletes projects on a Cloth board, keeping one to work in', async () => {
+    const { services, projectId } = await board()
+    await services.boards.createProject('Side project')
+    expect((await services.boards.renameProject(projectId, 'Main work')).projects.map((p) => p.name)).toEqual(['Main work', 'Side project'])
+    await expect(services.boards.renameProject(projectId, 'side PROJECT')).rejects.toThrow(/already/)
+    await expect(services.boards.renameProject(projectId, '  ')).rejects.toThrow(/name/)
+    await services.boards.selectProject(projectId)
+    await services.boards.createTicket({ title: 'Doomed', goal: '', auto: false })
+    const after = await services.boards.deleteProject(projectId)
+    expect(after.projects.map((p) => p.name)).toEqual(['Side project'])
+    expect(after.projectId).toBe(after.projects[0].id)
+    expect(after.tickets).toEqual([])
+    // Deleting the last one leaves a fresh, empty board to work in.
+    const last = await services.boards.deleteProject(after.projectId!)
+    expect(last.projects.map((p) => p.name)).toEqual(['My board'])
+    services.boards.stop()
+  })
 
   it('committing locally, makes a branch with the commit and pushes nothing', async () => {
     const { services, projectId } = await board()

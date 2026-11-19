@@ -217,7 +217,7 @@ else {
     services.boards.stop()
     services.lsp.disposeAll()
     services.panel.terminals.killAll()
-    void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.swatches.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll()]).finally(() => app.quit())
+    void Promise.allSettled([services.mcp.stop(), services.web.stop(), services.remote.stop(), services.swatches.stop(), services.containers.stopAll(), services.mcpClients.stopAll(), services.runs.stopAll(), services.background.stopAll()]).finally(() => app.quit())
   })
 }
 

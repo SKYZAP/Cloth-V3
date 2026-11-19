@@ -30,6 +30,7 @@ import { folderNotes, loadRules } from './rules'
 import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { hostShellNote } from '../core/shell-env'
+import { gitBashPath, shellCwd, type BackgroundShells, type ChatTerminals } from './shell'
 import { errorMessage, newId, type Ctx } from '../core/context'
 import type { ProviderService } from '../providers/providers'
 import { DEFAULT_AGENT_TIERS, DEFAULT_SUBAGENTS, type SettingsService } from '../core/settings'
@@ -402,12 +403,22 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin; swatches?: SwatchService } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin; swatches?: SwatchService; background?: BackgroundShells; terminals?: ChatTerminals } = {}
   ) {}
+
+  /** Commands chats started with run_in_background. */
+  get background(): BackgroundShells | undefined {
+    return this.ws.background
+  }
 
   /** Cloth itself for the agent's hub tools: other chats, agents, automations, MCP servers, providers (set once the services exist). */
   attachHub(hub: HubAdmin): void {
     this.ws.hub = hub
+  }
+
+  /** The chats' terminals, for terminal_read (set once the side panel's terminals exist). */
+  attachTerminals(terminals: ChatTerminals): void {
+    this.ws.terminals = terminals
   }
 
   /** Computer use on this machine (set by the app; absent in tests and on unsupported systems). */
@@ -582,7 +593,10 @@ export class AgentRuntime {
                 : scope.commandAllow?.length
                   ? []
                   : [
-                      `Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file (e.g. ${shell === 'bash' ? '`nohup npm run dev > /tmp/dev.log 2>&1 &`' : "`Start-Process npm -ArgumentList 'run','dev' -RedirectStandardOutput dev.log`"}), then check they respond (e.g. with curl) and tell the user the port.`
+                      unattended
+                        ? `Commands are stopped after 5 minutes unless you pass a larger timeout. Never run servers or other long-running processes in the foreground: start them in the background with output to a log file (e.g. ${shell === 'bash' ? '`nohup npm run dev > /tmp/dev.log 2>&1 &`' : "`Start-Process npm -ArgumentList 'run','dev' -RedirectStandardOutput dev.log`"}), then check they respond (e.g. with curl) and tell the user the port.`
+                        : 'Commands are stopped after 5 minutes unless you pass a larger timeout. Run servers, watchers and anything else that keeps running with run_in_background: true; it returns an id at once, shell_output reads its new output and shell_stop stops it. Check a server responds before telling the user its port. `cd` carries over from one command to the next while it stays in the workspace.',
+                      ...(shell === 'powershell' && gitBashPath() ? ['Git Bash is installed too: the `bash` tool runs bash commands (Unix tools, paths like /c/Users/…). Use whichever fits; both start in the same folder.'] : [])
                     ])
             ]
           : [])
@@ -1321,6 +1335,8 @@ export class ChatService {
 
   remove(id: string): void {
     this.abort(id)
+    void this.runtime.background?.stopSession(id, true)
+    shellCwd.reset(id)
     this.held.delete(id)
     this.ctx.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
     void this.checkpoints?.removeSession(id)
@@ -1551,7 +1567,10 @@ export class ChatService {
     this.approvals?.cancel(id)
     this.starting.get(id)?.abort()
     this.active.get(id)?.abort()
+    // Stopping a chat stops what it left running in the background too.
+    void this.runtime.background?.stopSession(id)
   }
+
 
   /** Truncate history to before the given UI message (for edit & resend / regenerate). */
   rewind(id: string, uiMessageId: string): UiMessage[] {

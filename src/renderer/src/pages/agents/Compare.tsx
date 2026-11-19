@@ -17,7 +17,7 @@ const ROWS: { label: string; cell(a: Agent, act?: AgentActivity): boolean | Reac
   { label: 'Runs commands', cell: (a) => yes(a.fileAccess === 'write' && !!a.shell) },
   { label: 'Web', cell: (a) => yes(!!a.webEnabled) },
   { label: 'Knowledge', cell: (a) => yes(!!a.knowledgeEnabled) },
-  { label: 'MCP servers', cell: (a) => (a.mcpServers?.length ? <span className="text-muted tabular-nums">{a.mcpServers.length}</span> : false) },
+  { label: 'MCP servers', cell: (a) => (a.mcpServers?.some((x) => !x.startsWith('!')) ? <span className="text-muted tabular-nums">{a.mcpServers.filter((x) => !x.startsWith('!')).length}</span> : false) },
   {
     label: 'Always-on skills',
     cell: (a) => {

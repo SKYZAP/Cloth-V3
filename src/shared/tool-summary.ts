@@ -10,7 +10,8 @@ export function toolSummary(name: string, args: unknown): string {
   if (name === 'skill_use') return `${a.name ?? ''}${a.file ? ` / ${a.file}` : ''}`
   if (['read_file', 'list_dir', 'read', 'ls', 'write', 'edit'].includes(name)) return String(a.path ?? '.')
   if (name === 'find') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
-  if (name === 'bash' || name === 'powershell') return clip(`$ ${String(a.command ?? '').split('\n')[0]}`)
+  if (name === 'bash' || name === 'powershell') return clip(`$ ${String(a.command ?? '').split('\n')[0]}${a.run_in_background ? ' (in the background)' : ''}`)
+  if (name === 'shell_output' || name === 'shell_stop') return String(a.id ?? '')
   if (name === 'task') return String(a.description ?? '')
   if (name === 'openspec') return clip(`$ openspec ${Array.isArray(a.args) ? a.args.join(' ') : ''}`)
   if (name === 'session_read') return String(a.id ?? '')

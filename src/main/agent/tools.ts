@@ -2,6 +2,7 @@ import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, Qu
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
+import { terminalReadTool, type BackgroundShells, type ChatTerminals } from './shell'
 import type { JsonValue } from '@earendil-works/pi-ai'
 import type { UsageService } from '../core/usage'
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
@@ -39,6 +40,10 @@ export interface ToolDeps {
   lsp?: LspManager
   /** The global coding rules folder (rules.ts). */
   rulesDir?: string
+  /** Commands chats run with run_in_background (shell.ts). */
+  background?: BackgroundShells
+  /** The chats' terminals (the Terminal panel), for terminal_read. */
+  terminals?: ChatTerminals
   /** Cloth itself: other chats, and setting up agents, automations, MCP servers and providers (admin.ts). */
   hub?: HubAdmin
 }
@@ -708,7 +713,7 @@ export const BUILTINS: BuiltinSpec[] = [
       url: Type.Optional(Type.String({ description: 'http: the server address' })),
       headers: Type.Optional(Type.Record(Type.String(), Type.String(), { description: 'http: headers sent with every request' })),
       approval: Type.Optional(Type.Union([Type.Literal('ask'), Type.Literal('auto')], { description: 'Ask before each call (default) or let calls run' })),
-      defaultOn: Type.Optional(Type.Boolean({ description: 'On in chats that haven’t picked their servers (default false)' }))
+      defaultOn: Type.Optional(Type.Boolean({ description: 'Ignored: every switched-on server is available in all chats' }))
     }),
     description: () => 'Add an external MCP server to Cloth (Settings → MCP): a program it starts over stdio, or a server at a web address. Do not put secrets in args or env unless the user gave them for this.',
     when: (ctx) => !!ctx.deps.hub && !!ctx.scope.sessionId && !ctx.scope.depth,
@@ -814,6 +819,9 @@ const WHERE: Record<string, ToolWhere> = {
   lsp: W(true, true, false, false),
   bash: W(true, true, false, false),
   powershell: W(true, true, false, false),
+  shell_output: W(true, true, false, false),
+  shell_stop: W(true, true, false, false),
+  terminal_read: W(true, true, false, false),
   task: W(true, false, false, false)
 }
 
@@ -875,6 +883,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null,
         rulesDir: deps.rulesDir ?? null,
         shellExec: scope.container?.exec,
+        // Background commands belong to a chat; unattended runs and subagents of automations get none.
+        background: scope.sessionId ? (deps.background ?? null) : null,
         // A container's changes are reviewed with Apply / Discard, so nothing in it counts as risky.
         checkRisk: !scope.container,
         // A chat in Auto takes risky actions without asking; unattended runs keep refusing them.
@@ -884,6 +894,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
       })
     )
   }
+  // The user's terminals in this chat: reading them needs a chat, and nothing else (it never types into them).
+  if (scope.sessionId && deps.terminals) tools.push(terminalReadTool(deps.terminals, scope.sessionId))
   if (scope.customTools !== false) {
     // Custom code may only write where file edits are already allowed without asking; Plan mode runs no custom commands.
     const env = scope.workspace ? { workspace: { root: scope.workspace, writable: scope.fileAccess === 'write' && autoEdits, onWrite: scope.onFile } } : {}

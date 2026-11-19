@@ -91,7 +91,7 @@ export function buildHubAdmin(s: { chat: ChatService; projects: ProjectService; 
         config = { id: newId('mcp_'), name, transport: 'stdio', command: input.command.trim(), args: input.args ?? [], env: input.env ?? {}, enabled: true, defaultOn: input.defaultOn ?? false, approval: input.approval ?? 'ask' }
       }
       s.settings.update({ mcpClients: [...clients, config] })
-      return `Added the MCP server "${name}" (${config.transport}${config.transport === 'http' ? ` at ${config.url}` : `: ${[config.command, ...config.args].join(' ')}`}). It starts when a chat uses it; ${config.defaultOn ? 'it is on for chats that haven’t picked their servers' : 'switch it on in a chat’s Setup → MCP'}. Calls ${config.approval === 'ask' ? 'ask first' : 'run without asking'}.`
+      return `Added the MCP server "${name}" (${config.transport}${config.transport === 'http' ? ` at ${config.url}` : `: ${[config.command, ...config.args].join(' ')}`}). Every chat can use it now (it starts the first time one does), and it is listed on the MCP page. Calls ${config.approval === 'ask' ? 'ask first' : 'run without asking'}.`
     },
     async addProvider(input) {
       if (!input.name.trim() || !/^https?:\/\//.test(input.baseUrl)) throw new Error('A provider needs a name and its base URL (http:// or https://)')

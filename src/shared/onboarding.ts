@@ -58,11 +58,18 @@ export interface FolderScan {
 /** Code intelligence for a language: shipped with Cloth, found on this PC, missing, or not offered. */
 export interface LanguageServerInfo {
   id: LanguageId
-  status: 'bundled' | 'found' | 'missing' | 'none'
+  /** bundled: ships with Cloth; installed: Cloth installed its own copy; found: on PATH; missing: not here yet; none: no server for it. */
+  status: 'bundled' | 'installed' | 'found' | 'missing' | 'none'
   /** The program Cloth runs (found) or would look for (missing). */
   program: string | null
   /** Where to get it when missing. */
   url?: string
+  /** Cloth can install it itself (Install button). */
+  installable?: boolean
+  /** The installed copy's version (installed). */
+  version?: string
+  /** Something else it needs that this computer lacks: Go to build gopls, Java 21+ to run jdtls. */
+  needs?: { name: string; url: string } | null
 }
 
 export type ImportSourceId = 'claude-code' | 'claude-desktop' | 'cursor' | 'codex' | 'agents' | 'omp'

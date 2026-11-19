@@ -7,7 +7,8 @@ import type { BestPracticeCadence, FolderScan, ImportResult, ImportSelection, Im
 import { LANGUAGES } from '@shared/onboarding'
 import { oauthOf } from '@shared/mcp-config'
 import { newId } from './core/context'
-import { findOnPath, PATH_SERVERS } from './agent/lsp'
+import { findJava, findOnPath, PATH_SERVERS } from './agent/lsp'
+import { missingPrerequisite, PREREQUISITE, readManifest, type InstallableServer } from './agent/lsp-install'
 import { parseSkillMd, slugify } from './skills/skills'
 import type { Services } from './services'
 
@@ -22,7 +23,8 @@ const EXT_LANG: Record<string, LanguageId> = {
   '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
   '.py': 'python', '.go': 'go', '.rs': 'rust',
   '.c': 'cpp', '.h': 'cpp', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp',
-  '.java': 'java', '.kt': 'java', '.cs': 'csharp', '.php': 'php', '.rb': 'ruby'
+  // No '.kt': Kotlin isn't Java to jdtls, so a Kotlin project shouldn't offer Java's server.
+  '.java': 'java', '.cs': 'csharp', '.php': 'php', '.rb': 'ruby'
 }
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'target', 'vendor', '.venv', 'venv', '__pycache__', '.next', '.nuxt', 'coverage', 'bin', 'obj', '.idea', '.vscode', 'release'])
 const PROJECT_FILES = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'composer.json', 'Gemfile', 'CMakeLists.txt']
@@ -117,13 +119,24 @@ export async function scanFolder(path: string): Promise<FolderScan> {
   return { path: root, git, instructions, languages, frameworks: [...frameworks].filter((f) => offered.has(f)), subprojects: subprojects.slice(0, 12), partial }
 }
 
-export function languageServers(ids: LanguageId[]): LanguageServerInfo[] {
+/**
+ * Each language's server and where it stands. `serversDir` is where Cloth installs its own copies
+ * (LspManager.serversDir); without it only PATH is looked at.
+ */
+export function languageServers(ids: LanguageId[], serversDir?: string, java: () => { major: number | null } | null = findJava): LanguageServerInfo[] {
   return ids.map((id) => {
     if (id === 'typescript' || id === 'javascript') return { id, status: 'bundled', program: 'tsc --lsp' }
     if (id === 'python') return { id, status: 'bundled', program: 'pyright' }
-    const server = Object.values(PATH_SERVERS).find((s) => s.language === id)
-    if (!server) return { id, status: 'none', program: null }
-    return findOnPath(server.program) ? { id, status: 'found', program: server.program } : { id, status: 'missing', program: server.program, url: server.url }
+    const key = (Object.keys(PATH_SERVERS) as InstallableServer[]).find((k) => PATH_SERVERS[k].language === id)
+    if (!key) return { id, status: 'none', program: null }
+    const server = PATH_SERVERS[key]
+    // jdtls runs on Java 21+, whichever copy it is.
+    const javaVersion = key === 'java' ? java() : null
+    const needs = key === 'java' && (!javaVersion || (javaVersion.major !== null && javaVersion.major < 21)) ? PREREQUISITE.java : missingPrerequisite(key, findOnPath)
+    const manifest = serversDir ? readManifest(serversDir, key) : null
+    if (manifest) return { id, status: 'installed', program: server.program, version: manifest.version, installable: true, needs: key === 'java' ? needs : null }
+    if (findOnPath(server.program)) return { id, status: 'found', program: server.program, installable: !!serversDir, needs: key === 'java' ? needs : null }
+    return { id, status: 'missing', program: server.program, url: server.url, installable: !!serversDir && !(key === 'go' && needs), needs }
   })
 }
 
@@ -324,11 +337,16 @@ export class OnboardingService {
         const slug = slugify(name) || 'server'
         if (taken.has(slug)) continue
         taken.add(slug)
-        // Switched off: they run programs on this PC, so each is turned on from the MCP page after a look.
-        clients.push({ id: newId('mcp_'), name: slug, ...raw.config, enabled: false, defaultOn: false, approval: 'ask' })
+        // On straight away, as they were in the tool they came from; every tool call asks first until that's changed.
+        clients.push({ id: newId('mcp_'), name: slug, ...raw.config, enabled: true, defaultOn: false, approval: 'ask' })
         result.mcp.push(slug)
       }
-      if (result.mcp.length) this.s.settings.update({ mcpClients: clients })
+      if (result.mcp.length) {
+        const added = clients.slice(clients.length - result.mcp.length)
+        this.s.settings.update({ mcpClients: clients })
+        // Start them now, so the MCP page shows each one running (or why not) instead of waiting for a chat.
+        void this.s.mcpClients.ensure(added.map((c) => c.id))
+      }
     }
     return result
   }

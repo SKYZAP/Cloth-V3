@@ -74,6 +74,9 @@ const GIT_MODES: { value: GitMode; label: string; hint: string }[] = [
   { value: 'pr', label: 'Commit and open a PR', hint: 'The branch is pushed and a pull request opened through the GitHub CLI. Failing checks get fixed and the PR waits for you.' }
 ]
 
+/** The ticket's finished changes wait, uncommitted, in their own copy of the code (a worktree or a plain copy). */
+const inCopy = (m: string | undefined) => m === 'none' || m === 'copy'
+
 const PRIORITY: Record<TicketPriority, { icon: ReactNode; label: string } | null> = {
   urgent: { icon: <CaretDoubleUp size={13} className="text-danger" />, label: 'Urgent' },
   high: { icon: <CaretUp size={13} className="text-danger" />, label: 'High' },
@@ -139,7 +142,7 @@ export function BoardsPage() {
             {o.projects.length > 0 && (
               <ProjectMenu overview={o} tracker={tracker} onSelect={(id) => { setSelected(null); void run(() => api.boards.selectProject(id)) }} onCreate={local ? (name) => run(() => api.boards.createProject(name), `Created ${name}`) : undefined} />
             )}
-            <Button variant="outline" icon={<SlidersHorizontal size={15} />} onClick={() => setModal('settings')} disabled={!project}>Project settings</Button>
+            <Button variant="outline" icon={<SlidersHorizontal size={15} />} onClick={() => setModal('settings')} disabled={!project}>{local ? 'Edit project' : 'Project settings'}</Button>
             <Button variant="primary" icon={<Plus size={15} weight="bold" />} onClick={() => setModal('new')} disabled={!project || !writes} title={project && !writes ? `Ticket updates are off for this project, so Cloth won't create tickets in ${tracker}. Turn them on in Project settings.` : undefined}>New ticket</Button>
           </>
         }
@@ -151,7 +154,8 @@ export function BoardsPage() {
             <span className="ml-auto flex items-center gap-3">
               {local && <Badge tone="dim"><Desktop size={11} />On this PC</Badge>}
               {!local && o.settings && !o.settings.trackerUpdates && <Badge tone="dim" title={`Cloth reads ${tracker} but changes nothing there. Turn on ticket updates in Project settings.`}>Read-only in {tracker}</Badge>}
-              {o.settings && o.settings.git !== 'pr' && <Badge tone="dim" title="Project settings → Commits and pull requests">{o.settings.git === 'none' ? 'No commits' : 'Local commits only'}</Badge>}
+              {o.settings && o.repoGit === false && <Badge tone="dim" title="The code folder isn't a git repository: agents build in a copy of it, and you apply the changes">No git: builds in a copy</Badge>}
+              {o.settings && o.repoGit !== false && o.settings.git !== 'pr' && <Badge tone="dim" title="Project settings → Commits and pull requests">{o.settings.git === 'none' ? 'No commits' : 'Local commits only'}</Badge>}
               {o.settings?.autoMerge && <Badge tone="warn"><Flask size={11} />Auto-merge on</Badge>}
               {working > 0 && <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-agent" />{working} agent{working === 1 ? '' : 's'} working</span>}
               {!local && (
@@ -191,8 +195,26 @@ export function BoardsPage() {
       </div>
       {project && o.settings && (
         <>
-          <NewTicketModal open={modal === 'new'} onClose={() => setModal(null)} projectName={project.name} tracker={tracker} local={local} settings={o.settings} agents={agents.data ?? []} onCreate={(input) => run(() => api.boards.createTicket(input), local ? 'Ticket created' : `Created in ${tracker}`)} />
-          <SettingsModal open={modal === 'settings'} onClose={() => setModal(null)} overview={o} agents={agents.data ?? []} onSave={(patch) => run(() => api.boards.saveSettings(project.id, patch))} />
+          <NewTicketModal open={modal === 'new'} onClose={() => setModal(null)} projectName={project.name} tracker={tracker} local={local} settings={o.settings} repoGit={o.repoGit} agents={agents.data ?? []} onCreate={(input) => run(() => api.boards.createTicket(input), local ? 'Ticket created' : `Created in ${tracker}`)} />
+          <SettingsModal
+            open={modal === 'settings'}
+            onClose={() => setModal(null)}
+            overview={o}
+            agents={agents.data ?? []}
+            onSave={(patch) => run(() => api.boards.saveSettings(project.id, patch))}
+            onRename={local ? (name) => run(() => api.boards.renameProject(project.id, name), 'Renamed') : undefined}
+            onDelete={
+              local
+                ? async () => {
+                    const n = o.tickets.length
+                    if (!(await confirmAction(`${project.name} and its ${n} open ticket${n === 1 ? '' : 's'} are deleted from this PC. Agents working on them stop, and changes waiting to be applied are lost. Your code folder isn't touched.`, { title: `Delete ${project.name}?`, confirmLabel: 'Delete project', danger: true }))) return
+                    setModal(null)
+                    setSelected(null)
+                    await run(() => api.boards.deleteProject(project.id), `Deleted ${project.name}`)
+                  }
+                : undefined
+            }
+          />
         </>
       )}
       <Modal open={modal === 'connect'} onClose={() => setModal(null)} title={local ? 'Switch from the Cloth board' : `Switch from ${tracker}`} width={480}>
@@ -492,7 +514,7 @@ export function ticketPrompt(t: BoardTicket, tracker: string): string {
   if (p?.pr) {
     lines.push('', `Pull request: ${p.pr.url}${p.branch ? ` (branch ${p.branch})` : ''}`)
     if (p.pr.checks === 'fail') lines.push(`Failing checks: ${p.pr.failing?.length ? p.pr.failing.join(', ') : 'see the PR'}`)
-  } else if (p?.local?.mode === 'none' && p.local.dir && !p.local.applied) lines.push('', `The changes are uncommitted in ${p.local.dir} (a worktree off ${p.local.base}).`)
+  } else if (inCopy(p?.local?.mode) && p?.local?.dir && !p.local.applied) lines.push('', p.local.mode === 'copy' ? `The changes are in ${p.local.dir} (a copy of the code folder).` : `The changes are uncommitted in ${p.local.dir} (a worktree off ${p.local.base}).`)
   else if (p?.branch) lines.push('', `Branch: ${p.branch}${p.local ? ' (local, not pushed)' : ''}`)
   return lines.join('\n')
 }
@@ -505,12 +527,12 @@ function TicketPanel({ ticket: t, tracker, kind, settings, chatProjectId, agents
   const ready = p?.stage === 'pr' && p.local && p.status === 'needsYou'
   const open = () => void api.app.openExternal(t.url)
   const markDone = async () => {
-    if (p?.local?.mode === 'none' && !(await confirmAction('The uncommitted changes in its copy of the code are deleted. Apply them first to keep them.', { title: `Mark ${t.key} done without applying?`, confirmLabel: 'Mark done', danger: true }))) return
+    if (inCopy(p?.local?.mode) && !(await confirmAction('The uncommitted changes in its copy of the code are deleted. Apply them first to keep them.', { title: `Mark ${t.key} done without applying?`, confirmLabel: 'Mark done', danger: true }))) return
     await run(() => api.boards.finish(t.id), `${t.key} is done`)
     onClose()
   }
   const remove = async () => {
-    if (!(await confirmAction(`${t.key} and what the agents did on it are deleted from this board${p?.local?.mode === 'none' ? ', with its uncommitted changes' : ''}.`, { title: `Delete ${t.key}?`, confirmLabel: 'Delete', danger: true }))) return
+    if (!(await confirmAction(`${t.key} and what the agents did on it are deleted from this board${inCopy(p?.local?.mode) ? ', with its uncommitted changes' : ''}.`, { title: `Delete ${t.key}?`, confirmLabel: 'Delete', danger: true }))) return
     await run(() => api.boards.deleteTicket(t.id), `Deleted ${t.key}`)
     onClose()
   }
@@ -544,7 +566,7 @@ function TicketPanel({ ticket: t, tracker, kind, settings, chatProjectId, agents
         {ready && p?.local && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             <Button size="sm" variant="primary" icon={<DownloadSimple size={14} />} onClick={() => run(() => api.boards.applyChanges(t.id), `Applied ${t.key} to your code folder, uncommitted`)} title={`Copies the changes into ${settings.repo ?? 'the code folder'} as uncommitted changes, then marks the ticket done`}>Apply to code folder</Button>
-            {p.local.mode === 'none' && p.local.dir && <Button size="sm" icon={<FolderOpen size={14} />} onClick={() => void api.app.openPath(p.local!.dir!)}>Open the copy</Button>}
+            {inCopy(p.local.mode) && p.local.dir && <Button size="sm" icon={<FolderOpen size={14} />} onClick={() => void api.app.openPath(p.local!.dir!)}>Open the copy</Button>}
             <Button size="sm" variant="ghost" icon={<CheckCircle size={14} />} onClick={() => void markDone()}>Mark done</Button>
           </div>
         )}
@@ -678,7 +700,7 @@ function Steps({ ticket: t, tracker, kind, settings }: { ticket: BoardTicket; tr
   const activity = live && p.activity ? ` · ${p.activity}` : ''
   const reqState: StepState = p.stage === 'req' && p.sendBacks > 0 && live ? 'now' : state(1)
   const revState: StepState = p.stage === 'req' && p.review?.verdict === 'revise' ? 'back' : state(2)
-  const gitMode = p.local?.mode ?? (p.pr ? 'pr' : settings.git)
+  const gitMode = p.local?.mode === 'copy' ? 'none' : (p.local?.mode ?? (p.pr ? 'pr' : settings.git))
   let pr: { body: ReactNode; state: StepState } = {
     body: gitMode === 'none' ? 'Leaves the changes uncommitted in their own copy of the code, for you to apply.' : gitMode === 'commit' ? 'Commits the changes to a local branch. Nothing is pushed.' : 'Pushes the branch and opens a pull request, linked on the ticket.',
     state: 'wait'
@@ -813,8 +835,8 @@ function AgentPicks({ value, onChange, agents }: { value: BoardAgents; onChange(
 
 // ---- Modals ----
 
-function NewTicketModal({ open, onClose, projectName, tracker, local, settings, agents, onCreate }: { open: boolean; onClose(): void; projectName: string; tracker: string; local: boolean; settings: BoardProjectSettings; agents: Agent[]; onCreate(input: { title: string; goal: string; auto: boolean; agents: BoardAgents }): Promise<void> }) {
-  const end = settings.git === 'pr' ? 'opens a PR' : settings.git === 'commit' ? 'commits it to a local branch' : 'leaves the changes uncommitted for you to apply'
+function NewTicketModal({ open, onClose, projectName, tracker, local, settings, repoGit, agents, onCreate }: { open: boolean; onClose(): void; projectName: string; tracker: string; local: boolean; settings: BoardProjectSettings; repoGit: boolean | null; agents: Agent[]; onCreate(input: { title: string; goal: string; auto: boolean; agents: BoardAgents }): Promise<void> }) {
+  const end = repoGit === false ? 'leaves the changes in a copy for you to apply' : settings.git === 'pr' ? 'opens a PR' : settings.git === 'commit' ? 'commits it to a local branch' : 'leaves the changes uncommitted for you to apply'
   const [title, setTitle] = useState('')
   const [goal, setGoal] = useState('')
   const [auto, setAuto] = useState(true)
@@ -849,15 +871,15 @@ function NewTicketModal({ open, onClose, projectName, tracker, local, settings, 
           <div className="flex items-start gap-3 p-3">
             <div className="flex-1">
               <div className="flex items-center gap-1.5 font-semibold"><Robot size={15} className="text-muted" />Hand to agents</div>
-              <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{auto ? `The planner writes requirements${local ? '' : ` into the ${tracker} ticket`}, the reviewer checks them against the goal${settings.approveRequirements ? ' and you approve them' : ''}, then the implementer builds it in a worktree and ${end}.` : `The ticket is created${local ? '' : ` in ${tracker}`} as written. You can hand it to agents later.`}</div>
+              <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{auto ? `The planner writes requirements${local ? '' : ` into the ${tracker} ticket`}, the reviewer checks them against the goal${settings.approveRequirements ? ' and you approve them' : ''}, then the implementer builds it in its own copy of the code and ${end}.` : `The ticket is created${local ? '' : ` in ${tracker}`} as written. You can hand it to agents later.`}</div>
             </div>
             <Switch checked={auto} onChange={setAuto} ariaLabel="Hand to agents" />
           </div>
           <div className={clsx('px-3 pb-3 transition-opacity', !auto && 'pointer-events-none opacity-40')}><AgentPicks value={picks} onChange={setPicks} agents={agents} /></div>
         </div>
         <div className="flex items-center gap-1.5 text-caption text-dim">
-          {settings.git !== 'pr'
-            ? settings.git === 'none' ? 'Nothing is committed: the finished changes wait for you to apply them.' : 'Commits stay on this PC: nothing is pushed.'
+          {repoGit === false || settings.git !== 'pr'
+            ? repoGit === false || settings.git === 'none' ? 'Nothing is committed: the finished changes wait for you to apply them.' : 'Commits stay on this PC: nothing is pushed.'
             : settings.autoMerge ? <><Flask size={13} className="text-warn" />Auto-merge is on for this project: the PR merges once checks pass and the code review approves.</> : 'The PR waits for your review. Auto-merge is off for this project.'}
         </div>
         {!settings.repo && auto && <div className="text-caption text-warn">Pick this project's code folder in Project settings before the build step, or the ticket waits there.</div>}
@@ -867,7 +889,7 @@ function NewTicketModal({ open, onClose, projectName, tracker, local, settings, 
   )
 }
 
-function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: boolean; onClose(): void; overview: BoardOverview; agents: Agent[]; onSave(patch: Partial<BoardProjectSettings>): Promise<void> }) {
+function SettingsModal({ open, onClose, overview: o, agents, onSave, onRename, onDelete }: { open: boolean; onClose(): void; overview: BoardOverview; agents: Agent[]; onSave(patch: Partial<BoardProjectSettings>): Promise<void>; onRename?(name: string): Promise<void>; onDelete?(): Promise<void> }) {
   const s = o.settings!
   const kind = o.connection!.kind
   const local = kind === 'cloth'
@@ -875,9 +897,20 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
   const project = o.projects.find((p) => p.id === o.projectId)
   const custom = o.states.some((st) => st.custom)
   const [commands, setCommands] = useState(s.commands.join('\n'))
+  const [name, setName] = useState(project?.name ?? '')
   useEffect(() => {
-    if (open) setCommands(s.commands.join('\n'))
+    if (open) {
+      setCommands(s.commands.join('\n'))
+      setName(project?.name ?? '')
+    }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  const noGit = o.repoGit === false
+  const renamed = !!onRename && !!name.trim() && name.trim() !== project?.name
+  const done = async () => {
+    if (renamed) await onRename!(name.trim())
+    await onSave({ commands: commands.split('\n') })
+    onClose()
+  }
   const pickRepo = async () => {
     const [dir] = await api.app.pickPaths({ directory: true, title: 'The code folder for this project' })
     if (dir) await onSave({ repo: dir })
@@ -888,14 +921,34 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
     return seen
   }, [s.stateMap])
   return (
-    <Modal open={open} onClose={onClose} title={`${project?.name ?? 'Project'} settings`} width={600} footer={<Button variant="primary" onClick={async () => { await onSave({ commands: commands.split('\n') }); onClose() }}>Done</Button>}>
+    <Modal open={open} onClose={onClose} title={onRename ? `Edit ${project?.name ?? 'project'}` : `${project?.name ?? 'Project'} settings`} width={600} footer={
+        <>
+          {onDelete && <Button variant="ghost" className="mr-auto text-danger-hi" icon={<Trash size={14} />} onClick={() => void onDelete()}>Delete project</Button>}
+          <Button variant="primary" onClick={() => void done()}>Done</Button>
+        </>
+      }>
       <div className="flex flex-col gap-5">
+        {onRename && (
+          <Field label="Name" hint={`Ticket keys stay ${project?.key ?? ''}-1, -2… after a rename.`}>
+            <Input id="board-project-name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && renamed) void onRename(name.trim()) }} />
+          </Field>
+        )}
+        <Section label="Agents for each step">
+          <AgentPicks value={s.agents} onChange={(agents) => void onSave({ agents })} agents={agents} />
+          <div className="mt-1.5 text-caption text-dim">Pick any of your agents for a step, or leave Cloth's built-in Planner, Code reviewer and Implementer. New tickets start with these; a ticket can change them before it's handed to agents. The implementer edits files in its own copy of the code whatever the agent's own file access is.</div>
+        </Section>
         <Section label="Code">
           <div className="flex items-center gap-2 rounded-[10px] border border-line bg-card p-3">
             <Folder size={16} className="shrink-0 text-muted" />
             <div className="min-w-0 flex-1">
               <div className={clsx('truncate font-mono text-caption', s.repo ? 'text-fg' : 'text-dim')}>{s.repo ?? 'No folder yet'}</div>
-              <div className="text-caption text-dim">The git checkout the implementer works from, in a separate worktree.{s.git === 'pr' ? ' Pull requests go to its GitHub remote, through the GitHub CLI.' : ' Finished changes are applied here when you say so.'}</div>
+              <div className="text-caption text-dim">
+                {!s.repo
+                  ? 'Any folder with your code. Git is optional.'
+                  : noGit
+                    ? 'Not a git repository: the implementer works in a copy of this folder, and you apply its changes here when you say so.'
+                    : `A git repository: the implementer works in a separate worktree.${s.git === 'pr' ? ' Pull requests go to its GitHub remote, through the GitHub CLI.' : ' Finished changes are applied here when you say so.'}`}
+              </div>
             </div>
             <Button size="sm" variant="outline" onClick={pickRepo}>{s.repo ? 'Change' : 'Choose folder'}</Button>
           </div>
@@ -905,9 +958,9 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
             <div className="p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-semibold">Allow PR creation and commits</div>
-                <Segmented<GitMode> value={s.git} onChange={(git) => void onSave({ git })} items={GIT_MODES.map((m) => ({ value: m.value, label: m.label }))} />
+                {noGit ? <Badge tone="dim">Needs git</Badge> : <Segmented<GitMode> value={s.git} onChange={(git) => void onSave({ git })} items={GIT_MODES.map((m) => ({ value: m.value, label: m.label }))} />}
               </div>
-              <div className="mt-1 text-[12.5px] leading-relaxed text-muted">{GIT_MODES.find((m) => m.value === s.git)?.hint}</div>
+              <div className="mt-1 text-[12.5px] leading-relaxed text-muted">{noGit ? 'The code folder isn’t a git repository, so nothing is committed: finished changes wait in a copy for you to apply. Choose a git repository to commit or open pull requests.' : GIT_MODES.find((m) => m.value === s.git)?.hint}</div>
             </div>
             <SettingRow
               title={local ? 'Ticket sync and updates' : 'Allow ticket sync and updates'}
@@ -923,7 +976,7 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
                 {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
               </Select>
             </SettingRow>
-            {s.git === 'pr' && (
+            {s.git === 'pr' && !noGit && (
               <SettingRow title="Automatic check fixes" hint="When a PR's checks fail, an agent reads the logs and pushes a fix this many times before the PR waits for you. 0 leaves every failure to you.">
                 <Select className="w-20" value={String(s.checkFixes)} onChange={(e) => void onSave({ checkFixes: Number(e.target.value) })} aria-label="Automatic check fixes">
                   {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
@@ -955,15 +1008,11 @@ function SettingsModal({ open, onClose, overview: o, agents, onSave }: { open: b
             <div className="mt-1.5 text-caption text-dim">{s.trackerUpdates ? `Moving a ticket in ${tracker} moves it here too. A ticket moved back to the Requirements state waits there for you to resume it.` : `Ticket updates are off, so Cloth doesn't move tickets. The map only places tickets without agents in a column.`}</div>
           </Section>
         )}
-        <Section label="Default agents">
-          <AgentPicks value={s.agents} onChange={(agents) => void onSave({ agents })} agents={agents} />
-          <div className="mt-1.5 text-caption text-dim">Planner, Code reviewer and Implementer are Cloth's built-in instructions; pick a saved agent to use its own. The implementer edits files in its own worktree whatever the agent's own file access is.</div>
-        </Section>
         <Section label="Commands the implementer may run">
           <Textarea id="board-commands" rows={4} className="font-mono text-caption" value={commands} onChange={(e) => setCommands(e.target.value)} />
           <div className="mt-1.5 text-caption text-dim">One per line. Each allows that command with any arguments; anything else is refused.</div>
         </Section>
-        {s.git === 'pr' && (
+        {s.git === 'pr' && !noGit && (
           <Section label="Merging">
             <div className="flex items-start gap-3 rounded-[10px] border border-line bg-card p-3">
               <div className="flex-1">

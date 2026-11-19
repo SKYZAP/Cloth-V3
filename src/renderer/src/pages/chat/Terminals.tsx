@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Plus, TerminalWindow, X } from '@phosphor-icons/react'
+import { Lightning, Plus, Stop, TerminalWindow, X } from '@phosphor-icons/react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalInfo } from '@shared/types'
-import { autoStart, terminalsAfter, withTerminal } from '@shared/terminal-tabs'
+import { autoStart, clipboardKey, terminalsAfter, withTerminal } from '@shared/terminal-tabs'
 import { api, useEvent } from '@/lib/api'
 import { attempt } from '@/lib/store'
 import { Button } from '@/components/ui'
 import { isMobile } from '@/lib/platform'
+
+const mac = /Mac|iPhone|iPad/.test(navigator.platform)
 
 const css = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 
@@ -52,7 +54,10 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
       fontFamily: "'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace",
       fontSize: 13,
       lineHeight: 1.2,
-      cursorBlink: true,
+      // A background command's tab only shows output: nothing to type into.
+      cursorBlink: !info.background,
+      disableStdin: !!info.background,
+      cursorInactiveStyle: info.background ? 'none' : 'outline',
       scrollback: 5000,
       allowProposedApi: false,
       theme: theme()
@@ -62,7 +67,22 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
     t.open(host.current!)
     term.current = t
     fit.current = f
-    const input = t.onData((d) => void api.panel.writeTerminal(info.id, d))
+    const input = t.onData((d) => {
+      if (!info.background) void api.panel.writeTerminal(info.id, d)
+    })
+    t.attachCustomKeyEventHandler((e) => {
+      const action = clipboardKey(e, t.hasSelection(), mac)
+      if (!action) return true
+      e.preventDefault()
+      if (action === 'copy') {
+        const text = t.getSelection()
+        if (text) void navigator.clipboard.writeText(text).catch(() => undefined)
+        t.clearSelection()
+      } else if (action === 'paste') {
+        if (!info.background) void navigator.clipboard.readText().then((text) => text && t.paste(text), () => undefined)
+      } else t.selectAll()
+      return false
+    })
     const resize = t.onResize(({ cols, rows }) => void api.panel.resizeTerminal(info.id, cols, rows))
     // A view torn down before its scrollback arrives (StrictMode remounts) leaves the replay to the next one.
     let live = true
@@ -99,13 +119,14 @@ function TerminalView({ info, active }: { info: TerminalInfo; active: boolean })
       } catch {
         /* hidden */
       }
-      term.current?.focus()
+      if (!info.background) term.current?.focus()
     })
   }, [active])
 
   useEvent('terminal', (e) => {
     if (e.type === 'data' && e.id === info.id && replayed.current) term.current?.write(e.data)
-    if (e.type === 'exit' && e.id === info.id) term.current?.write(`\r\n\x1b[90m[process exited${e.code !== null ? ` with code ${e.code}` : ''}]\x1b[0m\r\n`)
+    if (e.type === 'exit' && e.id === info.id)
+      term.current?.write(`\r\n\x1b[90m[${info.background && e.code === null ? 'stopped' : `process exited${e.code !== null ? ` with code ${e.code}` : ''}`}]\x1b[0m\r\n`)
   })
 
   return <div ref={host} className={clsx('absolute inset-0 px-2 pt-1.5', !active && 'invisible')} />
@@ -161,6 +182,11 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
   }, [list, active])
 
   const close = (id: string) => void api.panel.closeTerminal(id)
+  const stop = (id: string) => void attempt(() => api.panel.stopTerminal(id))
+  // A background command the agent starts comes to the front, so it's easy to find.
+  useEvent('terminal', (e) => {
+    if (e.type === 'opened' && e.terminal.sessionId === sessionId && e.terminal.background) setActive(e.terminal.id)
+  })
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -169,11 +195,25 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
           <div
             key={t.id}
             onClick={() => setActive(t.id)}
-            title={t.cwd}
+            title={t.background ? `Started by the agent in the background${t.cwd && t.cwd !== '.' ? `, in ${t.cwd}` : ''}:\n${t.command}` : t.cwd}
             className={clsx('group/tab flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1 text-caption', t.id === active ? 'bg-elev-2 text-fg' : 'text-muted hover:bg-elev')}
           >
-            <TerminalWindow size={13} className={t.running ? 'text-ok' : 'text-dim'} />
-            {t.title}
+            {t.background ? <Lightning size={13} weight="fill" className={t.running ? 'text-ok' : 'text-dim'} aria-label="Background command" /> : <TerminalWindow size={13} className={t.running ? 'text-ok' : 'text-dim'} />}
+            <span className={clsx(t.background && 'max-w-[180px] truncate font-mono')}>{t.title}</span>
+            {t.background && t.running && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  stop(t.id)
+                }}
+                className="flex h-5 items-center gap-0.5 rounded px-1 text-micro text-dim hover:bg-elev hover:text-danger-hi"
+                aria-label={`Stop ${t.title}`}
+                title="Stop this command (its output stays here)"
+              >
+                <Stop size={9} weight="fill" />
+                Stop
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -181,6 +221,7 @@ export function Terminals({ sessionId, visible, hasFolder, container, onPickFold
               }}
               className="flex h-5 w-5 items-center justify-center rounded text-dim opacity-0 hover:bg-elev hover:text-fg group-hover/tab:opacity-100 mobile:opacity-100"
               aria-label={`Close ${t.title}`}
+              title={t.background && t.running ? 'Stop it and close the tab' : undefined}
             >
               <X size={10} weight="bold" />
             </button>

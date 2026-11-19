@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -93,6 +93,20 @@ describe('automation commands', () => {
     const folder = mkdtempSync(join(tmpdir(), 'cloth-auto-'))
     const wf = services.workflows.createAutomation({ name: 'Box', automation: { ...base, deliver: 'notify', commands: { mode: 'container', image: '', network: false } }, workspace: folder })
     expect(wf.automation).toMatchObject({ commands: { mode: 'container', image: 'node:22', network: false } })
+    services.workflows.stopScheduler()
+  })
+
+  it('gives an automation with an empty container folder a folder of its own, removed with it', () => {
+    const { services } = setup()
+    const wf = services.workflows.createAutomation({ name: 'Scratch', automation: { ...base, commands: { mode: 'container', image: 'python:3.12', network: true, empty: true } }, workspace: null })
+    expect(wf.automation?.commands).toEqual({ mode: 'container', image: 'python:3.12', network: true, empty: true })
+    expect(wf.workspace).toMatch(/automations[\\/].+[\\/]files$/)
+    expect(existsSync(wf.workspace!)).toBe(true)
+    expect(readdirSync(wf.workspace!)).toEqual([])
+    // Back to no folder: commands need one again.
+    expect(() => services.workflows.saveAutomation(wf.id, { automation: { ...base, commands: { mode: 'allowlist', allow: ['ls'] } }, workspace: null })).toThrow(/folder/)
+    services.workflows.remove(wf.id)
+    expect(existsSync(wf.workspace!)).toBe(false)
     services.workflows.stopScheduler()
   })
 })

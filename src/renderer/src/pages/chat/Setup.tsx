@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { ArrowSquareOut, Books, CaretLeft, CaretRight, FolderSimple, Gauge, MagnifyingGlass, Monitor, NotePencil, PlugsConnected, Robot, Sparkle, Wrench, X, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { contextIsGuess, type Agent, type AgentSetup, type ChatSession, type ChatSetup, type McpClientStatus, type Project, type SkillMode } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
+import { pickedServers, withServer } from '@shared/mcp-select'
 import { attempt, useApp } from '@/lib/store'
 import { Segmented } from './StatusLine'
 import { filterOnOff, firstSentence, matches, nothingMatches, onOffCounts, serverMatches, type OnOff } from './setupFilter'
@@ -32,7 +33,7 @@ interface Group {
 /** Built-in tools by what they're for. Tools not listed here are custom tools (from the Tools page). */
 const GROUPS: Group[] = [
   { id: 'files', label: 'Files', names: ['read', 'ls', 'find', 'grep', 'ast_grep', 'write', 'edit', 'ast_edit', 'read_file', 'list_dir'] },
-  { id: 'shell', label: 'Commands', names: ['bash', 'powershell'] },
+  { id: 'shell', label: 'Commands', names: ['bash', 'powershell', 'shell_output', 'shell_stop', 'terminal_read'] },
   { id: 'code', label: 'Code intelligence', names: ['lsp'], flag: 'codeIntel' },
   { id: 'web', label: 'Web', names: ['web_search', 'web_fetch'], flag: 'webEnabled' },
   { id: 'agents', label: 'Subagents', names: ['task'], flag: 'subagents' },
@@ -57,7 +58,8 @@ export function useCapabilities(target: Target, update: Update, setup: ChatSetup
   updateRef.current = update
   return useMemo(() => {
     const configs = (settings?.mcpClients ?? []).filter((c) => c.enabled)
-    const chosen = target.mcpServers ?? configs.filter((c) => c.defaultOn).map((c) => c.id)
+    const enabledIds = configs.map((c) => c.id)
+    const chosen = pickedServers(target.mcpServers, enabledIds)
     const off = new Set(target.disabledTools)
     const tools = setup?.tools ?? []
     const serverOf = (name: string) => configs.find((c) => name.startsWith(`mcp__${c.name.replace(/[^a-zA-Z0-9_-]+/g, '_')}__`))
@@ -103,12 +105,12 @@ export function useCapabilities(target: Target, update: Update, setup: ChatSetup
       }
       const c = name.startsWith('mcp__') ? serverOf(name) : null
       if (c && !chosen.includes(c.id)) {
-        patch.mcpServers = [...chosen, c.id]
+        patch.mcpServers = withServer(target.mcpServers, enabledIds, c.id, true)
         for (const t of external) if (t.name !== name && serverOf(t.name) === c) nextOff.add(t.name)
       }
       void update({ ...patch, disabledTools: [...nextOff] })
     }
-    return { configs, chosen, serverOf, isOn, builtin, external, skills, skillCost, skillsOn, selected, parts, total, toggleTool, setup }
+    return { configs, chosen, enabledIds, serverOf, isOn, builtin, external, skills, skillCost, skillsOn, selected, parts, total, toggleTool, setup }
   }, [target, setup, settings, collections])
 }
 export type Capabilities = ReturnType<typeof useCapabilities>
@@ -611,7 +613,7 @@ export function SkillsView({ back, target: session, update, m }: { back?: () => 
 
 /** The MCP page: one row per server (its switch turns all its tools on or off); a row opens the server's tools. */
 export function ServersView({ back, target: session, update, m, status }: { back?: () => void; target: Target; update: Update; m: Capabilities; status: McpClientStatus[] }) {
-  const { configs, chosen, external, serverOf, isOn } = m
+  const { configs, chosen, enabledIds, external, serverOf, isOn } = m
   const total = m.parts.servers
   const [q, setQ] = useState('')
   const [chip, setChip] = useState<OnOff>('all')
@@ -640,7 +642,7 @@ export function ServersView({ back, target: session, update, m, status }: { back
   /** All of a server's tools on (the server joins the chat), or the server off. */
   const setServer = (id: string, on: boolean) => {
     const own = rows.find((r) => r.c.id === id)?.own.map((t) => t.name) ?? []
-    void update(on ? { mcpServers: [...new Set([...chosen, id])], disabledTools: session.disabledTools.filter((n) => !own.includes(n)) } : { mcpServers: chosen.filter((x) => x !== id) })
+    void update(on ? { mcpServers: withServer(session.mcpServers, enabledIds, id, true), disabledTools: session.disabledTools.filter((n) => !own.includes(n)) } : { mcpServers: withServer(session.mcpServers, enabledIds, id, false) })
   }
   const open = rows.find((r) => r.c.id === openId)
   if (open) return <ServerPage row={open} m={m} initialQuery={q} back={() => setOpenId(null)} setServer={(on) => setServer(open.c.id, on)} />

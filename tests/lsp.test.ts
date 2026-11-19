@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ToolTrace } from '../src/shared/types'
-import { LspManager, findPosition, locations, describeLocations, hoverText } from '../src/main/agent/lsp'
+import { LspManager, findOnPath, findPosition, locations, describeLocations, hoverText, javaMajor, jdtlsDataDir, lspLanguage } from '../src/main/agent/lsp'
 import { makeServices } from './helpers'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -100,5 +100,70 @@ describe('language servers', () => {
     expect(edit.result).toMatch(/Type errors after this change/)
     expect(edit.result).toMatch(/not assignable to type 'string'/)
     env.services.lsp.disposeAll()
+  })
+})
+
+describe('Java (jdtls)', () => {
+  const saved = { PATH: process.env.PATH, JAVA_HOME: process.env.JAVA_HOME }
+  afterEach(() => {
+    process.env.PATH = saved.PATH
+    if (saved.JAVA_HOME === undefined) delete process.env.JAVA_HOME
+    else process.env.JAVA_HOME = saved.JAVA_HOME
+  })
+  const javaProject = () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cloth-java-')))
+    writeFileSync(join(root, 'Main.java'), 'public class Main {\n  public static void main(String[] args) {\n    int n = "text";\n  }\n}\n')
+    return root
+  }
+  const emptyBin = () => realpathSync(mkdtempSync(join(tmpdir(), 'cloth-bin-')))
+
+  it('maps .java files to jdtls', () => {
+    expect(lspLanguage('src/Main.java')).toEqual({ server: 'java', languageId: 'java' })
+    expect(lspLanguage('src/App.kt')).toBeNull()
+  })
+
+  it("only runs when Java is one of the user's languages", () => {
+    const root = javaProject()
+    expect(() => new LspManager(() => ['go']).server(root, join(root, 'Main.java'))).toThrow(/Code intelligence for \.java files is off/)
+  })
+
+  it('says so when jdtls is not installed', async () => {
+    const root = javaProject()
+    process.env.PATH = emptyBin()
+    await expect(new LspManager(() => ['java']).server(root, join(root, 'Main.java'))).rejects.toThrow(/jdtls isn't installed/)
+  })
+
+  it('says so when Java itself is missing', async () => {
+    const root = javaProject()
+    const bin = emptyBin()
+    writeFileSync(join(bin, process.platform === 'win32' ? 'jdtls.cmd' : 'jdtls'), '')
+    process.env.PATH = bin
+    delete process.env.JAVA_HOME
+    await expect(new LspManager(() => ['java']).server(root, join(root, 'Main.java'))).rejects.toThrow(/jdtls needs Java 21 or newer, and no Java was found/)
+  })
+
+  it('reads Java versions and keeps its workspace out of the project', () => {
+    expect(javaMajor('openjdk version "21.0.7" 2025-04-15 LTS')).toBe(21)
+    expect(javaMajor('java version "1.8.0_402"')).toBe(8)
+    expect(javaMajor('nonsense')).toBeNull()
+    const root = javaProject()
+    const base = join(tmpdir(), 'cloth-data', 'lsp')
+    const dir = jdtlsDataDir(base, root)
+    expect(dir.startsWith(join(base, 'jdtls'))).toBe(true)
+    expect(dir.startsWith(root)).toBe(false)
+    expect(jdtlsDataDir(base, root)).toBe(dir)
+    expect(jdtlsDataDir(base, javaProject())).not.toBe(dir)
+  })
+
+  it.skipIf(!findOnPath('jdtls'))('diagnostics from a real jdtls after the project import', { timeout: 360_000 }, async () => {
+    const root = javaProject()
+    const java = new LspManager(() => ['java'], realpathSync(mkdtempSync(join(tmpdir(), 'cloth-lsp-data-'))))
+    try {
+      const server = await java.server(root, join(root, 'Main.java'))
+      const diags = await server.diagnostics(join(root, 'Main.java'), 60_000)
+      expect(diags.some((d) => d.severity === 1 && /String/.test(d.message))).toBe(true)
+    } finally {
+      java.disposeAll()
+    }
   })
 })

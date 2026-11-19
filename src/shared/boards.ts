@@ -92,7 +92,7 @@ export interface BoardAgents {
 }
 
 export interface BoardProjectSettings {
-  /** The local git checkout the implementer works from. Building needs one. */
+  /** The code folder the implementer works from: in a git worktree when it's a git repository, else in a copy. Building needs one. */
   repo: string | null
   /** stage → tracker state id. */
   stateMap: Record<MappedStage, string | null>
@@ -119,10 +119,11 @@ export interface BoardProjectSettings {
 
 /** Where the work of a ticket built without a pull request is. */
 export interface LocalResult {
-  mode: 'none' | 'commit'
-  /** The branch the worktree started from. */
+  /** `copy`: built in a copy of a code folder that isn't a git repository. */
+  mode: 'none' | 'commit' | 'copy'
+  /** The branch the worktree started from ('' for a copy). */
   base: string
-  /** `none`: the worktree holding the uncommitted changes. */
+  /** `none` and `copy`: the worktree or copy holding the uncommitted changes. */
   dir?: string
   /** `commit`: the local branch with the commit. */
   branch?: string
@@ -217,6 +218,8 @@ export interface BoardOverview {
   projectId: string | null
   states: TrackerState[]
   settings: BoardProjectSettings | null
+  /** Whether the project's code folder is in a git repository (null: no folder). Commits and PRs need one. */
+  repoGit: boolean | null
   tickets: BoardTicket[]
   syncedAt: number | null
   /** The chat project linked to the board on show: chats opened from its tickets go there. */

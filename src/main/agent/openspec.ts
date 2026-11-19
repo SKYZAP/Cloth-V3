@@ -1,4 +1,4 @@
-// OpenSpec mode: the chat takes one change from proposal to pull request with the openspec CLI
+// OpenSpec mode: the chat takes one change from proposal to a finished, committed branch with the openspec CLI
 // (@fission-ai/openspec), on its own. The agent runs the CLI with the `openspec` tool, reports each
 // step with `openspec_step` (the chat's progress strip and the step cards come from those reports),
 // and follows the section below, which replaces itself as the run moves on.
@@ -91,18 +91,18 @@ export function openspecSection(run: OpenSpecRun | null | undefined, folder: str
     : 'Do not stop for the person between steps. Stop only when a check still fails after two rounds of fixes, or when you need a decision only they can make (ask it with `ask_user`).'
   return [
     '## Mode: OpenSpec (automated)',
-    'Take the request from proposal to pull request with OpenSpec, on your own. Run the CLI with the `openspec` tool (pass its arguments; add `--json` where the command supports it). Report each step with `openspec_step` when you start it, and with step "done" at the very end. Keep your own messages short: the step cards show the progress.',
+    'Take the request from proposal to a committed branch with OpenSpec, on your own. Run the CLI with the `openspec` tool (pass its arguments; add `--json` where the command supports it). Report each step with `openspec_step` when you start it, and with step "done" at the very end. Keep your own messages short: the step cards show the progress.',
     where,
     gate,
     '',
-    `1. Set up: \`openspec --version\` (Cloth ships the CLI; never install it yourself). ${initialised ? 'The folder already has openspec/.' : 'The folder has no openspec/ yet: run `openspec init --tools none`.'} Check \`gh auth status\` with a shell command; without gh you will finish on a branch and skip the pull request.`,
+    `1. Set up: \`openspec --version\` (Cloth ships the CLI; never install it yourself). ${initialised ? 'The folder already has openspec/.' : 'The folder has no openspec/ yet: run `openspec init --tools none`.'}`,
     '2. Propose: read what exists (`openspec list --specs --json`, `openspec show <spec> --json`) and map the code the request touches with read-only agents (`task`, access reader). Pick a short kebab-case change name and run `openspec new change <name> --description "<one line>" --json`. For each artifact, get its instructions (`openspec instructions <artifact> --change <name> --json`) and write it: proposal.md (why and what), design.md (how), the spec deltas under specs/ (## ADDED / MODIFIED / REMOVED Requirements, each with scenarios), and tasks.md (a numbered checklist).',
     '3. Validate: `openspec validate <name> --strict --json`. Fix every finding and run it again. After two rounds of fixes that still fail, stop and tell the person what fails.',
     '4. Apply: work through tasks.md in order (`openspec instructions apply --change <name> --json`, `openspec status --change <name> --json`). Hand tasks to agents with `task` (access writer, or operator when it must run commands; the cheapest reasoning level that gets it right), independent tasks in parallel. Tick a task in tasks.md only after checking its result. After each batch, report step "apply" with `tasks` {done, total}.',
     '5. Verify: run the project\'s tests and build, run a check (`task` with kind check) to try to break the change, and validate again with --strict. Fix what is proven, at most two rounds.',
     '6. Archive: `openspec archive <name> -y --json` (it merges the spec deltas into openspec/specs).',
-    '7. Ship: with shell commands, create the branch `openspec/<name>`, commit everything with a message taken from the proposal, push it, and open a pull request with `gh pr create` (title from the proposal, the proposal as the body). Never merge it. Report its URL as `pr`.',
-    'Finish with `openspec_step` step "done" and a summary: what changed, what was checked, the pull request, and anything left open.'
+    '7. Ship: if the folder is a git repository, create the branch `openspec/<name>` with shell commands and commit everything there with a message taken from the proposal. Do not push and do not open a pull request: the person reviews the branch and decides. Only when the person asked for a pull request in this chat, push the branch and open one with `gh pr create` (title from the proposal, the proposal as the body), never merge it, and report its URL as `pr`. Without git, leave the changes in place.',
+    'Finish with `openspec_step` step "done" and a summary: what changed, what was checked, the branch it is on (or the pull request, if one was asked for), and anything left open.'
   ].join('\n')
 }
 

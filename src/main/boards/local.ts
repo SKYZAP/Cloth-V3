@@ -46,6 +46,9 @@ export interface LocalTracker extends Tracker {
   /** A ticket's comments, oldest first. */
   comments(projectId: string, ticketId: string): TicketComment[]
   deleteTicket(project: BoardProject, ticketId: string): Promise<void>
+  renameProject(projectId: string, name: string): Promise<void>
+  /** The project, its tickets and its ticket numbering. */
+  deleteProject(projectId: string): Promise<void>
 }
 
 export function localTracker(kv: KvLike): LocalTracker {
@@ -109,6 +112,20 @@ export function localTracker(kv: KvLike): LocalTracker {
     async deleteTicket(p, ticketId) {
       const s = load()
       s.tickets[p.id] = (s.tickets[p.id] ?? []).filter((x) => x.id !== ticketId)
+      save(s)
+    },
+    async renameProject(projectId, name) {
+      const s = load()
+      const p = s.projects.find((x) => x.id === projectId)
+      if (!p) throw new Error('That project is no longer on the board')
+      p.name = name.trim()
+      save(s)
+    },
+    async deleteProject(projectId) {
+      const s = load()
+      s.projects = s.projects.filter((x) => x.id !== projectId)
+      delete s.tickets[projectId]
+      delete s.seq[projectId]
       save(s)
     }
   }

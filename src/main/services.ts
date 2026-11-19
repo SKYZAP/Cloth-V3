@@ -23,6 +23,7 @@ import { PanelService } from './panel/panel'
 import { McpClientService } from './mcp/client'
 import { TerminalService, type PtySpawn } from './panel/terminals'
 import { ApprovalService, CheckpointStore } from './agent/workspace'
+import { BackgroundShells } from './agent/shell'
 import { LspManager } from './agent/lsp'
 import { globalRulesDir } from './agent/rules'
 import { BUILTIN_NAMES } from './agent/tools'
@@ -54,6 +55,8 @@ export interface Services {
   web: WebService
   custom: CustomToolService
   runtime: AgentRuntime
+  /** Commands chats started with run_in_background. */
+  background: BackgroundShells
   chat: ChatService
   agents: AgentService
   projects: ProjectService
@@ -127,14 +130,15 @@ export function createServices(opts: {
   const custom = new CustomToolService(ctx, providers, settings, () => BUILTIN_NAMES)
   const approvals = new ApprovalService((e) => ctx.emit('chat', e))
   const checkpoints = new CheckpointStore(join(opts.dataDir, 'checkpoints'))
-  const lsp = new LspManager(() => settings.get().languages ?? [])
+  const lsp = new LspManager(() => settings.get().languages ?? [], join(opts.dataDir, 'lsp'))
   const rulesDir = globalRulesDir(opts.dataDir)
   mkdirSync(rulesDir, { recursive: true })
   const images = new ImageService(ctx, providers, settings)
   const mcpClients = new McpClientService(ctx, settings, approvals, opts.openUrl)
   const agents = new AgentService(ctx, providers, settings)
   const swatches = new SwatchService(ctx, settings)
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents, swatches })
+  const background = new BackgroundShells()
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents, swatches, background })
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)
@@ -142,7 +146,11 @@ export function createServices(opts: {
   // A stand-in docker without a stand-in spawn (tests): no port forwarding.
   if (!opts.docker || opts.dockerSpawn) containers.watcher = ports
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
-  const panel = new PanelService(chat, providers, new TerminalService(ctx, containers, opts.pty), containers)
+  const terminals = new TerminalService(ctx, containers, opts.pty)
+  // Background commands (run_in_background) show as tabs in their chat's Terminals panel.
+  background.showIn(terminals)
+  runtime.attachTerminals(terminals)
+  const panel = new PanelService(chat, providers, terminals, containers)
   const workflows = new WorkflowService(ctx, { providers, rag, skills, runtime, settings, web, custom, agents, containers })
   // The chat agent's hub tools (session_read, agent_create, …) act on the app through these.
   runtime.attachHub(buildHubAdmin({ chat, projects, agents, workflows, settings, providers }))
@@ -215,7 +223,7 @@ export function createServices(opts: {
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
-  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, swatches, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
+  return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, background, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, swatches, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
 }
 
 const SEEDED_KEY = 'mcp.homelabSeeded'

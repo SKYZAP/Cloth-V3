@@ -96,6 +96,9 @@ function DesktopApp() {
     void api.mcp.status().then(setMcp)
   }, [loadProviders, loadCollections, loadSettings])
   useEvent('mcp', setMcp)
+  // MCP servers added or changed outside this window's own edits (setup's import, a chat's add_mcp_server, the phone):
+  // refresh the settings everywhere, so the MCP page and every chat's Setup list them at once.
+  useEvent('mcpClients', () => void api.settings.get().then((fresh) => useApp.setState({ settings: fresh })))
   // Computer use is missing a macOS permission: say which and offer the settings pane.
   const toast = useApp((s) => s.toast)
   useEvent('computer', (n) => toast(n.text, 'error', { label: 'Open System Settings', run: () => void api.app.openPrivacySettings(n.kind) }))

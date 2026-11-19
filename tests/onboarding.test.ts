@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { languageServers, mcpFromCodexToml, OnboardingService, scanFolder } from '../src/main/onboarding'
 import { makeServices } from './helpers'
 
@@ -40,9 +40,33 @@ describe('scanFolder', () => {
 })
 
 describe('languageServers', () => {
+  const savedPath = process.env.PATH
+  afterEach(() => {
+    process.env.PATH = savedPath
+  })
+
   it('reports the bundled servers and languages without one', () => {
-    const list = languageServers(['typescript', 'python', 'java'])
+    const list = languageServers(['typescript', 'python', 'csharp'])
     expect(list.map((l) => l.status)).toEqual(['bundled', 'bundled', 'none'])
+  })
+
+  it('Java: jdtls found on PATH, or missing with where to get it', () => {
+    const bin = tmp()
+    process.env.PATH = bin
+    const java21 = () => ({ major: 21 })
+    expect(languageServers(['java'], undefined, java21)).toEqual([{ id: 'java', status: 'missing', program: 'jdtls', url: expect.stringContaining('eclipse.jdt.ls'), installable: false, needs: null }])
+    write(join(bin, process.platform === 'win32' ? 'jdtls.cmd' : 'jdtls'), '')
+    expect(languageServers(['java'], undefined, java21)).toMatchObject([{ id: 'java', status: 'found', program: 'jdtls', needs: null }])
+    // jdtls runs on Java 21+: an older (or no) Java is called out.
+    expect(languageServers(['java'], undefined, () => ({ major: 17 }))[0].needs).toMatchObject({ name: 'Java 21 or newer' })
+  })
+
+  it("doesn't count Kotlin files as Java", async () => {
+    const root = tmp()
+    write(join(root, 'App.kt'))
+    write(join(root, 'Main.java'))
+    const scan = await scanFolder(root)
+    expect(scan.languages.map((l) => [l.id, l.files])).toEqual([['java', 1]])
   })
 })
 
@@ -99,15 +123,17 @@ describe('OnboardingService imports', () => {
     expect(JSON.stringify(sources)).not.toContain('ghp_secret')
   })
 
-  it('imports skills, agents and MCP servers (switched off), and nothing it did not find', async () => {
+  it('imports skills, agents and MCP servers (switched on and started), and nothing it did not find', async () => {
     const { services } = makeServices()
+    const started = vi.spyOn(services.mcpClients, 'ensure').mockResolvedValue(undefined)
     const ob = new OnboardingService(services)
     const [claude] = await ob.sources()
     const r = await ob.importItems({ skills: [claude.skills[0].dir, join(home, 'elsewhere')], agents: [claude.agents[0].file, join(home, 'x.md')], mcp: [{ source: 'cursor', name: 'github' }, { source: 'cursor', name: 'nope' }] })
     expect(r).toEqual({ skills: ['tidy'], agents: ['reviewer'], mcp: ['github'], errors: [] })
     expect(services.agents.list().find((a) => a.name === 'reviewer')?.instructions).toBe('You review code carefully.')
     const client = services.settings.get().mcpClients.find((c) => c.name === 'github')!
-    expect(client).toMatchObject({ command: 'npx', args: ['-y', 'gh-mcp'], env: { GITHUB_TOKEN: 'ghp_secret' }, enabled: false, defaultOn: false, approval: 'ask' })
+    expect(client).toMatchObject({ command: 'npx', args: ['-y', 'gh-mcp'], env: { GITHUB_TOKEN: 'ghp_secret' }, enabled: true, approval: 'ask' })
+    expect(started).toHaveBeenCalledWith([client.id])
     // A second import of the same server adds nothing.
     expect((await ob.importItems({ skills: [], agents: [], mcp: [{ source: 'cursor', name: 'github' }] })).mcp).toEqual([])
   })

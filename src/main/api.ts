@@ -18,6 +18,8 @@ import { TRYABLE } from './agent/chat'
 import { openPermissionPane } from './computer/host'
 import { globalRulesDir } from './agent/rules'
 import { languageServers, OnboardingService, scanFolder } from './onboarding'
+import { findOnPath, PATH_SERVERS } from './agent/lsp'
+import { installServer, uninstallServer, type InstallableServer } from './agent/lsp-install'
 
 /*
  * Secrets in settings (MCP servers' tokens) and providers' headers never leave the main process: the app
@@ -32,6 +34,13 @@ function restoreSettings(s: Services, patch: Partial<Settings>): Partial<Setting
   const presets = presetsWithTokens(MCP_PRESETS, readEnvFile())
   const known = (c: McpClientConfig) => [saved.find((x) => x.id === c.id), presets.find((p) => p.name === c.name)].filter((x): x is NonNullable<typeof x> => !!x)
   return { ...patch, mcpClients: patch.mcpClients.map((c) => restoreClient(c, known(c))) }
+}
+
+/** The installable server for a language (Go, Rust, C/C++ or Java), or an error for the rest. */
+function serverFor(id: string): InstallableServer {
+  const key = (Object.keys(PATH_SERVERS) as InstallableServer[]).find((k) => PATH_SERVERS[k].language === id)
+  if (!key) throw new Error('Cloth installs language servers for Go, Rust, C/C++ and Java; this language’s server ships with Cloth or has none yet')
+  return key
 }
 
 export function createApi(s: Services): ClothApi {
@@ -196,6 +205,7 @@ export function createApi(s: Services): ClothApi {
       writeTerminal: async (id, data) => s.panel.terminals.write(id, data),
       resizeTerminal: async (id, cols, rows) => s.panel.terminals.resize(id, cols, rows),
       closeTerminal: async (id) => s.panel.terminals.kill(id),
+      stopTerminal: async (id) => s.panel.terminals.stop(id),
       gitStatus: (id) => s.panel.gitStatus(id),
       openspec: async (id) => {
         const folder = s.chat.get(id).workspace
@@ -290,7 +300,23 @@ export function createApi(s: Services): ClothApi {
     },
     onboarding: {
       scanFolder: (path) => scanFolder(path),
-      languageServers: async (ids) => languageServers(ids),
+      languageServers: async (ids) => languageServers(ids, s.lsp.serversDir),
+      installLanguageServer: async (id) => {
+        const key = serverFor(id)
+        // A running copy keeps its files locked (Windows): stop this language's servers first.
+        await s.lsp.stopServer(key)
+        await installServer(s.lsp.serversDir, key, {
+          findOnPath,
+          onProgress: (text, fraction) => s.ctx.emit('languageServers', { id, text, fraction })
+        })
+        return languageServers([id], s.lsp.serversDir)[0]
+      },
+      removeLanguageServer: async (id) => {
+        const key = serverFor(id)
+        await s.lsp.stopServer(key)
+        await uninstallServer(s.lsp.serversDir, key)
+        return languageServers([id], s.lsp.serversDir)[0]
+      },
       importSources: () => onboarding.sources(),
       importItems: (sel) => onboarding.importItems(sel),
       bestPractices: (input) => onboarding.bestPractices(input)
@@ -312,6 +338,8 @@ export function createApi(s: Services): ClothApi {
       stopAgents: async (id) => s.boards.stopAgents(id),
       fixChecks: async (id) => s.boards.fixChecks(id),
       createProject: (name) => s.boards.createProject(name),
+      renameProject: (id, name) => s.boards.renameProject(id, name),
+      deleteProject: (id) => s.boards.deleteProject(id),
       setGoal: (id, goal) => s.boards.setGoal(id, goal),
       applyChanges: (id) => s.boards.applyChanges(id),
       finish: (id) => s.boards.finish(id),

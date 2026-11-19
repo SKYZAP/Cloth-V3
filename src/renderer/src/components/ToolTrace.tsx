@@ -84,7 +84,8 @@ function summarize(t: Trace): string {
   if (t.name === 'skill_use') return `${a.name ?? ''}${a.file ? ` / ${a.file}` : ''}`
   if (['read_file', 'list_dir', 'read', 'ls', 'write', 'edit'].includes(t.name)) return String(a.path ?? '.')
   if (t.name === 'find') return `${a.pattern ?? ''}${a.path ? ` in ${a.path}` : ''}`
-  if (t.name === 'bash' || t.name === 'powershell') return `$ ${String(a.command ?? '').split('\n')[0]}`
+  if (t.name === 'bash' || t.name === 'powershell') return `$ ${String(a.command ?? '').split('\n')[0]}${a.run_in_background ? ' (in the background)' : ''}`
+  if (t.name === 'shell_output' || t.name === 'shell_stop') return String(a.id ?? '')
   if (t.name === 'todo_write') {
     const todos = todosOf(t.args)
     const current = todos.find((x) => x.status === 'in_progress')

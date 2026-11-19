@@ -44,7 +44,10 @@ function fakeDocker(opts: { installed?: boolean; running?: boolean } = {}) {
         if (args[1] !== '-i') return ok()
         // ['exec','-i','-w',wd,name,'sh','-c',script,'sh',pidFile,command]
         const c = containers.get(args[4])!
-        const command = args.at(-1)!
+        // The command as the agent wrote it: the shell tool adds a tail that reports the folder it ended in. The call
+        // log keeps it that way too, so tests can look for the command they gave.
+        const command = args.at(-1)!.split('\n__cloth_rc=')[0]
+        args[args.length - 1] = command
         if (command === 'python -m http.server') {
           // Runs until the docker client is killed.
           await new Promise((r) => (o?.signal?.aborted ? r(null) : o?.signal?.addEventListener('abort', r, { once: true })))
@@ -309,7 +312,7 @@ describe('container copies', () => {
     expect(seen).toEqual([300])
     expect((err as Error).message).toContain('Serving HTTP on 0.0.0.0 port 8000')
     expect((err as Error).message).toContain('The command was stopped after 5 minutes')
-    expect((err as Error).message).toContain('nohup npm run dev > /tmp/server.log 2>&1 &')
+    expect((err as Error).message).toContain('run_in_background: true')
     expect((err as Error).message).toContain('pass a larger timeout')
 
     // A timeout the model gives is kept.

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Swatches as SwatchesIcon,
   Trash,
+  Translate,
   X,
   type Icon
 } from '@phosphor-icons/react'
@@ -39,12 +40,14 @@ import { SplitBack, SplitDetail, SplitRoot } from '@/components/SplitView'
 import { WebSearchSettings } from './WebSearchSettings'
 import { PhoneSettings } from './PhoneSettings'
 import { DependencySettings } from './DependencySettings'
+import { LanguageServerStatus, useLanguageServers } from '@/components/LanguageServers'
+import { LANGUAGES, type LanguageId } from '@shared/onboarding'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { activeTheme, allThemes, clampStrength, DEFAULT_CHAT_THEME, NO_THEME, STRENGTH_RANGE } from '@shared/chat-themes'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
 import { ACCESS_LEVELS, maxDelegatedAccess, type AgentAccess } from '@shared/access'
 
-type SectionId = 'models' | 'chat' | 'coding' | 'subagents' | 'web' | 'network' | 'knowledge' | 'design' | 'phone' | 'swatches' | 'mcp' | 'deps' | 'about'
+type SectionId = 'models' | 'chat' | 'coding' | 'languages' | 'subagents' | 'web' | 'network' | 'knowledge' | 'design' | 'phone' | 'swatches' | 'mcp' | 'deps' | 'about'
 
 interface SectionDef {
   id: SectionId
@@ -60,6 +63,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Which model does each job. Add or edit providers on the Models page.', keywords: 'default model embedding image llm provider' },
   { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, how long ones stay within the model’s limit, and the background behind them.', keywords: 'compact summarise summarize context window title name rename ai titles background theme shader animation flow waves strength' },
   { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
+  { id: 'languages', title: 'Languages', icon: Translate, blurb: 'The languages you work in, and the language servers that give agents go to definition, references and type errors.', keywords: 'lsp language server code intelligence gopls rust-analyzer clangd jdtls pyright typescript go rust c++ java install', desktopOnly: true },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, what they may do, and the reasoning levels they run at.', keywords: 'task delegate reader writer operator access reasoning tier parallel turns agent' },
   { id: 'web', title: 'Web search', icon: GlobeHemisphereWest, blurb: 'Where chats look things up when web search is on.', keywords: 'searxng obscura web_fetch internet results' },
   { id: 'network', title: 'Network', icon: ShieldCheck, blurb: 'How Cloth reaches sites over HTTPS, and certificates it trusts on networks that inspect it.', keywords: 'certificate cert ca pem crt ssl tls https proxy corporate company antivirus norton zscaler trust store mcp web search' },
@@ -395,6 +399,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       )
     case 'coding':
       return <CodingRulesSection value={settings.codingRules} />
+    case 'languages':
+      return <LanguagesSection languages={settings.languages ?? []} />
     case 'subagents':
       return (
         <>
@@ -566,6 +572,26 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
 }
 
 /** Rules for all code agents write: instructions in their prompt, and the global ast-grep rules folder checked after each edit. */
+/** The languages the user works in (they gate PATH servers and shape setup's library), and each one's language server. */
+function LanguagesSection({ languages }: { languages: LanguageId[] }) {
+  const update = useApp((s) => s.updateSettings)
+  const ls = useLanguageServers(LANGUAGES.map((l) => l.id))
+  const on = new Set(languages)
+  return (
+    <Group title="Languages" note="Code intelligence runs only for the languages switched on here. TypeScript, JavaScript and Python servers ship with Cloth; the others install into Cloth’s data folder, or come from this PC when already installed.">
+      {LANGUAGES.map((l) => (
+        <div key={l.id} className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line px-4 py-2 first:border-t-0">
+          <Switch checked={on.has(l.id)} onChange={(v) => void update({ languages: v ? [...languages, l.id] : languages.filter((x) => x !== l.id) })} ariaLabel={`I work in ${l.name}`} />
+          <span className="w-24 shrink-0 text-ui">{l.name}</span>
+          <div className={clsx('min-w-0 flex-1', !on.has(l.id) && 'opacity-60')}>
+            <LanguageServerStatus info={ls.servers?.find((s) => s.id === l.id)} progress={ls.busy[l.id]} onInstall={() => void ls.install(l.id)} onRemove={() => void ls.remove(l.id)} />
+          </div>
+        </div>
+      ))}
+    </Group>
+  )
+}
+
 function CodingRulesSection({ value }: { value: string }) {
   const update = useApp((s) => s.updateSettings)
   const [rules, setRules] = useState(value)

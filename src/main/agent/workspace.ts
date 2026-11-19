@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { glob, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { structuredPatch } from 'diff'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
@@ -23,6 +23,7 @@ import { newId } from '../core/context'
 import { Type } from 'typebox'
 import { astRewrite, astSearch, resolveLanguage, supportedLanguages } from './ast'
 import { commandRisk, commandRiskResolved, pathRiskResolved } from './risk'
+import { BACKGROUND_FIRST_LOOK, CwdReportFilter, cwdMarker, gitBashPath, shellCwd, withCwdReport, type BackgroundShells, type ShellKind } from './shell'
 import { DOCS_ONLY_REFUSAL, isDocPath } from './workflow'
 import { fileURLToPath } from 'node:url'
 import {
@@ -267,6 +268,8 @@ export interface WorkspaceOptions {
   rulesDir?: string | null
   /** Commands that run without asking; any other command is refused (unattended automations). */
   commandAllow?: string[] | null
+  /** Commands a chat runs with run_in_background (null: no background commands, e.g. unattended runs). */
+  background?: BackgroundShells | null
   /** Run commands somewhere else (a Linux container) with bash; cwd is relative to the workspace root. */
   shellExec?: (command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]) => Promise<{ exitCode: number | null }>
   /**
@@ -295,7 +298,7 @@ function allowCovers(command: string, allow: string[], shell: 'bash' | 'powershe
   })
 }
 
-export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'ast_grep', 'ast_edit', 'lsp']
+export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'shell_output', 'shell_stop', 'terminal_read', 'ast_grep', 'ast_edit', 'lsp']
 
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
@@ -314,7 +317,13 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     t('lsp', 'Code intelligence', 'Language-server diagnostics, definition, references, hover, symbols and rename for TypeScript/JavaScript (TypeScript 7 native server) and Python (Pyright). Also reports type errors right after each edit.', 'Chats with a workspace and code intelligence on', obj({ action: 'string', path: 'string', symbol: 'string', line: 'number', query: 'string', newName: 'string' }, ['action'])),
     t('write', 'Write file', 'Create or overwrite a file. Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', content: 'string' }, ['path', 'content'])),
     t('edit', 'Edit file', 'Replace exact text in a file (one or more edits). Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', edits: 'array' }, ['path', 'edits'])),
-    t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. In Manual mode, risky commands ask first.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number' }, ['command']))
+    t(shell, 'Run command', `Run a ${shell === 'bash' ? 'bash' : 'PowerShell'} command in the workspace. \`cd\` carries over to the next command while it stays in the workspace, and run_in_background keeps servers and watchers running. In Manual mode, risky commands ask first.`, 'Chats with a workspace and shell commands on', obj({ command: 'string', timeout: 'number', run_in_background: 'boolean' }, ['command'])),
+    ...(shell === 'powershell' && gitBashPath()
+      ? [t('bash', 'Run bash command', 'Run a command in Git Bash, in the workspace. Same rules as PowerShell: the folder carries over, run_in_background is there, and in Manual mode risky commands ask first.', 'Chats with a workspace and shell commands on (Git Bash installed)', obj({ command: 'string', timeout: 'number', run_in_background: 'boolean' }, ['command']))]
+      : []),
+    t('shell_output', 'Background output', 'Read new output from a command started with run_in_background, and whether it is still running. A filter (regular expression) keeps only matching lines.', 'Chats with shell commands on', obj({ id: 'string', filter: 'string' }, ['id'])),
+    t('shell_stop', 'Stop background command', 'Stop a command started with run_in_background, and everything it started.', 'Chats with shell commands on', obj({ id: 'string' }, ['id'])),
+    t('terminal_read', 'Read terminal', "Read what a terminal in the chat's Terminal panel shows: the user's own shells and background commands' tabs. It never types into them.", 'Chats', obj({ id: 'string', lines: 'number' }, []))
   ]
 }
 
@@ -323,8 +332,8 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   const inside = (p: string) => confine(o.root, p)
   const commandShell: 'bash' | 'powershell' = o.shellExec || process.platform !== 'win32' ? 'bash' : 'powershell'
   /** Why a command needs a person's look (risk.ts), or null; never in a container. */
-  const commandRiskOf = async (command: string, cwd: string): Promise<string | null> =>
-    o.checkRisk && !o.shellExec ? commandRiskResolved(command, { root: await realpath(o.root), cwd, shell: commandShell, home: homedir() }) : null
+  const commandRiskOf = async (command: string, cwd: string, shell: 'bash' | 'powershell' = commandShell): Promise<string | null> =>
+    o.checkRisk && !o.shellExec ? commandRiskResolved(command, { root: await realpath(o.root), cwd, shell, home: homedir() }) : null
   /**
    * Ask before a change or command unless the policy approves it up front. A risky one (`risk`)
    * asks even then; with nobody to ask, it is refused with a note for the model.
@@ -390,6 +399,11 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       for (const p of planned.filter((x) => lspLanguage(x.abs)).slice(0, 5)) {
         try {
           const server = await o.lsp.server(rootReal, p.abs)
+          if (!server.ready) {
+            // jdtls is still importing the project (can take minutes): don't hold the edit up for it.
+            state.notes.push(`${p.rel}: type check skipped, the Java language server is still importing the project`)
+            continue
+          }
           const errors = (await server.diagnostics(p.abs, 12_000)).filter((d) => d.severity === 1)
           state.notes.push(errors.length ? `Type errors after this change — ${formatDiagnostics(p.rel, errors, { errorsOnly: true, max: 8 })}` : `✓ ${p.rel}: no type errors`)
         } catch {
@@ -564,29 +578,171 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     )
   }
 
-  if (o.shell && o.shellExec) {
-    const run = o.shellExec
-    const operations: BashOperations = {
-      exec: async (command, cwd, options) => {
-        const rel = relative(await realpath(o.root), await inside(cwd)).split(sep).join('/')
-        await ask({ kind: 'command', command, path: rel || '.' }, await commandRiskOf(command, await inside(cwd)))
-        return withDefaultTimeout('bash', options, (opts) => run(command, rel, opts))
-      }
-    }
-    tools.push(createBashTool(o.root, { operations }))
-  } else if (o.shell) {
-    const local: BashOperations = process.platform === 'win32' ? createLocalPowerShellOperations() : createLocalBashOperations()
-    const operations: BashOperations = {
-      exec: async (command, cwd, options) => {
-        const dir = await inside(cwd)
-        await ask({ kind: 'command', command, path: relative(await realpath(o.root), dir).split(sep).join('/') || '.' }, await commandRiskOf(command, dir))
-        return withDefaultTimeout(process.platform === 'win32' ? 'powershell' : 'bash', options, (opts) => local.exec(command, dir, opts))
-      }
-    }
-    tools.push(process.platform === 'win32' ? createPowerShellTool(o.root, { operations }) : createBashTool(o.root, { operations }))
-  }
+  if (o.shell) tools.push(...shellTools(o, inside, ask, commandRiskOf))
 
   return tools.map(withCallState)
+}
+
+type Ask = (input: Omit<PendingApproval, 'id' | 'createdAt' | 'sessionId' | 'toolCallId'>, risk?: string | null) => Promise<void>
+
+interface Shell {
+  /** The tool's name. */
+  name: 'bash' | 'powershell'
+  kind: ShellKind
+  /** How risk.ts reads its commands. */
+  risk: 'bash' | 'powershell'
+  /** Runs a command (cwd relative to the workspace root, '' for the root). */
+  run(command: string, rel: string, options: ExecOptions): Promise<{ exitCode: number | null }>
+}
+
+/**
+ * The shell tools: bash (Linux, macOS, a container, and Git Bash on Windows) and PowerShell (Windows), each with a
+ * folder that carries over between commands and run_in_background, plus shell_output / shell_stop for those.
+ */
+function shellTools(o: WorkspaceOptions, inside: (p: string) => Promise<string>, ask: Ask, riskOf: (command: string, cwd: string, shell: 'bash' | 'powershell') => Promise<string | null>): AgentTool<any>[] {
+  const shells: Shell[] = []
+  if (o.shellExec) {
+    const run = o.shellExec
+    shells.push({ name: 'bash', kind: 'container', risk: 'bash', run: (command, rel, options) => run(command, rel, options) })
+  } else if (process.platform === 'win32') {
+    const ps = createLocalPowerShellOperations()
+    shells.push({ name: 'powershell', kind: 'powershell', risk: 'powershell', run: async (command, rel, options) => ps.exec(command, join(await realpath(o.root), rel), options) })
+    const gitBash = gitBashPath()
+    if (gitBash) {
+      const bash = createLocalBashOperations({ shellPath: gitBash })
+      shells.push({ name: 'bash', kind: 'gitbash', risk: 'bash', run: async (command, rel, options) => bash.exec(command, join(await realpath(o.root), rel), options) })
+    }
+  } else {
+    const bash = createLocalBashOperations()
+    shells.push({ name: 'bash', kind: 'bash', risk: 'bash', run: async (command, rel, options) => bash.exec(command, join(await realpath(o.root), rel), options) })
+  }
+
+  // The folder the next command starts in, relative to the root ('' = the root). Kept per chat; a run without a chat keeps its own.
+  let ownCwd = ''
+  const getRel = () => (o.sessionId ? (shellCwd.get(o.sessionId) ?? '') : ownCwd)
+  const setRel = (rel: string) => {
+    if (!o.sessionId) ownCwd = rel
+    else if (rel) shellCwd.set(o.sessionId, rel)
+    else shellCwd.reset(o.sessionId)
+  }
+  /** Where the next command starts: where the last one ended, while that is still a folder inside the workspace. */
+  const start = async (): Promise<{ dir: string; rel: string }> => {
+    const rootReal = await realpath(o.root)
+    const rel = getRel()
+    if (rel) {
+      try {
+        const dir = await inside(rel)
+        if ((await stat(dir)).isDirectory()) return { dir, rel: relative(rootReal, dir).split(sep).join('/') }
+      } catch {
+        /* gone, or outside now: back to the root */
+      }
+      setRel('')
+    }
+    return { dir: rootReal, rel: '' }
+  }
+  /** Keep the folder a command ended in, or go back to the root (with a note) when it left the workspace. */
+  const keep = async (reported: string | null, shell: Shell, out: (data: Buffer) => void): Promise<void> => {
+    if (!reported) return
+    let rel: string | null
+    if (shell.kind === 'container') {
+      const r = posix.relative('/workspace', reported)
+      rel = r.startsWith('..') || posix.isAbsolute(r) ? null : r
+    } else {
+      const rootReal = await realpath(o.root)
+      const abs = resolve(reported)
+      const real = await realpath(abs).catch(() => abs)
+      const r = relative(rootReal, real)
+      rel = r.startsWith('..') || isAbsolute(r) ? null : r.split(sep).join('/')
+    }
+    if (rel === null) {
+      setRel('')
+      out(Buffer.from(`\n[The command ended in ${reported}, outside the workspace, so the next command starts in the workspace root again.]\n`))
+      return
+    }
+    setRel(rel)
+  }
+
+  const background = o.background && o.sessionId ? { bg: o.background, sessionId: o.sessionId } : null
+  const NOTE =
+    '\n\nThe working folder carries over: after `cd sub`, the next command runs in sub, as long as it stays inside the workspace (leaving it sends the next command back to the root).' +
+    (background
+      ? ' Set run_in_background to true for dev servers, watchers and anything else that keeps running: it returns at once with an id, the command keeps running while you work, and you read its new output with shell_output and stop it with shell_stop. Never use nohup, & or Start-Process for that.'
+      : '')
+
+  const tools: AgentTool<any>[] = []
+  for (const sh of shells) {
+    const operations: BashOperations = {
+      exec: async (command, _cwd, options) => {
+        const { dir, rel } = await start()
+        await ask({ kind: 'command', command, path: rel || '.' }, await riskOf(command, dir, sh.risk))
+        const marker = cwdMarker()
+        const wrapped = withCwdReport(command, sh.kind, marker)
+        const filter = new CwdReportFilter(marker, options.onData)
+        try {
+          return await withDefaultTimeout(sh.risk, { ...options, onData: filter.push }, (opts) => sh.run(wrapped ?? command, rel, opts))
+        } finally {
+          filter.end()
+          await keep(filter.cwd, sh, options.onData)
+        }
+      }
+    }
+    const base: AgentTool<any> =
+      sh.name === 'powershell' ? createPowerShellTool(o.root, { operations }) : createBashTool(o.root, { operations })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (base.parameters as unknown as { properties: Record<string, any> }).properties
+    tools.push({
+      ...base,
+      description: `${base.description}${sh.kind === 'gitbash' ? '\n\nThis is Git Bash on Windows: Unix tools (grep, sed, find) and paths like /c/Users/…; Windows programs (npm, git, dotnet) run as usual.' : ''}${NOTE}`,
+      parameters: background
+        ? Type.Object({ ...props, run_in_background: Type.Optional(Type.Boolean({ description: 'Run it in the background and return at once with an id (for servers, watchers and other commands that keep running)' })) })
+        : base.parameters,
+      async execute(id, params, signal, onUpdate) {
+        const { run_in_background: inBackground, ...rest } = (params ?? {}) as { run_in_background?: boolean; command?: string; timeout?: number }
+        if (!inBackground || !background) return base.execute(id, rest, signal, onUpdate)
+        const command = String(rest.command ?? '').trim()
+        if (!command) throw new Error('Give the command to run')
+        const { dir, rel } = await start()
+        await ask({ kind: 'command', command, path: rel || '.' }, await riskOf(command, dir, sh.risk))
+        const info = background.bg.start({ sessionId: background.sessionId, command, cwd: rel || '.', shell: sh.name, container: sh.kind === 'container', run: (onData, sig) => sh.run(command, rel, { onData, signal: sig }) })
+        // A moment for it to fail straight away (a typo, a port in use) before the agent moves on; returns as soon as it ends.
+        await background.bg.settled(background.sessionId, info.id, BACKGROUND_FIRST_LOOK.ms)
+        const first = background.bg.read(background.sessionId, info.id)
+        const state = first.info.status === 'running' ? `It is running as ${info.id}.` : `It already ended (${first.info.status}${first.info.exitCode !== null ? `, exit code ${first.info.exitCode}` : ''}).`
+        const text = `Started in the background in ${rel || 'the workspace root'}. ${state} Read new output with shell_output (id ${info.id}); stop it with shell_stop. The user sees it as a tab in the chat's Terminals panel and can stop it there.${first.text.trim() ? `\n\nOutput so far:\n${capOutput(first.text)}` : ''}`
+        return { content: [{ type: 'text', text }], details: { background: info.id } }
+      }
+    })
+  }
+
+  if (background) {
+    const { bg, sessionId } = background
+    tools.push({
+      name: 'shell_output',
+      label: 'Background output',
+      description: 'Read the new output of a command started with run_in_background (since the last read), and whether it is still running. Pass filter, a regular expression, to keep only matching lines (e.g. "error|warn").',
+      parameters: Type.Object({ id: Type.String({ description: 'The id run_in_background returned (bg_…)' }), filter: Type.Optional(Type.String({ description: 'Only lines matching this regular expression' })) }),
+      async execute(_id, params) {
+        const p = params as { id: string; filter?: string }
+        const r = bg.read(sessionId, p.id, p.filter)
+        const status =
+          r.info.status === 'running' ? `${r.info.id} is still running.` : `${r.info.id} ${r.info.status === 'stopped' ? 'was stopped' : 'ended'}${r.info.exitCode !== null ? ` with exit code ${r.info.exitCode}` : ''}.`
+        const dropped = r.skipped ? `\n[${r.skipped} characters of older output were dropped before this read.]` : ''
+        return { content: [{ type: 'text', text: `${status}${dropped}\n\n${r.text.trim() ? capOutput(r.text) : p.filter ? '(no new lines match the filter)' : '(no new output)'}` }], details: {} }
+      }
+    })
+    tools.push({
+      name: 'shell_stop',
+      label: 'Stop background command',
+      description: 'Stop a command started with run_in_background, and everything it started.',
+      parameters: Type.Object({ id: Type.String({ description: 'The id run_in_background returned (bg_…)' }) }),
+      async execute(_id, params) {
+        const was = bg.list(sessionId).find((c) => c.id === (params as { id: string }).id.trim())?.status
+        const info = await bg.stop(sessionId, (params as { id: string }).id)
+        return { content: [{ type: 'text', text: was === 'running' ? `Stopped ${info.id}.` : `${info.id} had already ended (${info.status}).` }], details: {} }
+      }
+    })
+  }
+  return tools
 }
 
 /** Seconds a shell command may run when the model gives no timeout. */
@@ -602,10 +758,9 @@ async function withDefaultTimeout(shell: 'bash' | 'powershell', options: ExecOpt
   } catch (e) {
     if (e instanceof Error && e.message.startsWith('timeout:')) {
       const took = timeout % 60 === 0 ? `${timeout / 60} minute${timeout === 60 ? '' : 's'}` : `${timeout} seconds`
-      const example = shell === 'bash' ? '`nohup npm run dev > /tmp/server.log 2>&1 &`' : "`Start-Process npm -ArgumentList 'run','dev' -RedirectStandardOutput server.log`"
       options.onData(
         Buffer.from(
-          `\n[The command was stopped after ${took}. Start servers and other long-running processes in the background with output to a log file (e.g. ${example}), then check they respond. For a long build, pass a larger timeout.]\n`
+          `\n[The command was stopped after ${took}. Start servers, watchers and other long-running processes with run_in_background: true, then read their output with shell_output and check they respond. For a long build, pass a larger timeout.]\n`
         )
       )
     }

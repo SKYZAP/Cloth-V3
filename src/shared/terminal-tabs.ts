@@ -29,3 +29,21 @@ export function autoStart(decided: boolean, visible: boolean, list: readonly Ter
   if (decided || !visible || !list) return { decided, start: false }
   return { decided: true, start: !list.length }
 }
+
+/**
+ * Copy and paste with the keys people expect. macOS: Cmd+C / Cmd+V (Cmd+A selects all). Elsewhere: Ctrl+C copies when
+ * text is selected and otherwise interrupts the program as usual; Ctrl+Shift+C always copies; Ctrl+V and Ctrl+Shift+V
+ * paste. null: not a clipboard key, so the terminal sends it to the shell as usual.
+ */
+export function clipboardKey(e: { type: string; key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }, hasSelection: boolean, onMac: boolean): 'copy' | 'paste' | 'select-all' | null {
+  if (e.type !== 'keydown' || e.altKey) return null
+  const k = e.key.toLowerCase()
+  if (onMac) {
+    if (!e.metaKey || e.ctrlKey) return null
+    return k === 'c' ? 'copy' : k === 'v' ? 'paste' : k === 'a' ? 'select-all' : null
+  }
+  if (!e.ctrlKey || e.metaKey) return null
+  if (k === 'c') return e.shiftKey || hasSelection ? 'copy' : null
+  if (k === 'v') return 'paste'
+  return null
+}
