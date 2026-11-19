@@ -1,10 +1,10 @@
-# Publish the cloth.dev site (website/) to GitHub Pages whenever it changes on master.
+# Publish the cloth.dev site to GitHub Pages. This folder is Cloth-V3's website/, pushed to its own public
+# repository by `npm run site:publish` (Cloth-V3 is private, and Pages needs a public repository on this plan).
 name: Website
 
 on:
   push:
-    branches: [master]
-    paths: ['website/**', '.github/workflows/pages.yml']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -28,6 +28,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4
