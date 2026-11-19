@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import type { TerminalEvent, TerminalInfo } from '../src/shared/types'
 import type { DockerRun } from '../src/main/agent/containers'
 import type { Pty, PtySpawn } from '../src/main/panel/terminals'
-import { autoStart, terminalsAfter, withTerminal } from '../src/shared/terminal-tabs'
+import { autoStart, clipboardKey, terminalsAfter, withTerminal } from '../src/shared/terminal-tabs'
+import { terminalReadTool } from '../src/main/agent/shell'
 import { makeServices } from './helpers'
 
 interface Spawned {
@@ -182,5 +183,68 @@ describe('side panel terminal tabs', () => {
     expect(terminalsAfter(closed, 'ses_a', { type: 'closed', id: 't1', sessionId: 'ses_a' })).toBe(closed)
     expect(terminalsAfter(closed, 'ses_a', { type: 'closed', id: 't2', sessionId: 'ses_b' })).toBe(closed)
     expect(terminalsAfter(closed, 'ses_a', { type: 'data', id: 't2', data: 'hi' })).toBe(closed)
+  })
+})
+
+describe('terminal titles, copying and reading', () => {
+  it('numbers terminals with the lowest number not in use, so a lone terminal is always 1', async () => {
+    const pty = fakePty()
+    const { services } = makeServices({ pty: pty.spawn })
+    const chat = services.chat.create({ workspace: folder() })
+    const num = (t: TerminalInfo) => Number(/(\d+)$/.exec(t.title)?.[1])
+    const a = await services.panel.openTerminal(chat.id, size)
+    expect(num(a)).toBe(1)
+    services.panel.terminals.kill(a.id)
+    const b = await services.panel.openTerminal(chat.id, size)
+    expect(num(b)).toBe(1)
+    const c = await services.panel.openTerminal(chat.id, size)
+    expect(num(c)).toBe(2)
+    // Closing 1 while 2 is open: the next is 1 again; numbers of other chats don't count.
+    services.panel.terminals.kill(b.id)
+    expect(num(await services.panel.openTerminal(chat.id, size))).toBe(1)
+    const other = services.chat.create({ workspace: folder() })
+    expect(num(await services.panel.openTerminal(other.id, size))).toBe(1)
+  })
+
+  it('copies and pastes with the usual keys, and leaves Ctrl+C to the shell when nothing is selected', () => {
+    const key = (k: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) => ({ type: 'keydown', key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods })
+    // Windows and Linux.
+    expect(clipboardKey(key('c', { ctrlKey: true }), true, false)).toBe('copy')
+    expect(clipboardKey(key('c', { ctrlKey: true }), false, false)).toBeNull()
+    expect(clipboardKey(key('C', { ctrlKey: true, shiftKey: true }), false, false)).toBe('copy')
+    expect(clipboardKey(key('v', { ctrlKey: true }), false, false)).toBe('paste')
+    expect(clipboardKey(key('V', { ctrlKey: true, shiftKey: true }), false, false)).toBe('paste')
+    expect(clipboardKey(key('d', { ctrlKey: true }), true, false)).toBeNull()
+    expect(clipboardKey({ ...key('c', { ctrlKey: true }), type: 'keyup' }, true, false)).toBeNull()
+    // macOS: Cmd, and Ctrl+C still interrupts.
+    expect(clipboardKey(key('c', { metaKey: true }), false, true)).toBe('copy')
+    expect(clipboardKey(key('v', { metaKey: true }), false, true)).toBe('paste')
+    expect(clipboardKey(key('a', { metaKey: true }), false, true)).toBe('select-all')
+    expect(clipboardKey(key('c', { ctrlKey: true }), true, true)).toBeNull()
+  })
+
+  it("lets the agent read the chat's terminals as plain text, never typing into them", async () => {
+    const terms = [term('term_a'), { ...term('term_b'), background: true, command: 'npm run dev', running: false, exitCode: 1 }]
+    const buffers: Record<string, string> = {
+      term_a: '\u001b[32mPS C:/x>\u001b[0m npm test\r\nloading 10%\rloading 100%\r\n\u001b]0;title\u0007Error: boom\r\n',
+      term_b: 'one\r\ntwo\r\nthree\r\n'
+    }
+    const tool = terminalReadTool({ list: (s) => terms.filter((t) => t.sessionId === s), buffer: (id) => buffers[id] }, 'ses_a')
+    const read = async (args: Record<string, unknown>) => ((await tool.execute('t', args)).content[0] as { text: string }).text
+    // Several: it lists them.
+    const listed = await read({})
+    expect(listed).toContain('term_a')
+    expect(listed).toContain('background command `npm run dev` (exited with code 1, in /x)')
+    const a = await read({ id: 'term_a' })
+    expect(a).toContain('PS C:/x> npm test\nloading 100%\nError: boom')
+    expect(a).not.toContain('\u001b')
+    expect(a).not.toContain('loading 10%')
+    expect(await read({ id: 'term_b', lines: 2 })).toContain('last 2 of 3 lines:\n\ntwo\nthree')
+    expect(await read({ id: 'term_x' })).toContain('No terminal term_x')
+    // None open, and a chat with just one.
+    const none = terminalReadTool({ list: () => [], buffer: () => '' }, 'ses_a')
+    expect(((await none.execute('t', {})).content[0] as { text: string }).text).toContain('No terminals are open')
+    const one = terminalReadTool({ list: () => [term('term_a')], buffer: () => 'hello\r\n' }, 'ses_a')
+    expect(((await one.execute('t', {})).content[0] as { text: string }).text).toContain('hello')
   })
 })

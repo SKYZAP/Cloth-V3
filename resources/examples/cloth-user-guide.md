@@ -115,7 +115,7 @@ Settings › Chat › Background puts an animated background behind the conversa
 **Ctrl+.** shows or hides the side panel. A dock beside it shows running terminals, git changes, running agents and builds. Right-click a dock tab, or press Shift+Enter on it, to stack up to three tabs.
 
 - **Setup:** the chat's agent, instructions and context, knowledge, skills, tools and MCP servers, with the token cost of each.
-- **Terminal:** interactive shells in the chat's folder or container. **Ctrl+`** opens it.
+- **Terminal:** interactive shells in the chat's folder or container. **Ctrl+`** opens it. Copy with **Ctrl+C** when text is selected (otherwise it stops the running program) or **Ctrl+Shift+C**, and paste with **Ctrl+V**; on a Mac, **Cmd+C** and **Cmd+V**. The agent can read what a terminal shows (`terminal_read`), for example an error you want it to look at, but never types into it.
 - **Files:** the folder's tree and a file viewer.
 - **Git:** changes, staged and unstaged diffs, discard, an AI-written commit message, and commit.
 - **Agents:** the subagents working for this chat.
