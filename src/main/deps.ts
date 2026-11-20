@@ -124,7 +124,7 @@ export class DependencyService {
         source: 'system',
         status: !gh ? 'missing' : ghAuth ? 'ok' : 'warn',
         version: versionIn(gh),
-        usedFor: 'Pull requests: Boards set to “Commit and open a PR”, and OpenSpec’s Ship step',
+        usedFor: 'Pull requests: Boards set to “Commit and open a PR”, and OpenSpec or Spec → Ship when you ask one to open a PR',
         ...(!gh ? { detail: 'Boards can still build without commits or commit locally.' } : ghAuth ? {} : { detail: 'Installed but not signed in. Run `gh auth login` in a terminal.' }),
         url: 'https://cli.github.com'
       },

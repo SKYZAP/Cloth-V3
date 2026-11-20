@@ -30,7 +30,7 @@ export const CHAT_MODES: { id: ChatMode; name: string; sub: string }[] = [
   { id: 'chat', name: 'Chat', sub: 'Works straight away' },
   { id: 'plan', name: 'Plan', sub: 'Plans first; changes after you approve' },
   { id: 'spec', name: 'Spec → Ship', sub: 'Questions, spec, tickets, build, review' },
-  { id: 'openspec', name: 'OpenSpec', sub: 'Proposal to pull request on its own, with the openspec CLI' }
+  { id: 'openspec', name: 'OpenSpec', sub: 'Proposal to a committed local branch on its own, with the openspec CLI' }
 ]
 
 export const chatModeInfo = (id: ChatMode) => CHAT_MODES.find((m) => m.id === id) ?? CHAT_MODES[0]
