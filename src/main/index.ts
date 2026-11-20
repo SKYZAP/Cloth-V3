@@ -1,23 +1,21 @@
+import { mark, summary as startupSummary } from './core/startup-trace'
 import { app, BrowserWindow, ipcMain, nativeImage, Notification, powerSaveBlocker, protocol, safeStorage, shell } from 'electron'
-import electronUpdater from 'electron-updater'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ClothApi } from '@shared/api'
-import { createServices, type Services } from './services'
-import { applyNetworkCertificate } from './web/trust'
-import { createApi } from './api'
+import type { Services } from './services'
 import type { Secrets } from './core/context'
 import { errorMessage } from './core/context'
 import type { UsageService } from './core/usage'
 import type { ChatEvent, UsageSource, WorkflowEvent } from '@shared/types'
-import { createComputer } from './computer/host'
 import { loadLoginShellPath } from './core/shell-env'
 import { runPendingReset } from './core/reset'
 import type { ComputerController } from './computer/tool'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
+mark('main loaded')
 
 // Keep dev data out of the installed app's profile.
 if (!app.isPackaged && !process.env.CLOTH_HOME) app.setPath('userData', join(app.getPath('appData'), 'Cloth-dev'))
@@ -60,7 +58,11 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  mainWindow.once('ready-to-show', () => {
+    mark('shown')
+    mainWindow?.show()
+  })
+  mainWindow.webContents.once('did-finish-load', () => mark('page loaded'))
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -105,11 +107,18 @@ function keepAwake(on: boolean): void {
   }
 }
 
-function devUpdates(): boolean {
+function devUpdates(updater: { forceDevUpdateConfig: boolean }): boolean {
   if (app.isPackaged || process.env.CLOTH_DEV_UPDATES !== '1') return false
-  electronUpdater.autoUpdater.forceDevUpdateConfig = true
+  updater.forceDevUpdateConfig = true
   return true
 }
+
+// The rest of the main process (the agent, MCP, web tools …) takes a couple of seconds to load. It loads while the
+// window opens: the window's first calls and images wait for it instead of the window waiting for all of it.
+let markServicesReady!: (s: Services) => void
+const servicesReady = new Promise<Services>((resolve) => (markServicesReady = resolve))
+let markDispatchReady!: (d: (path: string, args: unknown[]) => Promise<unknown>) => void
+const dispatchReady = new Promise<(path: string, args: unknown[]) => Promise<unknown>>((resolve) => (markDispatchReady = resolve))
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) app.quit()
@@ -125,10 +134,29 @@ else {
   })
 
   void app.whenReady().then(async () => {
+    mark('ready')
     // Runs from source get their own id, so Windows never mixes them (and Electron's icon) up with the installed Cloth on the taskbar.
     app.setAppUserModelId(app.isPackaged ? 'dev.cloth.app' : 'dev.cloth.app.source')
+    registerIpc(async (path, args) => (await dispatchReady)(path, args))
+    protocol.handle('cloth-image', async (req) => {
+      const id = new URL(req.url).pathname.replace(/^\/+/, '')
+      const found = await (await servicesReady).images.file(id)
+      if (!found) return new Response('Not found', { status: 404 })
+      return new Response(new Uint8Array(await readFile(found.file)), { headers: { 'content-type': found.mime, 'cache-control': 'max-age=31536000, immutable' } })
+    })
+    createWindow()
+    mark('window')
+    // Loading these blocks this thread for over a second, and the page needs this thread to load and draw: let the
+    // window show Cloth's frame first (its first calls wait for the services), with a cap in case it never reports.
+    await new Promise<void>((resolve) => {
+      mainWindow?.once('ready-to-show', () => setTimeout(resolve, 50))
+      setTimeout(resolve, 2000)
+    })
+    const modules = Promise.all([import('./services'), import('./api'), import('./web/trust'), import('./computer/host'), import('electron-updater')])
     // macOS/Linux: an app opened from Finder or the Dock has a bare PATH; use the login shell's (Homebrew, nvm, Docker …).
     await loadLoginShellPath().catch(() => undefined)
+    const [{ createServices }, { createApi }, { applyNetworkCertificate }, { createComputer }, { default: electronUpdater }] = await modules
+    mark('modules')
     // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
     const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({
@@ -146,7 +174,7 @@ else {
       },
       // Installed Windows and Linux builds update themselves; Mac needs a signed app for that, and a run from source has nothing to replace.
       // CLOTH_DEV_UPDATES=1 lets a run from source check and download (not install) to try the feed.
-      updates: { version: app.getVersion(), updater: (app.isPackaged && process.platform !== 'darwin') || devUpdates() ? electronUpdater.autoUpdater : null },
+      updates: { version: app.getVersion(), updater: (app.isPackaged && process.platform !== 'darwin') || devUpdates(electronUpdater.autoUpdater) ? electronUpdater.autoUpdater : null },
       secrets,
       emit: (channel, payload) => {
         for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('cloth:event', channel, payload)
@@ -155,6 +183,7 @@ else {
         if (channel === 'chat') notifyChatReport(payload as ChatEvent)
       }
     })
+    mark('services')
     // Settings → Network: the certificate is trusted by the whole app and the programs it starts, now and when it changes.
     const trust = (path: string) => {
       const error = applyNetworkCertificate(path, app.getPath('userData'))
@@ -166,23 +195,26 @@ else {
     computer = createComputer((notice) => services?.ctx.emit('computer', notice))
     services.runtime.attachComputer(computer)
     services.approvals.onWait = (sessionId) => void computer?.release(sessionId)
-    const images = services.images
-    protocol.handle('cloth-image', async (req) => {
-      const id = new URL(req.url).pathname.replace(/^\/+/, '')
-      const found = await images.file(id)
-      if (!found) return new Response('Not found', { status: 404 })
-      return new Response(new Uint8Array(await readFile(found.file)), { headers: { 'content-type': found.mime, 'cache-control': 'max-age=31536000, immutable' } })
-    })
     const dispatch = makeDispatch(createApi(services), services.providers.usage)
-    registerIpc(dispatch)
+    markDispatchReady(dispatch)
+    markServicesReady(services)
+    mark('api')
     services.remote.attach({ dispatch, keepAwake, version: app.getVersion() })
-    createWindow()
     services.workflows.startScheduler()
     services.boards.start()
     void services.updates.checkIfDue()
     await services.mcp.restart()
     await services.remote.restart()
     await services.swatches.restart()
+    mark('servers')
+    if (process.env.CLOTH_STARTUP_TRACE && mainWindow) {
+      // When the page first drew, on the same clock (its timeOrigin is wall-clock time too).
+      const paint = await mainWindow.webContents.executeJavaScript(`(() => { const p = performance.getEntriesByName('first-contentful-paint')[0]; return p ? performance.timeOrigin + p.startTime : null })()`).catch(() => null)
+      if (typeof paint === 'number') mark(`first paint ${Math.round(paint - performance.timeOrigin)}ms (logged)`)
+    }
+    const line = startupSummary()
+    console.log(`[cloth] startup: ${line}`)
+    services.ctx.log('startup', line)
     // Dev: pair a phone (or the mobile web build) without clicking through Settings.
     if (!app.isPackaged && process.env.CLOTH_PAIR_FILE) {
       const { writeFile } = await import('node:fs/promises')
@@ -194,7 +226,9 @@ else {
     if (process.env.CLOTH_SMOKE && mainWindow) {
       const win = mainWindow
       const { runSmoke } = await import('./smoke')
-      win.once('ready-to-show', () => void runSmoke(win, services!, process.env.CLOTH_SMOKE!))
+      // The window usually shows before the services exist now: run straight away once it has.
+      if (win.isVisible()) void runSmoke(win, services, process.env.CLOTH_SMOKE)
+      else win.once('ready-to-show', () => void runSmoke(win, services!, process.env.CLOTH_SMOKE!))
     }
 
     app.on('activate', () => {

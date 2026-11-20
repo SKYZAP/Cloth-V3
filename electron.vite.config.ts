@@ -9,7 +9,14 @@ export default defineConfig({
   main: {
     resolve: { alias },
     build: {
-      rollupOptions: { input: { index: resolve('src/main/index.ts') } }
+      // Bundled rather than loaded from node_modules: Cloth uses its file tools and token counting, and its entry
+      // file loads the whole coding agent (about a second at startup).
+      externalizeDeps: { exclude: ['@earendil-works/pi-coding-agent'] },
+      rollupOptions: {
+        input: { index: resolve('src/main/index.ts') },
+        // Its image library reads a .wasm file from beside itself, so it stays in node_modules.
+        external: ['@silvia-odwyer/photon-node']
+      }
     }
   },
   preload: {
