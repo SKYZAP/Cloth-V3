@@ -821,14 +821,48 @@ function AgentPicks({ value, onChange, agents }: { value: BoardAgents; onChange(
   return (
     <div className="grid grid-cols-3 gap-2">
       {rows.map(([k, label, dot]) => (
-        <label key={k} className="flex flex-col gap-1 rounded-lg border border-line bg-bg px-2.5 py-2">
-          <span className="flex items-center gap-1.5 text-micro text-dim"><span className={clsx('h-1.5 w-1.5 rounded-full', dot)} />{label}</span>
-          <select value={value[k] ?? ''} onChange={(e) => onChange({ ...value, [k]: e.target.value || null })} className="w-full appearance-none truncate bg-transparent text-ui font-medium text-fg outline-none">
-            <option value="">{{ planner: 'Planner', reviewer: 'Code reviewer', implementer: 'Implementer' }[k]}</option>
-            {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </label>
+        <AgentPick key={k} label={label} dot={dot} fallback={{ planner: 'Planner', reviewer: 'Code reviewer', implementer: 'Implementer' }[k]} value={value[k] ?? null} agents={agents} onChange={(id) => onChange({ ...value, [k]: id })} />
       ))}
+    </div>
+  )
+}
+
+/** One step's agent: a card that opens a themed menu (a native select's list ignores the app's colours). */
+function AgentPick({ label, dot, fallback, value, agents, onChange }: { label: string; dot: string; fallback: string; value: string | null; agents: Agent[]; onChange(id: string | null): void }) {
+  const { open, setOpen, ref } = usePopover()
+  const current = agents.find((a) => a.id === value)
+  const options: { id: string | null; name: string; hint?: string }[] = [{ id: null, name: fallback, hint: 'Built into boards' }, ...agents.map((a) => ({ id: a.id, name: a.name }))]
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${label} agent`}
+        className={clsx('flex w-full flex-col gap-1 rounded-lg border bg-bg px-2.5 py-2 text-left transition-colors', open ? 'border-line-strong' : 'border-line hover:border-line-strong')}
+      >
+        <span className="flex items-center gap-1.5 text-micro text-dim"><span className={clsx('h-1.5 w-1.5 rounded-full', dot)} />{label}</span>
+        <span className="flex w-full items-center gap-1">
+          <span className="min-w-0 flex-1 truncate text-ui font-medium text-fg">{current?.name ?? fallback}</span>
+          <CaretDown size={12} className="shrink-0 text-dim" />
+        </span>
+      </button>
+      {open && (
+        <div role="menu" className="absolute left-0 top-full z-40 mt-1 w-full min-w-[200px] rounded-[10px] border border-line bg-elev p-1.5 shadow-2xl shadow-black/50">
+          <div className="max-h-64 overflow-y-auto">
+            {options.map((o) => (
+              <button key={o.id ?? ''} type="button" role="menuitemradio" aria-checked={o.id === value} onClick={() => { setOpen(false); if (o.id !== value) onChange(o.id) }} className={MENU_ITEM}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-fg">{o.name}</span>
+                  {o.hint && <span className="block truncate text-caption text-dim">{o.hint}</span>}
+                </span>
+                {o.id === value && <Check size={14} className="shrink-0 text-ok" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
