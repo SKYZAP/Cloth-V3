@@ -60,7 +60,7 @@ const pctOf = (n: number, of: number) => {
 }
 
 /** Segmented bar of the context window (what the tokens are spent on); click for the breakdown. */
-export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage | null; busy: boolean; onCompact(): void }) {
+export function ContextMeter({ usage, busy, onCompact, onStrip }: { usage: ContextUsage | null; busy: boolean; onCompact(): void; onStrip(): void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -81,6 +81,7 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
   const tone = near >= 0.9 ? 'text-danger-hi' : near >= 0.7 ? 'text-warn' : 'text-dim'
   // Biggest share first, in the list and the bar alike.
   const slices = [...usage.breakdown].sort((a, b) => b.tokens - a.tokens)
+  const toolTokens = usage.breakdown.find((s) => s.key === 'toolResults')?.tokens ?? 0
 
   /** `of`: what 100% width represents — the whole window (panel) or just what is used (compact pill). */
   const Bar = ({ className, marker, of = window_ }: { className: string; marker?: boolean; of?: number }) => (
@@ -140,20 +141,33 @@ export function ContextMeter({ usage, busy, onCompact }: { usage: ContextUsage |
                 <span className="w-12 text-right font-mono text-caption tabular-nums text-dim">{pctOf(Math.max(0, window_ - usage.tokens), window_)}</span>
               </div>
             </div>
-            <div className="mt-3 flex items-center gap-2 border-t border-line pt-2.5">
+            <div className="mt-3 flex items-start gap-2 border-t border-line pt-2.5">
               <span className="flex-1 text-caption leading-snug text-dim">
                 {usage.threshold ? `Older messages are summarised automatically at ${compact(usage.threshold)}.` : 'Summarise older messages to free up space.'} Shares are estimates.
               </span>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  setOpen(false)
-                  onCompact()
-                }}
-                className="h-7 shrink-0 rounded-lg border border-line-strong px-2.5 text-caption font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
-              >
-                Summarise now
-              </button>
+              <div className="flex shrink-0 flex-col items-stretch gap-1.5">
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    setOpen(false)
+                    onCompact()
+                  }}
+                  className="h-7 rounded-lg border border-line-strong px-2.5 text-caption font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
+                >
+                  Summarise now
+                </button>
+                <button
+                  disabled={busy || !toolTokens}
+                  title="Replace the output of every tool call with a short note for the model. The chat still shows each result."
+                  onClick={() => {
+                    setOpen(false)
+                    onStrip()
+                  }}
+                  className="h-7 rounded-lg border border-line-strong px-2.5 text-caption font-medium text-muted transition-colors hover:border-crimson-line hover:text-fg disabled:opacity-50"
+                >
+                  Strip tool calls
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

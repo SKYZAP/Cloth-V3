@@ -44,6 +44,7 @@ export function ComposerBar({
   usage,
   compacting,
   onCompact,
+  onStrip,
   attach,
   send,
   onWorkflow,
@@ -54,6 +55,8 @@ export function ComposerBar({
   usage: ContextUsage | null
   compacting: boolean
   onCompact(): void
+  /** Remove tool results' output from what the model sees. */
+  onStrip(): void
   /** Files waiting to go with the message, and opening the file picker. */
   attach: { count: number; onClick(): void }
   /** The send / stop button. */
@@ -234,7 +237,7 @@ export function ComposerBar({
         </span>
       )}
       <div className="hidden shrink-0 @[400px]:block">
-        <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} />
+        <ContextMeter usage={usage} busy={compacting} onCompact={onCompact} onStrip={onStrip} />
       </div>
       <div className="ml-1 shrink-0">{send}</div>
     </div>

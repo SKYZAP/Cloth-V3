@@ -931,6 +931,13 @@ function ChatView({
     const ms = await attempt(() => api.chat.compact(session.id), 'Earlier messages summarised')
     if (ms) setMessages(ms)
   }
+  const stripNow = async () => {
+    const out = await attempt(() => api.chat.stripToolResults(session.id))
+    if (!out) return
+    setMessages(out.messages)
+    refreshUsage()
+    useApp.getState().toast(out.count ? `Removed ${out.count} tool result${out.count === 1 ? '' : 's'} from the context` : 'No tool results big enough to remove', out.count ? 'ok' : 'info')
+  }
   // Spec → Ship hands each stage over with a fresh context, archiving the stages before it: those stay in place in the chat,
   // from the chat's first workflow on (a chat may run several, one after another).
   const flowStart = useMemo(() => (session.workflow ? messages.findIndex((m) => m.workflowStage === 'grill') : -1), [messages, session.workflow])
@@ -1348,6 +1355,7 @@ function ChatView({
             usage={usage}
             compacting={compacting}
             onCompact={() => void compactNow()}
+            onStrip={() => void stripNow()}
             attach={{ count: attachments.length, onClick: () => fileInput.current?.click() }}
             onWorkflow={workflowAction}
             specArmed={specArmed}
@@ -1926,10 +1934,18 @@ function TokenCounts({ usage }: { usage: UiUsage }) {
   const cached = usage.cached ?? 0
   const read = usage.input + cached
   const title = `${read.toLocaleString()} tokens read${cached ? ` (${usage.input.toLocaleString()} new, ${cached.toLocaleString()} cached)` : ''} · ${usage.output.toLocaleString()} written`
+  const speed = usage.genMs && usage.genOutput ? usage.genOutput / (usage.genMs / 1000) : null
   return (
-    <span className="tabular-nums" title={title}>
-      {formatTokens(read)} in, {formatTokens(usage.output)} out
-    </span>
+    <>
+      <span className="tabular-nums" title={title}>
+        {formatTokens(read)} in, {formatTokens(usage.output)} out
+      </span>
+      {speed !== null && (
+        <span className="tabular-nums" title={`${usage.genOutput!.toLocaleString()} tokens written in ${(usage.genMs! / 1000).toFixed(1)}s of generation (from the first token, across every step of this reply)`}>
+          {speed >= 100 ? Math.round(speed) : speed.toFixed(1)} tok/s
+        </span>
+      )}
+    </>
   )
 }
 

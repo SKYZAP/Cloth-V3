@@ -258,6 +258,8 @@ export interface ClothApi {
     answerQuestion(questionId: string, answer: string | null): Promise<void>
     undoChange(id: string, toolCallId: string, force?: boolean): Promise<UiMessage[]>
     compact(id: string, instructions?: string): Promise<UiMessage[]>
+    /** Replace every tool result's output sent to the model with a short note; `count` is how many were stripped. */
+    stripToolResults(id: string): Promise<{ messages: UiMessage[]; count: number }>
     /** Write a new AI title now (also replaces a title the user typed). */
     retitle(id: string): Promise<string | null>
     contextUsage(id: string): Promise<ContextUsage>

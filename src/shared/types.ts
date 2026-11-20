@@ -344,7 +344,7 @@ export interface ChatSession {
   access?: 'auto' | 'manual'
   /** The Spec → Ship workflow this chat is running, or null for a plain chat. */
   workflow?: SpecWorkflow | null
-  /** OpenSpec mode: the change it takes from proposal to pull request (null = not in OpenSpec mode). */
+  /** OpenSpec mode: the change it takes from proposal to a committed local branch (null = not in OpenSpec mode). */
   openspec?: OpenSpecRun | null
   /** Derived from `permissions` (permissionCaps); read-only, kept for older screens. */
   fileAccess: FileAccess
@@ -910,6 +910,10 @@ export interface UiUsage {
   /** Input tokens read from the provider's cache. */
   cached?: number
   cost: number
+  /** Time the model spent writing (from its first output to the end of each step), and the output tokens those steps
+   * wrote: their ratio is the reply's speed. Absent for replies saved before it was measured. */
+  genMs?: number
+  genOutput?: number
 }
 
 export interface UiMessage {

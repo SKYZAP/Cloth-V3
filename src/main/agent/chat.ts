@@ -9,6 +9,7 @@ import type { ChatOrigin, ComputerTrace, ContainerSettings,GeneratedImage, Image
 import { FINDINGS_HEAD, findingsLogLines, handoverText, nextFeatureNote, nextStage, specIndexLine, STAGE_NAME, STAGE_OPEN, stageNote, stageText, WORKFLOW_SECTION, workflowSection } from './workflow'
 import { appendFeatureLog, cleanupLogLine, cleanupWorkflow, commitWorkflowFinish, copyWorkingChanges, createWorkerTree, finishWorkerTree, parkWorkerTree, removeWorkerTree, WORKTREES_DIR, type MergeResult, type WorkerTree } from './worktrees'
 import { checkNote, parseCheckReport, VERIFIER_INSTRUCTIONS } from './checks'
+import { stripToolResults, type StrippedResult } from './strip'
 import { contextIsGuess, openFix } from '@shared/types'
 import { hasLegacyCaps, isPermissions, legacyPermissions, permissionCaps, type LegacyCaps } from '@shared/permissions'
 import { agentSlug } from '@shared/mention'
@@ -563,7 +564,7 @@ export class AgentRuntime {
         scope.container
           ? `You work in an isolated copy of ${scope.container.folder ? `the user's folder ${scope.container.folder}` : 'an empty workspace'}, inside a Linux container (image ${scope.container.image}) where it is mounted at /workspace. Tool paths are relative to the workspace root: write "src/app.ts", never an absolute path. Your file changes stay in the copy until the user reviews them and applies them to their folder, so work freely — but say what you changed when you finish. Dependencies (node_modules, .venv) are not copied: install them in the container when you need them.`
           : `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
-        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`.',
+        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`. To see what changed in a git repository (uncommitted work, or against a branch or commit), use git_diff.',
         writable
           ? unattended
             ? 'You can change files: use ast_edit for mechanical refactors across many places, edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. Nobody is watching this run, so changes are made without asking: keep them minimal and focused on the task, and say what you changed when you finish.'
@@ -1447,6 +1448,21 @@ export class ChatService {
   }
 
   /**
+   * Replace every tool result's output in the history with a short note, freeing the context without summarising.
+   * The chat still shows each result (kept beside the note); the model sees only that it was removed.
+   */
+  stripToolResults(id: string): { messages: UiMessage[]; count: number } {
+    if (this.busy(id)) throw new Error('Wait for the agent to finish first')
+    const { messages, count } = stripToolResults(this.rawMessages(id))
+    if (count) {
+      this.saveMessages(id, messages)
+      // Token counts the provider reported before this describe the longer history.
+      this.ctx.kv.set('compactedAt:' + id, Date.now())
+    }
+    return { messages: this.messages(id), count }
+  }
+
+  /**
    * Summarise `raw` (the chat's history, saved or in flight) up to the cut, archive what was
    * summarised and save the shortened history, which is returned. Emits compacting/compacted like
    * any summarising, with the error when it fails.
@@ -2099,8 +2115,13 @@ export class ChatService {
     // Written while the run was getting ready: read along with the message that started it.
     deliver()
 
+    // When the model began writing this step's output: its speed is output tokens over the time it spent writing.
+    let firstOutputAt: number | null = null
     agent.subscribe((e) => {
       switch (e.type) {
+        case 'message_start':
+          if (e.message.role === 'assistant') firstOutputAt = null
+          break
         case 'turn_end':
           // A stopped or failed step ends the run: its nudges go back to the queue instead.
           if (e.message.role === 'assistant' && (e.message.stopReason === 'aborted' || e.message.stopReason === 'error')) break
@@ -2110,11 +2131,19 @@ export class ChatService {
           if (e.partialResult?.details) partials.set(e.toolCallId, e.partialResult.details as ToolDetails)
           schedule()
           break
-        case 'message_update':
+        case 'message_update': {
+          const kind = e.assistantMessageEvent.type
+          if (firstOutputAt === null && (kind === 'text_delta' || kind === 'thinking_delta' || kind === 'toolcall_delta')) firstOutputAt = Date.now()
+          schedule()
+          break
+        }
         case 'tool_execution_start':
           schedule()
           break
         case 'message_end':
+          // Saved with the message (providers ignore fields they don't know), for the reply's tok/s.
+          if (e.message.role === 'assistant' && firstOutputAt !== null) (e.message as AssistantMessage & { genMs?: number }).genMs = Date.now() - firstOutputAt
+          firstOutputAt = null
           // A nudge the agent just read shows in the chat where it landed.
           if (e.message.role === 'user' && nudged.has(e.message.timestamp)) {
             const ui = toUiMessages([e.message])[0]
@@ -2373,7 +2402,8 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           name: block.name,
           args: block.arguments,
           status: r ? (r.isError ? 'error' : 'ok') : pending?.has(block.id) || a.stopReason === 'toolUse' ? 'running' : 'error',
-          result: r ? r.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n') : '',
+          // A stripped result shows its original output; only the model sees the note.
+          result: r ? ((r as StrippedResult).stripped ?? r.content).map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n') : '',
           durationMs: r?.details?.durationMs ?? null,
           references: r?.details?.references ?? [],
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
@@ -2395,6 +2425,12 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
       turn.usage!.output += a.usage.output
       turn.usage!.cached = (turn.usage!.cached ?? 0) + (a.usage.cacheRead ?? 0)
       turn.usage!.cost += a.usage.cost?.total ?? 0
+      // Only steps that were timed and streamed for a while count toward the speed (a reply sent in one piece has no rate).
+      const genMs = (a as AssistantMessage & { genMs?: number }).genMs
+      if (genMs && genMs >= 250 && a.usage.output > 0) {
+        turn.usage!.genMs = (turn.usage!.genMs ?? 0) + genMs
+        turn.usage!.genOutput = (turn.usage!.genOutput ?? 0) + a.usage.output
+      }
     }
     if (a.stopReason === 'error') turn.error = a.errorMessage || 'The model returned an error'
     if (a.stopReason === 'aborted') turn.error = 'Stopped'
