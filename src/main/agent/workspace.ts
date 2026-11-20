@@ -41,6 +41,7 @@ import {
   type WorkspaceEdit
 } from './lsp'
 import { ruleNotes } from './rules'
+import { git, repoRoot } from '../panel/git'
 
 const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'out', 'build', '.next', 'target', '.venv', '__pycache__']
 const MAX_DIFF_LINES = 600
@@ -298,7 +299,50 @@ function allowCovers(command: string, allow: string[], shell: 'bash' | 'powershe
   })
 }
 
-export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'shell_output', 'shell_stop', 'terminal_read', 'ast_grep', 'ast_edit', 'lsp']
+export const WORKSPACE_TOOL_NAMES = ['read', 'ls', 'find', 'write', 'edit', 'bash', 'powershell', 'shell_output', 'shell_stop', 'terminal_read', 'ast_grep', 'ast_edit', 'git_diff', 'lsp']
+
+const MAX_GIT_DIFF_CHARS = 60_000
+/** A ref or range the model may pass to git: no leading dash (it would read as an option), no spaces or shell-ish characters. */
+const SAFE_REF = /^(?!-)[\w./~^@{}:+-]+$/
+
+/**
+ * What changed in the repository holding `root`, for a reader: the commits in a range, a per-file summary,
+ * the patch (capped), and new untracked files. Never runs external diff or textconv drivers or fsmonitor hooks.
+ */
+export async function gitChanges(root: string, opts: { base?: string; staged?: boolean; path?: string; statOnly?: boolean } = {}): Promise<string> {
+  const top = await repoRoot(root)
+  if (!top) return 'This workspace is not in a git repository (or git is not installed), so there is no diff. Review the files you were pointed at instead.'
+  const base = opts.base?.trim() || undefined
+  if (base && !SAFE_REF.test(base)) throw new Error(`"${base}" is not a branch, tag, commit or range git_diff accepts`)
+  const run = async (args: string[]) => {
+    const r = await git(top, ['-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false', ...args])
+    if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ') || `git ${args[0]} failed`)
+    return r.stdout
+  }
+  const scope = opts.path ? ['--', relative(top, opts.path).split(sep).join('/') || '.'] : []
+  const diffArgs = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', ...(opts.staged ? ['--cached'] : []), ...(base ? [base] : opts.staged ? [] : ['HEAD'])]
+  const hasHead = (await git(top, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code === 0
+  // A repository with no commits yet has no HEAD to compare with: everything is new.
+  if (!hasHead && !base && !opts.staged) diffArgs.splice(diffArgs.indexOf('HEAD'), 1, '--cached')
+  const parts: string[] = []
+  if (base && /\.\.\.?/.test(base)) {
+    const log = (await run(['log', '--oneline', '--no-decorate', '-n', '30', base.includes('...') ? base.replace('...', '..') : base])).trim()
+    if (log) parts.push(`Commits in ${base}:\n${log}`)
+  }
+  const stat = (await run([...diffArgs, '--stat=120', ...scope])).trim()
+  const untracked = opts.staged || (base && /\.\./.test(base)) ? [] : (await run(['ls-files', '--others', '--exclude-standard', ...scope])).split('\n').map((f) => f.trim()).filter(Boolean)
+  if (!stat && !untracked.length) return `${parts.length ? parts.join('\n\n') + '\n\n' : ''}No changes${base ? ` against ${base}` : opts.staged ? ' staged' : ''}${opts.path ? ' in that path' : ''}.`
+  if (stat) parts.push(`Changed files (against ${base ?? (opts.staged ? 'HEAD, staged only' : 'HEAD')}):\n${stat}`)
+  if (untracked.length) parts.push(`New untracked files (not in the diff; read them in full):\n${untracked.slice(0, 200).join('\n')}${untracked.length > 200 ? `\n… and ${untracked.length - 200} more` : ''}`)
+  if (!opts.statOnly && stat) {
+    let patch = await run([...diffArgs, ...scope])
+    if (patch.length > MAX_GIT_DIFF_CHARS) {
+      patch = `${patch.slice(0, MAX_GIT_DIFF_CHARS)}\n… diff cut off at ${MAX_GIT_DIFF_CHARS} characters. Call git_diff again with path set to each remaining file, or read the files.`
+    }
+    parts.push(patch.trimEnd())
+  }
+  return parts.join('\n\n')
+}
 
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
@@ -313,6 +357,7 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     t('ls', 'List directory', 'List a directory in the workspace.', 'Chats with a workspace folder', obj({ path: 'string', limit: 'number' }, [])),
     t('find', 'Find files', 'Find files by glob pattern (e.g. **/*.ts) in the workspace.', 'Chats with a workspace folder', obj({ pattern: 'string', path: 'string', limit: 'number' }, ['pattern'])),
     t('ast_grep', 'AST search', 'Structural code search with ast-grep patterns ($VAR, $$ARGS). TS/JS/TSX/HTML/CSS, Python, Go, Rust, Java.', 'Chats with a workspace folder', obj({ pattern: 'string', language: 'string', path: 'string' }, ['pattern'])),
+    t('git_diff', 'Git diff', 'Read-only: the uncommitted changes, or the changes against a branch, commit or range, as a unified diff with a per-file summary and the new untracked files.', 'Chats with a workspace folder in a git repository', obj({ base: 'string', staged: 'boolean', path: 'string', statOnly: 'boolean' }, [])),
     t('ast_edit', 'AST rewrite', 'Rewrite every match of an ast-grep pattern, reusing captured $VARS. One approval (combined diff) for all files; undoable.', 'Chats with a workspace in read & write mode', obj({ pattern: 'string', rewrite: 'string', language: 'string', path: 'string' }, ['pattern', 'rewrite'])),
     t('lsp', 'Code intelligence', 'Language-server diagnostics, definition, references, hover, symbols and rename for TypeScript/JavaScript (TypeScript 7 native server) and Python (Pyright). Also reports type errors right after each edit.', 'Chats with a workspace and code intelligence on', obj({ action: 'string', path: 'string', symbol: 'string', line: 'number', query: 'string', newName: 'string' }, ['action'])),
     t('write', 'Write file', 'Create or overwrite a file. Asks for approval (with a diff) unless edits are auto-approved; undoable.', 'Chats with a workspace in read & write mode', obj({ path: 'string', content: 'string' }, ['path', 'content'])),
@@ -527,6 +572,25 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     }
   }
 
+  const gitDiffTool: AgentTool<any> = {
+    name: 'git_diff',
+    label: 'Git diff',
+    description:
+      'Read-only: show what changed in the workspace\'s git repository, as a unified diff with a per-file summary. With no arguments: every uncommitted change (staged and not) against HEAD, plus the list of new untracked files (read those with `read`). base: compare the working tree with a branch, tag or commit instead ("main", "HEAD~3", "abc123"), or give a range ("main...HEAD", "abc123..def456"); the commits in it are listed too. staged: only what is staged. path: limit to a file or folder. statOnly: just the summary, for a large change you will read file by file.',
+    parameters: Type.Object({
+      base: Type.Optional(Type.String({ description: 'Ref or range to compare against (default: HEAD)' })),
+      staged: Type.Optional(Type.Boolean({ description: 'Only staged changes' })),
+      path: Type.Optional(Type.String({ description: 'File or folder to limit the diff to' })),
+      statOnly: Type.Optional(Type.Boolean({ description: 'Only the per-file summary' }))
+    }),
+    async execute(_id, params) {
+      const p = params as { base?: string; staged?: boolean; path?: string; statOnly?: boolean }
+      const rootReal = await realpath(o.root)
+      const out = await gitChanges(rootReal, { base: p.base, staged: p.staged, path: p.path ? await inside(p.path) : undefined, statOnly: p.statOnly })
+      return { content: [{ type: 'text', text: out }], details: {} }
+    }
+  }
+
   const readOps = {
     readFile: async (p: string) => readFile(await inside(p)),
     access: async (p: string) => void (await stat(await inside(p)))
@@ -556,6 +620,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
       }
     }),
     astGrep,
+    gitDiffTool,
     ...(o.lsp ? [lspTool] : [])
   ]
 

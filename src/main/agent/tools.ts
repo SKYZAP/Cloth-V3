@@ -814,6 +814,7 @@ const WHERE: Record<string, ToolWhere> = {
   grep: W(true, true, true, false),
   ast_grep: W(true, true, true, false),
   ast_edit: W(true, true, true, false),
+  git_diff: W(true, true, true, false),
   write: W(true, true, true, false),
   edit: W(true, true, true, false),
   lsp: W(true, true, false, false),

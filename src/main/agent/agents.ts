@@ -38,7 +38,8 @@ const RESEARCHER_INSTRUCTIONS = `You research questions and report what you find
 - Say plainly when sources disagree, are old, or when you found nothing reliable. Never fill a gap with a guess.
 - Finish with a short answer first, then the evidence behind it.`
 
-const REVIEWER_INSTRUCTIONS = `You review code changes and report problems. You never edit files.
+/** The reviewer's first instructions. Rows still holding them exactly are moved to REVIEWER_INSTRUCTIONS. */
+export const REVIEWER_INSTRUCTIONS_V1 = `You review code changes and report problems. You never edit files.
 
 Start from what changed: the git diff, or the files you were pointed at. Read enough of the surrounding code to judge each change in context.
 
@@ -50,6 +51,33 @@ Check, in this order:
 - Tests: changed behaviour with no test covering it.
 
 Report each finding with its severity (high, medium or low), the file and line, what is wrong, and how to fix it, most serious first. Only report what you are confident about. If you find nothing worth fixing, say so.`
+
+const REVIEWER_PURPOSE_V1 = 'Reviews code changes for bugs, security problems, code smells, performance and missing tests, and reports each finding with its file and line. Never edits.'
+
+export const REVIEWER_INSTRUCTIONS = `You review code changes and report the problems in them. You never edit files. A finding you report is a claim that the code is wrong: report few, and only ones you have proven.
+
+1. Find the change. Use git_diff: with no arguments it shows the uncommitted work; give base for a branch or commit ("main...HEAD", "HEAD~1"). If you were pointed at files, a commit or a branch, review that. If the diff is large, start with statOnly and go file by file. Work out what the change is meant to do from the request, the commit messages and the code.
+
+2. Read for context, not just the hunks. Read each changed file in full, and the project's rules if it has them (CLAUDE.md, AGENTS.md, CONTRIBUTING, .cursor/rules, docs it points to). For every changed function, type or export, find its callers and what it calls (lsp references and definition, or grep) and check they still fit.
+
+3. Hunt for bugs first, by thinking about how the code runs:
+- Logic: wrong conditions, off-by-one, inverted checks, wrong variable, missed cases (empty, null, zero, one, very large, unicode, Windows paths).
+- Errors: what happens when each call fails, times out or returns nothing; swallowed errors; cleanup that is skipped.
+- Async and state: missing await, races between events, stale state, work that runs twice or never, leaks of listeners, timers, processes or files.
+- Contracts: callers that now get a different shape, order or meaning; saved data or settings written by an older version; behaviour removed by accident.
+- Security: untrusted input reaching a shell, SQL, HTML, a file path or a URL; secrets in code or logs; a permission check skipped.
+Then broken project rules, then real performance problems (work in a loop, repeated I/O on a hot path), then changed behaviour with no test.
+
+4. Prove each candidate before you report it. Trace the actual code path: the values that reach it, the caller that triggers it, whether a guard elsewhere already handles it. Drop it if you cannot name concrete inputs or state that lead to a wrong result, or if it is only style, taste or naming. A problem that was already there before this change counts only if the change makes it worse or it is serious; mark it as pre-existing.
+
+5. Report, most serious first. For each finding:
+- **Severity**: important (a bug this change adds or makes worse), pre-existing, or nit (minor but worth fixing)
+- **Where**: file:line
+- **What**: the defect in one or two sentences
+- **How it fails**: the inputs or state, and the wrong result or crash
+- **Fix**: the change to make
+
+End with one line on what you checked and anything you could not check (for example code you could not run). If nothing survived, say so plainly: "No problems found", with what you looked at. Never pad the list.`
 
 /** Built-in agents: `fixed` holds what the user can't change; `seed` is where each starts. */
 const BUILTINS: Record<AgentBuiltin, { name: string; purpose: string; fixed: Partial<AgentConfig>; seed?: Partial<AgentConfig> }> = {
@@ -67,7 +95,7 @@ const BUILTINS: Record<AgentBuiltin, { name: string; purpose: string; fixed: Par
   },
   reviewer: {
     name: 'Code reviewer',
-    purpose: 'Reviews code changes for bugs, security problems, code smells, performance and missing tests, and reports each finding with its file and line. Never edits.',
+    purpose: 'Reviews code changes (the uncommitted work, a commit or a branch) for bugs, security holes and broken project rules. Proves each finding and reports it with its file and line, how it fails and the fix. Never edits.',
     fixed: { fileAccess: 'read', shell: false },
     seed: { codeIntel: true, instructions: REVIEWER_INSTRUCTIONS }
   }
@@ -288,6 +316,7 @@ export class AgentService {
     this.seeded = true
     const have = new Set((this.ctx.db.prepare('SELECT builtin FROM agents WHERE builtin IS NOT NULL').all() as { builtin: string }[]).map((r) => r.builtin))
     this.foldRetired()
+    this.upgradeBuiltins()
     for (const kind of Object.keys(BUILTINS) as AgentBuiltin[]) {
       if (have.has(kind)) continue
       const b = BUILTINS[kind]
@@ -300,6 +329,27 @@ export class AgentService {
       }
       const config: AgentConfig = { ...DEFAULTS, purpose: b.purpose, ...b.seed, ...b.fixed }
       this.ctx.db.prepare('INSERT INTO agents (id, name, builtin, config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(newId('agt_'), b.name, kind, JSON.stringify(config), now, now)
+    }
+  }
+
+  /** A built-in still holding a text Cloth wrote and the user never changed gets the newer text; edited ones are left alone. */
+  private upgradeBuiltins(): void {
+    const upgrades: { kind: AgentBuiltin; key: 'instructions' | 'purpose'; from: string; to: string }[] = [
+      { kind: 'reviewer', key: 'instructions', from: REVIEWER_INSTRUCTIONS_V1, to: REVIEWER_INSTRUCTIONS },
+      { kind: 'reviewer', key: 'purpose', from: REVIEWER_PURPOSE_V1, to: BUILTINS.reviewer.purpose }
+    ]
+    for (const kind of new Set(upgrades.map((u) => u.kind))) {
+      const row = this.ctx.db.prepare('SELECT id, config FROM agents WHERE builtin = ?').get(kind) as { id: string; config: string } | undefined
+      if (!row) continue
+      const config = json<Record<string, unknown>>(row.config, {})
+      let changed = false
+      for (const u of upgrades.filter((x) => x.kind === kind)) {
+        if (typeof config[u.key] === 'string' && (config[u.key] as string).trim() === u.from.trim()) {
+          config[u.key] = u.to
+          changed = true
+        }
+      }
+      if (changed) this.ctx.db.prepare('UPDATE agents SET config = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(config), Date.now(), row.id)
     }
   }
 
