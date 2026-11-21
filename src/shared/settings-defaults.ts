@@ -1,3 +1,4 @@
+import { DEFAULT_CODE_CHECKS } from './formatters'
 import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type Settings } from './types'
 
 /** The tiers a chat agent picks from when it delegates; model null = the chat's own model. */
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTiers: DEFAULT_AGENT_TIERS,
   defaultPermissions: 'manual',
   codingRules: '',
+  codeChecks: DEFAULT_CODE_CHECKS,
   defaultWorkspace: null,
   languages: [],
   onboarding: null

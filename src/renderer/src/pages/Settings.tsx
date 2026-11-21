@@ -3,6 +3,8 @@ import clsx from 'clsx'
 import { motion } from 'motion/react'
 import {
   ArrowClockwise,
+  ArrowSquareOut,
+  CheckCircle,
   ArrowCounterClockwise,
   Books,
   CaretRight,
@@ -23,6 +25,7 @@ import {
   ShieldCheck,
   Swatches as SwatchesIcon,
   Trash,
+  Warning,
   Translate,
   X,
   type Icon
@@ -32,7 +35,7 @@ import { DEFAULT_TIER_INSTRUCTIONS, type AgentTier, type AppInfo, type Certifica
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile, useSideBySide } from '@/lib/platform'
-import { Button, Card, IconButton, Input, ListPane, Select, Switch, Textarea, chooseAction, confirmAction } from '@/components/ui'
+import { Button, Card, IconButton, Input, ListPane, Select, Spinner, Switch, Textarea, chooseAction, confirmAction } from '@/components/ui'
 import { ModelPicker } from '@/components/ModelPicker'
 import { NetworkFix, NetworkPill, networkSummary } from '@/components/NetworkTrust'
 import { Logo } from '@/components/Logo'
@@ -42,6 +45,8 @@ import { PhoneSettings } from './PhoneSettings'
 import { DependencySettings } from './DependencySettings'
 import { LanguageServerStatus, useLanguageServers } from '@/components/LanguageServers'
 import { LANGUAGES, type LanguageId } from '@shared/onboarding'
+import { FORMAT_TOOLS, type CodeChecks, type FormatToolId, type FormatToolStatus } from '@shared/formatters'
+import { attempt } from '@/lib/store'
 import { DEFAULT_SETTINGS } from '@shared/settings-defaults'
 import { activeTheme, allThemes, clampStrength, DEFAULT_CHAT_THEME, NO_THEME, STRENGTH_RANGE } from '@shared/chat-themes'
 import { EFFORT_OPTIONS, normalizeEffort, normalizeEffortOrNull } from '@shared/effort'
@@ -61,7 +66,7 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
   { id: 'models', title: 'Models', icon: Cpu, blurb: 'Which model does each job. Add or edit providers on the Models page.', keywords: 'default model embedding image llm provider' },
-  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, how long ones stay within the model’s limit, and the background behind them.', keywords: 'compact summarise summarize context window title name rename ai titles background theme shader animation flow waves strength' },
+  { id: 'chat', title: 'Chat', icon: ChatCircleDots, blurb: 'How chats are named, how long ones stay within the model’s limit, the background behind them, and how agents tidy the code they write.', keywords: 'format formatter lint linter prettier eslint biome ruff black gofmt golangci rustfmt clippy clang-format google-java-format compact summarise summarize context window title name rename ai titles background theme shader animation flow waves strength' },
   { id: 'coding', title: 'Coding rules', icon: Code, blurb: 'Rules every agent follows when it writes code.', keywords: 'style conventions lint ast-grep sgconfig agents.md claude.md preferences' },
   { id: 'languages', title: 'Languages', icon: Translate, blurb: 'The languages you work in, and the language servers that give agents go to definition, references and type errors.', keywords: 'lsp language server code intelligence gopls rust-analyzer clangd jdtls pyright typescript go rust c++ java install', desktopOnly: true },
   { id: 'subagents', title: 'Subagents', icon: Robot, blurb: 'Helpers a chat can hand parts of a task to, what they may do, and the reasoning levels they run at.', keywords: 'task delegate reader writer operator access reasoning tier parallel turns agent' },
@@ -382,6 +387,7 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
       )
     case 'chat':
       return (
+        <>
         <Group>
           <Row label="Summarise long conversations" track="autoCompact" hint="When a chat nears the model's limit, older turns are replaced by a summary.">
             <Switch checked={settings.autoCompact} onChange={(autoCompact) => void update({ autoCompact })} />
@@ -396,6 +402,8 @@ function SectionBody({ id, settings }: { id: SectionId; settings: Settings }) {
           )}
           <BackgroundRows settings={settings} />
         </Group>
+        <FormattingSection settings={settings} />
+        </>
       )
     case 'coding':
       return <CodingRulesSection value={settings.codingRules} />
@@ -569,6 +577,183 @@ function SubagentSection({ value }: { value: SubagentSettings }) {
       </Group>
     </>
   )
+}
+
+const WHEN_HINTS: Record<CodeChecks['when'], string> = {
+  agent: 'Agents are told the folder’s formatter and linter commands, and run them on the files they changed before they finish.',
+  cloth: 'Cloth runs them itself right after each write or edit, and shows the agent what’s left, so formatting doesn’t depend on the agent remembering.',
+  off: 'Nothing runs. Agents may still run a folder’s lint script when a task asks for it.'
+}
+
+const FORMAT_GROUPS: { name: string; langs: LanguageId[] }[] = [
+  { name: 'TypeScript and JavaScript', langs: ['typescript', 'javascript'] },
+  { name: 'Python', langs: ['python'] },
+  { name: 'Go', langs: ['go'] },
+  { name: 'Rust', langs: ['rust'] },
+  { name: 'C and C++', langs: ['cpp'] },
+  { name: 'Java', langs: ['java'] }
+]
+
+/** Formatting and linting: when they run, and each tool with where it stands (Cloth installs some itself). */
+function FormattingSection({ settings }: { settings: Settings }) {
+  const update = useApp((s) => s.updateSettings)
+  const checks = settings.codeChecks
+  const set = (p: Partial<CodeChecks>) => void update({ codeChecks: { ...checks, ...p } })
+  const [tools, setTools] = useState<FormatToolStatus[] | null>(null)
+  const [busy, setBusy] = useState<Partial<Record<FormatToolId, { text: string; fraction: number | null }>>>({})
+  useEffect(() => {
+    let live = true
+    void api.onboarding.formatters().then(
+      (t) => live && setTools(t),
+      () => live && setTools([])
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+  useEvent('formatters', (e) => setBusy((b) => (b[e.id] ? { ...b, [e.id]: { text: e.text, fraction: e.fraction } } : b)))
+  const run = async (id: FormatToolId, fn: () => Promise<FormatToolStatus[]>, done: string) => {
+    setBusy((b) => ({ ...b, [id]: { text: 'Starting', fraction: null } }))
+    const next = await attempt(fn, done)
+    setBusy(({ [id]: _gone, ...rest }) => rest)
+    if (next) setTools(next)
+  }
+  const off = checks.when === 'off'
+  const chosen = settings.languages ?? []
+  // Before any language is picked (no setup yet), every tool shows.
+  const shown = (langs: LanguageId[]) => !chosen.length || langs.some((l) => chosen.includes(l))
+  return (
+    <>
+      <Group title="Formatting and linting" note="Only the files a change touched are checked, so a folder is never reformatted as a whole.">
+        <Row label="When code changes" hint={WHEN_HINTS[checks.when]}>
+          <Select className="w-72 mobile:w-full" aria-label="When code changes" value={checks.when} onChange={(e) => set({ when: e.target.value as CodeChecks['when'] })}>
+            <option value="agent">The agent runs them before it finishes</option>
+            <option value="cloth">Cloth runs them after every change</option>
+            <option value="off">Off</option>
+          </Select>
+        </Row>
+        <div className={clsx(off && 'opacity-50')}>
+          <Row label="Fix what they can" hint="Formatters rewrite the changed files and linters apply their safe fixes. Off, they only report, and the agent fixes what they find.">
+            <Switch checked={checks.fix} disabled={off} onChange={(fix) => set({ fix })} ariaLabel="Fix what they can" />
+          </Row>
+        </div>
+        <div className={clsx(off && 'opacity-50')}>
+          <Row label="Folders with no setup of their own" hint="A folder’s own config and copy of a tool always come first. This decides what happens in a folder that has neither.">
+            <Select className="w-72 mobile:w-full" aria-label="Folders with no setup of their own" disabled={off} value={checks.noSetup} onChange={(e) => set({ noSetup: e.target.value as CodeChecks['noSetup'] })}>
+              <option value="skip">Leave them as they are</option>
+              <option value="defaults">Use Cloth’s copies with their defaults</option>
+            </Select>
+          </Row>
+        </div>
+      </Group>
+      <Group title="Formatters and linters" note="Shown for the languages switched on under Languages. Tools Cloth installs go in its data folder and are used only where a folder doesn’t have its own copy.">
+        {FORMAT_GROUPS.filter((g) => shown(g.langs)).map((g) => (
+          <div key={g.name}>
+            <div className="px-3 pb-1 pt-2.5 text-caption font-semibold text-muted">{g.name}</div>
+            {FORMAT_TOOLS.filter((t) => t.languages.some((l) => g.langs.includes(l))).map((t) => {
+              const use = !checks.off.includes(t.id)
+              return (
+                <div key={t.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-3 py-2.5 mobile:grid-cols-[auto_minmax(0,1fr)]">
+                  <Switch checked={use} onChange={(v) => set({ off: v ? checks.off.filter((x) => x !== t.id) : [...checks.off, t.id] })} ariaLabel={`Agents use ${t.name}`} />
+                  <div className={clsx('min-w-0', !use && 'opacity-60')}>
+                    <div className="flex flex-wrap items-center gap-2 text-ui font-medium">
+                      {t.name}
+                      <span className="rounded bg-elev-2 px-1.5 text-micro font-medium text-muted">{t.kind}</span>
+                    </div>
+                    <div className="text-caption leading-snug text-dim">{t.hint}</div>
+                  </div>
+                  <div className="mobile:col-start-2">
+                    <FormatToolState
+                      info={tools?.find((x) => x.id === t.id)}
+                      name={t.name}
+                      progress={busy[t.id]}
+                      onInstall={() => void run(t.id, () => api.onboarding.installFormatter(t.id), `${t.name} installed`)}
+                      onRemove={() => void run(t.id, () => api.onboarding.removeFormatter(t.id), `Removed Cloth’s copy of ${t.name}`)}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </Group>
+    </>
+  )
+}
+
+/** One formatter or linter: where it stands, and Install / Update / Remove when Cloth handles it. */
+function FormatToolState({ info, name, progress, onInstall, onRemove }: { info: FormatToolStatus | undefined; name: string; progress?: { text: string; fraction: number | null }; onInstall(): void; onRemove(): void }) {
+  if (!info) return <span className="text-caption text-dim">Checking…</span>
+  if (progress)
+    return (
+      <span className="flex min-w-0 items-center justify-end gap-2 text-caption text-muted" role="status">
+        <Spinner size={12} />
+        <span className="truncate">
+          {progress.text}
+          {progress.fraction !== null && progress.fraction < 1 ? ` · ${Math.round(progress.fraction * 100)}%` : ''}
+        </span>
+      </span>
+    )
+  const link = (to: string, text: string) => (
+    <button type="button" onClick={() => void api.app.openExternal(to)} className="inline-flex items-center gap-1 text-caption text-warn hover:underline">
+      <Warning size={12} />
+      {text}
+      <ArrowSquareOut size={10} />
+    </button>
+  )
+  const ok = (text: string) => (
+    <span className="inline-flex min-w-0 items-center gap-1 text-caption text-ok">
+      <CheckCircle size={13} weight="fill" className="shrink-0" />
+      <span className="truncate">{text}</span>
+    </span>
+  )
+  const needs = info.needs ? link(info.needs.url, `Needs ${info.needs.name}`) : null
+  const wrap = (children: ReactNode) => <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 mobile:justify-start">{children}</span>
+  switch (info.status) {
+    case 'bundled':
+      return ok('Included with Cloth')
+    case 'project':
+      return <span className="text-caption text-dim">Uses each folder’s own copy</span>
+    case 'toolchain':
+      return needs
+    case 'installed':
+      return wrap(
+        <>
+          {ok(info.version ? `${name} ${info.version} installed` : `${name} installed`)}
+          {needs}
+          <Button size="sm" variant="ghost" onClick={onInstall}>
+            Update
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onRemove}>
+            Remove
+          </Button>
+        </>
+      )
+    case 'found':
+      return wrap(
+        <>
+          {ok(`${info.program} found on this PC`)}
+          {needs}
+        </>
+      )
+    default:
+      return wrap(
+        <>
+          {info.installable ? (
+            <Button size="sm" variant="outline" icon={<DownloadSimple size={13} />} onClick={onInstall}>
+              Install {name}
+            </Button>
+          ) : (
+            info.url && (
+              <button type="button" onClick={() => void api.app.openExternal(info.url!)} className="inline-flex items-center gap-1 text-caption text-warn hover:underline">
+                How to install {name} <ArrowSquareOut size={10} />
+              </button>
+            )
+          )}
+          {needs}
+        </>
+      )
+  }
 }
 
 /** Rules for all code agents write: instructions in their prompt, and the global ast-grep rules folder checked after each edit. */

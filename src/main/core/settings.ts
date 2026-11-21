@@ -51,6 +51,7 @@ export class SettingsService {
       ...stored,
       // Settings saved before access levels had only "Allow workers": off means delegated jobs stay Readers.
       subagents: withEffort({ ...DEFAULT_SETTINGS.subagents, ...stored.subagents, ...(stored.subagents && !stored.subagents.maxAccess ? { maxAccess: stored.subagents.allowWorkers === false ? 'reader' : 'operator' } : {}) }),
+      codeChecks: { ...DEFAULT_SETTINGS.codeChecks, ...stored.codeChecks },
       ...(stored.agentTiers ? { agentTiers: stored.agentTiers.map(withInstructions) } : {})
     }
   }

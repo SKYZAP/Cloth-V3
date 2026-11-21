@@ -23,6 +23,7 @@ export async function runSmoke(win: BrowserWindow, s: Services, outDir: string):
     if (process.env.CLOTH_PROBE === 'flows') return await probeFlowOutput(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'dashboard') return await probeDashboard(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'pages') return await probePages(win, s, outDir, note)
+    if (process.env.CLOTH_PROBE === 'formatting') return await probeFormatting(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'coding') return await probeCoding(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'planning') return await probePlanning(win, s, outDir, note)
     if (process.env.CLOTH_PROBE === 'subagents') return await probeSubagents(win, s, outDir, note)
@@ -553,6 +554,38 @@ async function typeSearch(win: BrowserWindow) {
     setTimeout(() => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Search')?.click(), 100)
   })()`)
   await wait(800)
+}
+
+/** Settings → Chat → Formatting and linting: the two groups, then a real install of Biome into this run's data folder. */
+async function probeFormatting(win: BrowserWindow, s: Services, outDir: string, note: (m: string) => void) {
+  try {
+    await wait(1500)
+    await clickText(win, 'Set up later')
+    await wait(600)
+    await clickNav(win, 'Settings')
+    await wait(1200)
+    const scrollTo = (title: string) =>
+      win.webContents.executeJavaScript(`(() => { const el = [...document.querySelectorAll('div')].find(d => d.textContent.trim() === ${JSON.stringify(title)} && d.children.length === 0); el?.scrollIntoView({ block: 'start' }); return !!el })()`)
+    note(`formatting group: ${await scrollTo('Formatting and linting')}`)
+    await wait(800)
+    writeFileSync(join(outDir, 'formatting.png'), await screenshot(win))
+    note(`tools group: ${await scrollTo('Formatters and linters')}`)
+    await wait(800)
+    writeFileSync(join(outDir, 'formatters.png'), await screenshot(win))
+    await clickText(win, 'Install Biome')
+    for (let i = 0; i < 240; i++) {
+      await wait(500)
+      const state = await win.webContents.executeJavaScript(`/Biome [\\d.]+ installed/.test(document.body.innerText)`)
+      if (state) break
+    }
+    await wait(500)
+    writeFileSync(join(outDir, 'formatters-installed.png'), await screenshot(win))
+    const text = (await win.webContents.executeJavaScript('document.body.innerText')) as string
+    note(`biome: ${/Biome [\d.]+ installed/.exec(text)?.[0] ?? 'not installed'}`)
+    note(`settings: ${JSON.stringify(s.settings.get().codeChecks)}`)
+  } catch (err) {
+    note(`FAILED: ${err instanceof Error ? err.stack : String(err)}`)
+  }
 }
 
 /** One screenshot per sidebar page (layout check across the whole app). */

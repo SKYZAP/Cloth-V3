@@ -316,6 +316,11 @@ export interface ClothApi {
     installLanguageServer(id: import('./onboarding').LanguageId): Promise<import('./onboarding').LanguageServerInfo>
     /** Remove Cloth's own copy (one on PATH is left alone). */
     removeLanguageServer(id: import('./onboarding').LanguageId): Promise<import('./onboarding').LanguageServerInfo>
+    /** Formatters and linters on this PC, and Cloth's own copies of them (Settings → Chat). */
+    formatters(): Promise<import('./formatters').FormatToolStatus[]>
+    /** Install (or update) Cloth's own copy; progress arrives on the 'formatters' channel. */
+    installFormatter(id: import('./formatters').FormatToolId): Promise<import('./formatters').FormatToolStatus[]>
+    removeFormatter(id: import('./formatters').FormatToolId): Promise<import('./formatters').FormatToolStatus[]>
     /** Skills, agents and MCP servers other coding tools on this PC have (MCP secrets stay in the main process). */
     importSources(): Promise<import('./onboarding').ImportSource[]>
     /** Copies what was picked; MCP servers arrive switched on (their tools ask before running) and start at once. */
@@ -566,4 +571,6 @@ export type EventMap = {
   themes: { type: 'changed' }
   /** A language server install's progress (fraction null = no percentage to show). */
   languageServers: { id: import('./onboarding').LanguageId; text: string; fraction: number | null }
+  /** A formatter or linter install's progress. */
+  formatters: { id: import('./formatters').FormatToolId; text: string; fraction: number | null }
 }

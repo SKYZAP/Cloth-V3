@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · Formatters and linters (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #09090c; --panel: #141518; --elev: #1e1e22; --elev-2: #26262b; --hover: #2d2d33;
+    --line: #36363c; --line-strong: #494a51; --fg: #f1f1f4; --muted: #bdbdc5; --dim: #94949e;
+    --crimson: #cf2845; --crimson-hi: #e54056; --ok: #5ccb89; --warn: #f6b84d; --info: #6cb2ec;
+    --micro: 11px; --caption: 12px; --ui: 13px; --body: 14px; --section: 16px; --title: 20px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 400 var(--ui)/1.5 Inter, ui-sans-serif, system-ui, sans-serif; }
+  button, select { font: inherit; color: inherit; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .app { display: flex; height: 100vh; }
+  aside { width: 240px; flex-shrink: 0; border-right: 1px solid rgb(54 54 60 / .6); padding: 24px 12px 16px; display: flex; flex-direction: column; gap: 16px; }
+  aside h1 { font-size: var(--title); font-weight: 600; letter-spacing: -.01em; margin: 0; padding: 0 8px; }
+  .search { position: relative; }
+  .search input { width: 100%; height: 32px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); padding: 0 56px 0 30px; font: inherit; }
+  .search svg { position: absolute; left: 10px; top: 9px; color: var(--dim); }
+  .search kbd { position: absolute; right: 8px; top: 7px; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font: var(--micro) 'JetBrains Mono', monospace; color: var(--dim); }
+  nav { display: flex; flex-direction: column; gap: 1px; }
+  nav a { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 6px; color: var(--dim); font-weight: 500; text-decoration: none; }
+  nav a:hover { background: var(--elev); color: var(--fg); }
+  nav a.on { background: var(--elev); color: var(--fg); }
+  nav a .dot { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid currentColor; opacity: .8; }
+
+  main { flex: 1; min-width: 0; overflow-y: auto; }
+  .page { padding: 28px 48px 30vh; max-width: 980px; }
+  h2 { font-size: var(--section); font-weight: 600; margin: 0; }
+  .blurb { color: var(--dim); max-width: 60ch; margin: 2px 0 16px; }
+
+  .group { margin-bottom: 24px; }
+  .group-title { padding: 0 4px; margin-bottom: 8px; font-size: var(--caption); font-weight: 500; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+  .new { font-size: var(--micro); font-weight: 600; color: var(--info); background: rgb(108 178 236 / .14); border-radius: 999px; padding: 0 7px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 4px; }
+  .box > * + * { border-top: 1px solid var(--line); }
+  .note { margin-top: 6px; padding: 0 4px; font-size: var(--caption); color: var(--dim); max-width: 80ch; }
+  .row { display: flex; align-items: center; gap: 10px 24px; padding: 14px 12px; border-radius: 7px; }
+  .row .text { flex: 1; min-width: 0; }
+  .label { font-weight: 500; }
+  .hint { font-size: var(--caption); color: var(--dim); line-height: 1.35; margin-top: 2px; }
+
+  .switch { position: relative; width: 32px; height: 18px; border-radius: 999px; background: var(--line-strong); border: 0; padding: 0; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch[aria-checked="true"] { background: var(--crimson); }
+  .switch[aria-checked="true"]::after { left: 16px; }
+  .switch:focus-visible, .btn:focus-visible, select:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+  select { height: 32px; border-radius: 6px; border: 1px solid var(--line); background: var(--elev); padding: 0 28px 0 10px; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394949e' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; min-width: 0; }
+  .w-sel { width: 288px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; font-size: var(--caption); font-weight: 500; white-space: nowrap; cursor: default; background: none; border: 1px solid transparent; }
+  .btn.outline { border-color: var(--line); color: var(--muted); }
+  .btn.outline:hover { color: var(--fg); border-color: var(--line-strong); background: var(--elev); }
+  .btn.ghost { color: var(--muted); }
+  .btn.ghost:hover { color: var(--fg); background: var(--elev-2); }
+
+  /* Tool list */
+  .lang { display: flex; align-items: center; gap: 10px; padding: 10px 12px 6px; font-size: var(--caption); font-weight: 600; color: var(--muted); }
+  .lang .off { font-weight: 400; color: var(--dim); }
+  .box > .lang + .tool { border-top: 0; }
+  .tool { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 10px 12px; }
+  .tool.dim .meta { opacity: .6; }
+  .tool .name { display: flex; align-items: center; gap: 8px; font-weight: 500; flex-wrap: wrap; }
+  .kind { font-size: var(--micro); font-weight: 500; color: var(--muted); background: var(--elev-2); border-radius: 4px; padding: 0 6px; }
+  .tool .hint { margin-top: 1px; }
+  .status { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; justify-content: flex-end; font-size: var(--caption); }
+  .ok { color: var(--ok); display: inline-flex; align-items: center; gap: 4px; }
+  .warn { color: var(--warn); display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+  .warn:hover { text-decoration: underline; }
+  .muted { color: var(--dim); }
+  .spin { width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--fg); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } .switch, .switch::after { transition: none; } }
+
+  .callout { margin: 0 0 16px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--muted); font-size: var(--caption); max-width: 80ch; }
+  .callout b { color: var(--fg); font-weight: 600; }
+
+  .preview { font-size: var(--caption); color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; margin-top: 8px; }
+
+  @media (max-width: 760px) {
+    aside { display: none; }
+    .page { padding: 20px 16px 30vh; }
+    .row { flex-direction: column; align-items: stretch; }
+    .w-sel { width: 100%; }
+    .tool { grid-template-columns: auto minmax(0, 1fr); }
+    .tool .status { grid-column: 2; justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Settings</h1>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input placeholder="Find a setting" aria-label="Find a setting">
+      <kbd>Ctrl F</kbd>
+    </div>
+    <nav aria-label="Settings sections">
+      <a href="#"><span class="dot"></span>Models</a>
+      <a href="#" class="on" aria-current="true"><span class="dot"></span>Chat</a>
+      <a href="#"><span class="dot"></span>Coding rules</a>
+      <a href="#"><span class="dot"></span>Languages</a>
+      <a href="#"><span class="dot"></span>Subagents</a>
+      <a href="#"><span class="dot"></span>Web search</a>
+      <a href="#"><span class="dot"></span>Network</a>
+      <a href="#"><span class="dot"></span>Knowledge</a>
+      <a href="#"><span class="dot"></span>Design systems</a>
+      <a href="#"><span class="dot"></span>Dependencies</a>
+      <a href="#"><span class="dot"></span>Data &amp; about</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="page">
+      <p class="callout"><b>Mockup.</b> The new parts are the two groups marked <span class="new">New</span>. The first group is the Chat section as it is today. Switches, menus and Install buttons work, with made-up results.</p>
+
+      <h2>Chat</h2>
+      <p class="blurb">How chats are named, how long ones stay within the model’s limit, the background behind them, and how agents tidy the code they write.</p>
+
+      <div class="group">
+        <div class="box">
+          <div class="row"><div class="text"><div class="label">Summarise long conversations</div><div class="hint">When a chat nears the model's limit, older turns are replaced by a summary.</div></div><button class="switch" role="switch" aria-checked="true" aria-label="Summarise long conversations"></button></div>
+          <div class="row"><div class="text"><div class="label">Name chats with AI</div><div class="hint">Give each chat a short title after the first answer.</div></div><button class="switch" role="switch" aria-checked="true" aria-label="Name chats with AI"></button></div>
+          <div class="row"><div class="text"><div class="label">Background</div></div><select class="w-sel" aria-label="Chat background"><option>Crimson haze</option></select></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Formatting and linting <span class="new">New</span></div>
+        <div class="box">
+          <div class="row">
+            <div class="text"><div class="label">When code changes</div><div class="hint" id="when-hint"></div></div>
+            <select class="w-sel" id="when" aria-label="When code changes">
+              <option value="agent">The agent runs them before it finishes</option>
+              <option value="cloth">Cloth runs them after every change</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+          <div class="row" id="fix-row">
+            <div class="text"><div class="label">Fix what they can</div><div class="hint">Formatters rewrite the changed files and linters apply their safe fixes. Off, they only report, and the agent fixes what they find.</div></div>
+            <button class="switch" role="switch" aria-checked="true" aria-label="Fix what they can" id="fix"></button>
+          </div>
+          <div class="row" id="nosetup-row">
+            <div class="text"><div class="label">Folders with no setup of their own</div><div class="hint">A folder’s own config and copy of a tool always come first. This decides what happens in a folder that has neither.</div></div>
+            <select class="w-sel" aria-label="Folders with no setup of their own" id="nosetup">
+              <option value="skip">Leave them as they are</option>
+              <option value="defaults">Use Cloth’s copies with their defaults</option>
+            </select>
+          </div>
+        </div>
+        <div class="preview mono" id="preview" aria-live="polite"></div>
+        <div class="note">Only the files a change touched are checked, so a folder is never reformatted as a whole.</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Formatters and linters <span class="new">New</span></div>
+        <div class="box" id="tools"></div>
+        <div class="note">Shown for the languages switched on under Languages. Tools Cloth installs go in its data folder and are used only where a folder doesn’t have its own copy.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const svgOk = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1.2 14.2l-4-4 1.4-1.4 2.6 2.6 5.6-5.6 1.4 1.4-7 7z"/></svg>'
+  const svgWarn = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z"/></svg>'
+  const svgDown = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>'
+  const svgOut = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>'
+
+  // status: bundled · installed · found · install (Cloth can install it) · needs (comes with a toolchain that's missing) · project (only a folder's own copy)
+  const LANGS = [
+    { name: 'TypeScript and JavaScript', on: true, tools: [
+      { id: 'prettier', name: 'Prettier', kind: 'Formatter', hint: 'Also formats CSS, HTML, JSON, YAML and Markdown.', status: 'bundled', use: true },
+      { id: 'eslint', name: 'ESLint', kind: 'Linter', hint: 'Runs only where a folder has ESLint and its config, since rules differ in every project.', status: 'project', use: true },
+      { id: 'biome', name: 'Biome', kind: 'Formatter and linter', hint: 'Used instead of Prettier and ESLint in folders set up for it.', status: 'install', version: '2.3.4', use: true }
+    ] },
+    { name: 'Python', on: true, tools: [
+      { id: 'ruff', name: 'Ruff', kind: 'Formatter and linter', hint: 'Formats like Black and lints like flake8, in one program.', status: 'install', version: '0.14.2', use: true },
+      { id: 'black', name: 'Black', kind: 'Formatter', hint: 'Used instead of Ruff’s formatter where a folder is set up for Black.', status: 'found', program: 'black 25.9', use: true }
+    ] },
+    { name: 'Go', on: true, tools: [
+      { id: 'gofmt', name: 'gofmt', kind: 'Formatter', hint: 'Comes with Go.', status: 'needs', needs: 'Go', use: true },
+      { id: 'golangci', name: 'golangci-lint', kind: 'Linter', hint: 'Runs the linters a folder’s .golangci.yml turns on, or its standard set.', status: 'install', version: '2.6.0', use: false }
+    ] },
+    { name: 'Rust', on: true, tools: [
+      { id: 'rustfmt', name: 'rustfmt', kind: 'Formatter', hint: 'Comes with Rust through rustup.', status: 'found', program: 'rustfmt 1.8.0', use: true },
+      { id: 'clippy', name: 'Clippy', kind: 'Linter', hint: 'Comes with Rust through rustup. Builds the crate, so it takes longer than the others.', status: 'found', program: 'cargo clippy 0.1.91', use: false }
+    ] },
+    { name: 'C and C++', on: false, tools: [
+      { id: 'clangformat', name: 'clang-format', kind: 'Formatter', hint: 'Follows a folder’s .clang-format file.', status: 'install', version: '21.1.0', use: true }
+    ] },
+    { name: 'Java', on: false, tools: [
+      { id: 'gjf', name: 'google-java-format', kind: 'Formatter', hint: 'Formats to the Google Java style.', status: 'install', version: '1.28.0', use: true, needs: 'Java 21 or newer' }
+    ] }
+  ]
+  const busy = {}
+
+  function status(t) {
+    if (busy[t.id] != null) return `<span class="status" role="status"><span class="spin"></span><span class="muted">Downloading ${t.name} · ${busy[t.id]}%</span></span>`
+    const needs = t.needs && t.status !== 'needs' ? `<a class="warn" href="#">${svgWarn} Needs ${t.needs} ${svgOut}</a>` : ''
+    switch (t.status) {
+      case 'bundled': return `<span class="status"><span class="ok">${svgOk} Included with Cloth</span></span>`
+      case 'installed': return `<span class="status"><span class="ok">${svgOk} ${t.name} ${t.version} installed</span>${needs}<button class="btn ghost" data-act="install" data-id="${t.id}">Update</button><button class="btn ghost" data-act="remove" data-id="${t.id}">Remove</button></span>`
+      case 'found': return `<span class="status"><span class="ok">${svgOk} ${t.program} found on this PC</span></span>`
+      case 'project': return `<span class="status"><span class="muted">Uses each folder’s own copy</span></span>`
+      case 'needs': return `<span class="status"><a class="warn" href="#">${svgWarn} Needs ${t.needs} ${svgOut}</a></span>`
+      default: return `<span class="status"><button class="btn outline" data-act="install" data-id="${t.id}">${svgDown} Install ${t.name}</button>${needs}</span>`
+    }
+  }
+
+  function renderTools() {
+    const box = document.getElementById('tools')
+    box.innerHTML = LANGS.map((l) => `
+      <div class="lang">${l.name}${l.on ? '' : ' <span class="off">· switched off under Languages</span>'}</div>
+      ${l.on ? l.tools.map((t) => `
+        <div class="tool ${t.use ? '' : 'dim'}">
+          <button class="switch" role="switch" aria-checked="${t.use}" aria-label="Agents use ${t.name}" data-act="use" data-id="${t.id}"></button>
+          <div class="meta"><div class="name">${t.name} <span class="kind">${t.kind}</span></div><div class="hint">${t.hint}</div></div>
+          ${status(t)}
+        </div>`).join('') : ''}`).join('')
+  }
+
+  const find = (id) => LANGS.flatMap((l) => l.tools).find((t) => t.id === id)
+  document.getElementById('tools').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]')
+    if (!b) return
+    e.preventDefault()
+    const t = find(b.dataset.id)
+    if (b.dataset.act === 'use') { t.use = !t.use; renderTools(); renderPreview(); return }
+    if (b.dataset.act === 'remove') { t.status = 'install'; renderTools(); return }
+    busy[t.id] = 0
+    renderTools()
+    const tick = setInterval(() => {
+      busy[t.id] = Math.min(100, busy[t.id] + 17)
+      if (busy[t.id] >= 100) { clearInterval(tick); delete busy[t.id]; t.status = 'installed' }
+      renderTools(); renderPreview()
+    }, 260)
+  })
+
+  // Top-level options
+  const when = document.getElementById('when'), fix = document.getElementById('fix'), nosetup = document.getElementById('nosetup')
+  const HINTS = {
+    agent: 'Agents are told to run the folder’s formatter and linter on the files they changed, and to fix what they report. Costs a step or two per task.',
+    cloth: 'Cloth runs them itself right after each write or edit and shows the agent what is left, so formatting never depends on the agent remembering.',
+    off: 'Nothing runs. Agents may still run a folder’s lint script when a task asks for it.'
+  }
+  fix.addEventListener('click', () => { fix.setAttribute('aria-checked', fix.getAttribute('aria-checked') !== 'true'); renderPreview() })
+  document.querySelectorAll('.row .switch:not(#fix)').forEach((s) => s.addEventListener('click', () => s.setAttribute('aria-checked', s.getAttribute('aria-checked') !== 'true')))
+  when.addEventListener('change', () => { syncWhen(); renderPreview() })
+  nosetup.addEventListener('change', renderPreview)
+  function syncWhen() {
+    document.getElementById('when-hint').textContent = HINTS[when.value]
+    for (const id of ['fix-row', 'nosetup-row']) document.getElementById(id).style.opacity = when.value === 'off' ? .45 : 1
+  }
+
+  // What the agent sees after editing a TypeScript file, for the current choices.
+  function renderPreview() {
+    const p = document.getElementById('preview')
+    const prettier = find('prettier').use, eslint = find('eslint').use
+    const fixing = fix.getAttribute('aria-checked') === 'true'
+    if (when.value === 'off' || (!prettier && !eslint)) { p.textContent = 'After an edit to src/queue.ts the agent sees: nothing extra.'; return }
+    if (when.value === 'agent') { p.textContent = 'Added to the agent’s instructions:\n“Before you finish, run ' + [prettier && 'Prettier', eslint && 'ESLint'].filter(Boolean).join(' and ') + ' on the files you changed' + (fixing ? ' with their fixes on' : '') + ', and fix what they report.”'; return }
+    const lines = ['After an edit to src/queue.ts, Cloth adds to the edit’s result:']
+    if (prettier) lines.push(fixing ? '  Prettier reformatted src/queue.ts (3 lines).' : '  Prettier: src/queue.ts is not formatted (3 lines differ).')
+    if (eslint) lines.push(fixing ? '  ESLint fixed 1 problem; 1 left: 42:7 \'track\' is never used (no-unused-vars).' : '  ESLint: 2 problems: 18:3 prefer-const, 42:7 \'track\' is never used (no-unused-vars).')
+    p.textContent = lines.join('\n')
+  }
+
+  syncWhen(); renderTools(); renderPreview()
+</script>
+</body>
+</html>

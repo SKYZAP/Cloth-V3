@@ -1,4 +1,5 @@
 import { certificateInfo, checkNetwork, saveSystemCertificate } from './web/trust'
+import { formatterStatuses, installFormatter, INSTALLABLE, uninstallFormatter, type InstallableFormatter } from './agent/formatter-install'
 import { runOpenSpec } from './agent/openspec'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -42,6 +43,8 @@ function serverFor(id: string): InstallableServer {
   if (!key) throw new Error('Cloth installs language servers for Go, Rust, C/C++ and Java; this language’s server ships with Cloth or has none yet')
   return key
 }
+
+const formattersDir = (s: Services) => join(s.ctx.dataDir, 'formatters')
 
 export function createApi(s: Services): ClothApi {
   const onboarding = new OnboardingService(s)
@@ -317,6 +320,16 @@ export function createApi(s: Services): ClothApi {
         await s.lsp.stopServer(key)
         await uninstallServer(s.lsp.serversDir, key)
         return languageServers([id], s.lsp.serversDir)[0]
+      },
+      formatters: async () => formatterStatuses(formattersDir(s)),
+      installFormatter: async (id) => {
+        if (!(INSTALLABLE as string[]).includes(id)) throw new Error('Cloth installs Ruff, Biome, golangci-lint and google-java-format; this one ships with Cloth or comes with its language')
+        await installFormatter(formattersDir(s), id as InstallableFormatter, { onProgress: (text, fraction) => s.ctx.emit('formatters', { id, text, fraction }) })
+        return formatterStatuses(formattersDir(s))
+      },
+      removeFormatter: async (id) => {
+        if ((INSTALLABLE as string[]).includes(id)) await uninstallFormatter(formattersDir(s), id as InstallableFormatter)
+        return formatterStatuses(formattersDir(s))
       },
       importSources: () => onboarding.sources(),
       importItems: (sel) => onboarding.importItems(sel),

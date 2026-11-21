@@ -28,6 +28,7 @@ import type { ContainerService } from './containers'
 import type { ApprovalService, CheckpointStore } from './workspace'
 import type { LspManager } from './lsp'
 import { folderNotes, loadRules } from './rules'
+import { agentInstruction } from './formatters'
 import type { ImageService } from '../images'
 import { json } from '../core/db'
 import { hostShellNote } from '../core/shell-env'
@@ -404,7 +405,7 @@ export class AgentRuntime {
     private skills: SkillService,
     private web: WebService,
     private custom: CustomToolService,
-    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin; swatches?: SwatchService; background?: BackgroundShells; terminals?: ChatTerminals } = {}
+    private ws: { approvals?: ApprovalService; checkpoints?: CheckpointStore; lsp?: LspManager; rulesDir?: string; formattersDir?: string; images?: ImageService; settings?: SettingsService; mcp?: McpClientService; agents?: AgentService; computer?: ComputerController | null; hub?: HubAdmin; swatches?: SwatchService; background?: BackgroundShells; terminals?: ChatTerminals } = {}
   ) {}
 
   /** Commands chats started with run_in_background. */
@@ -577,7 +578,7 @@ export class AgentRuntime {
         ...(writable
           ? [
               'When you write tests, cover each rule and edge case the request spells out (one test or more per rule), not only the happy path.',
-              'Before you finish a code change, run the project’s own formatter and linter on the files you changed (its format or lint script, or Prettier, ESLint, ruff and the like when the project is set up for them), and fix what they report.'
+              ...this.formattingLines(scope.workspace, !!shell)
             ]
           : []),
         ...(scope.codeIntel !== false ? ['Use `lsp` for code intelligence (TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed): go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the edit or write result — fix them before finishing; don’t run `lsp` diagnostics on a file you just changed, the result already checked it.'] : []),
@@ -615,6 +616,16 @@ export class AgentRuntime {
   }
 
   /** The user's coding rules (Settings) and the folder's AGENTS.md, for any agent working in a folder (rules.ts). */
+  /** What the agent is told about formatters and linters (Settings → Chat → Formatting and linting). */
+  private formattingLines(folder: string, shell: boolean): string[] {
+    const checks = this.ws.settings?.get().codeChecks
+    if (!checks || checks.when === 'off') return []
+    if (checks.when === 'cloth') return ['After each write or edit, Cloth runs the folder’s formatters and linters on the changed files and adds what they did and found to the result. Fix what they report before finishing.']
+    if (!shell) return []
+    const text = agentInstruction(folder, checks, this.ws.formattersDir ?? null)
+    return text ? [text] : []
+  }
+
   private async codingRulesSection(folder: string, writable: boolean): Promise<string[]> {
     const rules = this.ws.settings?.get().codingRules.trim() ?? ''
     const notes = await folderNotes(folder)

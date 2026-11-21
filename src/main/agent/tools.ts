@@ -1,4 +1,5 @@
 import type { AutoApprove, FileAccess, FileChange, Permissions, PlanProposal, QuestionRound, SpecWorkflow, StageGate, TodoItem, WorkflowRoute, ReviewFinding } from '@shared/types'
+import type { SettingsService } from '../core/settings'
 import type { LspManager } from './lsp'
 import { asksBeforeRisky } from '@shared/permissions'
 import { buildWorkspaceTools, confine, describeWorkspaceTools, WORKSPACE_TOOL_NAMES, type ApprovalService, type CheckpointStore, type WorkspaceOptions } from './workspace'
@@ -41,6 +42,10 @@ export interface ToolDeps {
   lsp?: LspManager
   /** The global coding rules folder (rules.ts). */
   rulesDir?: string
+  /** Where Cloth installs formatters and linters (formatter-install.ts). */
+  formattersDir?: string
+  /** For the formatting and linting settings. */
+  settings?: SettingsService
   /** Commands chats run with run_in_background (shell.ts). */
   background?: BackgroundShells
   /** The chats' terminals (the Terminal panel), for terminal_read. */
@@ -881,6 +886,8 @@ export function buildTools(deps: ToolDeps, scope: ToolScope): AgentTool<any, Too
         onAlways: scope.onAlways,
         lsp: scope.codeIntel !== false ? (deps.lsp ?? null) : null,
         rulesDir: deps.rulesDir ?? null,
+        // A container works on its own copy of the folder, with its own tools: Cloth's checks run only on this PC.
+        codeChecks: !scope.container && deps.settings ? () => ({ checks: deps.settings!.get().codeChecks, toolsDir: deps.formattersDir ?? null }) : null,
         shellExec: scope.container?.exec,
         // Background commands belong to a chat; unattended runs and subagents of automations get none.
         background: scope.sessionId ? (deps.background ?? null) : null,

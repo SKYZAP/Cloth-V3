@@ -1,4 +1,6 @@
 import { commandAllowed } from '@shared/types'
+import { checkChanged } from './formatters'
+import type { CodeChecks } from '@shared/formatters'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -267,6 +269,8 @@ export interface WorkspaceOptions {
   lsp?: LspManager | null
   /** Global coding rules folder; changed files are also checked against the folder's own sgconfig.yml rules (rules.ts). */
   rulesDir?: string | null
+  /** Formatting and linting settings, for running them after each change ("Cloth runs them"); null = never. */
+  codeChecks?: (() => { checks: CodeChecks; toolsDir: string | null }) | null
   /** Commands that run without asking; any other command is refused (unattended automations). */
   commandAllow?: string[] | null
   /** Commands a chat runs with run_in_background (null: no background commands, e.g. unattended runs). */
@@ -516,6 +520,9 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     }
     // And whether it breaks the user's coding rules.
     if (state) state.notes.push(...(await ruleNotes(rootReal, o.rulesDir ?? null, planned).catch(() => [])))
+    // And, when Cloth runs them, what the folder's formatters and linters did and found.
+    const cc = o.codeChecks?.()
+    if (state && cc && cc.checks.when === 'cloth') state.notes.push(...(await checkChanged(rootReal, planned.map((p) => p.abs), cc.checks, { toolsDir: cc.toolsDir }).catch(() => [])))
     return changes
   }
 

@@ -138,7 +138,7 @@ export function createServices(opts: {
   const agents = new AgentService(ctx, providers, settings)
   const swatches = new SwatchService(ctx, settings)
   const background = new BackgroundShells()
-  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, images, settings, mcp: mcpClients, agents, swatches, background })
+  const runtime = new AgentRuntime(providers, rag, skills, web, custom, { approvals, checkpoints, lsp, rulesDir, formattersDir: join(opts.dataDir, 'formatters'), images, settings, mcp: mcpClients, agents, swatches, background })
   const designs = new DesignService(ctx, providers)
   const projects: ProjectService = new ProjectService(ctx, () => chat, designs, () => settings.get().defaultDesignId)
   const containers = new ContainerService(ctx, opts.docker)

@@ -57,6 +57,7 @@
     "pele": "1.9.0",
     "postcss": "^8.5.28",
     "pptxgenjs": "^4.0.1",
+    "prettier": "^3.10.1",
     "pyright": "^1.1.414",
     "turndown": "^7.2.4",
     "typebox": "^1.3.34",
@@ -252,6 +253,7 @@
       "node_modules/@ast-grep/**",
       "node_modules/@lydell/**",
       "node_modules/pyright/**",
+      "node_modules/prettier/**",
       "node_modules/koffi/**",
       "node_modules/@koromix/**"
     ]

@@ -1327,6 +1327,8 @@ export interface Settings {
   defaultPermissions: Permissions
   /** Rules for all code agents write: added to every chat and agent that works in a folder, before the folder's AGENTS.md. */
   codingRules: string
+  /** Formatters and linters run on the code agents change (Settings → Chat). */
+  codeChecks: import('./formatters').CodeChecks
   /** The folder new chats open in when nothing else picks one (null = they ask). */
   defaultWorkspace: string | null
   /** Languages the user works in (first-run setup): language servers found on this PC run only for these. Empty = any found. */
