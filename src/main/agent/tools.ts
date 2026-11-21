@@ -16,6 +16,7 @@ import type { WebService } from '../web/web'
 import type { CustomToolService } from '../tools/custom'
 import { createSkill, createTool, indexKnowledge, RAG_INDEX_DESCRIPTION, SKILL_CREATE_DESCRIPTION, TOOL_CREATE_DESCRIPTION } from './hub'
 import { docsOnly, openTickets } from './workflow'
+import { git, repoRoot } from '../panel/git'
 import type { HubAdmin } from './admin'
 import { pausesBeforeApply, runOpenSpec } from './openspec'
 import { OPENSPEC_STEP_LABEL, type OpenSpecRun, type OpenSpecStepReport } from '@shared/types'
@@ -321,11 +322,8 @@ export const BUILTINS: BuiltinSpec[] = [
       if (!summary.length) throw new Error('Say what the stage produced')
       const slug = p.slug?.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')
       // A finished spec is listed in docs/specs/README.md: a new feature never takes its folder, or it would overwrite it.
-      if (slug && slug !== w.slug && ctx.scope.workspace) {
-        const index = await readFile(join(ctx.scope.workspace, 'docs', 'specs', 'README.md'), 'utf8').catch(() => '')
-        if (index.includes(`(${slug}/`) || index.includes(`${slug}/spec.md`))
-          throw new Error(`docs/specs/${slug} is an earlier, finished spec. Give this feature its own new slug; if it changes that feature, name the earlier spec and its criteria under "Changes to earlier specs".`)
-      }
+      if (slug && slug !== w.slug && ctx.scope.workspace && (await earlierSpec(ctx.scope.workspace, slug)))
+        throw new Error(`docs/specs/${slug} is an earlier, finished spec. Give this feature its own new slug; if it changes that feature, name the earlier spec and its criteria under "Changes to earlier specs".`)
       if (slug) ctx.scope.setWorkflowSlug?.(slug)
       const route = w.stage === 'grill' ? (p.route ?? w.route) : undefined
       if (w.stage === 'grill' && !route) throw new Error('Say which route this task takes: quick, standard or preserve')
@@ -926,4 +924,18 @@ function withUsage<T extends AgentTool<any, ToolDetails>>(tool: T, kind: string,
       }
     }
   }
+}
+
+/**
+ * Whether docs/specs/<slug> is an earlier feature's spec: listed in docs/specs/README.md and, in a git folder, already
+ * committed. The spec this workflow is writing is neither committed nor (normally) listed yet, so it never counts,
+ * even when the agent has added its own line to the index.
+ */
+export async function earlierSpec(workspace: string, slug: string): Promise<boolean> {
+  const index = await readFile(join(workspace, 'docs', 'specs', 'README.md'), 'utf8').catch(() => '')
+  if (!index.includes(`(${slug}/`) && !index.includes(`${slug}/spec.md`)) return false
+  const root = await repoRoot(workspace).catch(() => null)
+  if (!root) return true
+  const r = await git(workspace, ['ls-files', '--', `docs/specs/${slug}/spec.md`]).catch(() => null)
+  return !!r && r.code === 0 && !!r.stdout.trim()
 }

@@ -67,7 +67,7 @@ const SUBAGENT_INSTRUCTIONS = (role: SubagentRun['role']) =>
     : [
     'You are a subagent: another agent delegated this job to you. Work autonomously — you cannot ask the user or the other agent questions.',
     role === 'scout'
-      ? 'You are a read-only scout: investigate with the tools you have and do not attempt to change anything.'
+      ? 'You are a read-only scout: investigate with the tools you have and do not attempt to change anything. Read the files you need together (read with `paths`); its output is line-numbered, so cite those numbers rather than searching the files again.'
       : 'You are a worker: make the changes the job asks for, keeping them minimal. Each edit may be reviewed by the user.',
     `When done, reply with a report — it is all the other agent will see. Start it with a line \`Result: done\`, \`Result: partly done\` or \`Result: blocked\`, then: ${role === 'scout' ? 'what you found (file paths with line numbers, names, facts)' : 'the files you changed, one line each with what changed'}; the verification you ran and its outcome; open questions or risks ("none" if none). Keep it under ~300 words, no preamble.`
   ].join('\n')
@@ -525,7 +525,7 @@ export class AgentRuntime {
       lines.push(
         '',
         '## Subagents',
-        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). access "reader" only reads and searches; "writer" can also edit files; "operator" can also run commands. kind "check" makes it a check that runs finished work (tests, probe scripts, the real app), changes no project files and reports only findings it proved with a command and its output; anything that makes or fixes something is kind "build" (the default). Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
+        'Use `task` to hand a self-contained job to a subagent with its own fresh context — e.g. exploring a large codebase, researching a question across many files or pages, or independent investigations you can run in parallel (call `task` several times in one turn). Don’t send an agent to explore code you will then need to read yourself to make the change: for a change touching a handful of files, read them yourself, since a scout’s report doesn’t save you that reading. access "reader" only reads and searches; "writer" can also edit files; "operator" can also run commands. kind "check" makes it a check that runs finished work (tests, probe scripts, the real app), changes no project files and reports only findings it proved with a command and its output; anything that makes or fixes something is kind "build" (the default). Give the subagent everything it needs in the prompt: it cannot see this conversation. It returns a concise report; relay what matters. Do simple lookups yourself.'
       )
       const named = this.delegates(scope.agentId)
       if (named.length) lines.push('These saved agents can take a job (pass its name as `agent`) when the job matches their purpose:', ...named.map((a) => `- ${a.name}: ${a.purpose || 'no purpose given'}`))
@@ -547,7 +547,7 @@ export class AgentRuntime {
     // A chat's current permission mode is told in its own section (permissionSection), which can change later.
     const planning = inPlanMode(scope) && !!scope.sessionId && !scope.depth
     if (scope.sessionId && !scope.depth) {
-      lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, mark one item in_progress while you work on it, and mark items completed as you finish them. Skip it for simple questions.')
+      lines.push('', '## Planning', 'For tasks with three or more steps, keep a todo list with `todo_write`: write the plan first, then update it when a step finishes (several items at once is fine) rather than before and after each step. Skip it for simple questions and short changes.')
       if (this.ws.approvals) lines.push('When you need a decision, a preference or information only the user has before you can continue, ask with the `ask_user` tool (offer options when you can) instead of guessing or ending your reply with questions — the user answers in the chat and you carry on with the answer. Ask one question per call; call it again for the next one. Do not ask about things you can find out yourself.')
     }
     if (scope.workspace) {
@@ -564,7 +564,7 @@ export class AgentRuntime {
         scope.container
           ? `You work in an isolated copy of ${scope.container.folder ? `the user's folder ${scope.container.folder}` : 'an empty workspace'}, inside a Linux container (image ${scope.container.image}) where it is mounted at /workspace. Tool paths are relative to the workspace root: write "src/app.ts", never an absolute path. Your file changes stay in the copy until the user reviews them and applies them to their folder, so work freely — but say what you changed when you finish. Dependencies (node_modules, .venv) are not copied: install them in the container when you need them.`
           : `The workspace root is ${scope.workspace}. Tool paths are relative to that root: write "src/app.ts", never "${basename(scope.workspace)}/src/app.ts" or an absolute path. Nothing outside the workspace is accessible.`,
-        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`. To see what changed in a git repository (uncommitted work, or against a branch or commit), use git_diff.',
+        'Explore with ls, find (glob) and grep, and read files with read before changing or quoting them. Work in few steps: when you already know which files you need, read them together (read with `paths`), and make independent calls (reads, searches, separate edits) in the same turn rather than one per turn; read output is line-numbered, so cite lines from it instead of searching again. Don’t re-read a file you just wrote or edited unless a tool said it changed. For code structure (calls, definitions, usages) prefer ast_grep: patterns are code with $NAME / $$$ARGS placeholders, e.g. `fetch($URL, $$$REST)`. To see what changed in a git repository (uncommitted work, or against a branch or commit), use git_diff.',
         writable
           ? unattended
             ? 'You can change files: use ast_edit for mechanical refactors across many places, edit for targeted changes to existing files (exact text replacement) and write for new files or full rewrites. Nobody is watching this run, so changes are made without asking: keep them minimal and focused on the task, and say what you changed when you finish.'
@@ -574,7 +574,8 @@ export class AgentRuntime {
           : planning
             ? 'Access is read-only in Plan mode: you cannot create or modify files or run commands. Put the changes in your plan instead.'
             : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
-        ...(scope.codeIntel !== false ? ['Use `lsp` for code intelligence (TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed): go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the tool result — fix them before finishing.'] : []),
+        ...(writable ? ['When you write tests, cover each rule and edge case the request spells out (one test or more per rule), not only the happy path.'] : []),
+        ...(scope.codeIntel !== false ? ['Use `lsp` for code intelligence (TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed): go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the edit or write result — fix them before finishing; don’t run `lsp` diagnostics on a file you just changed, the result already checked it.'] : []),
         ...(shell
           ? [
               scope.container
@@ -972,6 +973,7 @@ export class AgentRuntime {
             treeNote = `Couldn't make a separate git copy (${errorMessage(err)}), so it worked in the chat's folder${role === 'verifier' ? ', changing nothing' : ''}.`
             return null
           })
+          if (tree?.missingFrom) treeNote = `There is no branch ${tree.missingFrom} to carry on from (an earlier worker that changed nothing leaves none), so it started from ${tree.base} in its own copy.`
           if (tree && role === 'verifier') await copyWorkingChanges(tree).catch((err) => (treeNote = `Its copy may miss uncommitted changes (${errorMessage(err)}).`))
           if (tree) {
             scope = { ...scope, workspace: tree.workspace, ...(role === 'verifier' ? { fileAccess: 'write' as const } : {}) }

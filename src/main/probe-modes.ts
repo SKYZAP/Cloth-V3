@@ -1,7 +1,7 @@
 // Dev-only probe (CLOTH_PROBE=modes): runs one feature request in an existing project in one of Cloth's modes, with a
 // real model, answering as a hands-off person would (every question gets the agent's own recommendation, every
 // approval is allowed, every stage gate is approved), and writes what it cost and did to report.json.
-//   CLOTH_PROBE_MODE       chat | spec | openspec
+//   CLOTH_PROBE_MODE       chat | plan | spec | openspec (plan: the plan it presents is approved in Auto)
 //   CLOTH_PROBE_WORKSPACE  the project folder (a git repo)
 //   CLOTH_PROBE_PROMPT     a file holding the request
 //   CLOTH_PROBE_MODEL      a model id (or part of one) from the providers in CLOTH_HOME
@@ -64,12 +64,17 @@ function totals(messages: UiMessage[]): Totals {
 const acceptAll = (round: QuestionRound) => round.questions.map((q, i) => `Q${i + 1} (${q.title}): yes, ${q.recommendation}`).join('\n')
 
 export async function probeModes(s: Services, outDir: string, note: (m: string) => void): Promise<void> {
-  const mode = (process.env.CLOTH_PROBE_MODE ?? 'chat') as 'chat' | 'spec' | 'openspec'
+  const mode = (process.env.CLOTH_PROBE_MODE ?? 'chat') as 'chat' | 'plan' | 'spec' | 'openspec'
   const ws = process.env.CLOTH_PROBE_WORKSPACE
   const promptFile = process.env.CLOTH_PROBE_PROMPT
   if (!ws || !promptFile) throw new Error('Set CLOTH_PROBE_WORKSPACE and CLOTH_PROBE_PROMPT')
   const prompt = readFileSync(promptFile, 'utf8').trim()
   const want = process.env.CLOTH_PROBE_MODEL ?? 'gpt-6-luna'
+  // A fresh CLOTH_HOME has no providers: set up OpenAI from the environment's key, so a run never needs a copy of real data.
+  if (!s.providers.list().some((p) => p.enabled && p.models.some((m) => m.id === want)) && process.env.OPENAI_API_KEY) {
+    const p = s.providers.create({ name: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: process.env.OPENAI_API_KEY })
+    await s.providers.refreshModels(p.id)
+  }
   const provider = s.providers.list().find((p) => p.enabled && p.models.some((m) => m.id === want))
   if (!provider) throw new Error(`No provider has the model ${want}`)
   const model = { providerId: provider.id, modelId: want }
@@ -78,7 +83,7 @@ export async function probeModes(s: Services, outDir: string, note: (m: string) 
   s.settings.update({ aiTitles: false })
   note(`mode ${mode}, model ${model.modelId} (${thinking}) via ${provider.name}, folder ${ws}`)
 
-  const chat = s.chat.create({ model, workspace: ws, permissions: 'auto', subagents: true, webEnabled: false, knowledgeEnabled: false, mcpServers: [], thinking })
+  const chat = s.chat.create({ model, workspace: ws, permissions: mode === 'plan' ? 'plan' : 'auto', subagents: true, webEnabled: false, knowledgeEnabled: false, mcpServers: [], thinking })
   const id = chat.id
   const t0 = Date.now()
   const events: string[] = []
@@ -124,6 +129,25 @@ export async function probeModes(s: Services, outDir: string, note: (m: string) 
     if (mode === 'chat') {
       log('reply finished')
       break
+    }
+    if (mode === 'plan') {
+      if (session.permissions !== 'plan') {
+        log('plan carried out')
+        break
+      }
+      if (traces.some((t) => t.plan)) {
+        gates++
+        log('plan presented: approving in Auto')
+        await s.chat.approvePlan(id, 'auto')
+      } else if (nudges++ < 4) {
+        log('turn ended without a plan; nudging')
+        await s.chat.send(id, 'Present your plan with present_plan.')
+      } else {
+        log('gave up: no plan')
+        break
+      }
+      idle = 0
+      continue
     }
     if (mode === 'spec') {
       const w = session.workflow

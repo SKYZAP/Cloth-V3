@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { glob, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { structuredPatch } from 'diff'
-import type { AgentTool } from '@earendil-works/pi-agent-core'
+import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
 import {
   createEditTool,
   createFindTool,
@@ -344,6 +344,64 @@ export async function gitChanges(root: string, opts: { base?: string; staged?: b
   return parts.join('\n\n')
 }
 
+/** How many files one `read` call may open. */
+export const READ_MAX_PATHS = 10
+/** The notes pi's read adds after the text (more lines to read): they keep their place, unnumbered. */
+const READ_NOTE = /\n\n\[(?:Showing lines \d+-\d+ of \d+[^\]\n]*|\d+ more lines? in file[^\]\n]*)\]$/
+
+/** Text from pi's read with each line numbered from `first` ("12\tcode"), so reports can cite lines without a second read. */
+export function numberLines(text: string, first: number): string {
+  if (/^\[Line \d+ is /.test(text)) return text
+  const note = READ_NOTE.exec(text)
+  const lines = (note ? text.slice(0, note.index) : text).split('\n')
+  const width = String(first + lines.length - 1).length
+  const numbered = lines.map((line, i) => `${String(first + i).padStart(width)}\t${line}`).join('\n')
+  return numbered + (note ? note[0] : '')
+}
+
+/**
+ * pi's read, with line numbers and several files per call: `paths` reads up to READ_MAX_PATHS files in one step, each
+ * under its own header (a missing file is reported in its place, not as a failed call).
+ */
+function readTool(base: AgentTool<any>): AgentTool<any> {
+  return {
+    ...base,
+    description:
+      'Read files from the workspace: text with each line numbered (`12\tcode`; the number and tab are not part of the file, so leave them out of edit text), images as attachments. Give `path` for one file, or `paths` to read up to ' +
+      READ_MAX_PATHS +
+      ' files in one call (prefer this over several calls when you already know the files). offset (1-based line) and limit read part of a large file; long files are cut off with a note saying how to continue.',
+    parameters: Type.Object({
+      path: Type.Optional(Type.String({ description: 'The file to read (relative to the workspace, or absolute inside it)' })),
+      paths: Type.Optional(Type.Array(Type.String(), { description: `Several files to read in one call (at most ${READ_MAX_PATHS}); offset and limit apply to each` })),
+      offset: Type.Optional(Type.Number({ description: 'Line number to start reading from (1-based)' })),
+      limit: Type.Optional(Type.Number({ description: 'Maximum number of lines to read' }))
+    }),
+    async execute(id: string, params: unknown, signal?: AbortSignal, onUpdate?: Parameters<AgentTool<any>["execute"]>[3]) {
+      const p = params as { path?: string; paths?: string[]; offset?: number; limit?: number }
+      const list = [...new Set([...(p.paths ?? []), ...(p.path ? [p.path] : [])].map((x) => String(x).trim()).filter(Boolean))]
+      if (!list.length) throw new Error('Give path, or paths to read several files')
+      if (list.length > READ_MAX_PATHS) throw new Error(`Read at most ${READ_MAX_PATHS} files per call (${list.length} given)`)
+      const first = p.offset && p.offset > 1 ? Math.floor(p.offset) : 1
+      const one = async (path: string) => {
+        const r = await base.execute(id, { path, offset: p.offset, limit: p.limit }, signal, onUpdate)
+        return { ...r, content: r.content.map((c) => (c.type === 'text' && !/^Read image file \[/.test(c.text) ? { ...c, text: numberLines(c.text, first) } : c)) }
+      }
+      if (list.length === 1) return one(list[0])
+      const content: AgentToolResult<any>['content'] = []
+      for (const path of list) {
+        content.push({ type: 'text', text: `==> ${path} <==` })
+        try {
+          content.push(...(await one(path)).content)
+        } catch (err) {
+          if (signal?.aborted) throw err
+          content.push({ type: 'text', text: `(could not read: ${err instanceof Error ? err.message : String(err)})` })
+        }
+      }
+      return { content, details: {} }
+    }
+  }
+}
+
 export function describeWorkspaceTools(): BuiltinToolInfo[] {
   const shell = process.platform === 'win32' ? 'powershell' : 'bash'
   const t = (name: string, label: string, description: string, availability: string, schema: Record<string, unknown>): BuiltinToolInfo => ({ name, label, description, group: 'workspace', availability, where: { chats: true, subagents: true, flows: true, apps: false }, schema })
@@ -353,7 +411,7 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
     properties: Object.fromEntries(Object.entries(props).map(([k, type]) => [k, { type }]))
   })
   return [
-    t('read', 'Read file', 'Read a text or image file from the workspace, with offset/limit for large files.', 'Chats with a workspace folder', obj({ path: 'string', offset: 'number', limit: 'number' }, ['path'])),
+    t('read', 'Read file', 'Read one or more text or image files from the workspace, with line numbers, and offset/limit for large files.', 'Chats with a workspace folder', obj({ path: 'string', paths: 'array', offset: 'number', limit: 'number' }, [])),
     t('ls', 'List directory', 'List a directory in the workspace.', 'Chats with a workspace folder', obj({ path: 'string', limit: 'number' }, [])),
     t('find', 'Find files', 'Find files by glob pattern (e.g. **/*.ts) in the workspace.', 'Chats with a workspace folder', obj({ pattern: 'string', path: 'string', limit: 'number' }, ['pattern'])),
     t('ast_grep', 'AST search', 'Structural code search with ast-grep patterns ($VAR, $$ARGS). TS/JS/TSX/HTML/CSS, Python, Go, Rust, Java.', 'Chats with a workspace folder', obj({ pattern: 'string', language: 'string', path: 'string' }, ['pattern'])),
@@ -596,7 +654,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     access: async (p: string) => void (await stat(await inside(p)))
   }
   const tools: AgentTool<any>[] = [
-    createReadTool(o.root, { operations: readOps }),
+    readTool(createReadTool(o.root, { operations: readOps })),
     createLsTool(o.root, {
       operations: {
         exists: async (p) => existsSync(await inside(p)),

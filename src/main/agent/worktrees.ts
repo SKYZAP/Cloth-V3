@@ -49,6 +49,8 @@ export interface WorkerTree {
   base: string
   /** The unfinished branch it carried on from, dropped once this one merges. */
   from?: string
+  /** The branch it was asked to carry on from didn't exist, so it started from the base. */
+  missingFrom?: string
   /** Carrying on from an older branch: the base is merged in first; these files came out with conflicts to resolve. */
   conflicts?: string[]
 }
@@ -162,17 +164,21 @@ export async function createWorkerTree(workspace: string, dir: string, opts: { s
   const tree = join(dir, `${slugPart(opts.label)}-${opts.id.slice(-6)}`)
   await mkdir(dir, { recursive: true })
   // Carry on from an earlier worker's unfinished branch (only Cloth's own worker branches).
-  let start = base
-  if (opts.from) {
-    if (!opts.from.startsWith('cloth/') || (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${opts.from}`])).code !== 0) throw new Error(`There is no worker branch called ${opts.from}`)
-    start = opts.from
+  // A branch that is gone (an earlier worker that changed nothing leaves none) starts fresh from the base instead:
+  // the worker still gets its own copy rather than the chat's folder.
+  let from = opts.from
+  let missingFrom: string | undefined
+  if (from && (!from.startsWith('cloth/') || (await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${from}`])).code !== 0)) {
+    missingFrom = from
+    from = undefined
   }
+  const start = from ?? base
   await serial(root, () => run(root, ['worktree', 'add', '-b', branch, tree, start]))
   const sub = subfolder(root, workspace)
-  const made: WorkerTree = { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base, ...(opts.from ? { from: opts.from } : {}) }
+  const made: WorkerTree = { root, dir: tree, workspace: sub ? join(tree, sub) : tree, branch, base, ...(from ? { from } : {}), ...(missingFrom ? { missingFrom } : {}) }
   // Older work catches up with everything merged since, so it can merge back: the merge is left open (and any
   // conflicts marked in the files) for the worker to finish; Cloth's commit at the end concludes it.
-  if (opts.from) {
+  if (from) {
     const m = await git(tree, ['-c', 'user.name=Cloth', '-c', 'user.email=cloth@localhost', 'merge', '--no-ff', '--no-commit', base], { timeoutMs: 120_000 })
     if (m.code !== 0) {
       const conflicts = (await git(tree, ['diff', '--name-only', '--diff-filter=U'])).stdout.split('\n').map((f) => f.trim()).filter(Boolean)

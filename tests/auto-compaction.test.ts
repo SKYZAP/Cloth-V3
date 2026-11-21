@@ -234,7 +234,7 @@ describe('automatic summarising during a turn', () => {
 describe('automatic summarising before a turn', () => {
   it('summarises a chat whose only turn is one long agentic run before the next message', async () => {
     const env = setup(16_000)
-    bigFile(env, 'a.txt', 8500)
+    bigFile(env, 'a.txt', 7800) // read numbers its lines (~5% more text): still just under the threshold
     faux = registerFauxProvider({ api: 'openai-completions', provider: 'faux' })
     let summarised = false
     let nextContext: Msg[] = []

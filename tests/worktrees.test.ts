@@ -127,7 +127,13 @@ describe('worker worktrees', () => {
     expect(readFileSync(join(root, 'part1.txt'), 'utf8')).toBe('one')
     expect(readFileSync(join(root, 'part2.txt'), 'utf8')).toBe('two')
     expect(await branches(root)).toEqual(['main'])
-    await expect(createWorkerTree(root, trees, { slug: 'feat', label: 'x', id: 'p3', from: 'main' })).rejects.toThrow(/no worker branch/)
+    // A branch that isn't Cloth's, or is gone, starts fresh from the base in its own copy, saying so.
+    const fresh = (await createWorkerTree(root, trees, { slug: 'feat', label: 'x', id: 'p3', from: 'main' }))!
+    expect(fresh.missingFrom).toBe('main')
+    expect(fresh.from).toBeUndefined()
+    const gone = (await createWorkerTree(root, trees, { slug: 'feat', label: 'y', id: 'p4', from: 'cloth/feat/half-gone' }))!
+    expect(gone.missingFrom).toBe('cloth/feat/half-gone')
+    expect(readFileSync(join(gone.workspace, 'part2.txt'), 'utf8')).toBe('two')
   }, 60_000)
 
   it('merges commits the worker made itself', async () => {
