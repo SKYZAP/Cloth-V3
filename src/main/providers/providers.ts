@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 // The compat entry keeps pi-ai's global dispatch (provider registry by api id), which Cloth builds on.
-import { completeSimple, getModels } from '@earendil-works/pi-ai/compat'
+import { completeSimple } from '@earendil-works/pi-ai/compat'
 import type {
   ModelInfo,
   ModelRef,
@@ -11,11 +11,13 @@ import type {
   ProviderTestResult,
   ThinkingLevel
 } from '@shared/types'
+import { contextIsGuess } from '@shared/types'
 import { json } from '../core/db'
 import { errorMessage, newId, type Ctx, type Secrets } from '../core/context'
 import { mapSecrets, opener, restoreHeaders, sealer } from '../core/secret-fields'
 import { UsageService, type Pricing } from '../core/usage'
 import { isCertificateError } from '../web/trust'
+import { catalogCost, catalogModel, isLocalUrl, type Cost } from './catalog'
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'openai', label: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', needsKey: true, hint: 'Responses API' },
@@ -71,13 +73,11 @@ export class ProviderService {
     usage.pricing = (providerId, modelId) => this.pricing(providerId, modelId)
   }
 
-  /** USD per 1M tokens: the user's price for the model, else the built-in list; null when unknown or free. */
+  /** USD per 1M tokens: the user's price for the model, else its provider's listed price, else the built-in catalogue; null when unknown or free. */
   pricing(providerId: string, modelId: string): Pricing | null {
     try {
       const provider = this.get(providerId)
-      const info = provider.models.find((m) => m.id === modelId)
-      if (info?.pricing && (info.pricing.input > 0 || info.pricing.output > 0)) return info.pricing
-      const c = knownCost(provider.kind, modelId)
+      const c = modelCost(provider, provider.models.find((m) => m.id === modelId), modelId)
       return c.input > 0 || c.output > 0 ? c : null
     } catch {
       return null
@@ -230,7 +230,9 @@ export class ProviderService {
   resolve(ref: ModelRef): { model: Model<Api>; apiKey: string } {
     const provider = this.get(ref.providerId)
     if (!provider.enabled) throw new Error(`Provider "${provider.name}" is disabled`)
-    const info = provider.models.find((m) => m.id === ref.modelId) ?? guessModelInfo(provider.kind, ref.modelId)
+    const stored = provider.models.find((m) => m.id === ref.modelId)
+    // A stored guess (an older listing, or a server that doesn't say) gives way to the catalogue's limits.
+    const info = !stored ? guessModelInfo(provider, ref.modelId) : contextIsGuess(stored) ? { ...stored, ...catalogLimits(provider, ref.modelId) } : stored
     const api = API_FOR_KIND[provider.kind]
     const model: Model<Api> = {
       id: info.id,
@@ -240,7 +242,7 @@ export class ProviderService {
       baseUrl: provider.baseUrl,
       reasoning: info.reasoning,
       input: info.vision ? ['text', 'image'] : ['text'],
-      cost: info.pricing ? { input: info.pricing.input, output: info.pricing.output, cacheRead: 0, cacheWrite: 0 } : knownCost(provider.kind, info.id),
+      cost: modelCost(provider, info, info.id),
       contextWindow: info.contextWindow,
       maxTokens: info.maxTokens,
       headers: Object.keys(provider.headers).length ? provider.headers : undefined
@@ -374,7 +376,7 @@ export class ProviderService {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
       const body = (await res.json()) as { data: { id: string; display_name?: string }[] }
-      return body.data.map((m) => ({ ...guessModelInfo('anthropic', m.id), name: m.display_name ?? m.id }))
+      return body.data.map((m) => ({ ...guessModelInfo(provider, m.id), name: m.display_name ?? m.id }))
     }
 
     const res = await fetch(`${provider.baseUrl}/models`, {
@@ -382,13 +384,17 @@ export class ProviderService {
       headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), ...provider.headers }
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    const body = (await res.json()) as { data?: { id: string; context_length?: number; architecture?: { output_modalities?: string[] } }[] }
+    const body = (await res.json()) as { data?: { id: string; context_length?: number; architecture?: { output_modalities?: string[] }; pricing?: Record<string, string | number | undefined>; top_provider?: { max_completion_tokens?: number | null } }[] }
     const models = (body.data ?? []).map((m) => {
-      const info = guessModelInfo(provider.kind, m.id)
+      const info = guessModelInfo(provider, m.id)
       if (m.context_length) {
         info.contextWindow = m.context_length
         info.contextSource = 'server'
       }
+      if (m.top_provider?.max_completion_tokens) info.maxTokens = m.top_provider.max_completion_tokens
+      // OpenRouter (and routers like it) list each model's current price, per token.
+      const listed = serverPrice(m.pricing)
+      if (listed && !isLocalUrl(provider.baseUrl)) info.listPrice = listed
       // OpenRouter lists what each model outputs.
       if (m.architecture?.output_modalities?.includes('image')) info.image = true
       return info
@@ -456,13 +462,30 @@ function normalize(v: Float32Array): Float32Array {
   return v
 }
 
-const knownModels = new Map<string, Model<Api>>()
-for (const p of ['openai', 'anthropic'] as const) {
-  for (const m of getModels(p)) knownModels.set(`${p}:${m.id}`, m as Model<Api>)
+/** What a model costs per 1M tokens: the user's price (cache prices from the list when they didn't give them), else what
+ *  the provider lists for it, else the catalogue. Servers on this PC cost nothing. */
+export function modelCost(provider: { kind: ProviderKind; baseUrl: string }, info: Pick<ModelInfo, 'pricing' | 'listPrice'> | undefined, id: string): Cost {
+  if (isLocalUrl(provider.baseUrl) && !(info?.pricing && (info.pricing.input > 0 || info.pricing.output > 0))) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  const listed: Cost = info?.listPrice ? { ...info.listPrice } : catalogCost(provider, id)
+  const own = info?.pricing
+  if (!own || !(own.input > 0 || own.output > 0)) return listed
+  return { input: own.input, output: own.output, cacheRead: own.cacheRead ?? listed.cacheRead, cacheWrite: own.cacheWrite ?? listed.cacheWrite }
 }
 
-function knownCost(kind: ProviderKind, id: string): Model<Api>['cost'] {
-  return knownModels.get(`${kind}:${id}`)?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+/** A provider's per-token price strings (OpenRouter: prompt, completion, input_cache_read, input_cache_write) as USD per 1M tokens. */
+export function serverPrice(p: Record<string, string | number | undefined> | undefined): Cost | null {
+  if (!p) return null
+  const per = (v: string | number | undefined) => {
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? +(n * 1_000_000).toFixed(6) : 0
+  }
+  const c = { input: per(p.prompt), output: per(p.completion), cacheRead: per(p.input_cache_read), cacheWrite: per(p.input_cache_write) }
+  return c.input > 0 || c.output > 0 ? c : null
+}
+
+function catalogLimits(provider: { kind: ProviderKind; baseUrl: string }, id: string): Partial<ModelInfo> {
+  const known = catalogModel(provider, id)
+  return known ? { contextWindow: known.contextWindow, maxTokens: known.maxTokens, contextSource: 'catalog' } : {}
 }
 
 /** Image generation models by id (OpenAI, and common open models served behind OpenAI-style APIs). */
@@ -470,8 +493,9 @@ export function isImageModelId(id: string): boolean {
   return /(^|\/)(gpt-image|dall-e|chatgpt-image|imagen|flux|stable-diffusion|sdxl|sd3|sd-|seedream|recraft|grok-imagine|playground-v|kolors|hidream|qwen-image|mai-image|riverflow)|-image(-|$)|image-(gen|preview)/.test(id.toLowerCase())
 }
 
-export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
-  const known = knownModels.get(`${kind}:${id}`)
+export function guessModelInfo(provider: { kind: ProviderKind; baseUrl: string }, id: string): ModelInfo {
+  const kind = provider.kind
+  const known = catalogModel(provider, id)
   if (known) {
     return {
       id,
@@ -502,9 +526,11 @@ export function guessModelInfo(kind: ProviderKind, id: string): ModelInfo {
 
 /** Limits from a fresh model listing that should replace stored ones (a guess never does). */
 function freshLimits(m: ModelInfo): Partial<ModelInfo> {
-  if (m.contextSource === 'server') return { contextWindow: m.contextWindow, contextSource: 'server' }
-  if (m.contextSource === 'catalog') return { contextWindow: m.contextWindow, maxTokens: m.maxTokens, contextSource: 'catalog' }
-  return {}
+  // The provider's listed price is as fresh as the listing.
+  const price = m.listPrice ? { listPrice: m.listPrice } : {}
+  if (m.contextSource === 'server') return { contextWindow: m.contextWindow, contextSource: 'server', ...price }
+  if (m.contextSource === 'catalog') return { contextWindow: m.contextWindow, maxTokens: m.maxTokens, contextSource: 'catalog', ...price }
+  return price
 }
 
 /** LM Studio exposes richer metadata (model type, context length) on /api/v0/models. */

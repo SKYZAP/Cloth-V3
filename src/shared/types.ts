@@ -15,8 +15,11 @@ export interface ModelInfo {
   embedding: boolean
   /** Model generates images (OpenAI Images API, or OpenRouter image output). */
   image?: boolean
-  /** User-set price in USD per 1M tokens; overrides the built-in price list. */
-  pricing?: { input: number; output: number } | null
+  /** User-set price in USD per 1M tokens; overrides the provider's list and the built-in catalogue. Cache prices
+   *  left out come from the list. */
+  pricing?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } | null
+  /** The price the provider itself lists for the model (OpenRouter's /models), USD per 1M tokens. */
+  listPrice?: { input: number; output: number; cacheRead: number; cacheWrite: number }
   /** Where contextWindow came from: reported by the server, the built-in catalogue, or a default guess. */
   contextSource?: 'server' | 'catalog' | 'guess'
   /** The only reasoning efforts it accepts, when it doesn't take them all (e.g. Bonsai 2: low, medium, xhigh). */
