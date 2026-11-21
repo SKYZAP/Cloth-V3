@@ -668,7 +668,11 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
         glob: async (pattern, cwd, opts) => {
           const base = await inside(cwd)
           const out: string[] = []
-          const skip = new Set([...IGNORED_DIRS, ...opts.ignore.map((i) => i.replace(/^\*\*\/|\/\*\*$/g, ''))])
+          const own = opts.ignore.map((i) => i.replace(/^\*\*\/|\/\*\*$/g, ''))
+          // Asked to look inside an ignored folder (a package in node_modules, a build's output):
+          // skip only nested node_modules and .git there, or its dist/ and build/ would hide every match.
+          const within = relative(o.root, base).split(/[\\/]/).some((part) => IGNORED_DIRS.includes(part))
+          const skip = new Set(within ? own : [...IGNORED_DIRS, ...own])
           for await (const f of glob(pattern, { cwd: base, exclude: (name: string) => skip.has(name.split(/[\\/]/).pop() ?? name) })) {
             out.push(String(f).split(sep).join('/'))
             if (out.length >= opts.limit) break

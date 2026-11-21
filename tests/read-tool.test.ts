@@ -40,6 +40,27 @@ describe('read', () => {
   })
 })
 
+describe('find', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cloth-find-'))
+  mkdirSync(join(root, 'dist'), { recursive: true })
+  writeFileSync(join(root, 'dist/out.d.ts'), '')
+  mkdirSync(join(root, 'node_modules/pkg/dist'), { recursive: true })
+  mkdirSync(join(root, 'node_modules/pkg/node_modules/dep'), { recursive: true })
+  writeFileSync(join(root, 'node_modules/pkg/dist/index.d.ts'), '')
+  writeFileSync(join(root, 'node_modules/pkg/node_modules/dep/index.d.ts'), '')
+  const find = buildWorkspaceTools({ root, access: 'read' } as Parameters<typeof buildWorkspaceTools>[0]).find((t) => t.name === 'find')!
+
+  it('skips build output and dependencies from the workspace root', async () => {
+    expect(text(await find.execute('1', { pattern: '**/*.d.ts' }))).toMatch(/No files found/)
+  })
+
+  it('looks inside a package it is pointed at, but not its nested dependencies', async () => {
+    const out = text(await find.execute('2', { pattern: '**/*.d.ts', path: 'node_modules/pkg' }))
+    expect(out).toContain('dist/index.d.ts')
+    expect(out).not.toContain('dep/index.d.ts')
+  })
+})
+
 describe('earlierSpec', () => {
   it('counts only a listed spec that is already committed', async () => {
     const root = mkdtempSync(join(tmpdir(), 'cloth-spec-'))
