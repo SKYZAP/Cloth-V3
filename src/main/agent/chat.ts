@@ -574,7 +574,12 @@ export class AgentRuntime {
           : planning
             ? 'Access is read-only in Plan mode: you cannot create or modify files or run commands. Put the changes in your plan instead.'
             : 'Access is read-only: you cannot create or modify files. If the user asks for changes, show them as code instead.',
-        ...(writable ? ['When you write tests, cover each rule and edge case the request spells out (one test or more per rule), not only the happy path.'] : []),
+        ...(writable
+          ? [
+              'When you write tests, cover each rule and edge case the request spells out (one test or more per rule), not only the happy path.',
+              'Before you finish a code change, run the project’s own formatter and linter on the files you changed (its format or lint script, or Prettier, ESLint, ruff and the like when the project is set up for them), and fix what they report.'
+            ]
+          : []),
         ...(scope.codeIntel !== false ? ['Use `lsp` for code intelligence (TypeScript/JavaScript, Python, and Go, Rust or C/C++ when their server is installed): go to definition, find references, hover types, outline symbols, and check diagnostics. After you change such files, type errors are reported in the edit or write result — fix them before finishing; don’t run `lsp` diagnostics on a file you just changed, the result already checked it.'] : []),
         ...(shell
           ? [
