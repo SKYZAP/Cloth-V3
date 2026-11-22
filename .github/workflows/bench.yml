@@ -1,13 +1,27 @@
-# Nightly benchmark: Cloth's modes against OMP on two tasks, scored with hidden tests, published to http://bench.example.internal
-# (bench/README.md). Runs on the self-hosted runner on the Pi, outside a container: Cloth needs a display (xvfb).
-name: Nightly benchmark
+# Release benchmark: each release's Cloth modes against OMP on two tasks, scored with hidden tests and published to
+# http://bench.example.internal (bench/README.md). Runs on the self-hosted runner on the Pi, outside a container: Cloth needs a
+# display (xvfb).
+#
+# Runs when the Release workflow finishes (a release made from the Actions tab doesn't send a `release` event, so this
+# follows the workflow instead), or by hand for any release tag. The scoring scripts always come from master, so
+# every release is graded the same way, older ones included; the app comes from the release's tag.
+name: Release benchmark
 
 on:
-  schedule:
-    # 02:00 in Malaysia (UTC+8). A scheduled run skips a commit that was already benchmarked.
-    - cron: '0 18 * * *'
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
+      tag:
+        description: 'Release tag, e.g. v1.4.5; empty = the latest release'
+        required: false
+        type: string
+      force:
+        description: 'Measure it again if it already has a result'
+        required: false
+        type: boolean
+        default: false
       arms:
         description: 'Only these arms (cloth-chat,cloth-plan,cloth-spec,cloth-openspec,omp,omp-plan); empty = all'
         required: false
@@ -32,23 +46,50 @@ permissions:
 jobs:
   bench:
     name: Cloth vs OMP
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled'
     runs-on: [self-hosted, cloth-pi]
     timeout-minutes: 720
     env:
       BENCH_HOME: /home/pi/cloth-bench
-      # OMP release to compare against. Its results are reused until this changes (bench/nightly.mjs).
+      # OMP release to compare against. Its results are reused until this changes (bench/run.mjs).
       OMP_VERSION: '18.20.2'
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the scoring scripts (master)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: scoring
+      - name: Find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scoring/bench/find-release.mjs
+      - name: Check out the release
+        if: steps.release.outputs.tag != ''
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.release.outputs.tag }}
+          path: cloth
       - name: Install
+        if: steps.release.outputs.tag != ''
+        working-directory: cloth
         run: npm ci --no-audit --no-fund
       - name: Build
+        if: steps.release.outputs.tag != ''
+        working-directory: cloth
         run: npx electron-vite build
       - name: Run the benchmark
+        if: steps.release.outputs.tag != ''
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CLOTH_DIR: ${{ github.workspace }}/cloth
+          BENCH_RELEASE: ${{ steps.release.outputs.tag }}
+          BENCH_FORCE: ${{ inputs.force && '1' || '' }}
           BENCH_ARMS: ${{ inputs.arms }}
           BENCH_TASKS: ${{ inputs.tasks }}
           BENCH_MINUTES: ${{ inputs.minutes || '60' }}
-          BENCH_SKIP_SAME_COMMIT: ${{ github.event_name == 'schedule' && '1' || '' }}
-        run: node bench/nightly.mjs
+        run: node scoring/bench/run.mjs

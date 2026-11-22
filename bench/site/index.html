@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cloth Nightly Bench</title>
+<title>Cloth Release Bench</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Crect x='64' y='64' width='896' height='896' rx='208' fill='%23141518'/%3E%3Cpath d='M700 350a230 230 0 1 0 0 324' fill='none' stroke='%23cf2845' stroke-width='92' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -56,32 +56,32 @@
 <main>
   <header class="bar">
     <div>
-      <h1>Cloth vs OMP · nightly</h1>
+      <h1>Cloth vs OMP · by release</h1>
       <p class="muted" id="sub">Loading…</p>
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="Task" id="tasks"></div>
-      <label><span class="dim" style="margin-right:6px">Night</span><select id="night" aria-label="Night"></select></label>
+      <label><span class="dim" style="margin-right:6px">Release</span><select id="night" aria-label="Release"></select></label>
     </div>
   </header>
   <section class="tiles" id="tiles"></section>
   <section class="card">
     <div class="bar" style="margin-bottom:12px">
-      <div><h2>This night</h2><p class="dim" id="metricHint"></p></div>
+      <div><h2>This release</h2><p class="dim" id="metricHint"></p></div>
       <div class="seg" role="group" aria-label="Metric" id="metrics"></div>
     </div>
     <div id="bars"></div>
   </section>
   <section class="card">
     <div class="bar" style="margin-bottom:12px">
-      <div><h2>Over time</h2><p class="dim">Each Cloth mode per night. OMP is the dashed line: the average of its runs for that night's version.</p></div>
+      <div><h2>Over time</h2><p class="dim">Each Cloth mode per release, oldest first. OMP is the dashed line: the average of its runs for that release's OMP version.</p></div>
       <div class="legend" id="legend"></div>
     </div>
     <div id="trend"></div>
   </section>
   <section class="card">
     <h2>Runs</h2>
-    <p class="dim" style="margin-bottom:8px">Hidden tests are never shown to the agents. OMP runs marked “reused” come from an earlier night with the same OMP version.</p>
+    <p class="dim" style="margin-bottom:8px">Hidden tests are never shown to the agents. OMP runs marked “reused” come from an earlier release's benchmark with the same OMP version.</p>
     <div class="table-wrap"><table id="runs"></table></div>
   </section>
 </main>
@@ -155,7 +155,7 @@ function renderTiles(arms) {
   add('Fastest Cloth mode', best(cloth, (a) => a.value((r) => r.minutes) ?? Infinity, true), (a) => a.value((r) => r.minutes), (v) => `${v.toFixed(1)} min`)
   const o = best(omp, (a) => a.value((r) => r.cost) ?? Infinity, true)
   add('OMP baseline (cheapest)', o, (a) => a.value((r) => r.cost), (v) => `$${v.toFixed(3)}`, o ? `${Math.round(o.value(f))}% tests${o.runs.some((r) => r.cached) ? `, mean of ${o.n}` : ''}` : '')
-  $('tiles').innerHTML = tiles.join('') || '<div class="card empty">No runs for this task on this night.</div>'
+  $('tiles').innerHTML = tiles.join('') || '<div class="card empty">No runs for this task in this release.</div>'
 }
 
 function renderBars(arms) {
@@ -194,7 +194,7 @@ async function renderTrend() {
   })
   const arms = [...series.keys()].sort((a, b) => ARM_ORDER.indexOf(a) - ARM_ORDER.indexOf(b))
   $('legend').innerHTML = arms.map((a) => `<span><i style="background:${color(a)};opacity:${alpha(a)}"></i>${esc(series.get(a).label)}</span>`).join('')
-  if (!arms.length || ids.length < 1) return ($('trend').innerHTML = '<p class="empty">Trends appear after a few nights.</p>')
+  if (!arms.length || ids.length < 1) return ($('trend').innerHTML = '<p class="empty">Trends appear after a few releases.</p>')
   const w = 760, h = 240, l = 56, r = 12, t = 8, b = 26
   const all = arms.flatMap((a) => series.get(a).pts.map((p) => p.v))
   const max = state.metric === 'pass' ? 100 : Math.max(...all) * 1.1 || 1
@@ -206,7 +206,7 @@ async function renderTrend() {
     s += `<line x1="${l}" x2="${w - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${l - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`
   }
   const step = Math.ceil(ids.length / 8)
-  ids.forEach((id, i) => i % step === 0 && (s += `<text x="${x(i)}" y="${h - 6}" text-anchor="middle">${esc(id.slice(5, 10))}</text>`))
+  ids.forEach((id, i) => i % step === 0 && (s += `<text x="${x(i)}" y="${h - 6}" text-anchor="middle">${esc(state.index.find((n) => n.id === id)?.release ?? id.slice(5, 10))}</text>`))
   for (const a of arms) {
     const pts = series.get(a).pts
     const dash = a.startsWith('omp') ? ' stroke-dasharray="6 5"' : ''
@@ -237,7 +237,7 @@ function renderTable(rows) {
   const arrow = (k) => (state.sort?.[0] === k ? (state.sort[1] > 0 ? ' ↑' : ' ↓') : '')
   let s = '<thead><tr>' + cols.map((c) => `<th class="${c[4] ? 'num' : ''}" aria-sort="${state.sort?.[0] === c[0] ? (state.sort[1] > 0 ? 'ascending' : 'descending') : 'none'}"><button data-sort="${c[0]}">${c[1]}${arrow(c[0])}</button></th>`).join('') + '</tr></thead><tbody>'
   for (const r of list) s += `<tr>${cols.map((c, i) => `<td class="${c[4] ? 'num' : ''}">${i === 0 ? `<span class="dot" style="background:${color(r.arm)};opacity:${alpha(r.arm)}"></span>${esc(label(r))}` : c[3] ? c[3](r) : esc(c[2](r))}</td>`).join('')}</tr>`
-  $('runs').innerHTML = s + (list.length ? '' : `<tr><td colspan="${cols.length}" class="empty">No runs for this task on this night.</td></tr>`) + '</tbody>'
+  $('runs').innerHTML = s + (list.length ? '' : `<tr><td colspan="${cols.length}" class="empty">No runs for this task in this release.</td></tr>`) + '</tbody>'
 }
 
 async function render() {
@@ -246,7 +246,7 @@ async function render() {
   if (!state.night) return
   const n = await night(state.night)
   const cost = n.rows.filter((r) => !r.cached).reduce((s, r) => s + (r.cost ?? 0), 0)
-  $('sub').innerHTML = `${esc(new Date(n.date).toLocaleString())} · Cloth <span class="mono">${esc(n.commit.slice(0, 7))}</span> ${esc(n.subject)} · OMP ${esc(n.omp ?? '—')} · GPT-6 Luna, medium · spent $${cost.toFixed(2)}${n.done ? '' : ' · <span class="warn">still running</span>'}`
+  $('sub').innerHTML = `${n.release ? `<b>${esc(n.release)}</b> · ` : ''}measured ${esc(new Date(n.date).toLocaleString())} · Cloth <span class="mono">${esc(n.commit.slice(0, 7))}</span> ${esc(n.subject)} · OMP ${esc(n.omp ?? '—')} · GPT-6 Luna, medium · spent $${cost.toFixed(2)}${n.done ? '' : ' · <span class="warn">still running</span>'}`
   const arms = perArm(n.rows)
   renderTiles(arms)
   renderBars(arms)
@@ -281,7 +281,7 @@ load('data/index.json')
     return render()
   })
   .catch((err) => {
-    $('sub').textContent = err.message === 'No nights yet' ? 'No nights yet. The first run publishes here.' : `Couldn't load the results: ${err.message}`
+    $('sub').textContent = err.message === 'No nights yet' ? 'No releases benchmarked yet. The next release publishes here.' : `Couldn't load the results: ${err.message}`
     void render()
   })
 </script>

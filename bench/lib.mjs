@@ -1,10 +1,11 @@
-// Runs one benchmark arm and scores it. Used by nightly.mjs; Linux and macOS (the Pi runs it under xvfb).
+// Runs one benchmark arm and scores it. Used by run.mjs; Linux and macOS (the Pi runs it under xvfb).
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-export const BENCH = new URL('.', import.meta.url).pathname
+export const BENCH = fileURLToPath(new URL('.', import.meta.url))
 export const BERDBOT_BASE = '0e0008c'
 
 const read = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null)

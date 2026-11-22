@@ -1,10 +1,14 @@
-// The nightly benchmark: each Cloth mode and OMP do the same two tasks with the same model, every run is scored with
-// tests the agents never see, and the night is published to the dashboard (bench/site, served at bench.example.internal).
+// The release benchmark: each Cloth mode and OMP do the same two tasks with the same model, every run is scored with
+// tests the agents never see, and the result is published to the dashboard (bench/site, served at bench.example.internal).
+// .github/workflows/bench.yml runs it for each release. (One benchmark is a "night" in the data files.)
 //
-//   node bench/nightly.mjs            (from the Cloth repo, after `npx electron-vite build`)
+//   node bench/run.mjs                (after `npm ci && npx electron-vite build` in the Cloth folder)
 //
 // Environment:
 //   OPENAI_API_KEY        required
+//   CLOTH_DIR             the built Cloth to measure (default: the repo this script is in)
+//   BENCH_RELEASE         the release tag being measured, e.g. v1.5.0 (its id on the dashboard); unset: <date>-<commit>
+//   BENCH_FORCE           set: measure a release again although it already has a result (saved as <tag>-2 …)
 //   BENCH_HOME            data folder (default ~/cloth-bench): fixtures/berdbot.bundle, site/, results/, omp-cache/
 //   OMP_VERSION           OMP release to compare against, e.g. 18.20.2 (downloaded to BENCH_HOME/bin)
 //   OMP_RUNS_PER_VERSION  OMP runs to keep per task and arm (default 3); after that its results are reused until
@@ -12,7 +16,6 @@
 //   BENCH_ARMS            only these arms, e.g. cloth-chat,omp (default all)
 //   BENCH_TASKS           only these tasks: berdbot, recon (default both)
 //   BENCH_MINUTES         time limit per run (default 60)
-//   BENCH_SKIP_SAME_COMMIT  set: do nothing when this commit already has a finished night (the scheduled run)
 import { createHash } from 'node:crypto'
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, homedir, hostname, platform } from 'node:os'
@@ -20,7 +23,8 @@ import { join, resolve } from 'node:path'
 import { BENCH, berdbotTemplate, row, runCloth, runOmp, scoreBerdbot, scoreRecon, sh, workspace } from './lib.mjs'
 
 const HOME = resolve(process.env.BENCH_HOME ?? join(homedir(), 'cloth-bench'))
-const CLOTH = resolve(BENCH, '..')
+const CLOTH = resolve(process.env.CLOTH_DIR ?? resolve(BENCH, '..'))
+const RELEASE = process.env.BENCH_RELEASE || null
 const MINUTES = Number(process.env.BENCH_MINUTES ?? 60)
 const OMP_KEEP = Number(process.env.OMP_RUNS_PER_VERSION ?? 3)
 const only = (v) => (v ? new Set(v.split(',').map((s) => s.trim()).filter(Boolean)) : null)
@@ -77,14 +81,27 @@ function publish(night) {
   writeFileSync(join(site, 'data', 'nights', `${night.id}.json`), JSON.stringify(night))
   const index = readJson(join(site, 'data', 'index.json'), []).filter((n) => n.id !== night.id)
   const cost = night.rows.filter((r) => !r.cached).reduce((n, r) => n + (r.cost ?? 0), 0)
-  index.unshift({ id: night.id, date: night.date, commit: night.commit, subject: night.subject, omp: night.omp, runs: night.rows.length, cost: +cost.toFixed(4), done: night.done })
-  index.sort((a, b) => b.date.localeCompare(a.date))
+  index.unshift({ id: night.id, release: night.release, date: night.date, commit: night.commit, subject: night.subject, omp: night.omp, runs: night.rows.length, cost: +cost.toFixed(4), done: night.done })
+  // Newest release first by version (an older release measured later still lands in its place), then by date.
+  const ver = (n) => (n.release ?? '').replace(/^v/, '').split(/[.-]/).map((p) => (/^\d+$/.test(p) ? Number(p) : p))
+  const byVersion = (a, b) => {
+    const [x, y] = [ver(a), ver(b)]
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      if (x[i] === y[i]) continue
+      // A pre-release (1.5.0-beta) comes before its release (1.5.0).
+      if (x[i] === undefined) return typeof y[i] === 'string' ? -1 : 1
+      if (y[i] === undefined) return typeof x[i] === 'string' ? 1 : -1
+      return x[i] < y[i] ? 1 : -1
+    }
+    return b.date.localeCompare(a.date)
+  }
+  index.sort((a, b) => (a.release && b.release ? byVersion(a, b) : b.date.localeCompare(a.date)))
   writeFileSync(join(site, 'data', 'index.json'), JSON.stringify(index, null, 1))
 }
 
 function summary(night) {
   const file = process.env.GITHUB_STEP_SUMMARY
-  const lines = [`## Nightly benchmark ${night.id}`, '', `Cloth \`${night.commit.slice(0, 7)}\` ${night.subject} · OMP ${night.omp ?? '—'} · GPT-6 Luna, medium · [dashboard](http://bench.example.internal/#${night.id})`, '']
+  const lines = [`## Benchmark ${night.id}${night.done ? '' : ' (stopped early: partial results)'}`, '', `Cloth ${night.release ?? ''} \`${night.commit.slice(0, 7)}\` ${night.subject} · OMP ${night.omp ?? '—'} · GPT-6 Luna, medium · [dashboard](http://bench.example.internal/#${night.id})`, '']
   lines.push('| Task | Harness | Mode | Hidden tests | Minutes | Cost | Tokens | Tool calls | Note |', '|---|---|---|---|---|---|---|---|---|')
   for (const r of night.rows) {
     const note = [r.cached ? `reused from ${r.from}` : '', r.timed_out ? 'time limit' : '', r.error ?? ''].filter(Boolean).join('; ')
@@ -100,26 +117,60 @@ async function main() {
   const commit = sh('git', ['rev-parse', 'HEAD'], { cwd: CLOTH }).stdout.trim()
   const subject = sh('git', ['log', '-1', '--format=%s'], { cwd: CLOTH }).stdout.trim()
   const date = new Date().toISOString()
-  // Scheduled runs: nothing changed in Cloth since the last finished night, so there's nothing new to measure.
-  const last = readJson(join(HOME, 'site', 'data', 'index.json'), []).find((n) => n.done)
-  if (process.env.BENCH_SKIP_SAME_COMMIT && last?.commit === commit) {
-    const note = `Skipped: Cloth \`${commit.slice(0, 7)}\` was already benchmarked on ${last.id}.\n`
+  // A release is measured once, unless asked again (BENCH_FORCE).
+  const base = RELEASE ?? `${date.slice(0, 10)}-${commit.slice(0, 7)}`
+  const earlier = readJson(join(HOME, 'site', 'data', 'index.json'), []).find((n) => n.done && (n.id === base || n.id.startsWith(`${base}-`)))
+  if (RELEASE && earlier && !process.env.BENCH_FORCE) {
+    const note = `Skipped: ${RELEASE} was already benchmarked ([${earlier.id}](http://bench.example.internal/#${earlier.id})). Run the workflow with "force" to measure it again.\n`
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, note)
     return log(note.trim())
   }
-  let id = `${date.slice(0, 10)}-${commit.slice(0, 7)}`
-  for (let n = 2; existsSync(join(HOME, 'site', 'data', 'nights', `${id}.json`)); n++) id = `${date.slice(0, 10)}-${commit.slice(0, 7)}-${n}`
+  let id = base
+  for (let n = 2; existsSync(join(HOME, 'site', 'data', 'nights', `${id}.json`)); n++) id = `${base}-${n}`
 
   const arms = ARMS.filter((a) => !onlyArms || onlyArms.has(a.arm))
   const tasks = TASKS.filter((t) => !onlyTasks || onlyTasks.has(t.task))
   const ompVersion = arms.some((a) => a.harness === 'OMP') ? process.env.OMP_VERSION : null
   if (arms.some((a) => a.harness === 'OMP') && !ompVersion) throw new Error('Set OMP_VERSION')
   const omp = ompVersion ? await ompBinary(ompVersion) : null
-  const night = { id, date, commit, subject, omp: ompVersion, host: hostname(), minutesLimit: MINUTES, done: false, rows: [] }
+  const night = { id, release: RELEASE, date, commit, subject, omp: ompVersion, host: hostname(), minutesLimit: MINUTES, done: false, rows: [] }
   const resultsDir = join(HOME, 'results', id)
-  log(`night ${id}: ${arms.length} arms × ${tasks.length} tasks, results in ${resultsDir}`)
+  log(`${id}: ${arms.length} arms × ${tasks.length} tasks, results in ${resultsDir}`)
+  // Stopped early (an error, or the job cancelled or timed out): still publish and summarise what finished.
+  let finished = false
+  const wrapUp = () => {
+    if (finished) return
+    finished = true
+    try {
+      publish(night)
+    } catch (err) {
+      log(`couldn't publish to the dashboard: ${err?.message ?? err}`)
+    }
+    summary(night)
+  }
+  for (const sig of ['SIGINT', 'SIGTERM'])
+    process.once(sig, () => {
+      log(`${sig}: stopping`)
+      wrapUp()
+      process.exit(1)
+    })
+  try {
+    await runAll(night, arms, tasks, omp, ompVersion, resultsDir)
+    night.done = true
+  } finally {
+    wrapUp()
+  }
+  // Raw results (transcripts, logs, patches) for the last 14 benchmarks.
+  const all = existsSync(join(HOME, 'results')) ? readdirSync(join(HOME, 'results')).sort() : []
+  for (const old of all.slice(0, Math.max(0, all.length - 14))) rmSync(join(HOME, 'results', old), { recursive: true, force: true })
+  const cloth = night.rows.filter((r) => r.harness === 'Cloth')
+  if (cloth.length && cloth.every((r) => r.error)) throw new Error('Every Cloth run failed to start or report; see the results folder')
+}
 
-  for (const { task, name } of tasks) {
+async function runAll(night, arms, tasks, omp, ompVersion, resultsDir) {
+  const id = night.id
+
+  for (const { task, name } of arms.length ? tasks : []) {
     const template = task === 'berdbot' ? berdbotTemplate(join(HOME, 'fixtures', 'berdbot.bundle'), join(HOME, 'work', 'berdbot-template')) : null
     const prompt = join(BENCH, 'tasks', task, 'prompt.txt')
     for (const a of arms) {
@@ -155,14 +206,6 @@ async function main() {
       publish(night)
     }
   }
-  night.done = true
-  publish(night)
-  summary(night)
-  // Raw results (transcripts, logs, patches) for the last 14 nights.
-  const all = existsSync(join(HOME, 'results')) ? readdirSync(join(HOME, 'results')).sort() : []
-  for (const old of all.slice(0, Math.max(0, all.length - 14))) rmSync(join(HOME, 'results', old), { recursive: true, force: true })
-  const cloth = night.rows.filter((r) => r.harness === 'Cloth')
-  if (cloth.length && cloth.every((r) => r.error)) throw new Error('Every Cloth run failed to start or report; see the results folder')
 }
 
 main().catch((err) => {

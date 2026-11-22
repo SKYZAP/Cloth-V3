@@ -1,4 +1,4 @@
-# Serves the nightly benchmark dashboard (BENCH_HOME/site, written by bench/nightly.mjs) at http://bench.example.internal
+# Serves the release benchmark dashboard (BENCH_HOME/site, written by bench/run.mjs) at http://bench.example.internal
 # through the Pi's Traefik. On the Pi: cd ~/cloth-bench/site-server && docker compose up -d
 name: cloth-bench-site
 services:
