@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApi } from '../src/main/api'
 import { RemoteClient, type RemoteState } from '../src/shared/remote-client'
 import { SecureChannel, decodePairing, encodePairing, randomBytes, remoteAllowed, sessionKey, type PairingPayload } from '../src/shared/remote'
+import { nodeSessionCipher } from '../src/main/remote/cipher'
 import { makeServices } from './helpers'
 
 const { services } = makeServices()
@@ -13,6 +14,16 @@ function client(pairing: PairingPayload, onEvent: (c: string, p: unknown) => voi
   const c = new RemoteClient({ ...pairing, h: ['127.0.0.1'] }, { name: 'Pixel Test', platform: 'android', onEvent, onState: (s) => states.push(s) })
   clients.push(c)
   return { c, states }
+}
+
+/** A chat the size of a long agent run: many tool steps with big outputs (~24 MB of JSON). */
+function bigChat() {
+  const out = 'x'.repeat(8_000) + ' é✓🙂 '
+  return {
+    id: 'chat_big',
+    title: 'Fix YouTube Playback Abort Error',
+    messages: Array.from({ length: 3_000 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'tool', content: `step ${i} ${out}` }))
+  }
 }
 
 const until = async (fn: () => boolean, ms = 5000) => {
@@ -28,6 +39,12 @@ beforeAll(async () => {
   const api = createApi(services)
   services.remote.attach({
     dispatch: async (path, args) => {
+      if (path === 'test.bigChat') return bigChat()
+      if (path === 'test.circular') {
+        const o: Record<string, unknown> = {}
+        o.self = o
+        return o
+      }
       const [ns, m] = path.split('.')
       return (api as unknown as Record<string, Record<string, (...a: unknown[]) => Promise<unknown>>>)[ns][m](...args)
     }
@@ -62,6 +79,37 @@ describe('remote protocol', () => {
     const evil = new SecureChannel(await sessionKey(randomBytes(32), ch, nonce), 1, 2)
     const c = new SecureChannel(await sessionKey(k, ch, nonce), 2, 1)
     await expect(c.open(await evil.seal({ n: 1 }))).rejects.toThrow()
+  })
+
+  it("desktop's node:crypto cipher and the phone's Web Crypto agree, on large frames too", async () => {
+    const k = randomBytes(32)
+    const ch = randomBytes(16)
+    const nonce = randomBytes(16)
+    const desktop = new SecureChannel(nodeSessionCipher(k, ch, nonce), 2, 1)
+    const phone = new SecureChannel(await sessionKey(k, ch, nonce), 1, 2)
+    const big = bigChat()
+    expect(await phone.open(await desktop.seal(big))).toEqual(big)
+    expect(await desktop.open(await phone.seal({ t: 'call', id: 1 }))).toEqual({ t: 'call', id: 1 })
+    // Many frames in flight at once still arrive in order.
+    const sealed = await Promise.all(Array.from({ length: 50 }, (_, i) => desktop.seal({ i, pad: 'y'.repeat(100_000) })))
+    for (let i = 0; i < 50; i++) expect(((await phone.open(sealed[i])) as { i: number }).i).toBe(i)
+    // Wrong key and tampering are refused.
+    const evil = new SecureChannel(nodeSessionCipher(randomBytes(32), ch, nonce), 1, 2)
+    await expect(new SecureChannel(nodeSessionCipher(k, ch, nonce), 2, 1).open(await evil.seal({ n: 1 }))).rejects.toThrow()
+    const f = await phone.seal({ n: 2 })
+    f[f.length - 1] ^= 1
+    await expect(desktop.open(f)).rejects.toThrow()
+  })
+
+  it("doesn't spend a frame number on a value it can't serialise", async () => {
+    const k = randomBytes(32)
+    const ch = randomBytes(16)
+    const a = new SecureChannel(nodeSessionCipher(k, ch, ch), 2, 1)
+    const b = new SecureChannel(await sessionKey(k, ch, ch), 1, 2)
+    const o: Record<string, unknown> = {}
+    o.self = o
+    expect(() => a.seal(o)).toThrow()
+    expect(await b.open(await a.seal({ ok: 1 }))).toEqual({ ok: 1 })
   })
 
   it('keeps desktop-only and pairing calls off the phone', () => {
@@ -109,6 +157,19 @@ describe('remote host', () => {
     expect(seen.filter((e) => e.type === 'message').length).toBeLessThan(5)
     expect(seen.at(-2)).toMatchObject({ type: 'message', message: { n: 19 } })
   })
+
+  it('sends a large chat to the phone, and answers a reply it cannot send without dropping the link', async () => {
+    const { c } = client(pairing)
+    c.connect()
+    await until(() => c.state === 'online')
+    const chat = (await c.call('test.bigChat', [])) as ReturnType<typeof bigChat>
+    expect(chat.messages).toHaveLength(3_000)
+    expect(chat).toEqual(bigChat())
+    await expect(c.call('test.circular', [])).rejects.toThrow(/could not be sent to the phone/)
+    expect(((await c.call('settings.get', [])) as { remotePort: number }).remotePort).toBe(port)
+    expect(c.state).toBe('online')
+    c.close()
+  }, 30_000)
 
   it('rejects a phone with the wrong key or an unknown id', async () => {
     const bad = client({ ...pairing, k: 'A'.repeat(43) })

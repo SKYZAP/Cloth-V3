@@ -15,11 +15,11 @@ import {
   fromB64url,
   randomBytes,
   remoteAllowed,
-  sessionKey,
   type ClientFrame,
   type ServerFrame
 } from '@shared/remote'
 import { errorMessage, newId, type Ctx } from '../core/context'
+import { nodeSessionCipher } from './cipher'
 import type { SettingsService } from '../core/settings'
 
 /** Runs an API call by path, the same way the desktop window's IPC does. */
@@ -268,7 +268,7 @@ export class RemoteHost {
             if (isBinary) throw new Error('Expected hello')
             const hello = JSON.parse(data.toString()) as { t: string; c?: string }
             if (hello.t !== 'hello' || typeof hello.c !== 'string') throw new Error('Expected hello')
-            channel = new SecureChannel(await sessionKey(this.deviceKey(device), challenge, fromB64url(hello.c)), SERVER_DIR, CLIENT_DIR)
+            channel = new SecureChannel(nodeSessionCipher(this.deviceKey(device), challenge, fromB64url(hello.c)), SERVER_DIR, CLIENT_DIR)
             return
           }
           if (!isBinary) throw new Error('Expected an encrypted frame')
@@ -366,13 +366,25 @@ export class RemoteHost {
   }
 
   private send(c: Client, frame: ServerFrame): void {
-    const sealed = c.channel.seal(frame)
+    let sealed: Promise<Uint8Array>
+    try {
+      sealed = c.channel.seal(frame)
+    } catch (err) {
+      // Couldn't serialise (too large for one string, or not JSON): nothing was spent, so the stream is
+      // intact. A call still gets an answer; an event is dropped.
+      this.ctx.log('remote', `can't send ${frame.t}: ${errorMessage(err)}`)
+      if (frame.t === 'result') this.send(c, { t: 'result', id: frame.id, ok: false, error: `The reply could not be sent to the phone: ${errorMessage(err)}` })
+      return
+    }
     c.sending = c.sending.then(async () => {
       try {
         const bytes = await sealed
         if (c.ws.readyState === c.ws.OPEN) c.ws.send(bytes)
       } catch (err) {
+        // A frame number was spent without a frame, so the phone would refuse everything after it.
+        // Drop the link; the phone reconnects with a fresh session.
         this.ctx.log('remote', `send failed: ${errorMessage(err)}`)
+        c.ws.close(1011, 'Encryption failed')
       }
     })
   }

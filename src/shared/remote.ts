@@ -84,13 +84,38 @@ export function decodePairing(text: string): PairingPayload {
 
 const buf = (u: Uint8Array): ArrayBuffer => u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer
 
-/** Per-connection AES-GCM key: HKDF-SHA256(deviceKey, salt = challenge ‖ clientNonce). */
-export async function sessionKey(deviceKey: Uint8Array, challenge: Uint8Array, clientNonce: Uint8Array): Promise<CryptoKey> {
-  const ikm = await crypto.subtle.importKey('raw', buf(deviceKey), 'HKDF', false, ['deriveKey'])
+/** HKDF info string for the per-connection key. */
+export const SESSION_INFO = 'cloth-remote-v1'
+
+/** HKDF salt for the per-connection key: challenge ‖ clientNonce. */
+export function sessionSalt(challenge: Uint8Array, clientNonce: Uint8Array): Uint8Array {
   const salt = new Uint8Array(challenge.length + clientNonce.length)
   salt.set(challenge)
   salt.set(clientNonce, challenge.length)
-  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: buf(salt), info: buf(te.encode('cloth-remote-v1')) }, ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+  return salt
+}
+
+/** Per-connection AES-GCM key: HKDF-SHA256(deviceKey, salt = challenge ‖ clientNonce). */
+export async function sessionKey(deviceKey: Uint8Array, challenge: Uint8Array, clientNonce: Uint8Array): Promise<CryptoKey> {
+  const ikm = await crypto.subtle.importKey('raw', buf(deviceKey), 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: buf(sessionSalt(challenge, clientNonce)), info: buf(te.encode(SESSION_INFO)) }, ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+}
+
+/**
+ * AES-256-GCM under the session key. Output (and decrypt input) is ciphertext ‖ 16-byte tag, the
+ * Web Crypto layout. The phone uses Web Crypto; the desktop uses node:crypto (see main/remote/cipher.ts),
+ * because Web Crypto jobs in Electron's main process can abort the whole app.
+ */
+export interface SessionCipher {
+  encrypt(iv: Uint8Array, plain: Uint8Array): Promise<Uint8Array>
+  decrypt(iv: Uint8Array, sealed: Uint8Array): Promise<Uint8Array>
+}
+
+export function webCryptoCipher(key: CryptoKey): SessionCipher {
+  return {
+    encrypt: async (iv, plain) => new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buf(iv) }, key, buf(plain))),
+    decrypt: async (iv, sealed) => new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(iv) }, key, buf(sealed)))
+  }
 }
 
 function iv(dir: number, counter: number): Uint8Array {
@@ -111,18 +136,26 @@ export class SecureChannel {
   private sealing: Promise<unknown> = Promise.resolve()
   private opening: Promise<unknown> = Promise.resolve()
 
+  private cipher: SessionCipher
+
   constructor(
-    private key: CryptoKey,
+    key: CryptoKey | SessionCipher,
     private sendDir: number,
     private recvDir: number
-  ) {}
+  ) {
+    this.cipher = 'encrypt' in key ? key : webCryptoCipher(key)
+  }
 
-  /** Encrypts a frame; callers must send results in the order seal() was called (it resolves in order). */
+  /**
+   * Encrypts a frame; callers must send results in the order seal() was called (it resolves in order).
+   * A value that can't be serialised (too large for a string, circular) throws here, before it takes a
+   * counter, so the stream stays intact. A rejected promise means a counter was spent: the stream is broken.
+   */
   seal(value: unknown): Promise<Uint8Array<ArrayBuffer>> {
-    const n = ++this.sent
     const plain = te.encode(JSON.stringify(value))
+    const n = ++this.sent
     const next = this.sealing.then(async () => {
-      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buf(iv(this.sendDir, n)) }, this.key, buf(plain)))
+      const ct = await this.cipher.encrypt(iv(this.sendDir, n), plain)
       const out = new Uint8Array(8 + ct.length)
       new DataView(out.buffer).setBigUint64(0, BigInt(n))
       out.set(ct, 8)
@@ -137,7 +170,7 @@ export class SecureChannel {
       if (frame.length < 8 + 16) throw new Error('Frame too short')
       const n = Number(new DataView(frame.buffer, frame.byteOffset, 8).getBigUint64(0))
       if (n !== this.received + 1) throw new Error('Out-of-order or replayed frame')
-      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf(iv(this.recvDir, n)) }, this.key, buf(frame.subarray(8)))
+      const pt = await this.cipher.decrypt(iv(this.recvDir, n), frame.subarray(8))
       this.received = n
       return JSON.parse(td.decode(pt)) as T
     })
