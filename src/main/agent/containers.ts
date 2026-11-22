@@ -54,6 +54,11 @@ const MAX_TEXT = 2_000_000
 
 /** Copy files as last seen: [size, mtimeMs, sha1]. */
 type StatCache = Record<string, [number, number, string]>
+/**
+ * Whether a file's size and modified time can stand in for its contents next time. Not when it was modified just
+ * now: file times tick in steps (a few ms on Linux), so a same-size edit in the same tick would look unchanged.
+ */
+const settled = (mtimeMs: number) => Date.now() - mtimeMs > 2000
 
 interface Manifest {
   folder: string | null
@@ -214,7 +219,7 @@ export class ContainerService {
         const hash = sha1(await readFile(dest))
         files[rel] = hash
         const s = await stat(dest)
-        cache[rel] = [s.size, s.mtimeMs, hash]
+        if (settled(s.mtimeMs)) cache[rel] = [s.size, s.mtimeMs, hash]
       }
     }
     await this.saveManifest(sessionId, { folder, files })
@@ -357,7 +362,7 @@ export class ContainerService {
     for (const f of await walk(copy, DIFF_SKIP)) {
       const hit = cache[f.rel]
       const hash = hit && hit[0] === f.size && hit[1] === f.mtimeMs ? hit[2] : sha1(await readFile(join(copy, ...f.rel.split('/'))))
-      fresh[f.rel] = [f.size, f.mtimeMs, hash]
+      if (settled(f.mtimeMs)) fresh[f.rel] = [f.size, f.mtimeMs, hash]
       now.set(f.rel, hash)
     }
     await this.saveCache(sessionId, fresh)

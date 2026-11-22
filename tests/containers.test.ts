@@ -137,6 +137,11 @@ describe('container copies', () => {
     expect(existsSync(join(copy, 'src', 'secret.txt'))).toBe(false)
     expect(existsSync(join(copy, 'src', 'app.ts'))).toBe(true)
 
+    // Only files left alone for a moment are cached (a same-size edit in the same tick of the clock looks unchanged).
+    const { utimesSync } = await import('node:fs')
+    const old = new Date(Date.now() - 60_000)
+    utimesSync(join(copy, 'README.md'), old, old)
+
     // Build output the agent makes is ignored too; a real source change is not.
     mkdirSync(join(copy, 'dist'))
     writeFileSync(join(copy, 'dist', 'app.js'), 'console.log(1)')
@@ -151,7 +156,6 @@ describe('container copies', () => {
     writeFileSync(cacheFile, JSON.stringify(cache))
     expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['README.md', 'src/extra.ts'])
     // …and a file whose time changed is read again.
-    const { utimesSync } = await import('node:fs')
     utimesSync(join(copy, 'README.md'), new Date(), new Date(Date.now() + 5000))
     expect((await c.changes('ses_g')).changes.map((x) => x.path)).toEqual(['src/extra.ts'])
   })

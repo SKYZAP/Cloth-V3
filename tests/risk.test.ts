@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { describe, expect, it, onTestFinished } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { commandRisk, commandRiskResolved, pathRisk, pathRiskResolved, RISK, type RiskContext } from '../src/main/agent/risk'
 
@@ -259,7 +259,9 @@ describe('risky paths', () => {
   })
 
   it('follows links that lead out of the folder', async () => {
-    const base = mkdtempSync(join(tmpdir(), 'cloth-risk-'))
+    // Not under /tmp on Linux and macOS: writing there is allowed (scratch files), so a link into it is not risky.
+    const base = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : homedir(), '.cloth-risk-'))
+    onTestFinished(() => rmSync(base, { recursive: true, force: true }))
     const root = join(base, 'proj')
     const outside = join(base, 'outside')
     mkdirSync(root)
