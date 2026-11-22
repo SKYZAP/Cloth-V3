@@ -2,7 +2,7 @@
 // sends a chat message, runs a workflow and screenshots every page, then quits.
 import { newOpenSpecRun } from './agent/openspec'
 import { app, type BrowserWindow } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Services } from './services'
 
@@ -583,6 +583,14 @@ async function probeFormatting(win: BrowserWindow, s: Services, outDir: string, 
     const text = (await win.webContents.executeJavaScript('document.body.innerText')) as string
     note(`biome: ${/Biome [\d.]+ installed/.exec(text)?.[0] ?? 'not installed'}`)
     note(`settings: ${JSON.stringify(s.settings.get().codeChecks)}`)
+    // The bundled Prettier must run from the packaged app too (unpacked from app.asar).
+    const { checkChanged } = await import('./agent/formatters')
+    const dir = join(outDir, 'prettier-check')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '.prettierrc'), '{ "semi": false }\n')
+    writeFileSync(join(dir, 'a.ts'), 'const a  =  1;\n')
+    const notes = await checkChanged(dir, [join(dir, 'a.ts')], { ...s.settings.get().codeChecks, when: 'cloth' }, { toolsDir: null })
+    note(`bundled prettier: ${JSON.stringify(notes)} → ${JSON.stringify(readFileSync(join(dir, 'a.ts'), 'utf8'))}`)
   } catch (err) {
     note(`FAILED: ${err instanceof Error ? err.stack : String(err)}`)
   }

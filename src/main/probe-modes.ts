@@ -81,6 +81,8 @@ export async function probeModes(s: Services, outDir: string, note: (m: string) 
   const thinking = (process.env.CLOTH_PROBE_THINKING ?? 'medium') as ThinkingLevel
   // Titles are written by an extra model call; leave them out of the measurement.
   s.settings.update({ aiTitles: false })
+  // Formatting and linting for this run, e.g. {"when":"cloth"} (Settings → Chat).
+  if (process.env.CLOTH_PROBE_CODECHECKS) s.settings.update({ codeChecks: { ...s.settings.get().codeChecks, ...JSON.parse(process.env.CLOTH_PROBE_CODECHECKS) } })
   note(`mode ${mode}, model ${model.modelId} (${thinking}) via ${provider.name}, folder ${ws}`)
 
   const chat = s.chat.create({ model, workspace: ws, permissions: mode === 'plan' ? 'plan' : 'auto', subagents: true, webEnabled: false, knowledgeEnabled: false, mcpServers: [], thinking })

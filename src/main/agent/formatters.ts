@@ -329,25 +329,26 @@ export async function checkChanged(
     if (checks.fix) for (const f of r.files) before.set(f, await readFile(join(root, f), 'utf8').catch(() => ''))
     const outputs: string[] = []
     let failed = false
+    let stopped = false
     for (const args of r.runs) {
       const res = await run(r.launch, args, root, r.tool.timeout ?? 30, opts.signal)
       if (res.timedOut) {
         notes.push(`${r.tool.name} took too long and was stopped.`)
-        failed = false
-        outputs.length = 0
+        stopped = true
         break
       }
       // gofmt -l lists the files that need formatting and still exits 0.
       if (!res.ok || (r.tool.id === 'gofmt' && !checks.fix && res.output)) failed = true
       if (res.output) outputs.push(res.output)
     }
+    if (stopped) continue
+    let changed: string[] = []
     if (checks.fix) {
-      const changed: string[] = []
       for (const f of r.files) if ((await readFile(join(root, f), 'utf8').catch(() => '')) !== before.get(f)) changed.push(f)
       if (changed.length) notes.push(`${r.tool.name} fixed ${changed.join(', ')}. Read ${changed.length === 1 ? 'it' : 'them'} again before editing ${changed.length === 1 ? 'it' : 'them'} further.`)
     }
     if (failed) notes.push(`${r.tool.name} found problems${checks.fix ? ' it couldn’t fix' : ''}:\n${brief(outputs.join('\n'), root) || '(no details)'}`)
-    else if (!checks.fix) notes.push(`✓ ${r.tool.name}: ${r.files.join(', ')} ${r.files.length === 1 ? 'is' : 'are'} clean`)
+    else if (!changed.length) notes.push(`✓ ${r.tool.name}: ${r.files.join(', ')} ${r.files.length === 1 ? 'is' : 'are'} ${checks.fix ? 'already formatted' : 'clean'}`)
   }
   return notes
 }
