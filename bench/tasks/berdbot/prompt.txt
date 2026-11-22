@@ -1,0 +1,34 @@
+Add three queue-editing slash commands to berdbot's music commands: /remove, /move and /shuffle.
+
+Put each in its own file next to the existing music commands, registered the same way (module.exports with `data` and `execute`, default member permissions):
+- src/modules/discord/commands/music/remove.command.ts
+- src/modules/discord/commands/music/move.command.ts
+- src/modules/discord/commands/music/shuffle.command.ts
+
+Positions are 1-based and count the upcoming tracks exactly as /queue numbers them: position 1 is the next track to play, and the current track is not counted.
+
+/remove position:<integer, required, minimum 1>
+- Removes the upcoming track at that position.
+- Reply: `> **Removed** <title> **from the queue.**`
+
+/move from:<integer, required, minimum 1> to:<integer, required, minimum 1>
+- Moves the upcoming track at `from` so it ends up at position `to`; the other tracks keep their order.
+- Reply: `> **Moved** <title> **to position <to>.**`
+- If `from` and `to` are the same, change nothing and reply (ephemeral): `That track is already at position <to>.`
+
+/shuffle (no options)
+- Shuffles the upcoming tracks once, right away. The current track is not affected, and it does not turn on a lasting shuffle mode.
+- Reply: `> **Shuffled <n> tracks.**` where n is the number of upcoming tracks.
+- With fewer than 2 upcoming tracks, change nothing and reply (ephemeral): `There aren't enough tracks in the queue to shuffle.`
+
+Errors (all ephemeral; nothing changes):
+- No queue for the server: `This server does not have an active player session.`
+- A position outside the queue (for /remove, or `from` or `to` in /move; for /move check `from` first): `There is no track at position <n>. The queue has <m> upcoming tracks.`
+- Any unexpected error: log it and reply `Couldn’t change the queue. Please try again.`, unless the interaction was already replied to.
+
+Ephemeral means `flags: MessageFlags.Ephemeral`.
+
+Also:
+- Add Jest unit tests for all three commands (the project's `npm test`, files ending in .spec.ts), mocking `discord-player` the way queue.command.spec.ts does.
+- Don't add dependencies. Keep `npm run build` and `npm test` passing.
+- When you're done, reply with a short summary of what you built and how you checked it.

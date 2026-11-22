@@ -1,0 +1,51 @@
+# Typecheck and run the test suite on every push to master, on the self-hosted runner on the Pi (bench/README.md).
+# Runs in a node:22 container, so the Pi's own Node and files stay out of it.
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck and tests
+    runs-on: [self-hosted, cloth-pi]
+    timeout-minutes: 40
+    container:
+      image: node:22-bookworm
+      # npm's download cache survives between runs.
+      options: -v /home/pi/cloth-bench/npm-cache:/root/.npm
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npx vitest run --reporter=default --reporter=json --outputFile.json=test-results.json
+      - name: Summary
+        if: always()
+        run: |
+          node -e '
+            const fs = require("fs")
+            if (!fs.existsSync("test-results.json")) process.exit(0)
+            const r = JSON.parse(fs.readFileSync("test-results.json", "utf8"))
+            const failed = r.testResults.flatMap((f) => f.assertionResults.filter((a) => a.status === "failed").map((a) => `- ${f.name.replace(process.cwd() + "/", "")} › ${a.fullName}`))
+            const lines = [`## Tests: ${r.numPassedTests} passed, ${r.numFailedTests} failed, ${r.numPendingTests + r.numTodoTests} skipped`, "", ...failed]
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n")
+          '
+      # The container runs as root: give the checkout back to the runner's user, or the next job can't clean it.
+      - name: Give files back to the runner
+        if: always()
+        run: chown -R "$(stat -c '%u:%g' "$GITHUB_WORKSPACE/..")" "$GITHUB_WORKSPACE"

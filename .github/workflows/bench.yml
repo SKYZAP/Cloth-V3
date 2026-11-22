@@ -1,0 +1,54 @@
+# Nightly benchmark: Cloth's modes against OMP on two tasks, scored with hidden tests, published to http://bench.example.internal
+# (bench/README.md). Runs on the self-hosted runner on the Pi, outside a container: Cloth needs a display (xvfb).
+name: Nightly benchmark
+
+on:
+  schedule:
+    # 02:00 in Malaysia (UTC+8). A scheduled run skips a commit that was already benchmarked.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      arms:
+        description: 'Only these arms (cloth-chat,cloth-plan,cloth-spec,cloth-openspec,omp,omp-plan); empty = all'
+        required: false
+        type: string
+      tasks:
+        description: 'Only these tasks (berdbot,recon); empty = both'
+        required: false
+        type: string
+      minutes:
+        description: 'Time limit per run, in minutes'
+        required: false
+        type: string
+        default: '60'
+
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Cloth vs OMP
+    runs-on: [self-hosted, cloth-pi]
+    timeout-minutes: 720
+    env:
+      BENCH_HOME: /home/pi/cloth-bench
+      # OMP release to compare against. Its results are reused until this changes (bench/nightly.mjs).
+      OMP_VERSION: '18.20.2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        run: npx electron-vite build
+      - name: Run the benchmark
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BENCH_ARMS: ${{ inputs.arms }}
+          BENCH_TASKS: ${{ inputs.tasks }}
+          BENCH_MINUTES: ${{ inputs.minutes || '60' }}
+          BENCH_SKIP_SAME_COMMIT: ${{ github.event_name == 'schedule' && '1' || '' }}
+        run: node bench/nightly.mjs

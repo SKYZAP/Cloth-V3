@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloth Nightly Bench</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Crect x='64' y='64' width='896' height='896' rx='208' fill='%23141518'/%3E%3Cpath d='M700 350a230 230 0 1 0 0 324' fill='none' stroke='%23cf2845' stroke-width='92' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #09090c; --panel: #141518; --elev: #1e1e22; --line: #36363c; --fg: #f1f1f4; --muted: #bdbdc5; --dim: #94949e;
+    --cloth: #e54056; --omp: #6cb2ec; --ok: #5ccb89; --warn: #f6b84d; --bad: #ef4a5f;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f6f8; --panel: #ffffff; --elev: #eeeef1; --line: #dcdce2; --fg: #16161a; --muted: #4a4a55; --dim: #6b6b76; --cloth: #c4243f; --omp: #2a78bd; --ok: #1f8a4c; --warn: #a86500; --bad: #c4243f; color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; padding: 28px 16px 64px; display: flex; flex-direction: column; gap: 20px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  p { margin: 0; }
+  .muted { color: var(--muted); } .dim { color: var(--dim); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; background: var(--panel); }
+  .seg button { font: inherit; border: 0; background: transparent; color: var(--muted); padding: 6px 12px; min-height: 32px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--elev); color: var(--fg); box-shadow: 0 0 0 1px var(--line); }
+  select { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-height: 36px; max-width: 100%; }
+  button:focus-visible, select:focus-visible, th button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .tile .big { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  svg { display: block; width: 100%; overflow: visible; }
+  svg text { font-size: 11px; fill: var(--dim); font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 500; color: var(--muted); font-size: 12px; }
+  th button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  td.num, th.num { text-align: right; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .tip { position: fixed; pointer-events: none; background: var(--elev); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / .3); display: none; z-index: 10; max-width: 280px; }
+  .empty { padding: 48px 16px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header class="bar">
+    <div>
+      <h1>Cloth vs OMP · nightly</h1>
+      <p class="muted" id="sub">Loading…</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Task" id="tasks"></div>
+      <label><span class="dim" style="margin-right:6px">Night</span><select id="night" aria-label="Night"></select></label>
+    </div>
+  </header>
+  <section class="tiles" id="tiles"></section>
+  <section class="card">
+    <div class="bar" style="margin-bottom:12px">
+      <div><h2>This night</h2><p class="dim" id="metricHint"></p></div>
+      <div class="seg" role="group" aria-label="Metric" id="metrics"></div>
+    </div>
+    <div id="bars"></div>
+  </section>
+  <section class="card">
+    <div class="bar" style="margin-bottom:12px">
+      <div><h2>Over time</h2><p class="dim">Each Cloth mode per night. OMP is the dashed line: the average of its runs for that night's version.</p></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div id="trend"></div>
+  </section>
+  <section class="card">
+    <h2>Runs</h2>
+    <p class="dim" style="margin-bottom:8px">Hidden tests are never shown to the agents. OMP runs marked “reused” come from an earlier night with the same OMP version.</p>
+    <div class="table-wrap"><table id="runs"></table></div>
+  </section>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+<script>
+const TASKS = [['berdbot', 'Berdbot queue commands'], ['recon', 'Order reconciler']]
+const METRICS = [
+  ['pass', 'Hidden tests', (r) => (r.hidden_total ? (100 * r.hidden_passed) / r.hidden_total : 0), (v) => `${Math.round(v)}%`, true],
+  ['cost', 'Cost', (r) => r.cost, (v) => `$${v.toFixed(3)}`, false],
+  ['minutes', 'Minutes', (r) => r.minutes, (v) => v.toFixed(1), false],
+  ['tokens', 'Tokens', (r) => r.tokens, (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : `${Math.round(v / 1e3)}k`), false],
+  ['tool_calls', 'Tool calls', (r) => r.tool_calls, (v) => String(Math.round(v)), false]
+]
+const ARM_ORDER = ['cloth-chat', 'cloth-plan', 'cloth-spec', 'cloth-openspec', 'omp', 'omp-plan']
+const CLOTH_SHADES = { 'cloth-chat': 1, 'cloth-plan': 0.8, 'cloth-spec': 0.62, 'cloth-openspec': 0.46 }
+const state = { task: 'berdbot', night: null, metric: 'cost', sort: null, index: [], nights: new Map() }
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const metric = () => METRICS.find((m) => m[0] === state.metric)
+const color = (arm) => (arm.startsWith('omp') ? `var(--omp)` : `var(--cloth)`)
+const alpha = (arm) => (arm.startsWith('omp') ? (arm === 'omp' ? 1 : 0.6) : CLOTH_SHADES[arm] ?? 1)
+const label = (r) => `${r.harness} · ${r.mode}`
+const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
+
+async function load(path) {
+  const r = await fetch(path, { cache: 'no-store' })
+  if (!r.ok) throw new Error(`${path}: ${r.status}`)
+  return r.json()
+}
+async function night(id) {
+  if (!state.nights.has(id)) state.nights.set(id, await load(`data/nights/${encodeURIComponent(id)}.json`))
+  return state.nights.get(id)
+}
+
+/** One entry per arm: the run, or the mean of OMP's reused runs. */
+function perArm(rows) {
+  const by = new Map()
+  for (const r of rows) {
+    if (r.task !== state.task) continue
+    if (!by.has(r.arm)) by.set(r.arm, [])
+    by.get(r.arm).push(r)
+  }
+  return [...by.entries()]
+    .sort((a, b) => ARM_ORDER.indexOf(a[0]) - ARM_ORDER.indexOf(b[0]))
+    .map(([arm, rs]) => {
+      const ok = rs.filter((r) => !r.error)
+      const avg = (f) => mean(ok.map(f).filter((v) => v != null && !Number.isNaN(v)))
+      return { arm, label: label(rs[0]), runs: rs, n: ok.length, value: (f) => avg(f) }
+    })
+}
+
+function tip(e, html) {
+  const t = $('tip')
+  if (!html) return (t.style.display = 'none')
+  t.innerHTML = html
+  t.style.display = 'block'
+  const x = Math.min(e.clientX + 14, innerWidth - t.offsetWidth - 8)
+  t.style.left = `${x}px`
+  t.style.top = `${e.clientY + 14}px`
+}
+
+function renderTiles(arms) {
+  const [, , f, fmt] = METRICS[0]
+  const cloth = arms.filter((a) => a.arm.startsWith('cloth') && a.n)
+  const omp = arms.filter((a) => a.arm.startsWith('omp') && a.n)
+  const best = (list, g, low) => list.slice().sort((a, b) => (low ? g(a) - g(b) : g(b) - g(a)))[0]
+  const tiles = []
+  const add = (title, a, g, fmtv, note) => a && tiles.push(`<div class="card tile"><div class="dim">${title}</div><div class="big">${fmtv(g(a))}</div><div class="muted">${esc(a.label)}${note ? ` · ${note}` : ''}</div></div>`)
+  add('Best Cloth mode (hidden tests)', best(cloth, (a) => a.value(f) ?? 0, false), (a) => a.value(f) ?? 0, fmt)
+  add('Cheapest Cloth mode', best(cloth, (a) => a.value((r) => r.cost) ?? Infinity, true), (a) => a.value((r) => r.cost), (v) => `$${v.toFixed(3)}`)
+  add('Fastest Cloth mode', best(cloth, (a) => a.value((r) => r.minutes) ?? Infinity, true), (a) => a.value((r) => r.minutes), (v) => `${v.toFixed(1)} min`)
+  const o = best(omp, (a) => a.value((r) => r.cost) ?? Infinity, true)
+  add('OMP baseline (cheapest)', o, (a) => a.value((r) => r.cost), (v) => `$${v.toFixed(3)}`, o ? `${Math.round(o.value(f))}% tests${o.runs.some((r) => r.cached) ? `, mean of ${o.n}` : ''}` : '')
+  $('tiles').innerHTML = tiles.join('') || '<div class="card empty">No runs for this task on this night.</div>'
+}
+
+function renderBars(arms) {
+  const [, name, f, fmt, higher] = metric()
+  $('metricHint').textContent = higher ? `${name}: higher is better` : `${name}: lower is better`
+  const items = arms.filter((a) => a.n).map((a) => ({ a, v: a.value(f) ?? 0 }))
+  if (!items.length) return ($('bars').innerHTML = '<p class="empty">No finished runs.</p>')
+  const max = higher && state.metric === 'pass' ? 100 : Math.max(...items.map((i) => i.v)) || 1
+  const rowH = 34, left = 190, w = 760, h = items.length * rowH
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(name)} per harness and mode">`
+  items.forEach(({ a, v }, i) => {
+    const y = i * rowH
+    const bw = Math.max(2, ((w - left - 80) * v) / max)
+    const runs = a.runs.map((r) => `${r.night ?? r.from}: ${fmt(f(r) ?? 0)}${r.error ? ' (failed)' : ''}`).join('<br>')
+    s += `<g data-tip="${esc(`<b>${esc(a.label)}</b><br>${fmt(v)}${a.n > 1 ? ` (mean of ${a.n})` : ''}<br><span class=dim>${runs}</span>`)}">`
+    s += `<text x="0" y="${y + 21}" style="fill:var(--fg);font-size:12px">${esc(a.label)}</text>`
+    s += `<rect x="${left}" y="${y + 7}" width="${bw}" height="${rowH - 14}" rx="4" fill="${color(a.arm)}" fill-opacity="${alpha(a.arm)}"/>`
+    s += `<text x="${left + bw + 8}" y="${y + 21}" style="fill:var(--muted)">${fmt(v)}${a.n > 1 ? ` · n=${a.n}` : ''}</text></g>`
+  })
+  $('bars').innerHTML = s + '</svg>'
+}
+
+async function renderTrend() {
+  const [, name, f, fmt] = metric()
+  const ids = state.index.slice(0, 30).map((n) => n.id).reverse()
+  const nights = await Promise.all(ids.map((id) => night(id).catch(() => null)))
+  const series = new Map()
+  nights.forEach((n, i) => {
+    if (!n) return
+    for (const a of perArm(n.rows)) {
+      const v = a.value(f)
+      if (v == null || !a.n) continue
+      if (!series.has(a.arm)) series.set(a.arm, { label: a.label, pts: [] })
+      series.get(a.arm).pts.push({ i, v, id: n.id })
+    }
+  })
+  const arms = [...series.keys()].sort((a, b) => ARM_ORDER.indexOf(a) - ARM_ORDER.indexOf(b))
+  $('legend').innerHTML = arms.map((a) => `<span><i style="background:${color(a)};opacity:${alpha(a)}"></i>${esc(series.get(a).label)}</span>`).join('')
+  if (!arms.length || ids.length < 1) return ($('trend').innerHTML = '<p class="empty">Trends appear after a few nights.</p>')
+  const w = 760, h = 240, l = 56, r = 12, t = 8, b = 26
+  const all = arms.flatMap((a) => series.get(a).pts.map((p) => p.v))
+  const max = state.metric === 'pass' ? 100 : Math.max(...all) * 1.1 || 1
+  const x = (i) => l + (ids.length === 1 ? (w - l - r) / 2 : ((w - l - r) * i) / (ids.length - 1))
+  const y = (v) => t + (h - t - b) * (1 - v / max)
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(name)} over time">`
+  for (let k = 0; k <= 4; k++) {
+    const v = (max * k) / 4
+    s += `<line x1="${l}" x2="${w - r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${l - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`
+  }
+  const step = Math.ceil(ids.length / 8)
+  ids.forEach((id, i) => i % step === 0 && (s += `<text x="${x(i)}" y="${h - 6}" text-anchor="middle">${esc(id.slice(5, 10))}</text>`))
+  for (const a of arms) {
+    const pts = series.get(a).pts
+    const dash = a.startsWith('omp') ? ' stroke-dasharray="6 5"' : ''
+    s += `<polyline fill="none" stroke="${color(a)}" stroke-opacity="${alpha(a)}" stroke-width="2"${dash} points="${pts.map((p) => `${x(p.i)},${y(p.v)}`).join(' ')}"/>`
+    for (const p of pts) s += `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="4" fill="${color(a)}" fill-opacity="${alpha(a)}" data-tip="${esc(`<b>${esc(series.get(a).label)}</b><br>${esc(p.id)}: ${fmt(p.v)}`)}" data-night="${esc(p.id)}" style="cursor:pointer"/>`
+  }
+  $('trend').innerHTML = s + '</svg>'
+}
+
+function renderTable(rows) {
+  const cols = [
+    ['label', 'Harness · mode', (r) => label(r)],
+    ['pass', 'Hidden tests', (r) => (r.hidden_total ? r.hidden_passed / r.hidden_total : -1), (r) => (r.error ? '<span class="bad">failed</span>' : `<span class="${r.hidden_passed === r.hidden_total ? 'ok' : 'warn'}">${r.hidden_passed}/${r.hidden_total}</span>`), true],
+    ['minutes', 'Minutes', (r) => r.minutes, (r) => r.minutes?.toFixed(1) ?? '—', true],
+    ['cost', 'Cost', (r) => r.cost, (r) => (r.cost != null ? `$${r.cost.toFixed(3)}` : '—'), true],
+    ['tokens', 'Tokens', (r) => r.tokens, (r) => r.tokens?.toLocaleString('en') ?? '—', true],
+    ['tool_calls', 'Tool calls', (r) => r.tool_calls, (r) => r.tool_calls ?? '—', true],
+    ['own', 'Own tests', (r) => r.own_tests, (r) => (r.own_tests == null ? '—' : `<span class="${r.own_pass ? 'ok' : 'bad'}">${r.own_tests} ${r.own_pass ? 'pass' : 'fail'}</span>`), true],
+    ['build', 'Build · lint', (r) => (r.build_ok === false ? 1 : 0) + (r.lint_errors ?? 0), (r) => (r.build_ok == null ? '—' : `${r.build_ok ? '<span class="ok">ok</span>' : '<span class="bad">failed</span>'} · ${r.lint_errors ?? '?'} errors`)],
+    ['note', 'Note', (r) => (r.cached ? 1 : 0), (r) => [r.cached ? `<span class="chip">reused · ${esc(r.from)}</span>` : '', r.timed_out ? '<span class="chip warn">time limit</span>' : '', r.error ? `<span class="bad">${esc(r.error)}</span>` : ''].join(' ')]
+  ]
+  let list = rows.filter((r) => r.task === state.task)
+  if (state.sort) {
+    const [key, dir] = state.sort
+    const c = cols.find((c) => c[0] === key)
+    list = list.slice().sort((a, b) => ((c[2](a) ?? Infinity) > (c[2](b) ?? Infinity) ? 1 : -1) * dir)
+  } else list.sort((a, b) => ARM_ORDER.indexOf(a.arm) - ARM_ORDER.indexOf(b.arm))
+  const arrow = (k) => (state.sort?.[0] === k ? (state.sort[1] > 0 ? ' ↑' : ' ↓') : '')
+  let s = '<thead><tr>' + cols.map((c) => `<th class="${c[4] ? 'num' : ''}" aria-sort="${state.sort?.[0] === c[0] ? (state.sort[1] > 0 ? 'ascending' : 'descending') : 'none'}"><button data-sort="${c[0]}">${c[1]}${arrow(c[0])}</button></th>`).join('') + '</tr></thead><tbody>'
+  for (const r of list) s += `<tr>${cols.map((c, i) => `<td class="${c[4] ? 'num' : ''}">${i === 0 ? `<span class="dot" style="background:${color(r.arm)};opacity:${alpha(r.arm)}"></span>${esc(label(r))}` : c[3] ? c[3](r) : esc(c[2](r))}</td>`).join('')}</tr>`
+  $('runs').innerHTML = s + (list.length ? '' : `<tr><td colspan="${cols.length}" class="empty">No runs for this task on this night.</td></tr>`) + '</tbody>'
+}
+
+async function render() {
+  $('tasks').innerHTML = TASKS.map(([k, n]) => `<button aria-pressed="${state.task === k}" data-task="${k}">${n}</button>`).join('')
+  $('metrics').innerHTML = METRICS.map(([k, n]) => `<button aria-pressed="${state.metric === k}" data-metric="${k}">${n}</button>`).join('')
+  if (!state.night) return
+  const n = await night(state.night)
+  const cost = n.rows.filter((r) => !r.cached).reduce((s, r) => s + (r.cost ?? 0), 0)
+  $('sub').innerHTML = `${esc(new Date(n.date).toLocaleString())} · Cloth <span class="mono">${esc(n.commit.slice(0, 7))}</span> ${esc(n.subject)} · OMP ${esc(n.omp ?? '—')} · GPT-6 Luna, medium · spent $${cost.toFixed(2)}${n.done ? '' : ' · <span class="warn">still running</span>'}`
+  const arms = perArm(n.rows)
+  renderTiles(arms)
+  renderBars(arms)
+  renderTable(n.rows)
+  await renderTrend()
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-task],[data-metric],[data-sort],[data-night]')
+  if (!b) return
+  if (b.dataset.task) state.task = b.dataset.task
+  if (b.dataset.metric) state.metric = b.dataset.metric
+  if (b.dataset.sort) state.sort = state.sort?.[0] === b.dataset.sort ? (state.sort[1] > 0 ? [b.dataset.sort, -1] : null) : [b.dataset.sort, 1]
+  if (b.dataset.night) location.hash = b.dataset.night
+  void render()
+})
+document.addEventListener('mousemove', (e) => tip(e, e.target.closest('[data-tip]')?.dataset.tip))
+$('night').addEventListener('change', (e) => (location.hash = e.target.value))
+addEventListener('hashchange', () => {
+  state.night = decodeURIComponent(location.hash.slice(1)) || state.index[0]?.id
+  $('night').value = state.night
+  void render()
+})
+
+load('data/index.json')
+  .then((index) => {
+    state.index = index
+    if (!index.length) throw new Error('No nights yet')
+    $('night').innerHTML = index.map((n) => `<option value="${esc(n.id)}">${esc(n.id)}${n.done ? '' : ' (running)'}</option>`).join('')
+    state.night = index.some((n) => n.id === decodeURIComponent(location.hash.slice(1))) ? decodeURIComponent(location.hash.slice(1)) : index[0].id
+    $('night').value = state.night
+    return render()
+  })
+  .catch((err) => {
+    $('sub').textContent = err.message === 'No nights yet' ? 'No nights yet. The first run publishes here.' : `Couldn't load the results: ${err.message}`
+    void render()
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+// The nightly benchmark: each Cloth mode and OMP do the same two tasks with the same model, every run is scored with
+// tests the agents never see, and the night is published to the dashboard (bench/site, served at bench.example.internal).
+//
+//   node bench/nightly.mjs            (from the Cloth repo, after `npx electron-vite build`)
+//
+// Environment:
+//   OPENAI_API_KEY        required
+//   BENCH_HOME            data folder (default ~/cloth-bench): fixtures/berdbot.bundle, site/, results/, omp-cache/
+//   OMP_VERSION           OMP release to compare against, e.g. 18.20.2 (downloaded to BENCH_HOME/bin)
+//   OMP_RUNS_PER_VERSION  OMP runs to keep per task and arm (default 3); after that its results are reused until
+//                         OMP_VERSION changes, since OMP itself didn't change
+//   BENCH_ARMS            only these arms, e.g. cloth-chat,omp (default all)
+//   BENCH_TASKS           only these tasks: berdbot, recon (default both)
+//   BENCH_MINUTES         time limit per run (default 60)
+//   BENCH_SKIP_SAME_COMMIT  set: do nothing when this commit already has a finished night (the scheduled run)
+import { createHash } from 'node:crypto'
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { arch, homedir, hostname, platform } from 'node:os'
+import { join, resolve } from 'node:path'
+import { BENCH, berdbotTemplate, row, runCloth, runOmp, scoreBerdbot, scoreRecon, sh, workspace } from './lib.mjs'
+
+const HOME = resolve(process.env.BENCH_HOME ?? join(homedir(), 'cloth-bench'))
+const CLOTH = resolve(BENCH, '..')
+const MINUTES = Number(process.env.BENCH_MINUTES ?? 60)
+const OMP_KEEP = Number(process.env.OMP_RUNS_PER_VERSION ?? 3)
+const only = (v) => (v ? new Set(v.split(',').map((s) => s.trim()).filter(Boolean)) : null)
+const onlyArms = only(process.env.BENCH_ARMS)
+const onlyTasks = only(process.env.BENCH_TASKS)
+
+const TASKS = [
+  { task: 'berdbot', name: 'Berdbot queue commands' },
+  { task: 'recon', name: 'Order reconciler' }
+]
+const ARMS = [
+  { arm: 'cloth-chat', harness: 'Cloth', mode: 'Chat', cloth: 'chat' },
+  { arm: 'cloth-plan', harness: 'Cloth', mode: 'Plan', cloth: 'plan' },
+  { arm: 'cloth-spec', harness: 'Cloth', mode: 'Spec → Ship', cloth: 'spec' },
+  { arm: 'cloth-openspec', harness: 'Cloth', mode: 'OpenSpec', cloth: 'openspec' },
+  { arm: 'omp', harness: 'OMP', mode: 'Default', plan: false },
+  { arm: 'omp-plan', harness: 'OMP', mode: 'Plan (plan-yolo)', plan: true }
+]
+
+const log = (m) => console.log(`[bench ${new Date().toISOString().slice(11, 19)}] ${m}`)
+const readJson = (p, fallback) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : fallback)
+
+/** The OMP release binary for this machine, downloaded once and checked against the release's SHA256SUMS. */
+async function ompBinary(version) {
+  const os = platform() === 'darwin' ? 'darwin' : 'linux'
+  const asset = `omp-${os}-${arch() === 'arm64' ? 'arm64' : 'x64'}`
+  const bin = join(HOME, 'bin', `${asset}-${version}`)
+  if (existsSync(bin)) return bin
+  const base = `https://github.com/can1357/oh-my-pi/releases/download/v${version}`
+  log(`downloading OMP ${version} (${asset})`)
+  const get = async (url) => {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`)
+    return Buffer.from(await r.arrayBuffer())
+  }
+  const [data, sums] = await Promise.all([get(`${base}/${asset}`), get(`${base}/SHA256SUMS.txt`)])
+  const want = sums
+    .toString()
+    .split('\n')
+    .find((l) => l.trim().endsWith(asset))
+    ?.split(/\s+/)[0]
+  const got = createHash('sha256').update(data).digest('hex')
+  if (!want || want !== got) throw new Error(`OMP ${asset} checksum mismatch (expected ${want}, got ${got})`)
+  mkdirSync(join(HOME, 'bin'), { recursive: true })
+  writeFileSync(bin, data)
+  chmodSync(bin, 0o755)
+  return bin
+}
+
+function publish(night) {
+  const site = join(HOME, 'site')
+  mkdirSync(join(site, 'data', 'nights'), { recursive: true })
+  copyFileSync(join(BENCH, 'site', 'index.html'), join(site, 'index.html'))
+  writeFileSync(join(site, 'data', 'nights', `${night.id}.json`), JSON.stringify(night))
+  const index = readJson(join(site, 'data', 'index.json'), []).filter((n) => n.id !== night.id)
+  const cost = night.rows.filter((r) => !r.cached).reduce((n, r) => n + (r.cost ?? 0), 0)
+  index.unshift({ id: night.id, date: night.date, commit: night.commit, subject: night.subject, omp: night.omp, runs: night.rows.length, cost: +cost.toFixed(4), done: night.done })
+  index.sort((a, b) => b.date.localeCompare(a.date))
+  writeFileSync(join(site, 'data', 'index.json'), JSON.stringify(index, null, 1))
+}
+
+function summary(night) {
+  const file = process.env.GITHUB_STEP_SUMMARY
+  const lines = [`## Nightly benchmark ${night.id}`, '', `Cloth \`${night.commit.slice(0, 7)}\` ${night.subject} · OMP ${night.omp ?? '—'} · GPT-6 Luna, medium · [dashboard](http://bench.example.internal/#${night.id})`, '']
+  lines.push('| Task | Harness | Mode | Hidden tests | Minutes | Cost | Tokens | Tool calls | Note |', '|---|---|---|---|---|---|---|---|---|')
+  for (const r of night.rows) {
+    const note = [r.cached ? `reused from ${r.from}` : '', r.timed_out ? 'time limit' : '', r.error ?? ''].filter(Boolean).join('; ')
+    lines.push(`| ${r.task} | ${r.harness} | ${r.mode} | ${r.hidden_passed}/${r.hidden_total} | ${r.minutes ?? '—'} | ${r.cost != null ? `$${r.cost.toFixed(3)}` : '—'} | ${r.tokens?.toLocaleString('en') ?? '—'} | ${r.tool_calls ?? '—'} | ${note} |`)
+  }
+  const text = lines.join('\n') + '\n'
+  if (file) appendFileSync(file, text)
+  else console.log(text)
+}
+
+async function main() {
+  if (!process.env.OPENAI_API_KEY) throw new Error('Set OPENAI_API_KEY')
+  const commit = sh('git', ['rev-parse', 'HEAD'], { cwd: CLOTH }).stdout.trim()
+  const subject = sh('git', ['log', '-1', '--format=%s'], { cwd: CLOTH }).stdout.trim()
+  const date = new Date().toISOString()
+  // Scheduled runs: nothing changed in Cloth since the last finished night, so there's nothing new to measure.
+  const last = readJson(join(HOME, 'site', 'data', 'index.json'), []).find((n) => n.done)
+  if (process.env.BENCH_SKIP_SAME_COMMIT && last?.commit === commit) {
+    const note = `Skipped: Cloth \`${commit.slice(0, 7)}\` was already benchmarked on ${last.id}.\n`
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, note)
+    return log(note.trim())
+  }
+  let id = `${date.slice(0, 10)}-${commit.slice(0, 7)}`
+  for (let n = 2; existsSync(join(HOME, 'site', 'data', 'nights', `${id}.json`)); n++) id = `${date.slice(0, 10)}-${commit.slice(0, 7)}-${n}`
+
+  const arms = ARMS.filter((a) => !onlyArms || onlyArms.has(a.arm))
+  const tasks = TASKS.filter((t) => !onlyTasks || onlyTasks.has(t.task))
+  const ompVersion = arms.some((a) => a.harness === 'OMP') ? process.env.OMP_VERSION : null
+  if (arms.some((a) => a.harness === 'OMP') && !ompVersion) throw new Error('Set OMP_VERSION')
+  const omp = ompVersion ? await ompBinary(ompVersion) : null
+  const night = { id, date, commit, subject, omp: ompVersion, host: hostname(), minutesLimit: MINUTES, done: false, rows: [] }
+  const resultsDir = join(HOME, 'results', id)
+  log(`night ${id}: ${arms.length} arms × ${tasks.length} tasks, results in ${resultsDir}`)
+
+  for (const { task, name } of tasks) {
+    const template = task === 'berdbot' ? berdbotTemplate(join(HOME, 'fixtures', 'berdbot.bundle'), join(HOME, 'work', 'berdbot-template')) : null
+    const prompt = join(BENCH, 'tasks', task, 'prompt.txt')
+    for (const a of arms) {
+      const base = { task, task_name: name, arm: a.arm, harness: a.harness, mode: a.mode }
+      // OMP didn't change since its last runs: reuse them once there are enough.
+      const cacheDir = a.harness === 'OMP' ? join(HOME, 'omp-cache', ompVersion, `${task}-${a.arm}`) : null
+      if (cacheDir) {
+        const cached = existsSync(cacheDir) ? readdirSync(cacheDir).sort().map((f) => readJson(join(cacheDir, f))) : []
+        if (cached.length >= OMP_KEEP) {
+          for (const c of cached) night.rows.push({ ...c, ...base, cached: true, from: c.night })
+          log(`${task} ${a.arm}: reusing ${cached.length} runs of OMP ${ompVersion}`)
+          continue
+        }
+      }
+      const out = join(resultsDir, `${task}-${a.arm}`)
+      const ws = workspace(task, join(HOME, 'work', 'current', `${task}-${a.arm}`), template)
+      log(`${task} ${a.arm}: running`)
+      let r
+      try {
+        const result = a.harness === 'Cloth' ? await runCloth({ cloth: CLOTH, mode: a.cloth, ws, prompt, out, home: join(HOME, 'work', 'homes', `${task}-${a.arm}`), minutes: MINUTES }) : await runOmp({ omp, plan: a.plan, ws, prompt, out, minutes: MINUTES })
+        const score = task === 'berdbot' ? scoreBerdbot(ws, out) : scoreRecon(ws, out)
+        r = { ...row({ ...a, task, out, result, score }), ...base, night: id }
+      } catch (err) {
+        r = { ...base, night: id, error: String(err?.message ?? err).slice(0, 500), hidden_passed: 0, hidden_total: 0 }
+      }
+      night.rows.push(r)
+      if (cacheDir && !r.error) {
+        mkdirSync(cacheDir, { recursive: true })
+        writeFileSync(join(cacheDir, `${id}.json`), JSON.stringify(r))
+      }
+      rmSync(ws, { recursive: true, force: true })
+      log(`${task} ${a.arm}: hidden ${r.hidden_passed}/${r.hidden_total}, ${r.minutes ?? '?'} min, $${r.cost ?? '?'}${r.error ? ` (${r.error})` : ''}`)
+      publish(night)
+    }
+  }
+  night.done = true
+  publish(night)
+  summary(night)
+  // Raw results (transcripts, logs, patches) for the last 14 nights.
+  const all = existsSync(join(HOME, 'results')) ? readdirSync(join(HOME, 'results')).sort() : []
+  for (const old of all.slice(0, Math.max(0, all.length - 14))) rmSync(join(HOME, 'results', old), { recursive: true, force: true })
+  const cloth = night.rows.filter((r) => r.harness === 'Cloth')
+  if (cloth.length && cloth.every((r) => r.error)) throw new Error('Every Cloth run failed to start or report; see the results folder')
+}
+
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

@@ -1,0 +1,24 @@
+# Serves the nightly benchmark dashboard (BENCH_HOME/site, written by bench/nightly.mjs) at http://bench.example.internal
+# through the Pi's Traefik. On the Pi: cd ~/cloth-bench/site-server && docker compose up -d
+name: cloth-bench-site
+services:
+  cloth-bench-site:
+    image: caddy:2-alpine
+    container_name: cloth-bench-site
+    restart: unless-stopped
+    command: caddy file-server --root /srv --listen :80
+    volumes:
+      - /home/pi/cloth-bench/site:/srv:ro
+    mem_limit: 64m
+    networks:
+      - dokploy-network
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.cloth-bench.rule=Host(`bench.example.internal`)
+      - traefik.http.routers.cloth-bench.entrypoints=web
+      - traefik.http.services.cloth-bench.loadbalancer.server.port=80
+
+networks:
+  dokploy-network:
+    external: true
