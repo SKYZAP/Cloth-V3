@@ -81,7 +81,10 @@ jobs:
       - name: Build
         if: steps.release.outputs.tag != ''
         working-directory: cloth
-        run: npx electron-vite build
+        # OpenSpec mode runs the OpenSpec CLI, which the installers ship as a sidecar: stage it like `npm run sidecars`.
+        run: |
+          node scripts/stage-openspec.mjs
+          npx electron-vite build
       - name: Run the benchmark
         if: steps.release.outputs.tag != ''
         env:
