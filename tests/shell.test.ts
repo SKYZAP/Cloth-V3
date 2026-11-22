@@ -183,8 +183,12 @@ describe('background commands', () => {
     const id = /bg_[0-9a-f]+/.exec(started)?.[0]
     expect(id).toBeTruthy()
     expect(bg.list(s)).toEqual([expect.objectContaining({ id, status: 'running', cwd: '.' })])
-    await wait(800)
-    const first = await run(t, 'shell_output', { id })
+    // Until its first line (a slow machine, like the Pi's CI runner, takes a while to start the shell).
+    let first = ''
+    for (const end = Date.now() + 10_000; Date.now() < end && !first.includes('tick'); ) {
+      await wait(200)
+      first = await run(t, 'shell_output', { id })
+    }
     expect(first).toContain('still running')
     expect(first).toContain('tick')
     // Only lines that match, and only what is new since the last read.
