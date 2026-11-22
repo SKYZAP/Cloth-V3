@@ -13,6 +13,7 @@ import type { ChatEvent, UsageSource, WorkflowEvent } from '@shared/types'
 import { loadLoginShellPath } from './core/shell-env'
 import { runPendingReset } from './core/reset'
 import type { ComputerController } from './computer/tool'
+import { openSplash, type Splash } from './splash'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 mark('main loaded')
@@ -29,6 +30,8 @@ const firstExisting = (...paths: string[]) => paths.find((p) => existsSync(p)) ?
 let mainWindow: BrowserWindow | null = null
 let services: Services | null = null
 let computer: ComputerController | null = null
+let splash: Splash | null = null
+let splashShown = false
 
 const secrets: Secrets = {
   encrypt: (plain) => (safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(plain) : Buffer.from(`plain:${plain}`)),
@@ -61,6 +64,8 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     mark('shown')
     mainWindow?.show()
+    if (splashShown) mark('splash closed')
+    splash?.close()
   })
   mainWindow.webContents.once('did-finish-load', () => mark('page loaded'))
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -135,6 +140,10 @@ else {
 
   void app.whenReady().then(async () => {
     mark('ready')
+    // A start that takes longer than this shows the startup window until Cloth's window is ready. Probes skip it
+    // unless CLOTH_SPLASH_DELAY is set (0 shows it straight away).
+    const splashDelay = process.env.CLOTH_SPLASH_DELAY ?? (process.env.CLOTH_SMOKE || process.env.CLOTH_PROBE ? null : '1500')
+    if (splashDelay !== null) splash = openSplash({ delayMs: Number(splashDelay) || 0, version: app.getVersion(), icon: join(__dirname, '../../resources/icon.png'), onShown: () => ((splashShown = true), mark('splash shown')) })
     // Runs from source get their own id, so Windows never mixes them (and Electron's icon) up with the installed Cloth on the taskbar.
     app.setAppUserModelId(app.isPackaged ? 'dev.cloth.app' : 'dev.cloth.app.source')
     registerIpc(async (path, args) => (await dispatchReady)(path, args))
@@ -146,6 +155,7 @@ else {
     })
     createWindow()
     mark('window')
+    splash?.step('Loading the agent and its tools…')
     // Loading these blocks this thread for over a second, and the page needs this thread to load and draw: let the
     // window show Cloth's frame first (its first calls wait for the services), with a cap in case it never reports.
     await new Promise<void>((resolve) => {
@@ -157,6 +167,7 @@ else {
     await loadLoginShellPath().catch(() => undefined)
     const [{ createServices }, { createApi }, { applyNetworkCertificate }, { createComputer }, { default: electronUpdater }] = await modules
     mark('modules')
+    splash?.step('Starting services…')
     // Packaged: sidecars + examples are extraResources. Dev: repo-local staging folders.
     const resources = app.isPackaged ? process.resourcesPath : null
     services = createServices({
@@ -199,6 +210,7 @@ else {
     markDispatchReady(dispatch)
     markServicesReady(services)
     mark('api')
+    splash?.step('Starting the MCP server and the remote link…')
     services.remote.attach({ dispatch, keepAwake, version: app.getVersion() })
     services.workflows.startScheduler()
     services.boards.start()
