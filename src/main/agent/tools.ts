@@ -756,13 +756,16 @@ export const BUILTINS: BuiltinSpec[] = [
       const max = p.maxResults ?? 80
       const hits: string[] = []
       const base = await realpath(ctx.scope.workspace!)
-      const root = await confine(ctx.scope.workspace!, p.path || '.')
+      const root = await confine(ctx.scope.workspace!, p.path || '.', { read: true })
+      // Through a linked node_modules the files are elsewhere: show them under the path that was asked for.
+      const outside = relative(base, root).startsWith('..')
+      const shown = (full: string) => (outside ? join(p.path || '.', relative(root, full)) : relative(base, full)).split(sep).join('/')
       const searchFile = async (full: string) => {
         if ((await stat(full)).size > 1_000_000) return
         const text = await readFile(full, 'utf8').catch(() => '')
         if (text.includes('\u0000')) return
         text.split('\n').forEach((line, i) => {
-          if (hits.length < max && re.test(line)) hits.push(`${relative(base, full).split(sep).join('/')}:${i + 1}: ${line.trim().slice(0, 200)}`)
+          if (hits.length < max && re.test(line)) hits.push(`${shown(full)}:${i + 1}: ${line.trim().slice(0, 200)}`)
         })
       }
       const walk = async (dir: string): Promise<void> => {

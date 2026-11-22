@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai'
@@ -141,6 +141,37 @@ describe('workspace file tools', () => {
     expect(await confine(root, 'src/new/file.ts')).toContain(join('src', 'new', 'file.ts'))
     await expect(confine(root, '../x')).rejects.toThrow(/outside/)
     await expect(confine(root, join(tmpdir(), 'elsewhere.txt'))).rejects.toThrow(/outside/)
+  })
+
+  it('reads (never writes) go through a linked node_modules, as in a Spec → Ship worker tree; other links stay shut', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'cloth-link-'))
+    const main = join(base, 'main')
+    const worker = join(base, 'worker')
+    mkdirSync(join(main, 'node_modules', 'lib'), { recursive: true })
+    writeFileSync(join(main, 'node_modules', 'lib', 'index.js'), 'export function useQueue() {}\n')
+    mkdirSync(join(base, 'secrets'))
+    writeFileSync(join(base, 'secrets', 'key.txt'), 'secret\n')
+    mkdirSync(worker)
+    writeFileSync(join(worker, 'app.ts'), 'export {}\n')
+    // The same link worktrees.ts makes: a junction on Windows, a symlink elsewhere.
+    const kind = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(join(main, 'node_modules'), join(worker, 'node_modules'), kind)
+    symlinkSync(join(base, 'secrets'), join(worker, 'secrets'), kind)
+
+    expect(await confine(worker, 'node_modules/lib/index.js', { read: true })).toBe(realpathSync(join(main, 'node_modules', 'lib', 'index.js')))
+    await expect(confine(worker, 'node_modules/lib/index.js')).rejects.toThrow(/resolves through a link/)
+    await expect(confine(worker, 'secrets/key.txt', { read: true })).rejects.toThrow(/resolves through a link/)
+    await expect(confine(worker, '../main/node_modules/lib/index.js', { read: true })).rejects.toThrow(/outside/)
+
+    const tools = buildWorkspaceTools({ root: worker, sessionId: 's1', access: 'write', shell: false, approvals: null, checkpoints: null, autoApprove: () => 'all' })
+    const run = (name: string, args: object) => tools.find((t) => t.name === name)!.execute('t', args)
+    const text = (r: { content: { type: string; text?: string }[] }) => r.content.map((c) => c.text ?? '').join('')
+    expect(text(await run('read', { path: 'node_modules/lib/index.js' }))).toContain('useQueue')
+    expect(text(await run('ls', { path: 'node_modules/lib' }))).toContain('index.js')
+    await expect(run('read', { path: 'secrets/key.txt' })).rejects.toThrow(/resolves through a link/)
+    await expect(run('write', { path: 'node_modules/lib/index.js', content: 'changed' })).rejects.toThrow(/resolves through a link/)
+    await expect(run('edit', { path: 'node_modules/lib/index.js', edits: [{ oldText: 'useQueue', newText: 'x' }] })).rejects.toThrow(/resolves through a link/)
+    expect(readFileSync(join(main, 'node_modules', 'lib', 'index.js'), 'utf8')).toBe('export function useQueue() {}\n')
   })
 
   it('makeDiff counts lines for new and modified files', () => {

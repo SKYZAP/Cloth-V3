@@ -4,7 +4,7 @@ import type { CodeChecks } from '@shared/formatters'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { glob, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { glob, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 import { structuredPatch } from 'diff'
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
@@ -51,10 +51,18 @@ const MAX_DIFF_LINES = 600
 // ─── Path confinement ─────────────────────────────────────────────────────────
 
 /**
+ * Dependency folders that may be a link to somewhere else: a worker's tree in Spec → Ship links the chat's
+ * node_modules (worktrees.ts), and pnpm/monorepos link packages too. Reading through them is allowed.
+ */
+export const DEPENDENCY_DIRS = ['node_modules']
+
+/**
  * Resolve `p` against the workspace and make sure it stays inside it — including through
  * symlinks (the nearest existing ancestor is resolved with realpath). Returns the absolute path.
+ * `read`: a path through a linked dependency folder (DEPENDENCY_DIRS) may lead outside, so the agent can read a
+ * library's code; nothing is ever written there, and any other link out of the workspace is still refused.
  */
-export async function confine(root: string, p: string): Promise<string> {
+export async function confine(root: string, p: string, opts: { read?: boolean } = {}): Promise<string> {
   const rootReal = await realpath(root)
   const abs = isAbsolute(p) ? resolve(p) : resolve(rootReal, p)
   let probe = abs
@@ -71,8 +79,23 @@ export async function confine(root: string, p: string): Promise<string> {
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
   }
   if (!inside(real, rootReal) && !inside(abs, rootReal)) throw new Error(`"${p}" is outside the workspace (${root}). Only files inside the workspace can be accessed.`)
-  if (!inside(real, rootReal)) throw new Error(`"${p}" resolves through a link to a location outside the workspace.`)
+  if (!inside(real, rootReal)) {
+    if (opts.read && (await throughDependencyLink(rootReal, inside(abs, rootReal) ? abs : resolve(rootReal, relative(root, abs))))) return real
+    throw new Error(`"${p}" resolves through a link to a location outside the workspace.`)
+  }
   return real
+}
+
+/** Whether the first link on the way from the workspace root to `abs` is a dependency folder (DEPENDENCY_DIRS). */
+async function throughDependencyLink(rootReal: string, abs: string): Promise<boolean> {
+  let dir = rootReal
+  for (const part of relative(rootReal, abs).split(sep).filter(Boolean)) {
+    dir = join(dir, part)
+    const st = await lstat(dir).catch(() => null)
+    if (!st) return false
+    if (st.isSymbolicLink()) return DEPENDENCY_DIRS.includes(part)
+  }
+  return false
 }
 
 // ─── Approvals ───────────────────────────────────────────────────────────────
@@ -437,6 +460,8 @@ export function describeWorkspaceTools(): BuiltinToolInfo[] {
 /** pi's coding tools, confined to the workspace, with approvals and checkpoints on every change. */
 export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   const inside = (p: string) => confine(o.root, p)
+  /** For tools that only read: may follow a linked node_modules out of the workspace (confine). */
+  const readable = (p: string) => confine(o.root, p, { read: true })
   const commandShell: 'bash' | 'powershell' = o.shellExec || process.platform !== 'win32' ? 'bash' : 'powershell'
   /** Why a command needs a person's look (risk.ts), or null; never in a container. */
   const commandRiskOf = async (command: string, cwd: string, shell: 'bash' | 'powershell' = commandShell): Promise<string | null> =>
@@ -544,7 +569,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
     }),
     async execute(_id, params, signal) {
       const p = params as { pattern: string; language?: string; path?: string; maxResults?: number }
-      const { matches, files } = await astSearch(await realpath(o.root), await inside(p.path || '.'), { pattern: p.pattern, lang: resolveLanguage(p.language), max: p.maxResults ?? 60, signal })
+      const { matches, files } = await astSearch(await realpath(o.root), await readable(p.path || '.'), { pattern: p.pattern, lang: resolveLanguage(p.language), max: p.maxResults ?? 60, signal })
       const text = matches.length
         ? matches.map((m) => `${m.file}:${m.line}: ${m.text.length > 300 ? m.text.slice(0, 300) + '…' : m.text}`).join('\n\n')
         : `No matches in ${files} file${files === 1 ? '' : 's'}.`
@@ -595,7 +620,7 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
         return text(await describeLocations(rootReal, found.filter((s) => s.location).map((s) => s.location!), 40))
       }
       if (!p.path) throw new Error('path is required')
-      const abs = await inside(p.path)
+      const abs = await readable(p.path)
       const rel = relative(rootReal, abs).split(sep).join('/')
       const server = await o.lsp.server(rootReal, abs)
       if (p.action === 'diagnostics') return text(formatDiagnostics(rel, await server.diagnostics(abs)))
@@ -657,23 +682,23 @@ export function buildWorkspaceTools(o: WorkspaceOptions): AgentTool<any>[] {
   }
 
   const readOps = {
-    readFile: async (p: string) => readFile(await inside(p)),
-    access: async (p: string) => void (await stat(await inside(p)))
+    readFile: async (p: string) => readFile(await readable(p)),
+    access: async (p: string) => void (await stat(await readable(p)))
   }
   const tools: AgentTool<any>[] = [
     readTool(createReadTool(o.root, { operations: readOps })),
     createLsTool(o.root, {
       operations: {
-        exists: async (p) => existsSync(await inside(p)),
-        stat: async (p) => stat(await inside(p)),
-        readdir: async (p) => readdir(await inside(p))
+        exists: async (p) => existsSync(await readable(p)),
+        stat: async (p) => stat(await readable(p)),
+        readdir: async (p) => readdir(await readable(p))
       }
     }),
     createFindTool(o.root, {
       operations: {
-        exists: async (p) => existsSync(await inside(p)),
+        exists: async (p) => existsSync(await readable(p)),
         glob: async (pattern, cwd, opts) => {
-          const base = await inside(cwd)
+          const base = await readable(cwd)
           const out: string[] = []
           const own = opts.ignore.map((i) => i.replace(/^\*\*\/|\/\*\*$/g, ''))
           // Asked to look inside an ignored folder (a package in node_modules, a build's output):

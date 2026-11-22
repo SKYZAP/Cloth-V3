@@ -250,7 +250,8 @@ export async function removeWorkerTree(t: WorkerTree, dropBranch: boolean): Prom
   })
 }
 
-/** Folders the chat's checkout has that git ignores but a worker needs to build and test (linked, never copied). */
+/** Folders the chat's checkout has that git ignores but a worker needs to build and test (linked, never copied). The file
+ * tools may read through these links (DEPENDENCY_DIRS in workspace.ts). */
 const DEPS = ['node_modules']
 
 /** Link the checkout's dependencies into a worker's tree: a junction on Windows, a symlink elsewhere. */
