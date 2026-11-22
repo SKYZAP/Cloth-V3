@@ -33,7 +33,8 @@ describe('language servers', () => {
     const root = tsProject()
     const main = join(root, 'src', 'main.ts')
     const server = await manager.server(root, main)
-    const diags = await server.diagnostics(main)
+    // A cold TypeScript server takes a while on a slow machine (the Pi's CI runner).
+    const diags = await server.diagnostics(main, 60_000)
     expect(diags.some((d) => d.severity === 1 && /not assignable to type 'number'/.test(d.message))).toBe(true)
 
     const uri = await server.sync(main)

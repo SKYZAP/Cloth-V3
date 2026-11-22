@@ -33,7 +33,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Tests
-        run: npx vitest run --reporter=default --reporter=json --outputFile.json=test-results.json
+        # The Pi is several times slower than a PC: longer per-test time limits.
+        run: npx vitest run --testTimeout=60000 --reporter=default --reporter=json --outputFile.json=test-results.json
       - name: Summary
         if: always()
         run: |

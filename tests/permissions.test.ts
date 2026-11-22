@@ -34,7 +34,8 @@ function setup(permissions: Permissions) {
 /** Wait for the chat's run to end, answering approvals as they come. */
 async function settle(env: ReturnType<typeof setup>, onApproval?: (a: PendingApproval) => void) {
   const seen = new Set<string>()
-  for (let i = 0; i < 500; i++) {
+  // A time limit rather than a number of looks: a slow machine (the Pi's CI runner) takes longer per turn.
+  for (const end = Date.now() + 25_000; Date.now() < end; ) {
     for (const e of env.events) {
       const ev = e.payload as ChatEvent
       if (e.channel === 'chat' && ev.type === 'approval' && !seen.has(ev.approval.id)) {
