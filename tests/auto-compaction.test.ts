@@ -6,7 +6,8 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { fauxAssistantMessage, fauxToolCall, type TranscriptContext, type UserMessage } from '@earendil-works/pi-ai'
 import { registerFauxProvider } from '@earendil-works/pi-ai/compat'
 import type { ChatEvent, ToolTrace, UiMessage } from '../src/shared/types'
-import { budget, compactedHistory, findCut, planCompaction, splitSummary, withSummary } from '../src/main/agent/compaction'
+import { budget, compactedHistory, datedSummaries, findCut, planCompaction, splitSummary, withSummary } from '../src/main/agent/compaction'
+import { clampMaxTokensToContext } from '@earendil-works/pi-ai/api/simple-options'
 import { makeServices } from './helpers'
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -116,6 +117,32 @@ describe('cutting a long turn', () => {
     expect(JSON.stringify(carrier.content)).toContain('Read c1, c2 and c3.')
     expect(JSON.stringify(carrier.content)).toContain('including the work already done')
     expect(splitSummary(carrier).summary).toBe('## Goal\n- read files')
+  })
+
+  it('dates the summary when it was made, so usage reported before it no longer sizes the reply', () => {
+    // As it happened: a step sent ~284k tokens and was kept whole; after summarising, the history is far smaller.
+    const model = { contextWindow: 288_000 } as Parameters<typeof clampMaxTokensToContext>[0]
+    const plan = planCompaction(turn, 300, { steps: true })!
+    const kept = compactedHistory(plan, 'summary').map((m) =>
+      m.role === 'assistant' ? ({ ...m, usage: { input: 0, output: 100, cacheRead: 24_000, cacheWrite: 260_000, totalTokens: 284_100 } } as AgentMessage) : m
+    )
+    const at = 100
+    // With the request's old date the stale usage wins: the reply gets almost nothing.
+    expect(clampMaxTokensToContext(model, { messages: kept } as never, 32_000)).toBeLessThan(100)
+    const dated = datedSummaries(kept, at)
+    expect(dated[1].timestamp).toBe(at)
+    expect(clampMaxTokensToContext(model, { messages: dated } as never, 32_000)).toBe(32_000)
+    // Only the summary's carrier changes; nothing to date gives the same array back.
+    expect(dated.filter((m, i) => m !== kept[i])).toHaveLength(1)
+    expect(datedSummaries(turn, at)).toBe(turn)
+    expect(datedSummaries(kept, 0)).toBe(kept)
+    expect(datedSummaries(dated, at)).toBe(dated)
+  })
+
+  it('tells the model to carry on after summarising mid-turn', () => {
+    const kept = compactedHistory(planCompaction(turn, 300, { steps: true })!, 'x')
+    expect(JSON.stringify(kept[1])).toMatch(/Carry on with that work from where it stopped/)
+    expect(splitSummary(kept[1] as UserMessage).summary).toBe('x')
   })
 
   it('folds an earlier summary on the request into the new one', () => {

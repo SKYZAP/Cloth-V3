@@ -46,7 +46,7 @@ import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { computerOffered, type ComputerController } from '../computer/tool'
 import { pruneScreenshots } from '../computer/prune'
-import { budget, compactedHistory, cutOffEmpty, estimateHistory, fitToolResults, latestResults, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
+import { budget, compactedHistory, cutOffEmpty, datedSummaries, estimateHistory, fitToolResults, latestResults, planCompaction, splitSummary, summarize, SUMMARY_OPEN, withSummary } from './compaction'
 import { estimateTokens } from '@earendil-works/pi-coding-agent'
 import type { UsageService } from '../core/usage'
 import type { HubAdmin } from './admin'
@@ -2165,8 +2165,10 @@ export class ChatService {
       const send = (ms: AgentMessage[]) => {
         const total = estimateHistory(ms, since())
         const latest = latestResults(ms).reduce((n, m) => n + estimateTokens(m), 0)
-        const fitted = total > threshold && latest ? fitToolResults(ms, Math.max(Math.round(window / 10), threshold - (total - latest))) : ms
+        let fitted = total > threshold && latest ? fitToolResults(ms, Math.max(Math.round(window / 10), threshold - (total - latest))) : ms
         if (fitted !== ms) this.ctx.log('chat', `tool results trimmed to fit the context window (${total} tokens, limit ${threshold})`, id)
+        // A summary is dated when it was made, so the reply's output limit isn't sized from usage reported before it.
+        fitted = datedSummaries(fitted, since())
         return changed || fitted !== ms ? { context: { ...context, messages: fitted === ms ? ms.slice() : fitted } } : undefined
       }
       if (!this.settings.get().autoCompact || messages.findLast((m) => m.role !== 'system')?.role !== 'toolResult') return send(messages)

@@ -13,7 +13,7 @@ export const SUMMARY_OPEN = '<conversation-summary>'
 export const SUMMARY_CLOSE = '</conversation-summary>'
 const PREAMBLE = 'The conversation so far was summarised to save context. Summary of everything before this message:'
 /** A summary taken in the middle of a turn also covers the work already done on that turn's request. */
-const PREAMBLE_IN_TURN = 'The conversation so far was summarised to save context, including the work already done on the request in this message. Summary:'
+const PREAMBLE_IN_TURN = 'The conversation so far was summarised to save context, including the work already done on the request in this message. Carry on with that work from where it stopped (see In Progress and Next Steps); the summarising was automatic, so do not stop to report it or ask whether to continue. Summary:'
 
 /** Summarise automatically once the history reaches this share of the model's context window. */
 export const AUTO_COMPACT_AT = 0.75
@@ -188,6 +188,24 @@ export function splitSummary(m: UserMessage): { summary: string | null; message:
   if (!block) return { summary: null, message: m }
   const summary = block.text.slice(SUMMARY_OPEN.length, block.text.lastIndexOf(SUMMARY_CLOSE)).trim().replace(PREAMBLE, '').replace(PREAMBLE_IN_TURN, '').trim()
   return { summary, message: { ...m, content: m.content.filter((c) => c !== block) } }
+}
+
+/**
+ * The history as a request sends it: a message carrying a summary dated when the summary was made (`at`), not when it
+ * was first sent. The model library sizes the reply's output limit from the latest reply's reported usage unless a
+ * message before it is newer, so with the old date a step kept whole across a summary still reported the context as
+ * it was before summarising, and the next reply got almost no room (cut off at the 16-token minimum). Returns
+ * `messages` itself when nothing changes.
+ */
+export function datedSummaries(messages: AgentMessage[], at: number): AgentMessage[] {
+  if (!at) return messages
+  let out: AgentMessage[] | null = null
+  messages.forEach((m, i) => {
+    if (m.role !== 'user' || m.timestamp >= at || typeof m.content === 'string' || !m.content.some((c) => c.type === 'text' && c.text.startsWith(SUMMARY_OPEN))) return
+    out ??= messages.slice()
+    out[i] = { ...m, timestamp: at }
+  })
+  return out ?? messages
 }
 
 export function withSummary(m: UserMessage, summary: string, inTurn = false): UserMessage {
