@@ -531,6 +531,12 @@ export interface ClothApi {
     status(): Promise<import('./swatches').SwatchServerStatus>
     /** Save it as a file where the person picks; false when they cancelled. */
     saveAs(id: string): Promise<boolean>
+    /** A mockup at a version (default: the latest): its boards without their markup. */
+    mockup(id: string, version?: number): Promise<import('./swatches').MockupInfo>
+    /** Each board's thumbnail as a data URL, null until made (a 'thumbs' event follows). */
+    thumbs(id: string, version?: number): Promise<Record<string, string | null>>
+    /** Save boards as PNGs (one board: a file; several: a folder), with tweak values by board. False when cancelled. */
+    exportBoards(id: string, opts: { names: string[]; version?: number; tweaks?: Record<string, Record<string, unknown>> }): Promise<boolean>
   }
   /** Phone app: pairing on the desktop; file browsing and image bytes for the phone. */
   remote: {

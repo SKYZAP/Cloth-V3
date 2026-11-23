@@ -147,6 +147,20 @@ export function createServices(opts: {
   if (!opts.docker || opts.dockerSpawn) containers.watcher = ports
   const chat = new ChatService(ctx, runtime, settings, skills, providers.usage, approvals, checkpoints, projects, containers, agents)
   const terminals = new TerminalService(ctx, containers, opts.pty)
+  // A chat's mockups use its project's design system: its tokens and component styles go into every board.
+  swatches.designFor = (sessionId) => {
+    let projectId: string | null = null
+    try {
+      projectId = sessionId ? chat.get(sessionId).projectId : null
+    } catch {
+      return null
+    }
+    const design = designs.find(projects.find(projectId)?.designId)
+    if (!design) return null
+    const files = designs.files(design.id)
+    return { name: design.name, css: `${files['tokens.css'] ?? ''}
+${files['components.css'] ?? ''}` }
+  }
   // Background commands (run_in_background) show as tabs in their chat's Terminals panel.
   background.showIn(terminals)
   runtime.attachTerminals(terminals)

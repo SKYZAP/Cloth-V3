@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
-import { ArrowClockwise, ArrowUpRight, FileHtml, FileText, ImageSquare, LinkSimple, Swatches as SwatchesIcon, X } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowUpRight, FileHtml, FileText, ImageSquare, SquaresFour, LinkSimple, Swatches as SwatchesIcon, X } from '@phosphor-icons/react'
 import type { Swatch, SwatchLink } from '@shared/swatches'
 import { api, useEvent } from '@/lib/api'
 import { useApp } from '@/lib/store'
 import { isMobile } from '@/lib/platform'
 import { closePanelSwatch, openSwatch, pickPanelSwatch, useSwatchNav } from '@/lib/swatchNav'
 import { IconButton } from '@/components/ui'
+import { MockupCanvas } from '@/components/MockupCanvas'
 
 const FORMAT: Record<Swatch['format'], { label: string; icon: typeof FileHtml }> = {
   html: { label: 'Page', icon: FileHtml },
   markdown: { label: 'Document', icon: FileText },
-  svg: { label: 'Image', icon: ImageSquare }
+  svg: { label: 'Image', icon: ImageSquare },
+  mockup: { label: 'Mockup', icon: SquaresFour }
 }
 
 /** The side panel's Swatches tab: one of the chat's swatches, live, with the chat's others to switch to. */
@@ -105,8 +107,10 @@ function SwatchView({ swatch, others, network }: { swatch: Swatch; others: Swatc
           <X size={14} />
         </IconButton>
       </div>
-      <div className="min-h-0 flex-1 bg-white">
-        {preview ? (
+      <div className={clsx('min-h-0 flex-1', swatch.format === 'mockup' ? 'bg-bg' : 'bg-white')}>
+        {preview && swatch.format === 'mockup' ? (
+          <MockupCanvas swatch={swatch} base={preview.url} compact />
+        ) : preview ? (
           <iframe
             key={`${swatch.id}:${swatch.version}:${preview.url}:${reload}`}
             src={preview.url}

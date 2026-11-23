@@ -493,6 +493,32 @@ export function createApi(s: Services): ClothApi {
         if (res.canceled || !res.filePath) return false
         await writeFile(res.filePath, s.swatches.content(id))
         return true
+      },
+      mockup: async (id, version) => s.swatches.mockup(id, version),
+      thumbs: async (id, version) => s.swatches.thumbs(id, version),
+      exportBoards: async (id, opts) => {
+        const info = s.swatches.mockup(id, opts.version)
+        const names = opts.names.filter((n) => info.boards.some((b) => b.name === n))
+        if (!names.length) throw new Error('Pick a board to export')
+        const win = BrowserWindow.getFocusedWindow()
+        const base = swatchFileName({ title: s.swatches.get(id).title, format: 'html' }).replace(/\.html$/, '')
+        let files: { name: string; path: string }[]
+        if (names.length === 1) {
+          const o = { title: 'Export board', defaultPath: `${base}-${names[0]}.png`, filters: [{ name: 'PNG image', extensions: ['png'] }] }
+          const res = win ? await dialog.showSaveDialog(win, o) : await dialog.showSaveDialog(o)
+          if (res.canceled || !res.filePath) return false
+          files = [{ name: names[0], path: res.filePath }]
+        } else {
+          const o = { title: 'Export boards to a folder', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] }
+          const res = win ? await dialog.showOpenDialog(win, o) : await dialog.showOpenDialog(o)
+          if (res.canceled || !res.filePaths[0]) return false
+          files = names.map((n) => ({ name: n, path: join(res.filePaths[0], `${base}-${n}.png`) }))
+        }
+        for (const f of files) {
+          const { png } = await s.swatches.snapshot(id, f.name, { version: opts.version, tweaks: opts.tweaks?.[f.name] })
+          await writeFile(f.path, png)
+        }
+        return true
       }
     },
     remote: {

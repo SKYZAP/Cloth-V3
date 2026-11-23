@@ -20,6 +20,8 @@ export function toolSummary(name: string, args: unknown): string {
   if (name === 'automation_create') return clip(String(a.name ?? a.description ?? ''))
   if (name === 'generate_image') return clip(String(a.prompt ?? ''))
   if (name === 'publish_swatch') return clip(String(a.title ?? ''))
+  if (name === 'publish_mockup') return clip(String(a.title ?? (Array.isArray(a.boards) ? `${a.boards.length} board${a.boards.length === 1 ? '' : 's'}` : '')))
+  if (name === 'look_at_mockup') return clip(`${a.board ?? ''}${a.width ? ` at ${a.width} px` : ''}`)
   if (name === 'chat_theme') return clip([a.action, a.id ?? a.name].filter(Boolean).join(' '))
   if (name === 'computer') return String(a.action ?? '').replace(/_/g, ' ')
   if (name === 'ask_user') return clip(String(a.question ?? ''))

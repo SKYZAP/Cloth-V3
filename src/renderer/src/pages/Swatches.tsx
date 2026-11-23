@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import QRCode from 'qrcode'
-import { ArrowSquareOut, Copy, DownloadSimple, FileHtml, FileText, ImageSquare, LinkSimple, MagnifyingGlass, PencilSimple, QrCode, Swatches as SwatchesIcon, Trash, WifiHigh, WifiSlash } from '@phosphor-icons/react'
+import { ArrowSquareOut, Copy, DownloadSimple, FileHtml, FileText, ImageSquare, SquaresFour, LinkSimple, MagnifyingGlass, PencilSimple, QrCode, Swatches as SwatchesIcon, Trash, WifiHigh, WifiSlash } from '@phosphor-icons/react'
 import type { Swatch, SwatchLink, SwatchServerStatus } from '@shared/swatches'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
@@ -10,12 +10,14 @@ import { isMobile, useSideBySide } from '@/lib/platform'
 import { useSwatchNav } from '@/lib/swatchNav'
 import { Button, Empty, IconButton, Input, ListItem, ListPane, PageHeader, Switch, confirmAction } from '@/components/ui'
 import { SplitDetail, SplitRoot } from '@/components/SplitView'
+import { MockupCanvas } from '@/components/MockupCanvas'
 import { openSettingsSection } from './Settings'
 
 const FORMAT: Record<Swatch['format'], { label: string; icon: typeof FileHtml }> = {
   html: { label: 'Page', icon: FileHtml },
   markdown: { label: 'Document', icon: FileText },
-  svg: { label: 'Image', icon: ImageSquare }
+  svg: { label: 'Image', icon: ImageSquare },
+  mockup: { label: 'Mockup', icon: SquaresFour }
 }
 
 /** Swatches: the pages chats publish, previewed here and opened by link on this PC or (when shared) other devices. */
@@ -236,8 +238,10 @@ function SwatchView({ swatch, network }: { swatch: Swatch; network: boolean }) {
           <div className="text-caption text-muted">Scan with a phone on the same network to open this swatch. Anyone with the link can view it.</div>
         </div>
       )}
-      <div className="min-h-0 flex-1 bg-white">
-        {preview ? (
+      <div className={clsx('min-h-0 flex-1', swatch.format === 'mockup' ? 'bg-bg' : 'bg-white')}>
+        {preview && swatch.format === 'mockup' ? (
+          <MockupCanvas swatch={swatch} base={preview.url} />
+        ) : preview ? (
           <iframe
             key={`${swatch.id}:${swatch.version}:${preview.url}`}
             src={preview.url}

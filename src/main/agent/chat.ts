@@ -663,6 +663,7 @@ export class AgentRuntime {
       ...(scope.subagents && !scope.depth ? [this.taskTool(parent)] : []),
       ...(this.imagesAvailable(scope) ? [this.imageTool()] : []),
       ...(this.swatchesAvailable(scope) ? [this.swatchTool(scope)] : []),
+      ...(this.mockupsAvailable(scope) ? [this.mockupTool(scope), this.lookTool()] : []),
       ...(this.themesAvailable(scope) ? [this.themeTool()] : []),
       ...(this.computerAvailable(parent) ? [this.computerTool(scope)] : []),
       ...(this.ws.mcp?.tools(scope) ?? [])
@@ -877,6 +878,92 @@ export class AgentRuntime {
         return {
           content: [{ type: 'text', text: `Published "${sw.title}" (id ${sw.id}, version ${sw.version}, ${sw.format}). The user sees a card to open it.${where}` }],
           details: { swatch: { id: sw.id, title: sw.title, version: sw.version, format: sw.format } } as unknown as ToolDetails
+        }
+      }
+    }
+  }
+
+  private mockupsAvailable(scope: ToolScope): boolean {
+    return !!this.ws.swatches && !!scope.sessionId && !scope.depth && !scope.disabledTools?.includes('publish_mockup') && (!scope.onlyTools || scope.onlyTools.includes('publish_mockup'))
+  }
+
+  /** publish_mockup: a set of boards (screens) the user sees on a canvas, plays and tweaks; a new version on each call. */
+  private mockupTool(scope: ToolScope): AgentTool<any, ToolDetails> {
+    const swatches = this.ws.swatches!
+    const tweak = Type.Object({
+      key: Type.String({ description: 'Identifier the board reads: window.tweaks[key]' }),
+      label: Type.String({ description: 'Shown in the Tweaks panel' }),
+      kind: Type.Union([Type.Literal('enum'), Type.Literal('boolean'), Type.Literal('range'), Type.Literal('color')]),
+      options: Type.Optional(Type.Array(Type.String(), { description: 'enum: 2 to 8 values' })),
+      min: Type.Optional(Type.Number()),
+      max: Type.Optional(Type.Number()),
+      step: Type.Optional(Type.Number()),
+      default: Type.Union([Type.String(), Type.Number(), Type.Boolean()], { description: 'Value the board starts with (a #rrggbb hex for color)' })
+    })
+    return {
+      name: 'publish_mockup',
+      label: 'Publish mockup',
+      description:
+        'Publish a mockup: a set of boards (screens or states of a UI) the user sees on a canvas in Cloth, can play full size, tweak and export as PNGs. Use it when the user asks to mock up, visualise or design UI before it is built, or to compare options side by side. ' +
+        'Each board is one complete, self-contained HTML page whose root is exactly width × height CSS px (desktop app 1440 × 900, phone 390 × 844); inline CSS and JS, web fonts and CDN libraries are fine; it runs sandboxed. Make it look like the real product, with real copy, not lorem ipsum. Animate with CSS keyframes or a small script where motion matters. ' +
+        "Tweaks are levers the user switches in a panel (a state such as working / waiting / done, a count, a toggle, an accent colour): the board reads window.tweaks.<key> when it starts and listens for window.addEventListener('tweaks', e => …) (e.detail holds every value) to re-render. Set interactive true for a board with working controls or animation. " +
+        "When the chat's project has a design system, its CSS variables and component classes are already on every board: use them. " +
+        'To change a mockup pass its id: give only the boards that change (by name; fields you leave out stay), add new names, or remove names; every call is a new version on the same link. After publishing, check your boards with look_at_mockup and fix what is off. Do not paste the boards into your reply; the user sees a card.',
+      parameters: Type.Object({
+        title: Type.Optional(Type.String({ description: 'Short name, 2 to 6 words, sentence case (required for a new mockup)' })),
+        id: Type.Optional(Type.String({ description: 'An existing mockup to change (from an earlier publish_mockup)' })),
+        boards: Type.Array(
+          Type.Object({
+            name: Type.String({ description: 'Slug, unique in the mockup: lowercase letters, digits, hyphens (e.g. "live", "phone-done")' }),
+            title: Type.Optional(Type.String({ description: 'Shown above the board, e.g. "2 · While it works"' })),
+            width: Type.Optional(Type.Number({ description: 'CSS px (required for a new board)' })),
+            height: Type.Optional(Type.Number({ description: 'CSS px (required for a new board)' })),
+            html: Type.Optional(Type.String({ description: 'The whole page (required for a new board)' })),
+            interactive: Type.Optional(Type.Boolean({ description: 'Has working controls or animation (default: it has tweaks or a script)' })),
+            tweaks: Type.Optional(Type.Array(tweak, { description: 'Up to 12 levers for the Tweaks panel' }))
+          }),
+          { description: 'Boards to add or change, in canvas order' }
+        ),
+        remove: Type.Optional(Type.Array(Type.String(), { description: 'Names of boards to take out' }))
+      }),
+      execute: async (_id, params) => {
+        const p = params as { title?: string; id?: string; boards: Record<string, unknown>[]; remove?: string[] }
+        const { swatch: sw, mockup } = swatches.publishMockup({ ...p, sessionId: scope.sessionId ?? null })
+        const boards = mockup.boards.map((b) => `${b.name} (${b.width}×${b.height}${b.tweaks.length ? `, tweaks: ${b.tweaks.map((t) => t.key).join(', ')}` : ''})`).join('; ')
+        return {
+          content: [{ type: 'text', text: `Published mockup "${sw.title}" (id ${sw.id}, version ${sw.version}${mockup.design ? `, design system ${mockup.design}` : ''}). Boards: ${boards}. The user sees a card to open it. Look at the boards you changed with look_at_mockup before you finish.` }],
+          details: { swatch: { id: sw.id, title: sw.title, version: sw.version, format: sw.format, boards: mockup.boards.map((b) => ({ name: b.name, title: b.title })) } } as unknown as ToolDetails
+        }
+      }
+    }
+  }
+
+  /** look_at_mockup: render a board in a hidden window and show the model the picture. */
+  private lookTool(): AgentTool<any, ToolDetails> {
+    const swatches = this.ws.swatches!
+    return {
+      name: 'look_at_mockup',
+      label: 'Look at board',
+      description:
+        "Render one board of a mockup you published and see it as an image, the way the user will. Use it after publish_mockup to catch clipped or overflowing text, overlaps, broken layout, unreadable contrast and empty areas, then fix them by publishing the board again. Pass width (e.g. 390) to see it at a phone's width, and tweaks to see another state.",
+      parameters: Type.Object({
+        id: Type.String({ description: 'The mockup id' }),
+        board: Type.String({ description: 'The board name' }),
+        width: Type.Optional(Type.Number({ description: "CSS px; default the board's width" })),
+        height: Type.Optional(Type.Number({ description: "CSS px; default the board's height" })),
+        tweaks: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Number(), Type.Boolean()]), { description: 'Tweak values to render with (others keep their defaults)' }))
+      }),
+      execute: async (_id, params) => {
+        const p = params as { id: string; board: string; width?: number; height?: number; tweaks?: Record<string, unknown> }
+        const clamp = (n: number | undefined) => (n === undefined ? undefined : Math.min(4000, Math.max(200, Math.round(n))))
+        const shot = await swatches.snapshot(p.id, p.board, { width: clamp(p.width), height: clamp(p.height), tweaks: p.tweaks, maxSide: 1568 })
+        const set = p.tweaks && Object.keys(p.tweaks).length ? ` with ${Object.entries(p.tweaks).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')}` : ''
+        return {
+          content: [
+            { type: 'text', text: `Board "${p.board}" at ${shot.width}×${shot.height}${set}:` },
+            { type: 'image', data: shot.png.toString('base64'), mimeType: 'image/png' }
+          ],
+          details: {} as ToolDetails
         }
       }
     }
@@ -2427,7 +2514,7 @@ export function toUiMessages(messages: AgentMessage[], pending?: ReadonlySet<str
           ...(r?.details?.changes?.length ? { changes: r.details.changes } : {}),
           ...((r?.details?.subagent ?? partials?.get(block.id)?.subagent) ? { subagent: (r?.details?.subagent ?? partials?.get(block.id)?.subagent) as unknown as SubagentRun } : {}),
           ...(block.name === 'generate_image' ? { image: imageTrace(block.arguments, r, partials?.get(block.id)) } : {}),
-          ...(block.name === 'publish_swatch' && r?.details?.swatch ? { swatch: r.details.swatch as unknown as SwatchTrace } : {}),
+          ...((block.name === 'publish_swatch' || block.name === 'publish_mockup') && r?.details?.swatch ? { swatch: r.details.swatch as unknown as SwatchTrace } : {}),
           ...(block.name === 'computer' && (r?.details as { action?: unknown } | undefined)?.action ? { computer: r!.details as unknown as ComputerTrace } : {}),
           ...(block.name === 'present_plan' && r?.details?.plan ? { plan: r.details.plan as unknown as PlanProposal } : {}),
           ...(block.name === 'ask_questions' && r?.details?.questions ? { questions: r.details.questions as unknown as QuestionRound } : {}),

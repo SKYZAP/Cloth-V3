@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowCounterClockwise,
+  Eye,
   ArrowUpRight,
   SidebarSimple,
   Books,
@@ -69,6 +70,7 @@ export const ICONS: Record<string, Icon> = {
   ast_grep: TreeStructure,
   ast_edit: TreeStructure,
   generate_image: ImageSquare,
+  look_at_mockup: Eye,
   ask_user: ChatCircleDots,
   rag_index: BookmarkSimple,
   skill_create: Sparkle,
@@ -94,6 +96,7 @@ function summarize(t: Trace): string {
   if (t.name === 'task') return String(a.description ?? '')
   if (t.name === 'agent_mention') return String(a.name ?? '')
   if (t.name === 'generate_image') return String(a.prompt ?? '')
+  if (t.name === 'look_at_mockup') return `${a.board ?? ''}${a.width ? ` at ${a.width} px` : ''}`
   if (t.name === 'computer') {
     const at = Array.isArray(a.coordinate) ? ` [${a.coordinate.join(', ')}]` : ''
     const from = Array.isArray(a.start_coordinate) ? ` from [${a.start_coordinate.join(', ')}]` : ''
@@ -449,6 +452,8 @@ export function describeTools(traces: Trace[]): string {
 }
 
 const VERBS: Record<string, string> = {
+  look_at_mockup: 'Looked at',
+  publish_mockup: 'Published mockup',
   read: 'Read',
   read_file: 'Read',
   ls: 'Listed',
@@ -503,7 +508,7 @@ function ChangedPath({ path, undone }: { path: string; undone: boolean }) {
   )
 }
 
-const SWATCH_KIND: Record<SwatchTrace['format'], string> = { html: 'Page', markdown: 'Document', svg: 'Image' }
+const SWATCH_KIND: Record<SwatchTrace['format'], string> = { html: 'Page', markdown: 'Document', svg: 'Image', mockup: 'Mockup' }
 
 /** A swatch inside a tool card (agent runs): shows it in the side panel, or opens it on the Swatches page. In the chat itself it shows as a SwatchBlock. */
 function SwatchCard({ swatch }: { swatch: SwatchTrace }) {
