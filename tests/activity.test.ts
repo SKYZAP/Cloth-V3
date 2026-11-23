@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FileChange, ToolTrace, UiBlock } from '@shared/types'
-import { activityStats, changedFiles, elapsed, groupTurn, recentSteps, runNow, runState, runStepCount, runToolIds } from '../src/renderer/src/lib/activity'
+import { activityStats, changedFiles, currentStep, elapsed, groupTurn, planRun, recentSteps, runNow, runState, runStepCount, runToolIds } from '../src/renderer/src/lib/activity'
 
 const trace = (id: string, extra: Partial<ToolTrace> = {}): ToolTrace => ({ id, name: 'read', args: {}, status: 'ok', result: '', durationMs: null, references: [], ...extra })
 const tool = (id: string, extra: Partial<ToolTrace> = {}): UiBlock => ({ type: 'tool', trace: trace(id, extra) })
@@ -143,5 +143,64 @@ describe('agent run helpers', () => {
     expect(runState({ status: 'ok', subagent: sub([], { outcome: 'partial' }) })).toBe('partial')
     expect(runState({ status: 'ok', subagent: sub([], { outcome: 'blocked' }) })).toBe('blocked')
     expect(runState({ status: 'error', subagent: sub([], { outcome: 'done' }) })).toBe('failed')
+  })
+})
+
+const todos = (id: string, ...items: [string, 'pending' | 'in_progress' | 'completed'][]): UiBlock => tool(id, { name: 'todo_write', args: { todos: items.map(([content, status]) => ({ content, status })) } })
+
+describe('planRun: a turn with a todo list as its plan', () => {
+  it('puts each block under the step that was current when it ran', () => {
+    const blocks = [
+      tool('pre'),
+      todos('t1', ['Check', 'in_progress'], ['Test', 'pending'], ['Commit', 'pending']),
+      tool('a'),
+      think(),
+      todos('t2', ['Check', 'completed'], ['Test', 'in_progress'], ['Commit', 'pending']),
+      tool('b'),
+      text('Tests ran.'),
+      tool('c'),
+      todos('t3', ['Check', 'completed'], ['Test', 'completed'], ['Commit', 'pending']),
+      tool('d')
+    ]
+    const plan = planRun(blocks, 8)!
+    expect(plan.at).toBe(1)
+    expect(plan.steps.map((s) => [s.text, s.status, s.indices])).toEqual([
+      ['Check', 'completed', [2, 3]],
+      ['Test', 'completed', [5, 7]],
+      // Nothing in progress: the next step not done is current.
+      ['Commit', 'pending', [9]]
+    ])
+    expect(currentStep(plan)).toBe(2)
+    // The card sits where the list first appeared; text and the work before the plan stay in the reply.
+    expect(groupTurn(blocks, 8, plan)).toEqual([
+      { kind: 'group', key: 'pre', indices: [0] },
+      { kind: 'run', key: 'run:t1', plan },
+      { kind: 'block', i: 6 }
+    ])
+  })
+
+  it('leaves the wrap-up after every step is done in the reply', () => {
+    const blocks = [todos('t1', ['A', 'in_progress'], ['B', 'pending']), tool('a'), todos('t2', ['A', 'completed'], ['B', 'completed']), tool('z'), text('Done.')]
+    const plan = planRun(blocks, 2)!
+    expect(plan.steps.map((s) => s.indices)).toEqual([[1], []])
+    expect(currentStep(plan)).toBe(-1)
+    expect(groupTurn(blocks, 2, plan)).toEqual([{ kind: 'run', key: 'run:t1', plan }, { kind: 'group', key: 'z', indices: [3] }, { kind: 'block', i: 4 }])
+  })
+
+  it('takes questions and agent runs into their step, and keeps other cards in the reply', () => {
+    const blocks = [todos('t1', ['A', 'in_progress'], ['B', 'pending']), tool('q', { name: 'ask_user' }), tool('w', { name: 'task' }), tool('img', { name: 'generate_image' })]
+    const plan = planRun(blocks, 0)!
+    expect(plan.steps[0].indices).toEqual([1, 2])
+    expect(groupTurn(blocks, 0, plan)).toEqual([{ kind: 'run', key: 'run:t1', plan }, { kind: 'block', i: 3 }])
+  })
+
+  it('matches a reworded step by position', () => {
+    const blocks = [todos('t1', ['Run tests', 'in_progress'], ['Commit', 'pending']), tool('a'), todos('t2', ['Run the full suite', 'completed'], ['Commit', 'in_progress'])]
+    expect(planRun(blocks, 2)!.steps[0]).toEqual({ text: 'Run the full suite', status: 'completed', indices: [1] })
+  })
+
+  it('is no card for a list of one item, or none', () => {
+    expect(planRun([todos('t1', ['Only', 'in_progress']), tool('a')], 0)).toBeNull()
+    expect(planRun([tool('a')], -1)).toBeNull()
   })
 })

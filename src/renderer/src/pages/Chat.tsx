@@ -39,7 +39,8 @@ import { ReferenceCard, ToolTraceCard } from '@/components/ToolTrace'
 import { SwatchBlock } from '@/components/SwatchBlock'
 import { ActivityGroup, ChangedFiles } from '@/components/Activity'
 import { AgentRunLine } from '@/components/AgentRun'
-import { groupTurn } from '@/lib/activity'
+import { groupTurn, planRun } from '@/lib/activity'
+import { RunCard } from '@/components/RunCard'
 import { Tooltip } from '@/components/Tooltip'
 import { Logo } from '@/components/Logo'
 import { ApprovalCard } from '@/components/ApprovalCard'
@@ -1842,7 +1843,9 @@ function AssistantTurnView({
   const lastFlowIdx = all.map((b) => (b.type === 'tool' && (b.trace.questions || b.trace.stageGate) ? 'f' : '')).lastIndexOf('f')
   // Thinking and tool calls between pieces of the reply fold into one activity line. Plan updates other
   // than the latest are dropped (the plan panel shows the plan); images and questions keep their own cards; subagent runs show as agent lines.
-  const items = useMemo(() => groupTurn(all, lastTodoIdx), [all, lastTodoIdx])
+  // A turn that keeps a todo list shows as its plan, with the work done for each step under it (RunCard).
+  const run = useMemo(() => planRun(all, lastTodoIdx), [all, lastTodoIdx])
+  const items = useMemo(() => groupTurn(all, lastTodoIdx, run), [all, lastTodoIdx, run])
   const traces = useMemo(() => all.flatMap((b) => (b.type === 'tool' ? [b.trace] : [])), [all])
 
   const own = message.usage?.cost ?? 0
@@ -1857,6 +1860,7 @@ function AssistantTurnView({
         {items.map((item, n) => {
           if (item.kind === 'group')
             return <ActivityGroup key={item.key} blocks={item.indices.map((j) => all[j])} live={streaming && n === items.length - 1} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
+          if (item.kind === 'run') return <RunCard key={item.key} plan={item.plan} blocks={all} live={streaming} fresh={fresh} awaiting={awaiting} onUndo={onUndo} />
           const i = item.i
           const { block, refs } = blocks[i]
           if (block.type === 'thinking') return null

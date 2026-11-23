@@ -5,10 +5,7 @@ import { CheckCircle, Circle, CircleNotch } from '@phosphor-icons/react'
 import type { ContextSliceKey, ContextUsage, TodoItem } from '@shared/types'
 import { compact } from '@/lib/format'
 
-export function todosOf(args: unknown): TodoItem[] {
-  const list = (args as { todos?: unknown })?.todos
-  return Array.isArray(list) ? list.filter((t): t is TodoItem => !!t && typeof (t as TodoItem).content === 'string') : []
-}
+export { todosOf } from '@/lib/activity'
 
 export function TodoList({ todos, dense }: { todos: TodoItem[]; dense?: boolean }) {
   return (
