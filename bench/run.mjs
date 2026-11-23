@@ -11,6 +11,7 @@
 //   BENCH_FORCE           set: measure a release again although it already has a result (saved as <tag>-2 …)
 //   BENCH_HOME            data folder (default ~/cloth-bench): fixtures/berdbot.bundle, site/, results/, omp-cache/
 //   OMP_VERSION           OMP release to compare against, e.g. 18.20.2 (downloaded to BENCH_HOME/bin)
+//   OMP_BIN               use this installed OMP instead of downloading one (it must be OMP_VERSION)
 //   OMP_RUNS_PER_VERSION  OMP runs to keep per task and arm (default 3); after that its results are reused until
 //                         OMP_VERSION changes, since OMP itself didn't change
 //   BENCH_ARMS            only these arms, e.g. cloth-chat,omp (default all)
@@ -49,9 +50,16 @@ const readJson = (p, fallback) => (existsSync(p) ? JSON.parse(readFileSync(p, 'u
 
 /** The OMP release binary for this machine, downloaded once and checked against the release's SHA256SUMS. */
 async function ompBinary(version) {
-  const os = platform() === 'darwin' ? 'darwin' : 'linux'
-  const asset = `omp-${os}-${arch() === 'arm64' ? 'arm64' : 'x64'}`
-  const bin = join(HOME, 'bin', `${asset}-${version}`)
+  // OMP_BIN: an OMP already installed (its version is checked against OMP_VERSION).
+  if (process.env.OMP_BIN) {
+    const v = sh(process.env.OMP_BIN, ['--version']).stdout.trim()
+    if (!v.includes(version)) throw new Error(`OMP_BIN is ${v || 'not runnable'}, not OMP ${version}`)
+    return process.env.OMP_BIN
+  }
+  const os = platform() === 'darwin' ? 'darwin' : platform() === 'win32' ? 'windows' : 'linux'
+  const asset = `omp-${os}-${arch() === 'arm64' ? 'arm64' : 'x64'}${os === 'windows' ? '.exe' : ''}`
+  // The version before the extension: Windows runs only a name ending in .exe.
+  const bin = join(HOME, 'bin', asset.replace(/(\.exe)?$/, `-${version}$1`))
   if (existsSync(bin)) return bin
   const base = `https://github.com/can1357/oh-my-pi/releases/download/v${version}`
   log(`downloading OMP ${version} (${asset})`)

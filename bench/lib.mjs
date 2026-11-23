@@ -1,4 +1,4 @@
-// Runs one benchmark arm and scores it. Used by run.mjs; Linux and macOS (the Pi runs it under xvfb).
+// Runs one benchmark arm and scores it. Used by run.mjs; Linux (the Pi runs it under xvfb), macOS and Windows.
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -9,8 +9,12 @@ export const BENCH = fileURLToPath(new URL('.', import.meta.url))
 export const BERDBOT_BASE = '0e0008c'
 
 const read = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null)
+const WIN = process.platform === 'win32'
+/** Windows runs npm and npx through cmd.exe, which needs arguments with spaces quoted. */
+const quote = (a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a)
 export const sh = (cmd, args, opts = {}) => {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600_000, ...opts })
+  const viaShell = WIN && (cmd === 'npm' || cmd === 'npx')
+  const r = spawnSync(cmd, viaShell ? args.map(quote) : args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600_000, shell: viaShell, ...opts })
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}`, stdout: r.stdout ?? '' }
 }
 const must = (r, what) => {
@@ -19,16 +23,18 @@ const must = (r, what) => {
 }
 
 /** Starts a program and waits for it, stopping it (and what it started) after `minutes`. */
-function run(cmd, args, { cwd, env, minutes, log }) {
+function run(cmd, args, { cwd, env, minutes, log, hide = true }) {
   return new Promise((resolve) => {
     const t0 = Date.now()
-    const p = spawn(cmd, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    // Its own process group (Linux, macOS), so a time limit stops everything it started.
+    const p = spawn(cmd, args, { cwd, env, detached: !WIN, windowsHide: hide, stdio: ['ignore', 'pipe', 'pipe'] })
     const sink = createWriteStream(log)
     p.stdout.pipe(sink)
     p.stderr.pipe(sink)
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
+      if (WIN) return void spawnSync('taskkill', ['/PID', String(p.pid), '/T', '/F'])
       try {
         process.kill(-p.pid, 'SIGTERM')
         setTimeout(() => {
@@ -66,7 +72,12 @@ export function workspace(task, dir, template) {
     // A clone of the source, with the template's dependencies hard-linked in (a full copy takes minutes on the Pi).
     must(sh('git', ['clone', '-q', template, dir]), 'cloning the berdbot template')
     sh('git', ['remote', 'remove', 'origin'], { cwd: dir })
-    must(sh('cp', ['-al', join(template, 'node_modules'), join(dir, 'node_modules')]), 'linking node_modules')
+    if (WIN) {
+      // No hard-link copy of a folder here: robocopy copies it (exit codes under 8 mean success).
+      const r = sh('robocopy', [join(template, 'node_modules'), join(dir, 'node_modules'), '/E', '/MT:16', '/NFL', '/NDL', '/NJH', '/NJS', '/NP'], { timeout: 1_200_000 })
+      if (r.code >= 8) throw new Error(`copying node_modules failed:
+${r.out.slice(-2000)}`)
+    } else must(sh('cp', ['-al', join(template, 'node_modules'), join(dir, 'node_modules')]), 'linking node_modules')
     return dir
   }
   // The reconciler starts from an empty folder (a git repo, so every harness sees the same thing).
@@ -89,10 +100,14 @@ export async function runCloth({ cloth, mode, ws, prompt, out, home, minutes }) 
   const r = await run(cmd, args, {
     cwd: cloth,
     minutes: minutes + 10,
+    // Started hidden on Windows, Cloth's window never shows, and the probe waits for it to.
+    hide: false,
     log: join(out, 'app.log'),
     env: {
       ...process.env,
       ...noGitHub(out),
+      // Not the machine's own homelab MCP servers (~/.homelab/env): a run sees only what the benchmark gives it.
+      HOMELAB_ENV: join(out, 'no-homelab-env'),
       CLOTH_HOME: home,
       CLOTH_SMOKE: out,
       CLOTH_PROBE: 'modes',
