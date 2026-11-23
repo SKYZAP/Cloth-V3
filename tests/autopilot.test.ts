@@ -46,6 +46,11 @@ describe('the review stage', () => {
     expect(text).toContain('- Safety (a verifier')
     expect(text).toContain('Keep only what reproduces')
     expect(text).toContain('At most two rounds of fixes')
+    // Findings must be reachable by real callers; fixes keep to public APIs and leave the project's mocks alone.
+    expect(text).toContain('how a real caller reaches it')
+    expect(text).toContain('never their private fields or internals')
+    expect(text).toContain('never edits the project\'s existing test helpers or mocks')
+    expect(text).toContain('Standards check again on the fixes\' diff')
     expect(text).toContain('second opinion')
     // Work happens without the person; they are told when it's done.
     expect(text).toContain('Work on your own and report back')
