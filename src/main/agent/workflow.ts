@@ -77,7 +77,7 @@ const STAGES: Record<Exclude<WorkflowStage, 'done' | 'tickets'>, string> = {
   spec: [
     '### Stage: Spec',
     'When the spec depends on something about the code you have not confirmed (an interface, a schema, how an error surfaces), send a scout (`task`, access reader) to check it rather than guessing or reading around yourself.',
-    'Write the spec from what was settled while grilling; do not interview again. Keep the slug the mockup used, if any, and write docs/specs/<slug>/spec.md. Aim for one to two pages: every line should be something the build or a test needs. No code or file paths; they go stale and double the review.',
+    'Write the spec from what was settled while grilling; do not interview again. Keep the slug the mockup used, if any, and write docs/specs/<slug>/spec.md. Aim for one to two pages: every line should be something the build or a test needs. No code or file paths of your own; they go stale and double the review. What the person\'s request states exactly (names, options, reply and error texts, file paths, limits) goes into the criteria word for word, from the request in the handover; never reword it, rename it or replace it with your own, and when something it needs seems missing, reread the request before choosing.',
     '- Problem and Solution: a few sentences each, from the person\'s point of view. When docs/specs/<slug>/mockup.html exists, link it; the spec keeps to it.',
     '- Acceptance criteria: numbered AC-1, AC-2, …, each one testable behaviour: "Given <state>, when <action>, then <exact observable result>", using the exact names, outputs, wording and failure results settled while grilling. Add "Undefined: …" where some input or state is deliberately left open. On the Preserve route, the behaviour that must not change gets its own criteria.',
     '- Changes to earlier specs: if this alters behaviour an earlier spec in docs/specs/ states, name that spec and its criteria.',
@@ -191,6 +191,8 @@ export interface Handover {
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
+/** The most of the person's request a handover carries: a whole written brief, not a pasted log. */
+const REQUEST_MAX = 16_000
 
 /** The handover at the top of a stage's first message: the earlier stages' results, in place of their conversation. */
 export function handoverText(h: Handover): string {
@@ -208,17 +210,23 @@ export function handoverText(h: Handover): string {
   }
   if (h.verifyGuide !== undefined)
     lines.push('', h.verifyGuide ? 'Verification guide: docs/verify/README.md (use it to launch and drive the project).' : 'Verification guide: none yet (docs/verify/README.md doesn\'t exist).')
-  if (h.said.length) {
+  const [request, ...later] = h.said
+  if (request) {
+    // The request is the source of every exact name, text and limit the person gave, so it is kept whole and as
+    // written: clipped, a long one lost its option names and reply texts and the spec made up its own.
+    lines.push('', 'The person\'s request, as they wrote it (copy its exact names, texts, paths and limits; later answers override it where they differ):', ...clip(request.trim(), REQUEST_MAX).split(/\r?\n/).map((l) => `> ${l}`.trimEnd()))
+  }
+  if (later.length) {
     // The latest first when trimming: later words override earlier ones. At most about 4000 characters in all.
     const kept: string[] = []
     let room = 4000
-    for (const said of [...h.said].reverse()) {
+    for (const said of [...later].reverse()) {
       const line = `- ${clip(said.replace(/\s+/g, ' ').trim(), 600)}`
       if (line.length > room) break
       kept.unshift(line)
       room -= line.length
     }
-    lines.push('', 'What the person said during the workflow:', ...kept)
+    lines.push('', 'What the person said after that:', ...kept)
   }
   if (h.base) {
     const files = h.changed ?? []
