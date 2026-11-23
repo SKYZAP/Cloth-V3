@@ -23,6 +23,12 @@ Each arm gets the same request with GPT-6 Luna at medium effort, and is scored w
 |---|---|---|
 | Berdbot queue commands (`tasks/berdbot`) | Berdbot at `0e0008c` | `hidden.spec.ts` (21 Jest tests), plus its own tests, `npm run build`, ESLint on changed files |
 | Order reconciler (`tasks/recon`) | an empty git repo | `acceptance.test.mjs` (20 node:test tests), plus its own `npm test` |
+| Todo: due dates and tags (`tasks/todo`) | `seed/`, a small todo CLI | `hidden.test.mjs` (20 node:test tests: the new behaviour with its exact texts, the v1 → v2 file format, and the old commands unchanged), plus its own `npm test` |
+| Invoice refactor (`tasks/invoice`) | `seed/`, one quirky invoice module | `hidden.test.mjs` (18 node:test tests: the module split, and every result compared with the original, `reference.mjs`, on the same inputs, quirks included, plus the new `taxes`), plus its own `npm test` |
+
+The last two are shaped for Spec → Ship: a feature across several parts of a project (its Standard route), and a
+refactor whose behaviour must not change (its Preserve route). The prompts don't list the invoice module's quirks; a
+mode has to pin today's behaviour itself to keep them.
 
 Arms: Cloth Chat, Plan, Spec → Ship and OpenSpec (through `CLOTH_PROBE=modes`, which answers every question with the
 agent's own recommendation and approves every gate), and OMP default and plan-yolo. OMP is pinned by `OMP_VERSION` in

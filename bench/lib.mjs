@@ -1,12 +1,14 @@
 // Runs one benchmark arm and scores it. Used by run.mjs; Linux (the Pi runs it under xvfb), macOS and Windows.
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const BENCH = fileURLToPath(new URL('.', import.meta.url))
 export const BERDBOT_BASE = '0e0008c'
+/** Tasks that start from a small project in tasks/<task>/seed, scored with tasks/<task>/hidden.test.mjs. */
+export const SEEDED = new Set(['todo', 'invoice'])
 
 const read = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null)
 const WIN = process.platform === 'win32'
@@ -80,10 +82,13 @@ ${r.out.slice(-2000)}`)
     } else must(sh('cp', ['-al', join(template, 'node_modules'), join(dir, 'node_modules')]), 'linking node_modules')
     return dir
   }
-  // The reconciler starts from an empty folder (a git repo, so every harness sees the same thing).
+  // The reconciler starts from an empty folder, a seeded task from its seed project (a git repo either way, so every
+  // harness sees the same thing).
   mkdirSync(dir, { recursive: true })
+  if (SEEDED.has(task)) cpSync(join(BENCH, 'tasks', task, 'seed'), dir, { recursive: true })
   sh('git', ['init', '-q', '-b', 'main'], { cwd: dir })
-  sh('git', ['-c', 'user.name=bench', '-c', 'user.email=bench@localhost', 'commit', '-q', '--allow-empty', '-m', 'empty'], { cwd: dir })
+  git(['add', '-A'], dir)
+  git(['commit', '-q', '--allow-empty', '-m', SEEDED.has(task) ? 'seed' : 'empty'], dir)
   return dir
 }
 
@@ -227,6 +232,31 @@ export function scoreRecon(dir, out) {
     build: { ok: null },
     lintErrors: null,
     linesAdded: lines(join(dir, 'reconcile.mjs')) + testLines + lines(join(dir, 'README.md'))
+  }
+  writeFileSync(join(out, 'score.json'), JSON.stringify(score, null, 2))
+  return score
+}
+
+const git = (args, cwd) => sh('git', ['-c', 'user.name=bench', '-c', 'user.email=bench@localhost', ...args], { cwd })
+
+/** A seeded task: its hidden node:test suite, the agent's own `npm test`, and what changed since the seed. */
+export function scoreSeeded(task, dir, out) {
+  const r = sh(process.execPath, ['--test', '--test-reporter=spec', 'hidden.test.mjs'], { cwd: join(BENCH, 'tasks', task), env: { ...process.env, BENCH_DIR: dir }, timeout: 300_000 })
+  writeFileSync(join(out, 'hidden-tests.txt'), r.out)
+  const num = (k) => Number(r.out.match(new RegExp(`ℹ ${k} (\\d+)`))?.[1] ?? 0)
+  const failures = [...new Set([...r.out.matchAll(/^✖ (.+?) \(/gm)].map((m) => m[1]).filter((t) => !/^(failing tests|tests)/.test(t)))]
+  const own = sh('npm', ['test'], { cwd: dir, timeout: 300_000 })
+  git(['add', '-A'], dir)
+  writeFileSync(join(out, 'changes.patch'), git(['diff', '--cached', 'HEAD'], dir).stdout)
+  const numstat = git(['diff', '--cached', '--numstat', 'HEAD'], dir).stdout.trim().split('\n').filter(Boolean)
+  git(['reset', '-q'], dir)
+  const score = {
+    hidden: { passed: num('pass'), total: num('tests'), failures },
+    own: { tests: Number(own.out.match(/ℹ tests (\d+)/)?.[1] ?? own.out.match(/# tests (\d+)/)?.[1] ?? 0), pass: own.code === 0, failures: [] },
+    build: { ok: null },
+    lintErrors: null,
+    linesAdded: numstat.reduce((n, l) => n + (Number(l.split('\t')[0]) || 0), 0),
+    files: numstat.length
   }
   writeFileSync(join(out, 'score.json'), JSON.stringify(score, null, 2))
   return score

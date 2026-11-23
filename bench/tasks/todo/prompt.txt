@@ -1,0 +1,29 @@
+This folder is a small task-list CLI (todo.mjs, src/, its tests in test/). Add due dates, tags, filtering and sorting, and move the saved file to a new format. Use Node 22 and only Node's standard library: no npm dependencies.
+
+Everything that works today keeps working exactly as it does now: the same commands, the same output, the same errors and exit codes, unless a rule below changes it.
+
+Adding
+- `todo add <text> [--due YYYY-MM-DD] [--tag <name>]...` (flags may come before, between or after the words of the text; the text is every other word, joined by single spaces). The reply stays `Added #<id>: <text>`.
+- --due must be a real calendar date in exactly that form (2026-02-30 is not). Otherwise print `Invalid due date: <value> (use YYYY-MM-DD)` to stderr, exit 1, and save nothing.
+- A tag name is 1 to 20 characters of lowercase letters, digits and hyphens. Otherwise print `Invalid tag: <value>` to stderr, exit 1, and save nothing. --tag may be given more than once; a repeated tag is kept once, in the order first given.
+- A flag with no value after it: `Missing value for --due` (or `--tag`), exit 1.
+
+Listing
+- Each line is `[ ] #<id> <text>` (or `[x]` when done) as now, followed by ` (due <date>)` when it has a due date, then ` +<tag>` for each tag in order. Example: `[ ] #3 Ship it (due 2026-03-01) +work +release`
+- `todo list --tag <name>`: only tasks with that tag.
+- `todo list --overdue`: only tasks not done whose due date is before today. Today is $TODO_TODAY (YYYY-MM-DD) when it is set, otherwise the local date.
+- `todo list --sort due`: tasks with a due date first, earliest first, then those without; ties in id order. Without --sort, id order as now.
+- Filters combine (a task must match all of them) and work with --sort.
+- No tasks at all: `No tasks.` as now. Tasks exist but none match the filters: `No matching tasks.` Both exit 0.
+
+Tags
+- `todo tags`: one line per tag used by a task that is not done, sorted by name: `<name> <count>` (count = its tasks not done). None: `No tags.`
+
+Saved file
+- New format: { "version": 2, "tasks": [ { "id", "text", "done", "due" (a date string or null), "tags" (an array) } ] }.
+- Today's format (a bare array of { id, text, done }) is version 1. It must still load: its tasks have no due date and no tags. Reading never changes the file; the next command that saves writes version 2.
+- A file with a version above 2: `Unsupported todo file version: <n>`, exit 1, and the file is left as it is.
+
+Also:
+- Update the tests (`npm test`, node:test) and the README.
+- When you're done, reply with a short summary of what you built and how you checked it.

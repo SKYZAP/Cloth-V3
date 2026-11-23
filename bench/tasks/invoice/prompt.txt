@@ -1,0 +1,15 @@
+This folder is the invoice module our billing service and monthly statements job import (invoice.mjs, its tests in test/). It has grown into one hard-to-change file. Refactor it, then add one small feature. Use Node 22 and only Node's standard library: no npm dependencies.
+
+The refactor
+- Split the logic into modules under src/: src/money.mjs (parsing prices, formatting money), src/tax.mjs (tax classes and rates), src/coupons.mjs (coupons), src/totals.mjs (invoiceTotals), src/format.mjs (formatInvoice).
+- invoice.mjs stays the entry point and only re-exports the public API: invoiceTotals, formatInvoice and formatMoney, with the same signatures.
+- Modern JavaScript throughout: const and let, never var.
+- Behaviour must not change at all. Both callers depend on today's results exactly, including the parts that may look wrong or odd: every total, every rounding, every error message, every printed character, for every input that works today and every input that fails today. If you find something that looks like a bug, keep it as it is and mention it in your summary; don't fix it.
+
+The feature
+- invoiceTotals also returns `taxes`: one entry per tax rate that appears on the invoice, `{ rate, net, tax }` in minor units (rate is the percentage, e.g. 20), highest rate first. net and tax are the sums over the lines charged at that rate, after line discounts. Lines that are skipped today are not counted.
+- Nothing else in the returned object, and nothing in formatInvoice or formatMoney's output, changes.
+
+Also:
+- Keep `npm test` (node:test) passing and add tests for the behaviour you keep and the feature.
+- When you're done, reply with a short summary of what you changed, how you checked that nothing else changed, and anything that looked like a bug.

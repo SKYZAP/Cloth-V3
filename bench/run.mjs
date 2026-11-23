@@ -1,4 +1,4 @@
-// The release benchmark: each Cloth mode and OMP do the same two tasks with the same model, every run is scored with
+// The release benchmark: each Cloth mode and OMP do the same tasks with the same model, every run is scored with
 // tests the agents never see, and the result is published to the dashboard (bench/site, served at bench.example.internal).
 // .github/workflows/bench.yml runs it for each release. (One benchmark is a "night" in the data files.)
 //
@@ -15,13 +15,13 @@
 //   OMP_RUNS_PER_VERSION  OMP runs to keep per task and arm (default 3); after that its results are reused until
 //                         OMP_VERSION changes, since OMP itself didn't change
 //   BENCH_ARMS            only these arms, e.g. cloth-chat,omp (default all)
-//   BENCH_TASKS           only these tasks: berdbot, recon (default both)
+//   BENCH_TASKS           only these tasks: berdbot, recon, todo, invoice (default all)
 //   BENCH_MINUTES         time limit per run (default 60)
 import { createHash } from 'node:crypto'
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, homedir, hostname, platform } from 'node:os'
 import { join, resolve } from 'node:path'
-import { BENCH, berdbotTemplate, row, runCloth, runOmp, scoreBerdbot, scoreRecon, sh, workspace } from './lib.mjs'
+import { BENCH, SEEDED, berdbotTemplate, row, runCloth, runOmp, scoreBerdbot, scoreRecon, scoreSeeded, sh, workspace } from './lib.mjs'
 
 const HOME = resolve(process.env.BENCH_HOME ?? join(homedir(), 'cloth-bench'))
 const CLOTH = resolve(process.env.CLOTH_DIR ?? resolve(BENCH, '..'))
@@ -34,7 +34,11 @@ const onlyTasks = only(process.env.BENCH_TASKS)
 
 const TASKS = [
   { task: 'berdbot', name: 'Berdbot queue commands' },
-  { task: 'recon', name: 'Order reconciler' }
+  { task: 'recon', name: 'Order reconciler' },
+  // Two tasks shaped for Spec → Ship: a feature across several parts of a small project, and a refactor that must not
+  // change behaviour, quirks included.
+  { task: 'todo', name: 'Todo: due dates and tags' },
+  { task: 'invoice', name: 'Invoice refactor' }
 ]
 const ARMS = [
   { arm: 'cloth-chat', harness: 'Cloth', mode: 'Chat', cloth: 'chat' },
@@ -199,7 +203,7 @@ async function runAll(night, arms, tasks, omp, ompVersion, resultsDir) {
       let r
       try {
         const result = a.harness === 'Cloth' ? await runCloth({ cloth: CLOTH, mode: a.cloth, ws, prompt, out, home: join(HOME, 'work', 'homes', `${task}-${a.arm}`), minutes: MINUTES }) : await runOmp({ omp, plan: a.plan, ws, prompt, out, minutes: MINUTES })
-        const score = task === 'berdbot' ? scoreBerdbot(ws, out) : scoreRecon(ws, out)
+        const score = task === 'berdbot' ? scoreBerdbot(ws, out) : SEEDED.has(task) ? scoreSeeded(task, ws, out) : scoreRecon(ws, out)
         r = { ...row({ ...a, task, out, result, score }), ...base, night: id }
       } catch (err) {
         r = { ...base, night: id, error: String(err?.message ?? err).slice(0, 500), hidden_passed: 0, hidden_total: 0 }

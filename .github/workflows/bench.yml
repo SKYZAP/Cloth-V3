@@ -1,4 +1,4 @@
-# Release benchmark: each release's Cloth modes against OMP on two tasks, scored with hidden tests and published to
+# Release benchmark: each release's Cloth modes against OMP on four tasks, scored with hidden tests and published to
 # http://bench.example.internal (bench/README.md). Runs on the self-hosted runner on the Pi, outside a container: Cloth needs a
 # display (xvfb).
 #
@@ -27,7 +27,7 @@ on:
         required: false
         type: string
       tasks:
-        description: 'Only these tasks (berdbot,recon); empty = both'
+        description: 'Only these tasks (berdbot,recon,todo,invoice); empty = all'
         required: false
         type: string
       minutes:

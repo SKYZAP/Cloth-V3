@@ -1,0 +1,9 @@
+{
+  "name": "invoice",
+  "version": "2.3.0",
+  "private": true,
+  "type": "module",
+  "main": "invoice.mjs",
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=22" }
+}
