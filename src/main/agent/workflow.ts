@@ -193,6 +193,10 @@ export interface Handover {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
 /** The most of the person's request a handover carries: a whole written brief, not a pasted log. */
 const REQUEST_MAX = 16_000
+/** The most of the person's later messages (grilling answers, change requests) a handover carries in all… */
+const SAID_MAX = 16_000
+/** …and the least of each one once that is used up. */
+const SAID_FLOOR = 240
 
 /** The handover at the top of a stage's first message: the earlier stages' results, in place of their conversation. */
 export function handoverText(h: Handover): string {
@@ -217,16 +221,18 @@ export function handoverText(h: Handover): string {
     lines.push('', 'The person\'s request, as they wrote it (copy its exact names, texts, paths and limits; later answers override it where they differ):', ...clip(request.trim(), REQUEST_MAX).split(/\r?\n/).map((l) => `> ${l}`.trimEnd()))
   }
   if (later.length) {
-    // The latest first when trimming: later words override earlier ones. At most about 4000 characters in all.
+    // Grilling answers arrive one round per message, a line per question, so each is kept whole with its lines.
+    // Past the limit the oldest are shortened (never dropped): the latest words override earlier ones, but the
+    // first rounds settle what the rest builds on.
     const kept: string[] = []
-    let room = 4000
+    let room = SAID_MAX
     for (const said of [...later].reverse()) {
-      const line = `- ${clip(said.replace(/\s+/g, ' ').trim(), 600)}`
-      if (line.length > room) break
-      kept.unshift(line)
-      room -= line.length
+      const text = said.trim()
+      const cut = clip(text, Math.max(room, SAID_FLOOR))
+      room = Math.max(0, room - cut.length)
+      kept.unshift(cut.split(/\r?\n/).map((l, i) => `${i ? '  ' : '- '}${l}`.trimEnd()).join('\n'))
     }
-    lines.push('', 'What the person said after that:', ...kept)
+    lines.push('', 'What the person said after that (their answers and change requests, oldest first):', ...kept)
   }
   if (h.base) {
     const files = h.changed ?? []
