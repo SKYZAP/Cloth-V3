@@ -200,24 +200,8 @@ export function SidePanel({
           <X size={15} />
         </button>
       </div>
-      ) : (
-        !multi && (
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line pl-3.5 pr-1.5">
-            {(() => {
-              const t = TABS.find((x) => x.id === shown[0])!
-              return (
-                <>
-                  <t.icon size={15} weight="fill" className="shrink-0 text-muted" />
-                  <span className="min-w-0 flex-1 truncate text-ui font-semibold">{t.label}</span>
-                </>
-              )
-            })()}
-            <IconButton className="h-7 w-7" onClick={() => set({ open: false })} aria-label="Close panel" title="Close (Ctrl+.)">
-              <X size={14} />
-            </IconButton>
-          </div>
-        )
-      )}
+      ) : null}
+      {/* One panel on a wide screen has no title bar: the dock beside it shows which it is and hides it (as does Ctrl+.). */}
       <div ref={body} className="relative grid min-h-0 flex-1" style={{ gridTemplateRows: rows, gridTemplateColumns: 'minmax(0, 1fr)' }}>
         {multi &&
           shown.map((tab, i) => {
