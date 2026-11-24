@@ -147,7 +147,9 @@ describe('mockups', () => {
     expect((await fetch(`${link}/b/nope`)).status).toBe(404)
     expect((await fetch(`${link}/b/live?v=9`)).status).toBe(404)
     const overview = await (await fetch(link)).text()
-    expect(overview).toContain('src="b/done?v=2"')
+    // Each board's frame resolves, as a browser would, against the overview's own URL.
+    const src = /<iframe src="([^"]+done[^"]*)"/.exec(overview)?.[1] ?? ''
+    expect((await fetch(new URL(src, link))).status).toBe(200)
     expect(JSON.parse(await (await fetch(`${link}/source`)).text()).boards).toHaveLength(2)
     expect(sw.boardUrl(swatch.id, 'live', undefined, { dark: false })).toMatch(/\/b\/live\?v=2#tweaks=%7B%22dark%22%3Afalse%7D$/)
 

@@ -130,11 +130,12 @@ export function boardPage(b: StoredBoard, design: MockupVersion['design']): stri
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
 /** A mockup opened by its link outside Cloth (a browser, a phone): every board, scaled to fit, each opening full size. */
-export function overviewPage(title: string, version: number, boards: StoredBoard[]): string {
+/** `base` is the mockup's own path (/s/<id>/<key>): links are absolute, since the page's URL has no trailing slash for relative ones to resolve under. */
+export function overviewPage(title: string, version: number, boards: StoredBoard[], base: string): string {
   const cards = boards
     .map(
-      (b) => `<section><h2><a href="b/${b.name}?v=${version}" target="_blank" rel="noopener">${esc(b.title)}</a><span>${b.width} × ${b.height}</span></h2>
-<div class="frame" data-w="${b.width}" data-h="${b.height}"><iframe src="b/${b.name}?v=${version}" title="${esc(b.title)}" loading="lazy" sandbox="allow-scripts allow-forms" width="${b.width}" height="${b.height}"></iframe></div></section>`
+      (b) => `<section><h2><a href="${base}/b/${b.name}?v=${version}" target="_blank" rel="noopener">${esc(b.title)}</a><span>${b.width} × ${b.height}</span></h2>
+<div class="frame" data-w="${b.width}" data-h="${b.height}"><iframe src="${base}/b/${b.name}?v=${version}" title="${esc(b.title)}" loading="lazy" sandbox="allow-scripts allow-forms" width="${b.width}" height="${b.height}"></iframe></div></section>`
     )
     .join('\n')
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>
@@ -143,5 +144,5 @@ main{max-width:1200px;margin:0 auto;padding:28px 16px 64px}h1{font-size:22px;mar
 section{margin:0 0 32px}h2{display:flex;gap:10px;align-items:baseline;font-size:14px;font-weight:500;margin:0 0 8px}h2 a{color:#f1f1f4}h2 span{color:#94949e;font-size:12px}
 .frame{position:relative;overflow:hidden;border:1px solid #36363c;border-radius:8px;background:#fff}.frame iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0}
 </style></head><body><main><h1>${esc(title)}</h1><p>Mockup · version ${version} · ${boards.length} board${boards.length === 1 ? '' : 's'}</p>
-${cards}</main><script>function fit(){document.querySelectorAll('.frame').forEach(function(f){var w=+f.dataset.w,h=+f.dataset.h,s=Math.min(1,f.parentNode.clientWidth/w);f.style.width=w*s+'px';f.style.height=h*s+'px';f.firstElementChild.style.transform='scale('+s+')'})}addEventListener('resize',fit);fit()</script></body></html>`
+${cards}</main><script>function fit(){document.querySelectorAll('.frame').forEach(function(f){var w=+f.dataset.w,h=+f.dataset.h,s=Math.min(1,(f.parentNode.clientWidth-2)/w);f.style.width=w*s+'px';f.style.height=h*s+'px';f.firstElementChild.style.transform='scale('+s+')'})}new ResizeObserver(fit).observe(document.querySelector('main'));fit()</script></body></html>`
 }

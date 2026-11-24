@@ -308,7 +308,7 @@ export class SwatchService {
       const b = ver.boards.find((x) => x.name === rest.slice(3))
       return b ? body('text/html; charset=utf-8', boardPage(b, ver.design), CSP.html) : notFound()
     }
-    return body('text/html; charset=utf-8', overviewPage(s.title, v, ver.boards), CSP.mockup)
+    return body('text/html; charset=utf-8', overviewPage(s.title, v, ver.boards, `/s/${s.id}/${s.key}`), CSP.mockup)
   }
 
   rename(id: string, title: string): Swatch {
