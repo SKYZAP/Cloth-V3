@@ -20,6 +20,8 @@ export const renderPage: RenderPage = async (url, width, height) => {
     win.webContents.on('will-navigate', (e) => e.preventDefault())
     win.webContents.setAudioMuted(true)
     await Promise.race([win.loadURL(url), new Promise((_, reject) => setTimeout(() => reject(new Error('The board took over 15 s to load')), LOAD_TIMEOUT))])
+    // A page longer than the window would show its scrollbar down the picture's edge.
+    await win.webContents.insertCSS('html{scrollbar-width:none}html::-webkit-scrollbar{display:none}').catch(() => undefined)
     await new Promise((r) => setTimeout(r, SETTLE_MS))
     const img = await win.webContents.capturePage({ x: 0, y: 0, width, height })
     return img.toPNG()

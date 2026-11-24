@@ -22,6 +22,9 @@ const EXT: Record<SwatchFormat, string> = { html: 'html', markdown: 'md', svg: '
 /** Versions of a mockup kept on disk (older ones are deleted). */
 const MOCKUP_VERSIONS = 20
 const THUMB_PX = 560
+/** The size a page is rendered at for its card: a desktop window. */
+const COVER_W = 1280
+const COVER_H = 800
 
 /**
  * Every swatch page runs sandboxed: an opaque origin, so it can't read Cloth's or another swatch's data, and
@@ -80,6 +83,8 @@ export class SwatchService {
   private thumbsTried = new Set<string>()
   /** The design system a chat's mockups follow (its project's), set once the services are built. */
   designFor: (sessionId: string | null) => MockupVersion['design'] = () => null
+  /** Scales a rendered page down for its card (Electron's image tools; swapped out in tests). */
+  private shrink = shrinkPng
 
   constructor(
     private ctx: Ctx,
@@ -249,7 +254,47 @@ export class SwatchService {
     const width = Math.round(opts.width ?? board.width)
     const height = Math.round(opts.height ?? board.height)
     const png = await this.render(this.boardUrl(id, name, opts.version, opts.tweaks), width, height)
-    return { png: opts.maxSide ? await shrinkPng(png, opts.maxSide) : png, width, height }
+    return { png: opts.maxSide ? await this.shrink(png, opts.maxSide) : png, width, height }
+  }
+
+  /**
+   * A picture of the swatch for its card in the library, as a data URL: a mockup's first board, or the page as it
+   * renders at a desktop size. Null until made: it's made in the background, then a 'thumbs' event says to ask again.
+   */
+  cover(id: string): string | null {
+    const s = this.read(id)
+    if (!s) return null
+    if (s.format === 'mockup') {
+      const first = this.version(s, s.version).boards[0]
+      return first ? (this.thumbs(id)[first.name] ?? null) : null
+    }
+    const dir = join(this.dir, id, 'thumbs')
+    const file = join(dir, `cover-v${s.version}.png`)
+    try {
+      return `data:image/png;base64,${readFileSync(file).toString('base64')}`
+    } catch {
+      // Not made yet.
+    }
+    const key = `${id}:cover:${s.version}`
+    if (this.server && !this.thumbing.has(key) && !this.thumbsTried.has(key)) {
+      this.thumbsTried.add(key)
+      const url = `http://127.0.0.1:${this.boundPort}/s/${s.id}/${s.key}`
+      const job = (async () => {
+        try {
+          const png = await this.shrink(await this.render(url, COVER_W, COVER_H), THUMB_PX)
+          mkdirSync(dir, { recursive: true })
+          for (const old of readdirSync(dir)) if (/^cover-v\d+\.png$/.test(old)) rmSync(join(dir, old), { force: true })
+          writeFileSync(file, png)
+        } catch (err) {
+          this.ctx.log('swatches', `cover of ${id} failed`, err)
+        }
+      })().finally(() => {
+        this.thumbing.delete(key)
+        this.ctx.emit('swatches', { type: 'thumbs', id })
+      })
+      this.thumbing.set(key, job)
+    }
+    return null
   }
 
   /**

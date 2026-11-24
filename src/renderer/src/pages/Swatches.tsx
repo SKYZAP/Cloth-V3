@@ -620,7 +620,7 @@ function SwatchSkeleton({ compact }: { compact: boolean }) {
           key={index}
           className="animate-pulse overflow-hidden rounded-xl border border-line bg-panel"
         >
-          <div className="h-[108px] bg-elev" />
+          <div className="h-[168px] bg-elev" />
           <div className="space-y-3 p-3.5">
             <div className="h-3 w-2/3 rounded bg-elev-2" />
             <div className="h-2.5 w-1/2 rounded bg-elev" />
@@ -680,6 +680,7 @@ function SwatchCard({ swatch, onOpen }: { swatch: Swatch; onOpen(): void }) {
 
 function SwatchRow({ swatch, onOpen }: { swatch: Swatch; onOpen(): void }) {
   const { label, icon: FormatIcon } = FORMAT[swatch.format];
+  const image = useCover(swatch);
   return (
     <button
       type="button"
@@ -689,11 +690,20 @@ function SwatchRow({ swatch, onOpen }: { swatch: Swatch; onOpen(): void }) {
     >
       <span
         className={clsx(
-          "grid h-12 w-14 shrink-0 place-items-center rounded-lg border border-line-strong bg-gradient-to-br",
+          "grid h-12 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-line-strong bg-gradient-to-br",
           FORMAT[swatch.format].cover,
         )}
       >
-        <FormatIcon size={21} className="text-fg" aria-hidden="true" />
+        {image ? (
+          <img
+            src={image}
+            alt=""
+            draggable={false}
+            className="h-full w-full bg-white object-cover object-top"
+          />
+        ) : (
+          <FormatIcon size={21} className="text-fg" aria-hidden="true" />
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-ui font-semibold text-fg">
@@ -711,12 +721,26 @@ function SwatchRow({ swatch, onOpen }: { swatch: Swatch; onOpen(): void }) {
   );
 }
 
+/** The picture on a swatch's card: its first board or the page as rendered; null until made (in the background). */
+function useCover(swatch: Swatch): string | null {
+  const [cover, setCover] = useState<string | null>(null);
+  const load = () =>
+    void api.swatches.cover(swatch.id).then(setCover, () => setCover(null));
+  useEffect(load, [swatch.id, swatch.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEvent("swatches", (event) => {
+    // Made, or the server it is rendered from has just started.
+    if ((event.type === "thumbs" && event.id === swatch.id) || event.type === "status") load();
+  });
+  return cover;
+}
+
 function SwatchArt({ swatch }: { swatch: Swatch }) {
   const { label, icon: FormatIcon, cover } = FORMAT[swatch.format];
+  const image = useCover(swatch);
   return (
     <span
       className={clsx(
-        "relative block h-[108px] overflow-hidden border-b border-line bg-gradient-to-br",
+        "relative block h-[168px] overflow-hidden border-b border-line bg-gradient-to-br",
         cover,
       )}
     >
@@ -729,6 +753,24 @@ function SwatchArt({ swatch }: { swatch: Swatch }) {
             ? ` · ${swatch.boards ?? 0} SCREENS`
             : ""}
       </span>
+      {image ? (
+        <img
+          src={image}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full bg-white object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
+        />
+      ) : (
+        <SwatchPlaceholder swatch={swatch} />
+      )}
+    </span>
+  );
+}
+
+/** Stand-in art for a card while its picture is made (or when it can't be). */
+function SwatchPlaceholder({ swatch }: { swatch: Swatch }) {
+  return (
+    <>
       {swatch.format === "html" && (
         <span
           className="absolute inset-x-4 bottom-3 flex h-12 items-end gap-1.5"
@@ -793,7 +835,7 @@ function SwatchArt({ swatch }: { swatch: Swatch }) {
           )}
         </span>
       )}
-    </span>
+    </>
   );
 }
 

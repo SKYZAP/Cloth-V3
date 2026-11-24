@@ -495,6 +495,7 @@ export function createApi(s: Services): ClothApi {
         return true
       },
       mockup: async (id, version) => s.swatches.mockup(id, version),
+      cover: async (id) => s.swatches.cover(id),
       thumbs: async (id, version) => s.swatches.thumbs(id, version),
       exportBoards: async (id, opts) => {
         const info = s.swatches.mockup(id, opts.version)

@@ -533,6 +533,8 @@ export interface ClothApi {
     saveAs(id: string): Promise<boolean>
     /** A mockup at a version (default: the latest): its boards without their markup. */
     mockup(id: string, version?: number): Promise<import('./swatches').MockupInfo>
+    /** The picture on its library card (a mockup's first board, or the page rendered) as a data URL, null until made (a 'thumbs' event follows). */
+    cover(id: string): Promise<string | null>
     /** Each board's thumbnail as a data URL, null until made (a 'thumbs' event follows). */
     thumbs(id: string, version?: number): Promise<Record<string, string | null>>
     /** Save boards as PNGs (one board: a file; several: a folder), with tweak values by board. False when cancelled. */

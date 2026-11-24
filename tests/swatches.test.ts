@@ -180,4 +180,30 @@ describe('mockups', () => {
     expect(info.versions[0]).toBe(3)
     expect(() => sw.mockup(swatch.id, 1)).toThrow(/no longer kept/)
   })
+  it("renders a page once per version for its card, and a mockup's card is its first board", async () => {
+    const { sw } = await started()
+    const calls: string[] = []
+    const stub = sw as unknown as { render: (u: string, w: number, h: number) => Promise<Buffer>; shrink: (b: Buffer) => Promise<Buffer>; thumbing: Map<string, Promise<void>> }
+    stub.render = async (u, w, h) => {
+      calls.push(`${u} ${w}x${h}`)
+      return Buffer.from('png')
+    }
+    stub.shrink = async (b) => b
+    const settle = () => Promise.all([...stub.thumbing.values()])
+    const s = sw.publish({ title: 'Chart', content: '<!doctype html><h1>Hi</h1>' })
+    expect(sw.cover(s.id)).toBeNull()
+    await settle()
+    expect(sw.cover(s.id)).toBe(`data:image/png;base64,${Buffer.from('png').toString('base64')}`)
+    expect(calls).toEqual([`${sw.links(s.id)[0].url} 1280x800`])
+    sw.publish({ id: s.id, content: '<!doctype html><h1>Bye</h1>' })
+    expect(sw.cover(s.id)).toBeNull()
+    await settle()
+    expect(sw.cover(s.id)).not.toBeNull()
+    expect(calls).toHaveLength(2)
+    const { swatch } = sw.publishMockup({ title: 'M', boards: [{ name: 'first', width: 390, height: 844, html: page('a') }, { name: 'second', width: 1440, height: 900, html: page('b') }] })
+    expect(sw.cover(swatch.id)).toBeNull()
+    await settle()
+    expect(calls.some((c) => /\/b\/first\?v=1 390x844$/.test(c))).toBe(true)
+    expect(sw.cover('sw' + '0'.repeat(16))).toBeNull()
+  })
 })
