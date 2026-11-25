@@ -1,3 +1,9 @@
+## New in 1.5.1
+- The 1.5.0 installers failed to build, so 1.5.1 is the first 1.5 release you can install. Everything below is new since 1.4.
+- The page sidebar folds to a column of icons on every page: press Ctrl+B, or point at the sidebar and click the round arrow on its right edge. Cloth remembers your choice. Hiding the chat list is now Ctrl+Shift+B.
+- The Cloth logo now sits in the middle of the strip along the top of the window.
+- Fix: on macOS, the agent no longer refuses files in a workspace under `/var` (such as temp folders) as "outside the workspace".
+
 ## Mockups
 - Ask a chat to mock something up and it publishes a mockup: a set of screens (boards) at desktop or phone size, made to look like the real product. Each change is a new version on the same link, and the last 20 are kept.
 - The chat checks its own boards before finishing: it looks at each one as a picture and fixes clipped text, overlaps and broken layout.
