@@ -42,6 +42,14 @@ export class SettingsService {
     if (JSON.stringify(sealed) !== JSON.stringify(stored.mcpClients)) this.ctx.kv.set('settings', { ...stored, mcpClients: sealed })
   }
 
+  /** Subagents got 30 steps by default before 1.5.1, now 100: a saved 30 is raised once, later choices stay. */
+  raiseSubagentSteps(): void {
+    if (this.ctx.kv.get<boolean>('migrated.subagentSteps100', false)) return
+    const stored = this.ctx.kv.get<Partial<Settings>>('settings', {})
+    if (stored.subagents?.maxTurns === 30) this.ctx.kv.set('settings', { ...stored, subagents: { ...stored.subagents, maxTurns: 100 } })
+    this.ctx.kv.set('migrated.subagentSteps100', true)
+  }
+
   get(): Settings {
     const raw = this.ctx.kv.get<Partial<Settings>>('settings', {})
     const stored = raw.mcpClients ? { ...raw, mcpClients: this.open(raw.mcpClients) } : raw

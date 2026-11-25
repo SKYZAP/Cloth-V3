@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
     enabledByDefault: true,
     model: null,
     thinking: 'inherit',
-    maxTurns: 30,
+    maxTurns: 100,
     maxParallel: 4,
     allowWorkers: true,
     maxAccess: 'operator',

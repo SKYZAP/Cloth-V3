@@ -213,6 +213,7 @@ ${files['components.css'] ?? ''}` }
   // tokens are in ~/.homelab/env: each once, so one you remove stays removed.
   // MCP server tokens saved before they were encrypted get encrypted now.
   settings.sealAtRest()
+  settings.raiseSubagentSteps()
   providers.sealAtRest()
   seedHomelabServers(ctx, settings)
 
