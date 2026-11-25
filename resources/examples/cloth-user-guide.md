@@ -57,7 +57,7 @@ The Chat page has the chat list on the left, the conversation in the middle, and
 
 ### Starting and finding chats
 
-- **Ctrl+N** (Cmd+N on macOS) starts a chat in the current chat's project; **Ctrl+K** jumps to the chat search; **Ctrl+B** hides or shows the chat list.
+- **Ctrl+N** (Cmd+N on macOS) starts a chat in the current chat's project; **Ctrl+K** jumps to the chat search; **Ctrl+Shift+B** hides or shows the chat list, and **Ctrl+B** folds the page sidebar to icons on any page. With the mouse, point at the sidebar and click the round arrow on its right edge, or click the edge itself.
 - Chats get a short AI-written title after the first answer (Settings › Chat › Name chats with AI).
 - **Projects** group chats under a shared folder, instructions and starting settings. Make one from the chat list; new chats in it start in its folder with its settings.
 - Chats are **archived** rather than deleted: **Ctrl+E** archives the open chat, with Undo. Archived chats sit in their own section. The chat's header menu has Rename, Move to project, Archive and Delete.
@@ -268,7 +268,8 @@ On macOS use Cmd instead of Ctrl.
 |---|---|
 | Ctrl+N | New chat |
 | Ctrl+K | Search chats |
-| Ctrl+B | Hide or show the chat list |
+| Ctrl+B | Fold or unfold the page sidebar (any page) |
+| Ctrl+Shift+B | Hide or show the chat list |
 | Ctrl+E | Archive the open chat |
 | Ctrl+. | Hide or show the side panel |
 | Ctrl+` | Open the terminal |

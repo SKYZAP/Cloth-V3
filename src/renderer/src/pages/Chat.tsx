@@ -127,7 +127,7 @@ export function ChatPage() {
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
   const side = useSideBySide()
-  // The chat list folds away (Ctrl+B) so the conversation can take the room; remembered per device.
+  // The chat list folds away (Ctrl+Shift+B; Ctrl+B folds the page sidebar) so the conversation can take the room; remembered per device.
   const [listHidden, setListHidden] = useState(() => readJson<boolean>(LIST_HIDDEN_KEY, false))
   useEffect(() => writeJson(LIST_HIDDEN_KEY, listHidden), [listHidden])
 
@@ -250,8 +250,14 @@ export function ChatPage() {
   const search = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
       const k = e.key.toLowerCase()
+      if (k === 'b' && e.shiftKey && side) {
+        e.preventDefault()
+        setListHidden((h) => !h)
+        return
+      }
+      if (e.shiftKey) return
       if (k === 'n') {
         e.preventDefault()
         void create(active?.projectId ?? null)
@@ -260,9 +266,6 @@ export function ChatPage() {
         setOpen(false)
         setListHidden(false)
         requestAnimationFrame(() => search.current?.focus())
-      } else if (k === 'b' && side) {
-        e.preventDefault()
-        setListHidden((h) => !h)
       } else if (k === 'e' && active) {
         e.preventDefault()
         void archive(active.id, !active.archivedAt)
@@ -1034,7 +1037,7 @@ function ChatView({
       <header className="absolute inset-x-0 top-0 z-10 flex h-14 items-center gap-3 bg-gradient-to-b from-bg from-55% to-transparent px-5 mobile:gap-1.5 mobile:px-3">
         <SplitBack />
         {side && (
-          <Tooltip content={listHidden ? 'Show the chat list (Ctrl+B)' : 'Hide the chat list (Ctrl+B)'}>
+          <Tooltip content={listHidden ? 'Show the chat list (Ctrl+Shift+B)' : 'Hide the chat list (Ctrl+Shift+B)'}>
             <motion.button
               whileTap={{ scale: 0.88 }}
               transition={SPRING_PRESS}

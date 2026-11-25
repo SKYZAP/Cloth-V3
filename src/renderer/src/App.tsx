@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import { GearSix } from '@phosphor-icons/react'
+import { CaretLeft, CaretRight, GearSix } from '@phosphor-icons/react'
 import { NAV } from './lib/nav'
 import { MotionConfig } from 'motion/react'
 import { useApp, type Page } from './lib/store'
@@ -28,6 +28,7 @@ import { ConfirmHost } from './components/ConfirmDialog'
 import { Onboarding } from './components/Onboarding'
 import { isMobile } from './lib/platform'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { Tooltip } from './components/Tooltip'
 // Phone-only chrome (and its Capacitor plugins) never loads on the desktop.
 const MobileShell = lazy(() => import('./mobile/Shell').then((m) => ({ default: m.MobileShell })))
 
@@ -85,6 +86,31 @@ function DesktopApp() {
   const setPage = useApp((s) => s.setPage)
   const { loadProviders, loadCollections, loadSettings } = useApp()
   const [mcp, setMcp] = useState<McpStatus | null>(null)
+  // The page sidebar folds to a rail of icons (Ctrl+B, on any page); remembered on this device.
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(FOLDED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(FOLDED_KEY, folded ? '1' : '0')
+    } catch {
+      // Storage can be unavailable; the sidebar still folds for this session.
+    }
+  }, [folded])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        setFolded((f) => !f)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     void loadCollections()
@@ -116,30 +142,68 @@ function DesktopApp() {
   const mcpLabel = mcp ? (mcp.running ? `Connected · port ${mcp.port}` : 'MCP server offline') : 'Starting…'
   return (
     <MotionConfig reducedMotion="user">
-    <div className="flex h-full bg-panel">
-      {/* Sidebar: the same grey as the strip above the page, so the two read as one frame around it. */}
-      <nav aria-label="Pages" className="flex w-[216px] shrink-0 flex-col">
-        <div className={clsx('drag flex shrink-0 items-center gap-2 px-4', isMac ? 'h-[52px] items-end pb-2' : 'h-12')}>
-          <Logo size={18} />
-          <span className="text-body font-semibold tracking-tight">Cloth</span>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pt-1 pb-2">
+    <div className="relative flex h-full bg-panel">
+      {/* The app's name sits in the middle of the strip along the top, clear of the sidebar and the window controls. */}
+      <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-0 z-10 flex h-9 -translate-x-1/2 items-center gap-2">
+        <Logo size={16} />
+        <span className="text-ui font-semibold tracking-tight">Cloth</span>
+      </div>
+      {/* Sidebar: the same grey as the strip above the page, so the two read as one frame around it. Folds to a rail of icons
+          from a handle on its right edge, which shows while the pointer is over the sidebar. */}
+      <div className="group/side relative flex shrink-0">
+      <nav
+        aria-label="Pages"
+        className={clsx('flex shrink-0 flex-col overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none', folded ? 'w-14' : 'w-[216px]')}
+      >
+        <div aria-hidden="true" className={clsx('drag shrink-0', isMac ? 'h-[52px]' : 'h-9')} />
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden px-2 pt-1 pb-2">
           {SIDEBAR.map(({ page: p, label, icon: Icon }) => (
-            <NavItem key={p} active={page === p} onClick={() => setPage(p)} label={label} icon={<Icon size={18} weight={page === p ? 'fill' : 'regular'} />} />
+            <NavItem key={p} folded={folded} active={page === p} onClick={() => setPage(p)} label={label} icon={<Icon size={18} weight={page === p ? 'fill' : 'regular'} />} />
           ))}
         </div>
         <div className="shrink-0 px-2 pb-2">
-          <NavItem active={page === 'settings'} onClick={() => setPage('settings')} label="Settings" icon={<GearSix size={18} weight={page === 'settings' ? 'fill' : 'regular'} />} />
-          <button
-            onClick={() => setPage('mcp')}
-            className="mt-2 flex w-full items-center gap-2 border-t border-line px-2.5 pt-3 pb-1 text-left text-caption text-dim hover:text-muted"
-            title={mcp?.url}
-          >
-            <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
-            <span className="truncate">{mcpLabel}</span>
-          </button>
+          <NavItem folded={folded} active={page === 'settings'} onClick={() => setPage('settings')} label="Settings" icon={<GearSix size={18} weight={page === 'settings' ? 'fill' : 'regular'} />} />
+          {folded ? (
+            <div className="mt-2 flex justify-center border-t border-line pt-2">
+              <Tooltip content={mcpLabel} side="right">
+                <button onClick={() => setPage('mcp')} className="flex h-7 w-10 items-center justify-center rounded-md hover:bg-elev">
+                  <span className={clsx('h-1.5 w-1.5 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
+                </button>
+              </Tooltip>
+            </div>
+          ) : (
+            <button
+              onClick={() => setPage('mcp')}
+              className="mt-2 flex w-full items-center gap-2 border-t border-line px-2.5 pt-3 pb-1 text-left text-caption text-dim hover:text-muted"
+              title={mcp?.url}
+            >
+              <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', mcp?.running ? 'bg-ok' : 'bg-danger')} />
+              <span className="truncate">{mcpLabel}</span>
+            </button>
+          )}
         </div>
       </nav>
+        {/* The edge itself: a strip straddling the border that lights up and folds the sidebar when clicked. Mouse only; the round button below is the keyboard way in. */}
+        <button
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={() => setFolded((f) => !f)}
+          className={clsx('group/edge no-drag absolute -right-1.5 bottom-0 z-20 w-3 cursor-pointer', isMac ? 'top-[52px]' : 'top-9')}
+        >
+          <span className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 transition-colors group-hover/edge:bg-crimson-line" />
+        </button>
+        <div className={clsx('no-drag absolute -right-2.5 z-30 opacity-0 transition-opacity duration-150 group-hover/side:opacity-100 has-[:focus-visible]:opacity-100 motion-reduce:transition-none', isMac ? 'top-[60px]' : 'top-11')}>
+          <Tooltip content={folded ? 'Expand the sidebar (Ctrl+B)' : 'Collapse the sidebar (Ctrl+B)'} side="right">
+            <button
+              onClick={() => setFolded((f) => !f)}
+              aria-expanded={!folded}
+              className="flex h-5 w-5 items-center justify-center rounded-full border border-line-strong bg-elev-2 text-muted shadow-md shadow-black/40 outline-none transition-colors hover:border-crimson-line hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson"
+            >
+              {folded ? <CaretRight size={11} weight="bold" /> : <CaretLeft size={11} weight="bold" />}
+            </button>
+          </Tooltip>
+        </div>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Grey strip continuing the sidebar: drags the window and holds the window controls (Windows and Linux).
@@ -157,20 +221,37 @@ function DesktopApp() {
   )
 }
 
-function NavItem({ active, onClick, label, icon }: { active: boolean; onClick(): void; label: string; icon: React.ReactNode }) {
+const FOLDED_KEY = 'cloth.sidebar.folded'
+
+/** On the folded rail, a control's name shows beside it on hover or keyboard focus. */
+function Rail({ folded, label, children }: { folded: boolean; label: string; children: React.ReactElement<{ 'aria-label'?: string }> }) {
+  return folded ? (
+    <Tooltip content={label} side="right">
+      {children}
+    </Tooltip>
+  ) : (
+    children
+  )
+}
+
+function NavItem({ active, onClick, label, icon, folded }: { active: boolean; onClick(): void; label: string; icon: React.ReactNode; folded: boolean }) {
   return (
-    <button
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={clsx(
-        'relative flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-ui transition-colors',
-        active ? 'bg-elev-2 font-semibold text-fg' : 'font-medium text-muted hover:bg-elev hover:text-fg'
-      )}
-    >
-      {active && <span className="absolute -left-2 top-[7px] bottom-[7px] w-0.5 rounded-r bg-crimson" />}
-      <span className="shrink-0">{icon}</span>
-      <span className="truncate">{label}</span>
-    </button>
+    <Rail folded={folded} label={label}>
+      <button
+        onClick={onClick}
+        aria-current={active ? 'page' : undefined}
+        aria-label={folded ? label : undefined}
+        className={clsx(
+          'relative flex h-8 items-center rounded-md text-left text-ui transition-colors',
+          folded ? 'w-10 justify-center' : 'w-full gap-2.5 px-2.5',
+          active ? 'bg-elev-2 font-semibold text-fg' : 'font-medium text-muted hover:bg-elev hover:text-fg'
+        )}
+      >
+        {active && <span className="absolute -left-2 top-[7px] bottom-[7px] w-0.5 rounded-r bg-crimson" />}
+        <span className="shrink-0">{icon}</span>
+        {!folded && <span className="truncate whitespace-nowrap">{label}</span>}
+      </button>
+    </Rail>
   )
 }
 
