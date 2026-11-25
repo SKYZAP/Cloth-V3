@@ -24,6 +24,9 @@ export interface ModelInfo {
   contextSource?: 'server' | 'catalog' | 'guess'
   /** The only reasoning efforts it accepts, when it doesn't take them all (e.g. Bonsai 2: low, medium, xhigh). */
   efforts?: ('low' | 'medium' | 'high' | 'xhigh')[]
+  /** What to send as reasoning_effort when thinking is off: 'none', or null for nothing (the server's default).
+   *  Unset: 'none' for reasoning models (local servers honour it). A LiteLLM proxy says which its models take. */
+  offEffort?: 'none' | null
 }
 
 /** The context size is a default guess (older model lists don't say where it came from; 32,768 was the default). */

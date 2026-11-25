@@ -26,6 +26,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'ollama', label: 'Ollama', kind: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', needsKey: false, hint: 'Local server on :11434' },
   { id: 'llamacpp', label: 'llama.cpp server', kind: 'openai-compatible', baseUrl: 'http://localhost:8080/v1', needsKey: false, hint: 'llama-server --port 8080' },
   { id: 'vllm', label: 'vLLM', kind: 'openai-compatible', baseUrl: 'http://localhost:8000/v1', needsKey: false, hint: 'vllm serve' },
+  { id: 'litellm', label: 'LiteLLM', kind: 'openai-compatible', baseUrl: 'http://localhost:4000/v1', needsKey: false, hint: 'LiteLLM Proxy on :4000: a virtual key, or the master key' },
   { id: 'openrouter', label: 'OpenRouter', kind: 'openai-compatible', baseUrl: 'https://openrouter.ai/api/v1', needsKey: true, hint: 'Hosted router' },
   { id: 'custom', label: 'Custom (OpenAI-compatible)', kind: 'openai-compatible', baseUrl: 'http://localhost:5000/v1', needsKey: false, hint: 'Any /v1/chat/completions endpoint' }
 ]
@@ -256,7 +257,13 @@ export class ProviderService {
       }
       // Local reasoning models (Qwen 3.x, DeepSeek-R1, …) think by default. With thinking "off",
       // send reasoning_effort "none" so they answer directly (LM Studio / Ollama honour it).
-      if (info.reasoning) model.thinkingLevelMap = info.efforts?.length ? effortMap(info.efforts) : { off: 'none' }
+      if (info.reasoning) {
+        const map: Record<string, string> = info.efforts?.length ? effortMap(info.efforts) : { off: 'none' }
+        // A model that can't switch thinking off gets no reasoning_effort at all when off (its server's default).
+        if (info.offEffort === null) delete map.off
+        else if (info.offEffort) map.off = info.offEffort
+        model.thinkingLevelMap = map
+      }
     }
     // Local servers accept any key; pi-ai still wants a non-empty one.
     return { model, apiKey: this.apiKey(provider.id) || 'cloth-local' }
@@ -399,7 +406,7 @@ export class ProviderService {
       if (m.architecture?.output_modalities?.includes('image')) info.image = true
       return info
     })
-    if (provider.kind === 'openai-compatible') await enrichFromLmStudio(provider.baseUrl, models)
+    if (provider.kind === 'openai-compatible') await Promise.all([enrichFromLmStudio(provider.baseUrl, models), enrichFromLiteLlm(provider, key, models)])
     if (provider.kind === 'openai') {
       // The OpenAI list includes audio/image/moderation models that can't chat.
       return models.filter((m) => m.image || (/^(gpt|o\d|chatgpt|codex|text-embedding)/.test(m.id) && !/(audio|realtime|tts|transcribe|image|search)/.test(m.id)))
@@ -465,7 +472,8 @@ function normalize(v: Float32Array): Float32Array {
 /** What a model costs per 1M tokens: the user's price (cache prices from the list when they didn't give them), else what
  *  the provider lists for it, else the catalogue. Servers on this PC cost nothing. */
 export function modelCost(provider: { kind: ProviderKind; baseUrl: string }, info: Pick<ModelInfo, 'pricing' | 'listPrice'> | undefined, id: string): Cost {
-  if (isLocalUrl(provider.baseUrl) && !(info?.pricing && (info.pricing.input > 0 || info.pricing.output > 0))) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  // A gateway on this PC (LiteLLM) still bills for the hosted models behind it, and lists what they cost.
+  if (isLocalUrl(provider.baseUrl) && !info?.listPrice && !(info?.pricing && (info.pricing.input > 0 || info.pricing.output > 0))) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   const listed: Cost = info?.listPrice ? { ...info.listPrice } : catalogCost(provider, id)
   const own = info?.pricing
   if (!own || !(own.input > 0 || own.output > 0)) return listed
@@ -528,9 +536,11 @@ export function guessModelInfo(provider: { kind: ProviderKind; baseUrl: string }
 function freshLimits(m: ModelInfo): Partial<ModelInfo> {
   // The provider's listed price is as fresh as the listing.
   const price = m.listPrice ? { listPrice: m.listPrice } : {}
-  if (m.contextSource === 'server') return { contextWindow: m.contextWindow, contextSource: 'server', ...price }
-  if (m.contextSource === 'catalog') return { contextWindow: m.contextWindow, maxTokens: m.maxTokens, contextSource: 'catalog', ...price }
-  return price
+  // A LiteLLM proxy's output limit and reasoning levels are as fresh as its context size.
+  const gateway = fromGateway.get(m) ?? {}
+  if (m.contextSource === 'server') return { contextWindow: m.contextWindow, contextSource: 'server', ...gateway, ...price }
+  if (m.contextSource === 'catalog') return { contextWindow: m.contextWindow, maxTokens: m.maxTokens, contextSource: 'catalog', ...gateway, ...price }
+  return { ...gateway, ...price }
 }
 
 /** LM Studio exposes richer metadata (model type, context length) on /api/v0/models. */
@@ -558,6 +568,93 @@ async function enrichFromLmStudio(baseUrl: string, models: ModelInfo[]): Promise
   } catch {
     // Not LM Studio — ignore.
   }
+}
+
+/** What a LiteLLM proxy reported for a model in this listing: a refresh takes these over saved values. */
+const fromGateway = new WeakMap<ModelInfo, Partial<ModelInfo>>()
+
+/** One entry of a LiteLLM proxy's GET /model_group/info (litellm/types/router.py ModelGroupInfo). */
+export interface LiteLlmGroup {
+  model_group: string
+  mode?: string | null
+  max_input_tokens?: number | null
+  max_output_tokens?: number | null
+  input_cost_per_token?: number | null
+  output_cost_per_token?: number | null
+  supports_vision?: boolean
+  supports_reasoning?: boolean
+  supported_reasoning_efforts?: string[] | null
+  deployment_pricing?: { provider: string; costs: Record<string, number> }[]
+}
+
+/** LiteLLM modes a chat can't use (speech, transcription, rerank, moderation, …). Chat, completion, responses,
+ *  embedding and image generation stay. */
+const LITELLM_SKIP = /^(audio_|rerank|moderation|ocr|realtime|search|decisions|evaluation|extraction|video)/
+
+/**
+ * A LiteLLM proxy describes each model group it serves (the ids /v1/models lists) on GET /model_group/info, for any
+ * valid key: input and output limits, price per token, vision, reasoning and the reasoning efforts it takes. Other
+ * servers answer 404 and are left alone.
+ */
+export async function enrichFromLiteLlm(provider: { baseUrl: string; headers: Record<string, string> }, key: string, models: ModelInfo[]): Promise<ModelInfo[]> {
+  let groups: LiteLlmGroup[]
+  try {
+    // The proxy serves its API both at the root and under /v1, but /model_group/info only at the root.
+    const root = provider.baseUrl.replace(/\/v1\/?$/, '')
+    const res = await fetch(`${root}/model_group/info`, {
+      signal: AbortSignal.timeout(4000),
+      headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), ...provider.headers }
+    })
+    if (!res.ok) return models
+    const body = (await res.json()) as { data?: unknown }
+    if (!Array.isArray(body.data)) return models
+    groups = (body.data as LiteLlmGroup[]).filter((g) => g && typeof g.model_group === 'string')
+  } catch {
+    return models // not LiteLLM, or unreachable
+  }
+  const byId = new Map(groups.map((g) => [g.model_group, g]))
+  for (let i = models.length - 1; i >= 0; i--) {
+    const g = byId.get(models[i].id)
+    if (!g) continue
+    if (g.mode && LITELLM_SKIP.test(g.mode)) models.splice(i, 1)
+    else applyLiteLlmGroup(models[i], g)
+  }
+  return models
+}
+
+/** USD per token as USD per 1M tokens. */
+const perMillion = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? +(v * 1_000_000).toFixed(6) : undefined)
+
+/** What one LiteLLM model group says about a model, written onto it. */
+export function applyLiteLlmGroup(m: ModelInfo, g: LiteLlmGroup): void {
+  m.embedding = g.mode === 'embedding'
+  if (g.mode === 'image_generation') m.image = true
+  if (g.max_input_tokens && g.max_input_tokens > 0) {
+    m.contextWindow = Math.floor(g.max_input_tokens)
+    m.contextSource = 'server'
+  }
+  const fresh: Partial<ModelInfo> = {}
+  if (g.max_output_tokens && g.max_output_tokens > 0) m.maxTokens = fresh.maxTokens = Math.floor(g.max_output_tokens)
+  if (g.supports_vision) m.vision = true
+  // supported_reasoning_efforts names every level the group takes, 'none' included when thinking can be switched off.
+  const efforts = (g.supported_reasoning_efforts ?? []).map((e) => e.toLowerCase())
+  const levels = EFFORT_ORDER.filter((e) => efforts.includes(e))
+  if (!m.embedding && (g.supports_reasoning || levels.length)) {
+    m.reasoning = true
+    m.efforts = levels.length && levels.length < EFFORT_ORDER.length ? [...levels] : undefined
+    m.offEffort = efforts.includes('none') ? 'none' : null
+    Object.assign(fresh, { efforts: m.efforts, offEffort: m.offEffort })
+  } else if (g.supports_reasoning === false && !isReasoningModelId(m.id)) {
+    m.reasoning = false
+  }
+  // Prices: the group's own price per token, with cache prices from its first deployment's cost map entry.
+  const input = perMillion(g.input_cost_per_token)
+  const output = perMillion(g.output_cost_per_token)
+  if (input !== undefined || output !== undefined) {
+    const costs = g.deployment_pricing?.[0]?.costs ?? {}
+    m.listPrice = { input: input ?? 0, output: output ?? 0, cacheRead: perMillion(costs.cache_read_input_token_cost) ?? 0, cacheWrite: perMillion(costs.cache_creation_input_token_cost) ?? 0 }
+  }
+  fromGateway.set(m, fresh)
 }
 
 /** Model families that reason (think) by default. Matches ids and LM Studio `arch` values. */

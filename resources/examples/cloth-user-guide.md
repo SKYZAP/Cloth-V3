@@ -30,6 +30,7 @@ Open **Models** to add a provider.
 
 - **OpenAI** uses the Responses API; **Anthropic** uses the Messages API. Both need an API key.
 - **OpenAI-compatible** covers LM Studio (`http://localhost:1234/v1`), Ollama (`http://localhost:11434/v1`), llama.cpp, vLLM and OpenRouter.
+- **LiteLLM** connects to a LiteLLM Proxy (`http://localhost:4000/v1`) with a virtual key or the master key. **Fetch list** reads each model's context size, output limit, price (cache prices included), vision and the reasoning levels it takes from the proxy, and leaves out speech, transcription and rerank models. Models on the proxy are priced even when it runs on this PC.
 - **Fetch list** lists a provider's models. Each model shows its context size and what it can do: **Reasoning**, **Vision**, **Embed** (embedding model) and **Images** (image generation). Click a chip to correct it.
 - The star marks the default chat model. The bottom of the provider list shows which model does each job (chat, embeddings, images and chat titles); change them in **Settings › Models**.
 - Set a price (USD per 1M input and output tokens) for models the built-in price list doesn't know; the Dashboard uses it for cost.
