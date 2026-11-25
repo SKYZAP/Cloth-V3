@@ -137,7 +137,9 @@ describe('the shell keeps its folder between commands', () => {
     expect(out).toContain('outside the workspace')
     expect(shellCwd.get(s)).toBeNull()
     const here = await run(t, SHELL, { command: win ? '(Get-Location).Path' : 'pwd' })
-    expect(here.trim().replace(/\\/g, '/').toLowerCase()).toContain(root.replace(/\\/g, '/').toLowerCase())
+    // The root as given or its real path: Windows may print the long form of an 8.3 name, macOS /var or /private/var.
+    const norm = (p: string) => p.trim().replace(/\\/g, '/').toLowerCase()
+    expect([norm(root), norm(realpathSync.native(root))].some((r) => norm(here).includes(r))).toBe(true)
     expect(here.replace(/\\/g, '/')).not.toMatch(/\/sub\s*$/)
   }, 60_000)
 

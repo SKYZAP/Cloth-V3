@@ -158,7 +158,7 @@ describe('workspace file tools', () => {
     symlinkSync(join(main, 'node_modules'), join(worker, 'node_modules'), kind)
     symlinkSync(join(base, 'secrets'), join(worker, 'secrets'), kind)
 
-    expect(await confine(worker, 'node_modules/lib/index.js', { read: true })).toBe(realpathSync(join(main, 'node_modules', 'lib', 'index.js')))
+    expect(await confine(worker, 'node_modules/lib/index.js', { read: true })).toBe(realpathSync.native(join(main, 'node_modules', 'lib', 'index.js')))
     await expect(confine(worker, 'node_modules/lib/index.js')).rejects.toThrow(/resolves through a link/)
     await expect(confine(worker, 'secrets/key.txt', { read: true })).rejects.toThrow(/resolves through a link/)
     await expect(confine(worker, '../main/node_modules/lib/index.js', { read: true })).rejects.toThrow(/outside/)

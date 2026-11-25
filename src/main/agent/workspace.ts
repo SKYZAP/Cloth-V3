@@ -78,7 +78,9 @@ export async function confine(root: string, p: string, opts: { read?: boolean } 
     const rel = relative(b, a)
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
   }
-  if (!inside(real, rootReal) && !inside(abs, rootReal)) throw new Error(`"${p}" is outside the workspace (${root}). Only files inside the workspace can be accessed.`)
+  // The root as given and its real path are the same folder (macOS /var is /private/var; Windows has 8.3 short names).
+  const rootAbs = resolve(root)
+  if (!inside(real, rootReal) && !inside(abs, rootReal) && !inside(abs, rootAbs)) throw new Error(`"${p}" is outside the workspace (${root}). Only files inside the workspace can be accessed.`)
   if (!inside(real, rootReal)) {
     if (opts.read && (await throughDependencyLink(rootReal, inside(abs, rootReal) ? abs : resolve(rootReal, relative(root, abs))))) return real
     throw new Error(`"${p}" resolves through a link to a location outside the workspace.`)
@@ -346,7 +348,9 @@ export async function gitChanges(root: string, opts: { base?: string; staged?: b
     if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ') || `git ${args[0]} failed`)
     return r.stdout
   }
-  const scope = opts.path ? ['--', relative(top, opts.path).split(sep).join('/') || '.'] : []
+  // git reports its top folder by its real path, so compare the path by its real path too.
+  const scopePath = opts.path ? await realpath(opts.path).catch(() => resolve(opts.path!)) : null
+  const scope = scopePath ? ['--', relative(top, scopePath).split(sep).join('/') || '.'] : []
   const diffArgs = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', ...(opts.staged ? ['--cached'] : []), ...(base ? [base] : opts.staged ? [] : ['HEAD'])]
   const hasHead = (await git(top, ['rev-parse', '--verify', '--quiet', 'HEAD'])).code === 0
   // A repository with no commits yet has no HEAD to compare with: everything is new.
