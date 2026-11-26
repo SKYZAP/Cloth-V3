@@ -4,764 +4,428 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cloth</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Cloth is a free, open-source desktop app for working with AI models on your own machine: chat, agents, boards, automations and searchable knowledge, with hosted or local models.">
+<meta name="description" content="Cloth, an open-source desktop app for working with AI models on your own machine. Coming soon.">
 <meta property="og:title" content="Cloth">
-<meta property="og:description" content="Every model you use, woven into one open-source desktop app.">
+<meta property="og:description" content="Coming soon.">
 <meta property="og:image" content="https://skyzap.github.io/Cloth-V3/media/chat.jpg">
-<meta name="theme-color" content="#09090c">
+<meta name="theme-color" content="#ffffff">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&display=swap">
 <style>
-/* Layout: one narrow reading column for words, wide stages for the app's own recordings; a woven-thread canvas opens and closes the page. */
-:root {
-  color-scheme: dark;
-  /* Cloth's own palette (src/renderer/src/styles.css) */
-  --bg: #09090c;
-  --panel: #141518;
-  --card: #0f0f12;
-  --elev: #1e1e22;
-  --line: #2a2a30;
-  --line-strong: #494a51;
-  --fg: #f1f1f4;
-  --muted: #bdbdc5;
-  --dim: #94949e;
-  --crimson: #cf2845;
-  --crimson-hi: #e54056;
-  --crimson-lo: #97182f;
-  --crimson-soft: rgb(207 40 69 / 0.12);
-  --crimson-text: #f88d96;
-  --agent: #70ccee;
-  --skill: #c9a3f5;
-  --ospec: #7dd3c0;
-  --ok: #5ccb89;
-  --info: #6cb2ec;
-  --warn: #f6b84d;
-
-  --font-display: 'Bricolage Grotesque', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
-
-  --step--1: 0.875rem;
-  --step-0: 1.0625rem;
-  --step-1: 1.25rem;
-  --step-2: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
-  --step-3: clamp(2rem, 1.4rem + 2.6vw, 3.25rem);
-  --step-4: clamp(2.3rem, 1.4rem + 4.6vw, 5rem);
-
-  --ease-out: cubic-bezier(.16, 1, .3, 1);
-  --wide: 1200px;
-  --narrow: 680px;
-}
-
-*, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-body);
-  font-size: var(--step-0);
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-}
-img, video { max-width: 100%; display: block; }
-a { color: inherit; }
-:focus-visible { outline: 2px solid var(--crimson-hi); outline-offset: 3px; border-radius: 6px; }
-::selection { background: var(--crimson); color: #fff; }
-
-.wrap {
-  width: 100%;
-  max-width: calc(var(--wide) + 48px);
-  margin-inline: auto;
-  padding-left: max(24px, env(safe-area-inset-left, 0px));
-  padding-right: max(24px, env(safe-area-inset-right, 0px));
-}
-@media (max-width: 520px) {
-  .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-}
-
-/* ---------- Nav ---------- */
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--bg); }
-.nav {
-  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50;
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  background: rgb(9 9 12 / 0.72);
-  border-bottom: 1px solid transparent;
-  transition: border-color .3s;
-}
-.nav.scrolled { border-bottom-color: var(--line); }
-.nav .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; letter-spacing: -0.01em; }
-.brand img { width: 28px; height: 28px; }
-.nav-links { display: flex; gap: 24px; margin-left: auto; }
-.nav-links a { text-decoration: none; color: var(--muted); font-size: var(--step--1); font-weight: 500; transition: color .2s; }
-.nav-links a:hover { color: var(--fg); }
-@media (max-width: 640px) { .nav-links { display: none; } .nav .btn { margin-left: auto; } }
-
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 44px; padding: 0 18px; border-radius: 10px;
-  font: 600 var(--step--1)/1 var(--font-body); text-decoration: none; cursor: pointer;
-  border: 1px solid transparent;
-  transition: background .2s, border-color .2s, transform .2s var(--ease-out), box-shadow .3s;
-}
-.btn:active { transform: translateY(1px) scale(.98); }
-.btn-primary { background: var(--crimson); color: #fff; box-shadow: 0 0 0 0 rgb(207 40 69 / 0); }
-.btn-primary:hover { background: var(--crimson-hi); box-shadow: 0 8px 32px -8px rgb(229 64 86 / .6); }
-.btn-ghost { background: transparent; color: var(--fg); border-color: var(--line-strong); }
-.btn-ghost:hover { background: var(--elev); }
-.btn svg { width: 18px; height: 18px; flex: none; }
-.nav .btn { min-height: 38px; padding: 0 14px; }
-
-/* ---------- Hero ---------- */
-.hero { position: relative; padding-block: 72px 0; isolation: isolate; }
-#weave { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 92%);
-          mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 92%); }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 56px; align-items: end; }
-.hero-copy { max-width: 760px; min-width: 0; }
-@media (max-width: 900px) { .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; } }
-.release {
-  display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: 999px;
-  background: rgb(20 21 24 / .8); border: 1px solid var(--line); font-size: var(--step--1); color: var(--muted); text-decoration: none;
-  transition: border-color .2s;
-}
-.release:hover { border-color: var(--line-strong); }
-.release b { font: 500 .75rem/1 var(--font-mono); color: var(--crimson-text); background: var(--crimson-soft); padding: 5px 8px; border-radius: 999px; }
-h1 {
-  font-family: var(--font-display); font-size: var(--step-4); line-height: 1.02; font-weight: 600;
-  letter-spacing: -0.028em; margin: 28px 0 0; text-wrap: balance;
-  font-variation-settings: "opsz" 96;
-}
-h1 .line { display: block; overflow: hidden; padding-bottom: .06em; }
-h1 .line > span { display: inline-block; }
-.lede { font-size: var(--step-1); color: var(--muted); max-width: 44ch; margin: 24px 0 0; line-height: 1.55; text-wrap: pretty; }
-/* "woven": the one word that carries a thread under it */
-h1 em { font-style: normal; color: var(--crimson-hi); position: relative; white-space: nowrap; }
-h1 em::after {
-  content: ""; position: absolute; left: -2%; right: -2%; bottom: -.04em; height: .16em;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4 Q6 0 12 4 T24 4' fill='none' stroke='%23e54056' stroke-width='1.6'/%3E%3C/svg%3E") repeat-x 0 50% / auto 100%;
-  animation: thread 6s linear infinite;
-}
-@keyframes thread { to { background-position: 48px 50%; } }
-.hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
-.hero-note { margin-top: 14px; font-size: var(--step--1); color: var(--dim); }
-
-/* App window that carries the recordings */
-.stage { perspective: 1800px; margin-top: 64px; }
-.window {
-  position: relative; border-radius: 14px; overflow: hidden;
-  background: var(--card); border: 1px solid var(--line);
-  box-shadow: 0 0 0 1px rgb(255 255 255 / .03) inset, 0 40px 120px -40px rgb(0 0 0 / .9), 0 0 140px -30px rgb(207 40 69 / .35);
-  transform-origin: 50% 0%;
-  will-change: transform;
-}
-.titlebar { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; background: #101013; border-bottom: 1px solid var(--line); }
-.titlebar i { width: 11px; height: 11px; border-radius: 50%; background: #2c2c32; }
-.titlebar span { margin-inline: auto; font: 500 .75rem/1 var(--font-mono); color: var(--dim); transform: translateX(-24px); }
-.screen { position: relative; aspect-ratio: 1440 / 900; background: #09090c; }
-.screen video, .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.hero .stage { position: relative; }
-.hero .stage::after { /* floor glow */
-  content: ""; position: absolute; left: 10%; right: 10%; bottom: -60px; height: 120px; z-index: -1;
-  background: radial-gradient(50% 50% at 50% 50%, rgb(207 40 69 / .35), transparent 70%); filter: blur(30px);
-}
-
-/* ---------- Care label: what Cloth is made of, sewn on like a garment tag ---------- */
-.tag {
-  position: relative; justify-self: end; width: 100%; max-width: 300px; padding: 30px 22px 22px;
-  background: #f2ede4; color: #1b1a1f; border-radius: 4px 4px 14px 14px;
-  font: 500 .78rem/1.5 var(--font-mono); letter-spacing: .02em;
-  transform: rotate(2.4deg); transform-origin: 50% 0;
-  box-shadow: 0 30px 60px -30px rgb(0 0 0 / .9), 0 0 0 1px rgb(255 255 255 / .06);
-  animation: sway 7s ease-in-out infinite alternate;
-}
-.tag::before { /* the stitches round the edge */
-  content: ""; position: absolute; inset: 8px; border: 1.5px dashed rgb(151 24 47 / .55); border-radius: 2px 2px 10px 10px; pointer-events: none;
-}
-.tag::after { /* the loop it hangs from */
-  content: ""; position: absolute; top: -26px; left: 50%; width: 2px; height: 34px; background: linear-gradient(var(--crimson-lo), var(--crimson-hi)); transform: translateX(-50%);
-}
-@keyframes sway { from { transform: rotate(2.4deg); } to { transform: rotate(-1.2deg); } }
-.tag-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgb(27 26 31 / .18); padding-bottom: 10px; margin-bottom: 12px; }
-.tag-head strong { font: 700 1.25rem/1 var(--font-display); letter-spacing: .18em; }
-.tag-head span { color: #97182f; }
-.tag dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; }
-.tag dt { text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; color: rgb(27 26 31 / .55); padding-top: .15em; }
-.tag dd { margin: 0; }
-.tag-care { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgb(27 26 31 / .18); font-size: .72rem; color: rgb(27 26 31 / .72); }
-@media (max-width: 900px) { .tag { justify-self: start; transform: rotate(-1.5deg); animation: none; } }
-
-/* ---------- Open source ---------- */
-.oss { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; margin-top: 56px; align-items: start; }
-.oss-points { display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
-.oss-points li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; color: var(--muted); }
-.oss-points b { color: var(--fg); font-weight: 600; }
-.oss-points svg { width: 20px; height: 20px; color: var(--crimson-hi); margin-top: 3px; }
-.oss .btn { margin-top: 32px; }
-@media (max-width: 960px) { .oss { grid-template-columns: minmax(0, 1fr); gap: 40px; } }
-
-/* ---------- Section heads ---------- */
-section { scroll-margin-top: 80px; }
-.section { padding-block: 128px 0; }
-.head { max-width: var(--narrow); }
-.head h2 { font-family: var(--font-display); font-size: var(--step-3); line-height: 1.06; letter-spacing: -0.03em; font-weight: 600; margin: 0; text-wrap: balance; }
-.head p { color: var(--muted); font-size: var(--step-1); margin: 18px 0 0; max-width: 46ch; text-wrap: pretty; }
-
-/* ---------- Tour ---------- */
-.tour { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 48px; margin-top: 56px; align-items: start; }
-.tabs { display: flex; flex-direction: column; gap: 4px; }
-.tab {
-  --c: var(--crimson);
-  position: relative; text-align: left; width: 100%; padding: 16px 18px 18px; border-radius: 12px; cursor: pointer;
-  background: transparent; border: 1px solid transparent; color: var(--fg); font: inherit;
-  transition: background .25s, border-color .25s;
-}
-.tab:hover { background: rgb(30 30 34 / .55); }
-.tab[aria-selected="true"] { background: var(--panel); border-color: var(--line); }
-.tab-title { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--step-0); }
-.tab-title i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 12px var(--c); flex: none; }
-.tab-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .45s var(--ease-out); }
-.tab-body > span { overflow: hidden; display: block; min-height: 0; }
-.tab-desc { display: block; margin: 8px 0 0 18px; color: var(--muted); font-size: .95rem; line-height: 1.55; }
-.tab[aria-selected="true"] .tab-body { grid-template-rows: 1fr; }
-.tab .bar { position: absolute; left: 18px; right: 18px; bottom: 8px; height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; opacity: 0; transition: opacity .3s; }
-.tab .bar b { display: block; height: 100%; width: 100%; background: var(--c); transform-origin: left; transform: scaleX(0); }
-.tab[aria-selected="true"] .bar { opacity: 1; }
-.tour-stage { position: sticky; top: 96px; }
-.tour .window { box-shadow: 0 0 0 1px rgb(255 255 255 / .03) inset, 0 40px 100px -40px rgb(0 0 0 / .9), 0 0 120px -40px var(--glow, rgb(207 40 69 / .4)); transition: box-shadow .6s; }
-.tour .screen video { transition: opacity .35s; }
-.tour .screen video.fading { opacity: 0; }
-.tour-controls { display: flex; justify-content: flex-end; margin-top: 12px; }
-.icon-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 10px; background: transparent; color: var(--dim); border: 0; font: 500 var(--step--1)/1 var(--font-body); cursor: pointer; }
-.icon-btn:hover { color: var(--fg); background: var(--elev); }
-.icon-btn svg { width: 16px; height: 16px; }
-@media (max-width: 960px) {
-  .tour { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-  .tour-stage { position: relative; top: 0; order: -1; }
-}
-
-/* ---------- Local-first ---------- */
-.local { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; margin-top: 56px; align-items: start; }
-.points { display: grid; gap: 36px; }
-.point { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; }
-.point .ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--line); color: var(--c, var(--crimson-hi)); }
-.point .ico svg { width: 20px; height: 20px; }
-.point h3 { margin: 0; font-size: var(--step-1); font-weight: 600; letter-spacing: -0.01em; font-family: var(--font-display); }
-.point p { margin: 6px 0 0; color: var(--muted); }
-.term { border-radius: 14px; border: 1px solid var(--line); background: var(--card); overflow: hidden; position: sticky; top: 96px; }
-.term .titlebar span { transform: none; margin: 0; }
-.term pre { margin: 0; padding: 22px 22px 26px; overflow-x: auto; font: 400 .875rem/1.8 var(--font-mono); color: var(--muted); }
-.term .p { color: var(--crimson-hi); user-select: none; }
-.term .c { color: var(--dim); }
-.term .k { color: var(--fg); }
-.term .s { color: var(--ospec); }
-.term .o { color: var(--ok); }
-.term .caret { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: var(--fg); animation: blink 1.1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.copy { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--dim); font: 500 .75rem/1 var(--font-body); cursor: pointer; min-height: 28px; padding: 0 8px; border-radius: 6px; }
-.copy:hover { color: var(--fg); background: var(--elev); }
-@media (max-width: 960px) { .local { grid-template-columns: minmax(0, 1fr); gap: 48px; } .term { position: relative; top: 0; } }
-
-/* ---------- Providers ---------- */
-.works { margin-top: 128px; text-align: center; }
-.works p { color: var(--dim); font-size: var(--step--1); margin: 0 0 20px; }
-.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-.chips span { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font: 500 .875rem/1.2 var(--font-mono); color: var(--muted); }
-
-/* ---------- Download ---------- */
-.download { position: relative; margin-top: 128px; padding-block: 120px 128px; isolation: isolate; overflow: hidden; border-top: 1px solid var(--line); }
-#weave2 { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none;
-  -webkit-mask-image: radial-gradient(70% 80% at 50% 60%, #000 20%, transparent 85%);
-          mask-image: radial-gradient(70% 80% at 50% 60%, #000 20%, transparent 85%); }
-.download .head { margin-inline: auto; text-align: center; }
-.download .head p { margin-inline: auto; }
-.platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 760px; margin: 48px auto 0; }
-.platform {
-  display: flex; flex-direction: column; gap: 4px; padding: 20px; border-radius: 14px; text-decoration: none;
-  background: rgb(20 21 24 / .85); border: 1px solid var(--line); transition: border-color .25s, transform .3s var(--ease-out), background .25s;
-}
-.platform:hover { border-color: var(--crimson-lo); background: rgb(30 30 34 / .9); transform: translateY(-2px); }
-.platform svg { width: 24px; height: 24px; margin-bottom: 14px; color: var(--fg); }
-.platform strong { font-weight: 600; }
-.platform span { color: var(--dim); font-size: var(--step--1); }
-@media (max-width: 640px) { .platforms { grid-template-columns: minmax(0, 1fr); } }
-
-footer { border-top: 1px solid var(--line); padding-block: 32px; color: var(--dim); font-size: var(--step--1); }
-footer .wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-footer nav { display: flex; gap: 20px; margin-left: auto; }
-footer a { text-decoration: none; }
-footer a:hover { color: var(--fg); }
-.dl-more { text-align: center; margin: 28px 0 0; font-size: var(--step--1); }
-.dl-more a { color: var(--muted); }
-.dl-more a:hover { color: var(--fg); }
-
-/* ---------- Motion ---------- */
-/* Everything is readable at rest; the hero only eases up a few pixels on load. */
-@keyframes lift { from { transform: translateY(12px); } }
-.hero-copy > *, .tag { animation-fill-mode: both; }
-.hero-copy > * { animation: lift .9s var(--ease-out) both; }
-.hero-copy > :nth-child(2) { animation-delay: .06s; }
-.hero-copy > :nth-child(3) { animation-delay: .12s; }
-.hero-copy > :nth-child(4) { animation-delay: .18s; }
-@media (prefers-reduced-motion: reduce) {
-  .hero-copy > *, .tag, h1 em::after { animation: none !important; }
-  .term .caret { animation: none; }
-}
+html, body { margin: 0; height: 100%; background: #ffffff; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
+canvas.over { cursor: grab; }
+canvas.holding { cursor: grabbing; }
 </style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.webgpu.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.webgpu.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+} }
+</script>
 </head>
 <body>
+<canvas id="scene" aria-label="A grey glasses cloth printed with the Cloth logo. Drag it to move it around."></canvas>
+<script type="module">
+import * as THREE from 'three/webgpu'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 
-<header class="nav" id="nav">
-  <div class="wrap">
-    <a class="brand" href="#top" aria-label="Cloth home"><img src="icon.svg" alt="" width="28" height="28">Cloth</a>
-    <nav class="nav-links" aria-label="Sections">
-      <a href="#tour">Tour</a>
-      <a href="#local">On your machine</a>
-      <a href="#source">Open source</a>
-      <a href="https://github.com/SKYZAP/Cloth-V3">GitHub</a>
-    </nav>
-    <a class="btn btn-primary" href="#download">Download</a>
-  </div>
-</header>
+/* ---------------------------------------------------------------- renderer, camera, light */
+const canvas = document.getElementById('scene')
+// WebGPU where the browser has it; three.js falls back to WebGL 2 by itself elsewhere.
+const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, alpha: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight, false)
+renderer.toneMapping = THREE.NeutralToneMapping
+renderer.toneMappingExposure = 1.0
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+await renderer.init()
+// The page itself is the white table: the canvas stays see-through, so tone mapping never greys it.
+renderer.setClearColor(0xffffff, 0)
 
-<main id="top">
-  <section class="hero">
-    <canvas id="weave" aria-hidden="true"></canvas>
-    <div class="wrap">
-      <div class="hero-grid">
-        <div class="hero-copy">
-          <a class="release" href="https://github.com/SKYZAP/Cloth-V3"><b>MIT</b>Cloth is open source. Read the code on GitHub</a>
-          <h1>Every model you use, <em>woven</em> into one app.</h1>
-          <p class="lede">Chat with hosted or local models, hand work to agents, schedule automations and search your own notes. It all runs on your machine, and the code is yours to read.</p>
-          <div class="hero-ctas">
-            <a class="btn btn-primary" href="#download">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></svg>
-              Download Cloth
-            </a>
-            <a class="btn btn-ghost" href="https://github.com/SKYZAP/Cloth-V3">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.5a10.5 10.5 0 0 0-3.3 20.5c.5.1.7-.2.7-.5v-1.9c-2.9.6-3.5-1.3-3.5-1.3-.5-1.2-1.2-1.6-1.2-1.6-1-.7.1-.6.1-.6 1 .1 1.6 1.1 1.6 1.1.9 1.6 2.5 1.1 3.1.9.1-.7.4-1.1.7-1.4-2.3-.3-4.8-1.2-4.8-5.2 0-1.1.4-2.1 1.1-2.8-.1-.3-.5-1.4.1-2.8 0 0 .9-.3 2.9 1.1a10 10 0 0 1 5.2 0c2-1.4 2.9-1.1 2.9-1.1.6 1.4.2 2.5.1 2.8.7.7 1.1 1.7 1.1 2.8 0 4-2.4 4.9-4.8 5.2.4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10.5 10.5 0 0 0 12 1.5z"/></svg>
-              View on GitHub
-            </a>
-          </div>
-          <p class="hero-note">Free for Windows, macOS and Android. MIT licence.</p>
-        </div>
+const scene = new THREE.Scene()
 
-        <aside class="tag" aria-label="Care label">
-          <div class="tag-head"><strong>CLOTH</strong><span data-version>v1.5</span></div>
-          <dl>
-            <dt>Made of</dt><dd>100% your machine</dd>
-            <dt>Threads</dt><dd>Any model, hosted or local</dd>
-            <dt>Woven</dt><dd>Electron, React, llama.cpp</dd>
-            <dt>Licence</dt><dd>MIT, open source</dd>
-          </dl>
-          <p class="tag-care">Care: runs offline. Keep keys sealed. Keep away from the cloud unless you choose it.</p>
-        </aside>
-      </div>
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.05, 50)
+const fit = () => {
+  camera.aspect = innerWidth / innerHeight
+  // Keep the cloth's area in view on narrow screens too.
+  const d = camera.aspect < 1 ? 5.2 / Math.max(0.55, camera.aspect) : 5.2
+  camera.position.set(0, d * 0.78, d * 0.62)
+  camera.lookAt(0, 0, 0.05)
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight, false)
+}
+fit()
+addEventListener('resize', fit)
 
-      <div class="stage" id="heroStage">
-        <div class="window" id="heroWindow">
-          <div class="titlebar" aria-hidden="true"><i></i><i></i><i></i><span>Cloth</span></div>
-          <div class="screen">
-            <video id="heroVideo" src="media/chat.mp4" poster="media/chat.jpg" autoplay muted loop playsinline preload="auto" aria-label="Recording: asking Cloth for a typed debounce helper. The local model thinks, then streams TypeScript code with notes."></video>
-          </div>
-        </div>
-      </div>
-    </div>
+try {
+  const pmrem = new THREE.PMREMGenerator(renderer)
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+  scene.environmentIntensity = 0.55
+} catch { /* lights alone still read well */ }
 
-  </section>
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d9de, 0.75))
+const sun = new THREE.DirectionalLight(0xffffff, 3.2)
+sun.position.set(2.2, 6, 2.8)
+sun.castShadow = true
+sun.shadow.mapSize.set(2048, 2048)
+sun.shadow.camera.left = -3; sun.shadow.camera.right = 3; sun.shadow.camera.top = 3; sun.shadow.camera.bottom = -3
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 14
+sun.shadow.bias = -0.0004
+sun.shadow.normalBias = 0.012
+sun.shadow.radius = 6
+scene.add(sun)
+const fill = new THREE.DirectionalLight(0xf3f4ff, 0.5)
+fill.position.set(-3, 2.5, -1)
+scene.add(fill)
 
-  <section class="section" id="tour" aria-labelledby="tour-h">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="tour-h">From a question to a shipped ticket.</h2>
-        <p>Each clip is the real app, recorded as it runs. Pick one, or let the tour play.</p>
-      </div>
+// The table: pure white, showing only the cloth's shadow.
+const floorMat = new THREE.ShadowNodeMaterial()
+floorMat.opacity = 0.2
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), floorMat)
+floor.rotation.x = -Math.PI / 2
+floor.receiveShadow = true
+scene.add(floor)
 
-      <div class="tour">
-        <div class="tabs" role="tablist" aria-label="Features" aria-orientation="vertical" id="tabs">
-          <button class="tab" role="tab" id="t-chat" aria-controls="tourPanel" aria-selected="true" data-clip="chat" style="--c: var(--crimson-hi)">
-            <span class="tab-title"><i></i>Chat</span>
-            <span class="tab-body"><span><span class="tab-desc">Ask any model. Reasoning, code and tool calls stream in, and every tool call is traced. Your model and effort carry over to the next chat.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-          <button class="tab" role="tab" id="t-agents" aria-controls="tourPanel" aria-selected="false" tabindex="-1" data-clip="agents" style="--c: var(--agent)">
-            <span class="tab-title"><i></i>Agents</span>
-            <span class="tab-body"><span><span class="tab-desc">Built-in agents review code, design and research. Set each one's access, reasoning and tools, or describe a new agent in a sentence.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-          <button class="tab" role="tab" id="t-boards" aria-controls="tourPanel" aria-selected="false" tabindex="-1" data-clip="boards" style="--c: var(--info)">
-            <span class="tab-title"><i></i>Boards</span>
-            <span class="tab-body"><span><span class="tab-desc">Tickets move from requirements to review to building, with agents doing the work. Keep the board on this PC, or connect Plane or Jira.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-          <button class="tab" role="tab" id="t-auto" aria-controls="tourPanel" aria-selected="false" tabindex="-1" data-clip="auto" style="--c: var(--skill)">
-            <span class="tab-title"><i></i>Automations</span>
-            <span class="tab-body"><span><span class="tab-desc">Describe a job in plain words. Cloth drafts the prompt, the schedule and the tools it needs, and you turn it on when it looks right.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-          <button class="tab" role="tab" id="t-knowledge" aria-controls="tourPanel" aria-selected="false" tabindex="-1" data-clip="knowledge" style="--c: var(--ospec)">
-            <span class="tab-title"><i></i>Knowledge</span>
-            <span class="tab-body"><span><span class="tab-desc">Add folders, web pages and notes. Search them by keyword and by meaning in milliseconds, and let chats cite what they find.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-          <button class="tab" role="tab" id="t-dash" aria-controls="tourPanel" aria-selected="false" tabindex="-1" data-clip="dash" style="--c: var(--ok)">
-            <span class="tab-title"><i></i>Dashboard</span>
-            <span class="tab-body"><span><span class="tab-desc">Tokens, cost, calls and response times by model and by source, so you can see where your usage goes.</span></span></span>
-            <span class="bar"><b></b></span>
-          </button>
-        </div>
+/* ---------------------------------------------------------------- textures */
+await document.fonts.load('600 120px "Bricolage Grotesque"').catch(() => {})
+const SIZE = 1024
+const BASE = '#8c8e93'
 
-        <div class="tour-stage">
-          <div class="window" id="tourWindow">
-            <div class="titlebar" aria-hidden="true"><i></i><i></i><i></i><span id="tourTitle">Cloth · Chat</span></div>
-            <div class="screen" role="tabpanel" id="tourPanel" aria-labelledby="t-chat">
-              <video id="tourVideo" muted playsinline preload="none" poster="media/chat.jpg" aria-label="Recording of the Chat screen"></video>
-            </div>
-          </div>
-          <div class="tour-controls">
-            <button class="icon-btn" id="tourToggle" type="button" aria-pressed="false">
-              <svg id="icoPause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
-              <svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5z"/></svg>
-              <span id="tourToggleLabel">Pause tour</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+/** Microfibre: a grey ground with fine fibre noise and an overlocked edge. */
+function fabric(ctx) {
+  ctx.fillStyle = BASE
+  ctx.fillRect(0, 0, SIZE, SIZE)
+  const img = ctx.getImageData(0, 0, SIZE, SIZE)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 10
+    d[i] += n; d[i + 1] += n; d[i + 2] += n
+  }
+  ctx.putImageData(img, 0, 0)
+  // Overlocked edge: a denser band, then a row of stitches inside it.
+  ctx.strokeStyle = 'rgba(70, 72, 78, 0.55)'
+  ctx.lineWidth = 22
+  ctx.strokeRect(11, 11, SIZE - 22, SIZE - 22)
+  ctx.save()
+  ctx.strokeStyle = 'rgba(52, 54, 60, 0.7)'
+  ctx.lineWidth = 2.5
+  ctx.setLineDash([7, 6])
+  ctx.strokeRect(32, 32, SIZE - 64, SIZE - 64)
+  ctx.restore()
+}
 
-  <section class="section" id="local" aria-labelledby="local-h">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="local-h">Your code and keys stay on your machine.</h2>
-        <p>Cloth is a desktop app first. The cloud is something you add, not something you need.</p>
-      </div>
+function frontTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = SIZE
+  const ctx = c.getContext('2d')
+  fabric(ctx)
+  // The Cloth mark, printed: the crimson C with its stitched bar, and the name beside it.
+  const cx = 512, cy = 512, s = 0.3
+  ctx.save()
+  ctx.translate(cx - 200, cy)
+  ctx.scale(s, s)
+  ctx.translate(-512, -512)
+  const g = ctx.createLinearGradient(260, 280, 760, 760)
+  g.addColorStop(0, '#e23a58'); g.addColorStop(1, '#a51a33')
+  ctx.strokeStyle = g
+  ctx.lineWidth = 92
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  // Same arc as the logo: centre (512, 512), radius 230, opening to the right.
+  ctx.arc(512, 512, 230, -0.785, 0.785, true)
+  ctx.stroke()
+  ctx.strokeStyle = 'rgba(244, 244, 246, 0.8)'
+  ctx.lineWidth = 40
+  ctx.setLineDash([40, 64])
+  ctx.beginPath(); ctx.moveTo(410, 512); ctx.lineTo(610, 512); ctx.stroke()
+  ctx.restore()
+  ctx.fillStyle = 'rgba(246, 246, 248, 0.9)'
+  ctx.font = '600 120px "Bricolage Grotesque", "Segoe UI", sans-serif'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('Cloth', cx - 92, cy + 4)
+  return finish(c)
+}
 
-      <div class="local">
-        <div class="points">
-          <div class="point" style="--c: var(--crimson-hi)">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></div>
-            <div><h3>Run models on your GPU</h3><p>Cloth installs and updates llama.cpp for you, suggests models that fit your graphics card, and lets you set context size and reasoning per model.</p></div>
-          </div>
-          <div class="point" style="--c: var(--agent)">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h8a4 4 0 0 1 0 8H8a4 4 0 0 1 0-8z"/><path d="M12 3v4M12 15v6"/></svg></div>
-            <div><h3>Connect any MCP server</h3><p>Add servers by command or by address. The ones that need an account sign in through your browser, and you can change a server's permissions without restarting it.</p></div>
-          </div>
-          <div class="point" style="--c: var(--ospec)">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
-            <div><h3>Lend Cloth to your other tools</h3><p>Cloth runs its own MCP server, so Claude Code, Cursor and Claude Desktop can search your knowledge and use your skills. One command connects them.</p></div>
-          </div>
-          <div class="point" style="--c: var(--skill)">
-            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
-            <div><h3>Secrets stay sealed</h3><p>API keys, tokens and sign-ins are stored encrypted and never shown back in the app. Paired phones can chat, but they never see them.</p></div>
-          </div>
-        </div>
+function backTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = SIZE
+  const ctx = c.getContext('2d')
+  fabric(ctx)
+  // Seen from behind, the texture is mirrored: draw it mirrored so the words read the right way round.
+  ctx.save()
+  ctx.translate(SIZE, 0); ctx.scale(-1, 1)
+  ctx.fillStyle = 'rgba(246, 246, 248, 0.88)'
+  ctx.font = '600 92px "Bricolage Grotesque", "Segoe UI", sans-serif'
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '10px'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('coming soon', 512, 512)
+  ctx.restore()
+  return finish(c)
+}
 
-        <div class="term" aria-label="Terminal: connect Claude Code to Cloth">
-          <div class="titlebar"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><span>&nbsp;terminal</span><button class="copy" type="button" id="copyCmd">Copy command</button></div>
-<pre><span class="c"># Give Claude Code everything Cloth knows</span>
-<span class="p">$ </span><span class="k" id="cmd">claude mcp add --transport http cloth http://127.0.0.1:7811/mcp</span>
-<span class="o">Added HTTP MCP server cloth</span>
+function finish(canvas) {
+  const t = new THREE.CanvasTexture(canvas)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = 8
+  return t
+}
 
-<span class="p">$ </span><span class="k">claude mcp list</span>
-cloth: http://127.0.0.1:7811/mcp <span class="s">- ✓ Connected</span>
-<span class="p">$ </span><span class="caret" aria-hidden="true"></span></pre>
-        </div>
-      </div>
+/** The weave, as a tiling normal map: warp and weft threads crossing over and under. */
+function weaveNormals() {
+  const n = 128, c = document.createElement('canvas'); c.width = c.height = n
+  const ctx = c.getContext('2d'), img = ctx.createImageData(n, n)
+  const h = (x, y) => {
+    const u = (x / n) * Math.PI * 16, v = (y / n) * Math.PI * 16
+    const over = Math.sign(Math.sin(u / 2) * Math.sin(v / 2))
+    return Math.abs(Math.sin(u)) * (over > 0 ? 1 : 0.4) + Math.abs(Math.sin(v)) * (over > 0 ? 0.4 : 1) + (Math.random() - 0.5) * 0.25
+  }
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = h((x + 1) % n, y) - h((x - 1 + n) % n, y)
+    const dy = h(x, (y + 1) % n) - h(x, (y - 1 + n) % n)
+    const v = new THREE.Vector3(-dx, -dy, 2.2).normalize()
+    const i = (y * n + x) * 4
+    img.data[i] = (v.x * 0.5 + 0.5) * 255; img.data[i + 1] = (v.y * 0.5 + 0.5) * 255; img.data[i + 2] = (v.z * 0.5 + 0.5) * 255; img.data[i + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(36, 36)
+  t.anisotropy = 8
+  return t
+}
 
-      <div class="works">
-        <p>Works with</p>
-        <div class="chips">
-          <span>OpenAI</span><span>Anthropic</span><span>OpenRouter</span><span>LiteLLM</span><span>LM Studio</span><span>Ollama</span><span>llama.cpp</span><span>vLLM</span><span>Plane</span><span>Jira</span><span>MCP</span>
-        </div>
-      </div>
-    </div>
-  </section>
+/* ---------------------------------------------------------------- the cloth: particles and constraints */
+const N = 44                       // particles per side
+const W = 1.7                      // side length
+const REST = W / (N - 1)
+const COUNT = N * N
+const pos = new Float32Array(COUNT * 3)
+const prev = new Float32Array(COUNT * 3)
+const invMass = new Float32Array(COUNT).fill(1)
 
-  <section class="section" id="source" aria-labelledby="src-h">
-    <div class="wrap">
-      <div class="head">
-        <h2 id="src-h">Open source, every thread of it.</h2>
-        <p>Cloth's code is on GitHub under the MIT licence. Read how it treats your keys, build it yourself, or send a fix.</p>
-      </div>
-      <div class="oss">
-        <div>
-          <ul class="oss-points">
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span><b>Nothing hidden.</b> Every request Cloth makes is in the code, and the installers are built from it by GitHub Actions.</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg><span><b>Fork it.</b> MIT means you can change it, ship it inside your own tools, and keep your changes.</span></li>
-            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span><b>Pull requests welcome.</b> The test suite runs on every one, so you know before review whether it works.</span></li>
-          </ul>
-          <a class="btn btn-ghost" href="https://github.com/SKYZAP/Cloth-V3">Open the repository</a>
-        </div>
-        <div class="term" aria-label="Terminal: build Cloth from source">
-          <div class="titlebar"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><span>&nbsp;terminal</span></div>
-<pre><span class="c"># Build Cloth from source</span>
-<span class="p">$ </span><span class="k">git clone https://github.com/SKYZAP/Cloth-V3.git</span>
-<span class="p">$ </span><span class="k">cd Cloth-V3 &amp;&amp; npm install</span>
-<span class="p">$ </span><span class="k">npm run dev</span>
-<span class="o">Cloth is running with hot reload</span>
+// Dropped from above, steeply and drifting a little, so it lands rumpled the way a dropped cloth does.
+{
+  const tilt = 1.05, turn = 0.6, dt = 1 / 240
+  const drift = new THREE.Vector3(0.5, 0, -0.35)
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const i = r * N + c
+    const x = (c / (N - 1) - 0.5) * W, z = (r / (N - 1) - 0.5) * W
+    // Tilt about x, then turn about y; a slight ripple across it.
+    const y0 = -z * Math.sin(tilt) + Math.sin(c * 0.35) * 0.03, z0 = z * Math.cos(tilt)
+    const xr = x * Math.cos(turn) - z0 * Math.sin(turn), zr = x * Math.sin(turn) + z0 * Math.cos(turn)
+    pos[i * 3] = xr - 0.25; pos[i * 3 + 1] = 1.25 + y0; pos[i * 3 + 2] = zr + 0.1
+    prev[i * 3] = pos[i * 3] - drift.x * dt; prev[i * 3 + 1] = pos[i * 3 + 1]; prev[i * 3 + 2] = pos[i * 3 + 2] - drift.z * dt
+  }
+}
 
-<span class="p">$ </span><span class="k">npm test</span>
-<span class="s">✓ All tests passed</span>
-<span class="p">$ </span><span class="caret" aria-hidden="true"></span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
+// Constraints: stretch (neighbours), shear (diagonals) and a soft bend (two apart).
+const ci = [], cj = [], cr = [], ck = []
+const link = (a, b, k) => {
+  ci.push(a); cj.push(b); ck.push(k)
+  const dx = (a % N) - (b % N), dz = Math.floor(a / N) - Math.floor(b / N)
+  cr.push(Math.hypot(dx, dz) * REST)
+}
+for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+  const i = r * N + c
+  if (c + 1 < N) link(i, i + 1, 1)
+  if (r + 1 < N) link(i, i + N, 1)
+  if (c + 1 < N && r + 1 < N) { link(i, i + N + 1, 0.85); link(i + 1, i + N, 0.85) }
+  if (c + 2 < N) link(i, i + 2, 0.07)
+  if (r + 2 < N) link(i, i + 2 * N, 0.07)
+}
+const CI = Int32Array.from(ci), CJ = Int32Array.from(cj), CR = Float32Array.from(cr), CK = Float32Array.from(ck)
 
-  <section class="download" id="download" aria-labelledby="dl-h">
-    <canvas id="weave2" aria-hidden="true"></canvas>
-    <div class="wrap">
-      <div class="head">
-        <h2 id="dl-h">Get Cloth.</h2>
-        <p><span data-version-text>The latest release</span>. Setup takes about two minutes, and everything except the model can be skipped.</p>
-      </div>
-      <div class="platforms">
-        <a class="platform" href="https://github.com/SKYZAP/Cloth-V3/releases/latest" data-dl="windows">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10 4.5v7H3zM11 4.4 21 3v8.5H11zM3 12.5h7v7l-7-1zM11 12.5h10V21l-10-1.4z"/></svg>
-          <strong>Windows</strong><span>Windows 10 and 11, 64-bit</span>
-        </a>
-        <a class="platform" href="https://github.com/SKYZAP/Cloth-V3/releases/latest" data-dl="mac">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9s-2-.9-3.3-.9C6.1 6.9 4.5 7.9 3.7 9.5c-1.8 3.1-.5 7.6 1.3 10.1.8 1.2 1.8 2.6 3.1 2.5 1.3 0 1.7-.8 3.3-.8s2 .8 3.3.8c1.4 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.6-4.3zM14 5.1c.7-.8 1.1-1.9 1-3.1-1 .1-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>
-          <strong>macOS</strong><span>Apple silicon (M1 and later)</span>
-        </a>
-        <a class="platform" href="https://github.com/SKYZAP/Cloth-V3/releases/latest" data-dl="android">
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 9.5 19.4 6.4a.4.4 0 0 0-.7-.4L16.9 9.2A11 11 0 0 0 12 8.1a11 11 0 0 0-4.9 1.1L5.3 6a.4.4 0 0 0-.7.4l1.8 3.1A10.4 10.4 0 0 0 1 18h22a10.4 10.4 0 0 0-5.4-8.5zM7 15.3a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm10 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
-          <strong>Android</strong><span>Pairs with your desktop by QR code</span>
-        </a>
-      </div>
-      <p class="dl-more"><a href="https://github.com/SKYZAP/Cloth-V3/releases">All releases and release notes</a></p>
-    </div>
-  </section>
-</main>
+const GRAVITY = -11
+const SUBSTEPS = 4
+const ITER = 7
+const THICK = 0.006                 // how far the cloth sits above the table
+const SELF = REST * 0.62            // the closest two layers may come
+const grab = { index: -1, target: new THREE.Vector3() }
 
-<footer>
-  <div class="wrap">
-    <a class="brand" href="#top"><img src="icon.svg" alt="" width="22" height="22">Cloth</a>
-    <span>Open source under the MIT licence.</span>
-    <nav aria-label="Footer">
-      <a href="#tour">Tour</a>
-      <a href="#download">Download</a>
-      <a href="https://github.com/SKYZAP/Cloth-V3">GitHub</a>
-      <a href="https://github.com/SKYZAP/Cloth-V3/blob/master/LICENSE">Licence</a>
-    </nav>
-  </div>
-</footer>
-
-<script>
-(() => {
-  /* Downloads: the latest release's installers, straight from GitHub. Without the API the cards still open the
-     release page, which lists them. */
-  const PICK = { windows: (n) => /\.exe$/i.test(n), mac: (n) => /\.dmg$/i.test(n), android: (n) => /\.apk$/i.test(n) }
-  fetch('https://api.github.com/repos/SKYZAP/Cloth-V3/releases/latest', { headers: { accept: 'application/vnd.github+json' } })
-    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-    .then((rel) => {
-      const v = String(rel.tag_name || '').replace(/^v/, '')
-      if (v) {
-        document.querySelectorAll('[data-version]').forEach((el) => (el.textContent = 'v' + v))
-        document.querySelectorAll('[data-version-text]').forEach((el) => (el.textContent = 'Version ' + v))
-      }
-      document.querySelectorAll('[data-dl]').forEach((a) => {
-        const asset = (rel.assets || []).find((x) => PICK[a.dataset.dl](x.name))
-        if (asset) a.href = asset.browser_download_url
-      })
-    })
-    .catch(() => {})
-
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-  const root = document.documentElement
-
-  /* Nav border once the page scrolls */
-  const nav = document.getElementById('nav')
-  const onScroll = () => nav.classList.toggle('scrolled', scrollY > 8)
-  addEventListener('scroll', onScroll, { passive: true }); onScroll()
-
-  /* ---------- Woven threads ---------- */
-  function weave(canvas, opts) {
-    const ctx = canvas.getContext('2d')
-    let w = 0, h = 0, dpr = 1, t = 0, raf = 0, visible = true
-    const pointer = { x: -1e4, y: -1e4, tx: -1e4, ty: -1e4 }
-    const threads = []
-    // Areas the names stay out of (the headline and the care label), in canvas coordinates.
-    let keepOut = []
-    const measure = () => {
-      const c = canvas.getBoundingClientRect()
-      keepOut = (opts.avoid || []).map((el) => el.getBoundingClientRect()).map((r) => ({ x1: r.left - c.left - 24, y1: r.top - c.top - 16, x2: r.right - c.left + 24, y2: r.bottom - c.top + 16 }))
-    }
-    const resize = () => {
-      const r = canvas.getBoundingClientRect()
-      dpr = Math.min(2, devicePixelRatio || 1)
-      w = r.width; h = r.height
-      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr)
-      threads.length = 0
-      const gap = opts.gap
-      const n = Math.ceil(h / gap) + 2
-      for (let i = 0; i < n; i++) {
-        const accent = (i * 7919) % opts.every === 3
-        // Some threads carry a model's name along them: every model you use, woven in.
-        const label = opts.labels && accent ? opts.labels[(i * 3) % opts.labels.length] : null
-        threads.push({ y: i * gap - gap / 2, amp: 6 + ((i * 31) % 11), freq: 0.0022 + ((i * 13) % 7) * 0.00025, phase: i * 0.7, accent, label, speed: 14 + ((i * 17) % 9) * 3, offset: (i * 211) % 900 })
-      }
-      measure()
-      if (reduce) draw()
-    }
-    const yAt = (th, x) => {
-      const dx = x - pointer.x, dy = th.y - pointer.y
-      const near = Math.exp(-(dx * dx + dy * dy) / 26000)
-      return th.y + Math.sin(x * th.freq + th.phase + t) * th.amp + Math.sin(x * 0.011 - t * 1.7 + th.phase) * 2 - near * 22 * Math.sign(dy || 1)
-    }
-    const draw = () => {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, w, h)
-      pointer.x += (pointer.tx - pointer.x) * 0.08
-      pointer.y += (pointer.ty - pointer.y) * 0.08
-      // Warp: faint vertical threads
-      ctx.lineWidth = 1
-      ctx.strokeStyle = 'rgba(241,241,244,0.035)'
-      ctx.beginPath()
-      for (let x = (t * 6) % opts.gap; x < w; x += opts.gap) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h) }
-      ctx.stroke()
-      // Weft: flowing horizontal threads, a few in crimson
-      for (const th of threads) {
-        ctx.beginPath()
-        for (let x = -20; x <= w + 20; x += 14) {
-          const y = yAt(th, x)
-          x === -20 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-        }
-        if (th.accent) {
-          const g = ctx.createLinearGradient(0, 0, w, 0)
-          const s = (Math.sin(t * 0.6 + th.phase) + 1) / 2
-          g.addColorStop(0, 'rgba(207,40,69,0)')
-          g.addColorStop(Math.max(0.05, s * 0.6), 'rgba(229,64,86,0.75)')
-          g.addColorStop(Math.min(0.95, s * 0.6 + 0.35), 'rgba(151,24,47,0.35)')
-          g.addColorStop(1, 'rgba(207,40,69,0)')
-          ctx.strokeStyle = g; ctx.lineWidth = 1.4
-        } else { ctx.strokeStyle = 'rgba(241,241,244,0.07)'; ctx.lineWidth = 1 }
-        ctx.stroke()
-        if (th.label) {
-          // The name rides the thread left to right, fading in and out at the edges.
-          const span = w + 240
-          const x = ((t * th.speed * 10 + th.offset) % span) - 120
-          const edge = Math.min(1, Math.max(0, Math.min(x + 60, w - x) / 160))
-          ctx.font = '500 11px "JetBrains Mono", ui-monospace, monospace'
-          const tw = ctx.measureText(th.label).width
-          const y = yAt(th, x + tw / 2)
-          if (keepOut.some((k) => x + tw > k.x1 && x < k.x2 && y > k.y1 && y < k.y2)) continue
-          ctx.fillStyle = `rgba(9,9,12,${0.85 * edge})`
-          ctx.fillRect(x - 6, y - 9, tw + 12, 18)
-          ctx.fillStyle = `rgba(248,141,150,${0.85 * edge})`
-          ctx.fillText(th.label, x, y + 4)
-        }
+// Self-collision: a spatial hash, so folded layers rest on each other instead of passing through.
+const HASH = 8192, cellStart = new Int32Array(HASH + 1), cellItems = new Int32Array(COUNT), cellOf = new Int32Array(COUNT)
+const hash = (x, y, z) => (Math.imul(x, 92837111) ^ Math.imul(y, 689287499) ^ Math.imul(z, 283923481)) & (HASH - 1)
+function selfCollide() {
+  const inv = 1 / SELF
+  cellStart.fill(0)
+  for (let i = 0; i < COUNT; i++) {
+    const h = hash(Math.floor(pos[i * 3] * inv), Math.floor(pos[i * 3 + 1] * inv), Math.floor(pos[i * 3 + 2] * inv))
+    cellOf[i] = h; cellStart[h]++
+  }
+  for (let h = 0, sum = 0; h <= HASH; h++) { const c = h < HASH ? cellStart[h] : 0; cellStart[h] = sum; sum += c }
+  const fillAt = cellStart.slice()
+  for (let i = 0; i < COUNT; i++) cellItems[fillAt[cellOf[i]]++] = i
+  const min2 = SELF * SELF
+  for (let i = 0; i < COUNT; i++) {
+    const ix = Math.floor(pos[i * 3] * inv), iy = Math.floor(pos[i * 3 + 1] * inv), iz = Math.floor(pos[i * 3 + 2] * inv)
+    const ri = (i / N) | 0, cii = i % N
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const h = hash(ix + dx, iy + dy, iz + dz)
+      for (let k = cellStart[h], end = cellStart[h + 1]; k < end; k++) {
+        const j = cellItems[k]
+        if (j <= i) continue
+        const rj = (j / N) | 0, cjj = j % N
+        if (Math.abs(ri - rj) <= 2 && Math.abs(cii - cjj) <= 2) continue // neighbours in the weave
+        const ax = pos[j * 3] - pos[i * 3], ay = pos[j * 3 + 1] - pos[i * 3 + 1], az = pos[j * 3 + 2] - pos[i * 3 + 2]
+        const d2 = ax * ax + ay * ay + az * az
+        if (d2 >= min2 || d2 === 0) continue
+        const wi = invMass[i], wj = invMass[j], w = wi + wj
+        if (!w) continue
+        const d = Math.sqrt(d2), push = (SELF - d) / (d * w)
+        pos[i * 3] -= ax * push * wi; pos[i * 3 + 1] -= ay * push * wi; pos[i * 3 + 2] -= az * push * wi
+        pos[j * 3] += ax * push * wj; pos[j * 3 + 1] += ay * push * wj; pos[j * 3 + 2] += az * push * wj
       }
     }
-    const loop = () => { t += 0.006; draw(); raf = visible ? requestAnimationFrame(loop) : 0 }
-    new ResizeObserver(resize).observe(canvas)
-    document.fonts?.ready.then(measure)
-    resize()
-    if (reduce) return
-    new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !raf) raf = requestAnimationFrame(loop) }).observe(canvas)
-    const host = canvas.parentElement
-    host.addEventListener('pointermove', (e) => { const r = canvas.getBoundingClientRect(); pointer.tx = e.clientX - r.left; pointer.ty = e.clientY - r.top })
-    host.addEventListener('pointerleave', () => { pointer.tx = -1e4; pointer.ty = -1e4 })
-    raf = requestAnimationFrame(loop)
   }
-  weave(document.getElementById('weave'), { gap: 26, every: 5, avoid: [...document.querySelectorAll('.hero-copy > *, .tag')], labels: ['claude', 'gpt', 'qwen3', 'llama.cpp', 'deepseek', 'gemma', 'litellm', 'ollama', 'mistral', 'openrouter', 'glm', 'lm studio'] })
-  weave(document.getElementById('weave2'), { gap: 22, every: 4 })
+}
 
-  /* ---------- Hero window: tilted at rest, straightens as it scrolls up ---------- */
-  const heroWin = document.getElementById('heroWindow')
-  const heroStage = document.getElementById('heroStage')
-  if (!reduce) {
-    let ticking = false
-    const tilt = () => {
-      ticking = false
-      const r = heroStage.getBoundingClientRect()
-      const p = Math.min(1, Math.max(0, (innerHeight - r.top) / (innerHeight * 0.9)))
-      const k = 1 - (1 - p) * (1 - p)
-      heroWin.style.transform = `rotateX(${(1 - k) * 18}deg) scale(${0.92 + k * 0.08}) translateY(${(1 - k) * 30}px)`
+function step(dt) {
+  const g = GRAVITY * dt * dt
+  for (let i = 0; i < COUNT; i++) {
+    if (!invMass[i]) continue
+    const k = i * 3
+    // Verlet with a little air drag.
+    const vx = (pos[k] - prev[k]) * 0.992, vy = (pos[k + 1] - prev[k + 1]) * 0.992, vz = (pos[k + 2] - prev[k + 2]) * 0.992
+    prev[k] = pos[k]; prev[k + 1] = pos[k + 1]; prev[k + 2] = pos[k + 2]
+    pos[k] += vx; pos[k + 1] += vy + g; pos[k + 2] += vz
+  }
+  if (grab.index >= 0) {
+    // The held point follows the hand closely but not rigidly, as fabric does between fingers.
+    const k = grab.index * 3
+    pos[k] += (grab.target.x - pos[k]) * 0.55
+    pos[k + 1] += (grab.target.y - pos[k + 1]) * 0.55
+    pos[k + 2] += (grab.target.z - pos[k + 2]) * 0.55
+  }
+  for (let it = 0; it < ITER; it++) {
+    for (let c = 0; c < CI.length; c++) {
+      const a = CI[c] * 3, b = CJ[c] * 3
+      const wa = invMass[CI[c]], wb = invMass[CJ[c]], w = wa + wb
+      if (!w) continue
+      const dx = pos[b] - pos[a], dy = pos[b + 1] - pos[a + 1], dz = pos[b + 2] - pos[a + 2]
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-9
+      const diff = ((d - CR[c]) / (d * w)) * CK[c]
+      pos[a] += dx * diff * wa; pos[a + 1] += dy * diff * wa; pos[a + 2] += dz * diff * wa
+      pos[b] -= dx * diff * wb; pos[b + 1] -= dy * diff * wb; pos[b + 2] -= dz * diff * wb
     }
-    addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(tilt) } }, { passive: true })
-    addEventListener('resize', tilt); tilt()
   }
-  const heroVideo = document.getElementById('heroVideo')
-  if (reduce) { heroVideo.removeAttribute('autoplay'); heroVideo.pause() }
-
-  /* ---------- Tour ---------- */
-  const tabs = [...document.querySelectorAll('.tab')]
-  const video = document.getElementById('tourVideo')
-  const panel = document.getElementById('tourPanel')
-  const title = document.getElementById('tourTitle')
-  const tourWindow = document.getElementById('tourWindow')
-  const toggle = document.getElementById('tourToggle')
-  const label = document.getElementById('tourToggleLabel')
-  const glow = { chat: 'rgb(207 40 69 / .4)', agents: 'rgb(112 204 238 / .3)', boards: 'rgb(108 178 236 / .3)', auto: 'rgb(201 163 245 / .3)', knowledge: 'rgb(125 211 192 / .3)', dash: 'rgb(92 203 137 / .3)' }
-  const descs = { chat: 'Recording of the Chat screen: a question, the model thinking, then a streamed answer with code.', agents: 'Recording of the Agents screen: switching between the Code reviewer, Designer and Researcher agents.', boards: 'Recording of Boards: a ticket board with New, Requirements, Review, Building and Ready columns.', auto: 'Recording of Automations: a plain description becomes a scheduled automation with tools.', knowledge: 'Recording of Knowledge: a search returns ranked passages from the sample docs.', dash: 'Recording of the Dashboard: usage by tokens, cost and calls, switched between time ranges.' }
-  let current = 0, playing = !reduce, inView = false, started = false
-
-  const select = (i, focus) => {
-    current = (i + tabs.length) % tabs.length
-    const tab = tabs[current], clip = tab.dataset.clip
-    tabs.forEach((t, j) => { const on = j === current; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; t.querySelector('.bar b').style.transform = 'scaleX(0)' })
-    if (focus) tab.focus()
-    panel.setAttribute('aria-labelledby', tab.id)
-    title.textContent = 'Cloth · ' + tab.querySelector('.tab-title').textContent.trim()
-    tourWindow.style.setProperty('--glow', glow[clip])
-    video.classList.add('fading')
-    setTimeout(() => {
-      video.poster = `media/${clip}.jpg`
-      video.src = `media/${clip}.mp4`
-      video.setAttribute('aria-label', descs[clip])
-      video.currentTime = 0
-      video.classList.remove('fading')
-      if (playing && inView) video.play().catch(() => {})
-    }, reduce ? 0 : 220)
+  selfCollide()
+  // The table: no falling through, and friction so the cloth doesn't skate.
+  for (let i = 0; i < COUNT; i++) {
+    const k = i * 3
+    if (pos[k + 1] < THICK) {
+      pos[k + 1] = THICK
+      prev[k] = pos[k] - (pos[k] - prev[k]) * 0.35
+      prev[k + 2] = pos[k + 2] - (pos[k + 2] - prev[k + 2]) * 0.35
+      if (prev[k + 1] < THICK) prev[k + 1] = THICK
+    }
+    // Stay within reach of the camera.
+    const lim = 2.4
+    if (pos[k] > lim) pos[k] = lim; else if (pos[k] < -lim) pos[k] = -lim
+    if (pos[k + 2] > lim) pos[k + 2] = lim; else if (pos[k + 2] < -lim) pos[k + 2] = -lim
   }
-  tabs.forEach((t, i) => t.addEventListener('click', () => select(i)))
-  document.getElementById('tabs').addEventListener('keydown', (e) => {
-    const k = e.key
-    if (k === 'ArrowDown' || k === 'ArrowRight') { e.preventDefault(); select(current + 1, true) }
-    else if (k === 'ArrowUp' || k === 'ArrowLeft') { e.preventDefault(); select(current - 1, true) }
-    else if (k === 'Home') { e.preventDefault(); select(0, true) }
-    else if (k === 'End') { e.preventDefault(); select(tabs.length - 1, true) }
-  })
-  video.addEventListener('timeupdate', () => {
-    if (!video.duration) return
-    tabs[current].querySelector('.bar b').style.transform = `scaleX(${video.currentTime / video.duration})`
-  })
-  video.addEventListener('ended', () => { if (playing) select(current + 1) ; else { video.currentTime = 0 } })
-  const setPlaying = (on) => {
-    playing = on
-    toggle.setAttribute('aria-pressed', String(!on))
-    label.textContent = on ? 'Pause tour' : 'Play tour'
-    document.getElementById('icoPause').hidden = !on
-    document.getElementById('icoPlay').hidden = on
-    if (on && inView) video.play().catch(() => {}); else video.pause()
-  }
-  toggle.addEventListener('click', () => setPlaying(!playing))
-  new IntersectionObserver(([e]) => {
-    inView = e.isIntersecting
-    if (inView && !started) { started = true; select(0) }
-    else if (inView && playing) video.play().catch(() => {})
-    else video.pause()
-  }, { threshold: 0.35 }).observe(tourWindow)
-  setPlaying(playing)
+}
 
-  /* Copy the MCP command */
-  const copyBtn = document.getElementById('copyCmd')
-  copyBtn.addEventListener('click', () => {
-    const text = document.getElementById('cmd').textContent
-    const done = () => { copyBtn.textContent = 'Copied'; setTimeout(() => (copyBtn.textContent = 'Copy command'), 1600) }
-    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById('cmd')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); copyBtn.textContent = 'Press Ctrl+C' }
-    try { navigator.clipboard.writeText(text).then(done, fallback) } catch { fallback() }
-  })
-})()
+/* ---------------------------------------------------------------- the mesh */
+const geometry = new THREE.PlaneGeometry(W, W, N - 1, N - 1)
+geometry.attributes.position.setUsage(THREE.DynamicDrawUsage)
+const posAttr = geometry.attributes.position
+const sync = () => {
+  posAttr.array.set(pos)
+  posAttr.needsUpdate = true
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+}
+sync()
+
+const weave = weaveNormals()
+const material = (map, side) => {
+  const m = new THREE.MeshPhysicalNodeMaterial()
+  m.map = map
+  m.normalMap = weave
+  m.normalScale = new THREE.Vector2(0.45, 0.45)
+  m.roughness = 0.88
+  m.metalness = 0
+  m.sheen = 1
+  m.sheenRoughness = 0.42
+  m.sheenColor = new THREE.Color(0xc9cbd1)
+  m.side = side
+  return m
+}
+const front = new THREE.Mesh(geometry, material(frontTexture(), THREE.FrontSide))
+const back = new THREE.Mesh(geometry, material(backTexture(), THREE.BackSide))
+front.castShadow = true
+front.receiveShadow = true
+back.receiveShadow = true
+scene.add(front, back)
+
+/* ---------------------------------------------------------------- the hand */
+const ray = new THREE.Raycaster()
+const ndc = new THREE.Vector2()
+const plane = new THREE.Plane()
+const camDir = new THREE.Vector3()
+let pointer = null
+
+const aim = (e) => {
+  const r = canvas.getBoundingClientRect()
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+  ray.setFromCamera(ndc, camera)
+}
+const nearestVertex = (hit) => {
+  const f = hit.face, p = hit.point
+  let best = f.a, bd = Infinity
+  for (const v of [f.a, f.b, f.c]) {
+    const d = (pos[v * 3] - p.x) ** 2 + (pos[v * 3 + 1] - p.y) ** 2 + (pos[v * 3 + 2] - p.z) ** 2
+    if (d < bd) { bd = d; best = v }
+  }
+  return best
+}
+canvas.addEventListener('pointerdown', (e) => {
+  aim(e)
+  const hit = ray.intersectObjects([front, back], false)[0]
+  if (!hit) return
+  grab.index = nearestVertex(hit)
+  camera.getWorldDirection(camDir)
+  plane.setFromNormalAndCoplanarPoint(camDir, hit.point)
+  // Picking it up lifts it a little off the table.
+  grab.target.copy(hit.point)
+  grab.target.y += 0.12
+  try { canvas.setPointerCapture(e.pointerId) } catch { /* the pointer already left */ }
+  canvas.classList.add('holding')
+})
+canvas.addEventListener('pointermove', (e) => {
+  pointer = e
+  if (grab.index < 0) return
+  aim(e)
+  if (ray.ray.intersectPlane(plane, grab.target)) grab.target.y = Math.max(THICK + 0.02, grab.target.y + 0.12)
+})
+const release = () => {
+  grab.index = -1
+  canvas.classList.remove('holding')
+}
+canvas.addEventListener('pointerup', release)
+canvas.addEventListener('pointercancel', release)
+
+/* ---------------------------------------------------------------- loop */
+const clock = new THREE.Clock()
+let acc = 0
+const FIXED = 1 / 60
+renderer.setAnimationLoop(() => {
+  acc = Math.min(acc + clock.getDelta(), 0.1)
+  while (acc >= FIXED) {
+    for (let s = 0; s < SUBSTEPS; s++) step(FIXED / SUBSTEPS)
+    acc -= FIXED
+  }
+  sync()
+  if (pointer && grab.index < 0) {
+    aim(pointer)
+    canvas.classList.toggle('over', ray.intersectObjects([front, back], false).length > 0)
+  }
+  renderer.render(scene, camera)
+})
 </script>
 </body>
 </html>
