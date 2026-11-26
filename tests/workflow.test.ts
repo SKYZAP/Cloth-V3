@@ -135,6 +135,9 @@ describe('Spec → Ship in a chat', () => {
     const started = await env.services.chat.startWorkflow(env.session.id, 'Add saved searches')
     // Plan mode is read-only; the workflow needs to write documents.
     expect(started).toMatchObject({ permissions: 'manual', workflow: { kind: 'spec-ship', stage: 'grill', slug: null } })
+    // The person approves the spec, so it waits at the Spec gate rather than going into Build on its own: that step
+    // runs just after the chat stops, and a fast machine would otherwise see Build before the checks below.
+    env.services.chat.update(env.session.id, { workflow: { ...started.workflow!, approveSpec: true } })
     const r1 = await settle(env)
     expect(seen).toHaveLength(1)
     expect(getCurrentSystemPrompt(seen[0].messages)).toContain('### Stage: Grill')
@@ -172,7 +175,7 @@ describe('Spec → Ship in a chat', () => {
     expect(env.services.chat.messages(env.session.id).some((m) => m.archived && m.blocks.some((b) => b.type === 'tool' && b.trace.id === 'q'))).toBe(true)
     expect(readFileSync(join(env.root, 'docs/specs/saved-searches/spec.md'), 'utf8')).toBe('# Spec\n')
     // finish_stage records the slug, cleaned up.
-    expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches', route: 'standard' })
+    expect(env.services.chat.get(env.session.id).workflow).toEqual({ kind: 'spec-ship', stage: 'spec', slug: 'saved-searches', route: 'standard', approveSpec: true })
     const line = r3.msgs.filter((m) => m.role === 'user').at(-1)!
     expect(line).toMatchObject({ workflowStage: 'spec', blocks: [{ type: 'text', text: 'Approved the grilling' }] })
 
