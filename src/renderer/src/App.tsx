@@ -183,25 +183,22 @@ function DesktopApp() {
           )}
         </div>
       </nav>
-        {/* The edge itself: a strip straddling the border that lights up and folds the sidebar when clicked. Mouse only; the round button below is the keyboard way in. */}
+        {/* The edge itself: a strip straddling the border that folds the sidebar when clicked. Mouse only; the round button below is the keyboard way in. */}
         <button
           tabIndex={-1}
           aria-hidden="true"
           onClick={() => setFolded((f) => !f)}
-          className={clsx('group/edge no-drag absolute -right-1.5 bottom-0 z-20 w-3 cursor-pointer', isMac ? 'top-[52px]' : 'top-9')}
-        >
-          <span className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 transition-colors group-hover/edge:bg-crimson-line" />
-        </button>
+          className={clsx('no-drag absolute -right-1.5 bottom-0 z-20 w-3 cursor-pointer', isMac ? 'top-[52px]' : 'top-9')}
+        />
         <div className={clsx('no-drag absolute -right-2.5 z-30 opacity-0 transition-opacity duration-150 group-hover/side:opacity-100 has-[:focus-visible]:opacity-100 motion-reduce:transition-none', isMac ? 'top-[60px]' : 'top-11')}>
-          <Tooltip content={folded ? 'Expand the sidebar (Ctrl+B)' : 'Collapse the sidebar (Ctrl+B)'} side="right">
-            <button
-              onClick={() => setFolded((f) => !f)}
-              aria-expanded={!folded}
-              className="flex h-5 w-5 items-center justify-center rounded-full border border-line-strong bg-elev-2 text-muted shadow-md shadow-black/40 outline-none transition-colors hover:border-crimson-line hover:text-fg focus-visible:ring-2 focus-visible:ring-crimson"
-            >
-              {folded ? <CaretRight size={11} weight="bold" /> : <CaretLeft size={11} weight="bold" />}
-            </button>
-          </Tooltip>
+          <button
+            onClick={() => setFolded((f) => !f)}
+            aria-expanded={!folded}
+            aria-label={folded ? 'Expand the sidebar (Ctrl+B)' : 'Collapse the sidebar (Ctrl+B)'}
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-line-strong bg-elev-2 text-muted shadow-md shadow-black/40 outline-none transition-[color,background-color,transform] duration-150 ease-out hover:bg-elev hover:text-fg active:scale-[0.8] active:bg-panel active:text-fg active:duration-75 focus-visible:ring-2 focus-visible:ring-crimson motion-reduce:transition-none"
+          >
+            {folded ? <CaretRight size={11} weight="bold" /> : <CaretLeft size={11} weight="bold" />}
+          </button>
         </div>
       </div>
 
