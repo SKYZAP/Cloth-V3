@@ -111,8 +111,6 @@ export async function runCloth({ cloth, mode, ws, prompt, out, home, minutes }) 
     env: {
       ...process.env,
       ...noGitHub(out),
-      // Not the machine's own homelab MCP servers (~/.homelab/env): a run sees only what the benchmark gives it.
-      HOMELAB_ENV: join(out, 'no-homelab-env'),
       CLOTH_HOME: home,
       CLOTH_SMOKE: out,
       CLOTH_PROBE: 'modes',

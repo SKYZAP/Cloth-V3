@@ -1,5 +1,5 @@
 // The release benchmark: each Cloth mode and OMP do the same tasks with the same model, every run is scored with
-// tests the agents never see, and the result is published to the dashboard (bench/site, served at bench.example.internal).
+// tests the agents never see, and the result is published to the dashboard (bench/site, served from BENCH_HOME/site).
 // .github/workflows/bench.yml runs it for each release. (One benchmark is a "night" in the data files.)
 //
 //   node bench/run.mjs                (after `npm ci && npx electron-vite build` in the Cloth folder)
@@ -22,6 +22,9 @@ import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFil
 import { arch, homedir, hostname, platform } from 'node:os'
 import { join, resolve } from 'node:path'
 import { BENCH, SEEDED, berdbotTemplate, row, runCloth, runOmp, scoreBerdbot, scoreRecon, scoreSeeded, sh, workspace } from './lib.mjs'
+
+/** A link to one benchmark on the dashboard, when BENCH_URL says where it is served. */
+const dash = (id) => (process.env.BENCH_URL ? ` · [dashboard](${process.env.BENCH_URL.replace(/\/$/, '')}/#${id})` : '')
 
 const HOME = resolve(process.env.BENCH_HOME ?? join(homedir(), 'cloth-bench'))
 const CLOTH = resolve(process.env.CLOTH_DIR ?? resolve(BENCH, '..'))
@@ -113,7 +116,7 @@ function publish(night) {
 
 function summary(night) {
   const file = process.env.GITHUB_STEP_SUMMARY
-  const lines = [`## Benchmark ${night.id}${night.done ? '' : ' (stopped early: partial results)'}`, '', `Cloth ${night.release ?? ''} \`${night.commit.slice(0, 7)}\` ${night.subject} · OMP ${night.omp ?? '—'} · GPT-6 Luna, medium · [dashboard](http://bench.example.internal/#${night.id})`, '']
+  const lines = [`## Benchmark ${night.id}${night.done ? '' : ' (stopped early: partial results)'}`, '', `Cloth ${night.release ?? ''} \`${night.commit.slice(0, 7)}\` ${night.subject} · OMP ${night.omp ?? '—'} · GPT-6 Luna, medium${dash(night.id)}`, '']
   lines.push('| Task | Harness | Mode | Hidden tests | Minutes | Cost | Tokens | Tool calls | Note |', '|---|---|---|---|---|---|---|---|---|')
   for (const r of night.rows) {
     const note = [r.cached ? `reused from ${r.from}` : '', r.timed_out ? 'time limit' : '', r.error ?? ''].filter(Boolean).join('; ')
@@ -133,7 +136,7 @@ async function main() {
   const base = RELEASE ?? `${date.slice(0, 10)}-${commit.slice(0, 7)}`
   const earlier = readJson(join(HOME, 'site', 'data', 'index.json'), []).find((n) => n.done && (n.id === base || n.id.startsWith(`${base}-`)))
   if (RELEASE && earlier && !process.env.BENCH_FORCE) {
-    const note = `Skipped: ${RELEASE} was already benchmarked ([${earlier.id}](http://bench.example.internal/#${earlier.id})). Run the workflow with "force" to measure it again.\n`
+    const note = `Skipped: ${RELEASE} was already benchmarked (${earlier.id}${dash(earlier.id)}). Run the workflow with "force" to measure it again.\n`
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, note)
     return log(note.trim())
   }

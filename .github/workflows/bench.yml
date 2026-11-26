@@ -1,6 +1,6 @@
 # Release benchmark: each release's Cloth modes against OMP on four tasks, scored with hidden tests and published to
-# http://bench.example.internal (bench/README.md). Runs on the self-hosted runner on the Pi, outside a container: Cloth needs a
-# display (xvfb).
+# the benchmark dashboard (bench/README.md). Runs on the maintainer's self-hosted runner (label cloth-pi), outside a
+# container: Cloth needs a display (xvfb). Only pushes to master and maintainers can start it, never a pull request.
 #
 # Runs when the Release workflow finishes (a release made from the Actions tab doesn't send a `release` event, so this
 # follows the workflow instead), or by hand for any release tag. The scoring scripts always come from master, so
@@ -46,7 +46,7 @@ permissions:
 jobs:
   bench:
     name: Cloth vs OMP
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled'
+    if: github.repository_owner == 'SKYZAP' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion != 'cancelled')
     runs-on: [self-hosted, cloth-pi]
     timeout-minutes: 720
     env:
@@ -97,4 +97,6 @@ jobs:
           BENCH_ARMS: ${{ inputs.arms }}
           BENCH_TASKS: ${{ inputs.tasks }}
           BENCH_MINUTES: ${{ inputs.minutes || '60' }}
+          # Where the dashboard is served, for the links in the run's summary (repository variable; optional).
+          BENCH_URL: ${{ vars.BENCH_URL }}
         run: node scoring/bench/run.mjs

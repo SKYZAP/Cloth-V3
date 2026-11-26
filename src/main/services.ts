@@ -1,10 +1,8 @@
 import { SwatchService } from './swatches/swatches'
 import { join } from 'node:path'
-import { MCP_PRESETS } from './mcp/client'
-import { migrateOldPenpot, readEnvFile, serversToSeed } from './mcp/homelab'
 import { BUILTIN_SKILLS, seedBuiltinSkills } from './skills/builtin'
 import { openDb, Kv } from './core/db'
-import { newId, type Ctx, type EventChannel, type Secrets } from './core/context'
+import { type Ctx, type EventChannel, type Secrets } from './core/context'
 import { SettingsService } from './core/settings'
 import { ProviderService } from './providers/providers'
 import { RagService } from './rag/rag'
@@ -209,18 +207,15 @@ ${files['components.css'] ?? ''}` }
   const toManual = chat.migrateAutoToManual()
   if (toManual) ctx.log('permissions', `Moved ${toManual} chat${toManual === 1 ? '' : 's'} from Auto to Manual`)
 
-  // The homelab servers (deploy control, the notes vault, Penpot) are set up for you when their
-  // tokens are in ~/.homelab/env: each once, so one you remove stays removed.
   // MCP server tokens saved before they were encrypted get encrypted now.
   settings.sealAtRest()
   settings.raiseSubagentSteps()
   providers.sealAtRest()
-  seedHomelabServers(ctx, settings)
 
-  // Skills Cloth ships with, each added once (penpot's once its server is set up). CLOTH_BUILTIN_SKILLS=off leaves
+  // Skills Cloth ships with, each added once. CLOTH_BUILTIN_SKILLS=off leaves
   // them out, for tests that count skills.
   if (process.env.CLOTH_BUILTIN_SKILLS !== 'off')
-    void seedBuiltinSkills(skills, ctx.kv, BUILTIN_SKILLS.filter((s) => s.name !== 'penpot' || settings.get().mcpClients.some((c) => c.name === 'penpot')))
+    void seedBuiltinSkills(skills, ctx.kv, BUILTIN_SKILLS)
     .then((added) => added.length && ctx.log('skills', `Added built-in skill${added.length === 1 ? '' : 's'}: ${added.join(', ')}`))
     .catch((err) => ctx.log('skills', 'could not add built-in skills', err))
 
@@ -239,24 +234,4 @@ ${files['components.css'] ?? ''}` }
 
   const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
   return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, background, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, swatches, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
-}
-
-const SEEDED_KEY = 'mcp.homelabSeeded'
-
-/** Adds the homelab MCP servers whose tokens are on file and that haven't been added before. */
-function seedHomelabServers(ctx: Ctx, settings: SettingsService): void {
-  const env = readEnvFile()
-  // Penpot's plugin-based MCP was replaced by penpot-api-mcp: move a server still set up for it.
-  const migrated = migrateOldPenpot(settings.get().mcpClients, MCP_PRESETS, env)
-  if (migrated) {
-    settings.update({ mcpClients: migrated })
-    ctx.log('mcp', 'Moved the penpot server to penpot-api-mcp')
-  }
-  const cur = settings.get().mcpClients
-  const seeded = ctx.kv.get<string[]>(SEEDED_KEY, [])
-  const add = serversToSeed(MCP_PRESETS, env, cur.map((c) => c.name), seeded)
-  if (!add.length) return
-  settings.update({ mcpClients: [...cur, ...add.map((c) => ({ ...c, id: newId('mcs_') }))] })
-  ctx.kv.set(SEEDED_KEY, [...seeded, ...add.map((c) => c.name)])
-  ctx.log('mcp', `Set up ${add.map((c) => c.name).join(', ')} from ~/.homelab/env`)
 }

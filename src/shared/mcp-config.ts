@@ -116,7 +116,7 @@ export function splitCommandLine(line: string): { command: string; args: string[
   return { command: words[0] ?? '', args: words.slice(1) }
 }
 
-/** A suggested server name from what it runs or where it is: @playwright/mcp → playwright, mcp.example.internal → mcp. */
+/** A suggested server name from what it runs or where it is: @playwright/mcp → playwright, mcp.example.com → mcp. */
 export function suggestName(e: Pick<McpServerEntry, 'transport' | 'command' | 'args' | 'url'>): string {
   let base = ''
   if (e.transport === 'http') {

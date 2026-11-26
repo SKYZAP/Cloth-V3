@@ -1,7 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
 import { createApi } from '../src/main/api'
 import { mapClient, masker, opener, restoreClient, sealer } from '../src/main/core/secret-fields'
 import { plainSecrets } from '../src/main/core/context'
@@ -24,7 +21,6 @@ const server = (over: Partial<McpClientConfig> = {}): McpClientConfig => ({
   ...over
 })
 
-afterEach(() => vi.unstubAllEnvs())
 
 describe('secret fields', () => {
   it('seals and opens only the values whose names say they are secret', () => {
@@ -77,19 +73,6 @@ describe('settings and providers keep secrets to the main process', () => {
     services.settings.sealAtRest()
     expect(JSON.stringify(services.ctx.kv.get('settings', {}))).not.toContain('tok-header')
     expect(services.settings.get().mcpClients[0]).toEqual(server())
-  })
-
-  it('fills a preset token from the homelab env file without showing it', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cloth-env-'))
-    writeFileSync(join(dir, 'env'), 'PLANE_API_KEY=plane-secret\n')
-    vi.stubEnv('HOMELAB_ENV', join(dir, 'env'))
-    const { services } = makeServices()
-    const api = createApi(services)
-    const plane = (await api.mcp.clientPresets()).find((p) => p.name === 'plane')!
-    expect(JSON.stringify(plane)).not.toContain('plane-secret')
-    const { about: _a, needsToken: _n, tokenQuery: _q, ...config } = plane
-    await api.settings.update({ mcpClients: [{ ...config, id: 'mcs_9' }] })
-    expect(services.settings.get().mcpClients[0].headers?.Authorization).toBe('Bearer plane-secret')
   })
 
   it('masks provider header secrets and keeps them when sent back', async () => {

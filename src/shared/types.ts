@@ -1406,14 +1406,12 @@ export interface AppInfo {
   node: string
 }
 
-/** Where Cloth stands on updates from its private GitHub releases. */
+/** Where Cloth stands on updates from its GitHub releases. */
 export interface UpdateStatus {
   state: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
   current: string
   /** False in a dev build or a platform that can't update itself: checking only says so. */
   supported: boolean
-  /** A GitHub token is saved: releases of the private repository can be read. */
-  hasToken: boolean
   /** The newer version, once one is found. */
   version?: string
   /** Bytes to download for it. */

@@ -1045,43 +1045,19 @@ function ResetGroup() {
 const UPDATE_REPO = 'SKYZAP/Cloth-V3'
 const mb = (bytes: number) => `${Math.round(bytes / 1_048_576)} MB`
 
-/** Check for updates from the private GitHub releases, download when asked, restart into the new version. */
+/** Check for updates from the GitHub releases, download when asked, restart into the new version. */
 function UpdatesGroup() {
   const [st, setSt] = useState<UpdateStatus | null>(null)
-  const [token, setToken] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [tokenError, setTokenError] = useState<string | null>(null)
   useEffect(() => {
     void api.updates.status().then(setSt)
   }, [])
   useEvent('updates', setSt)
   if (!st) return null
 
-  const saveToken = async () => {
-    setSaving(true)
-    setTokenError(null)
-    try {
-      setSt(await api.updates.setToken(token))
-      setToken('')
-      setEditing(false)
-    } catch (err) {
-      setTokenError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-  const forget = async () => {
-    if (!(await confirmAction('Cloth stops checking for updates until a token is added again.', { title: 'Forget the GitHub token?', confirmLabel: 'Forget' }))) return
-    setSt(await api.updates.setToken(''))
-  }
-
   const pct = st.progress && st.progress.total ? Math.round((st.progress.transferred / st.progress.total) * 100) : 0
   const summary = !st.supported
     ? 'This build can’t update itself. Installed Windows and Linux builds can.'
-    : !st.hasToken
-      ? 'Add a GitHub token below to check for updates.'
-      : st.state === 'checking'
+    : st.state === 'checking'
         ? 'Checking GitHub…'
         : st.state === 'none'
           ? `Cloth ${st.current} is the newest version.`
@@ -1097,7 +1073,7 @@ function UpdatesGroup() {
 
   return (
     <div className="mt-6">
-      <Group title="Updates" note={`Releases come from the private repository ${UPDATE_REPO}. Cloth checks once a day at launch; downloads start only when you ask.`}>
+      <Group title="Updates" note={`Releases come from ${UPDATE_REPO} on GitHub. Cloth checks once a day at launch; downloads start only when you ask.`}>
         <Row
           label={`Cloth ${st.current}`}
           hint={
@@ -1112,7 +1088,7 @@ function UpdatesGroup() {
             </>
           }
         >
-          {st.supported && st.hasToken && (
+          {st.supported && (
             <div className="flex gap-2">
               {st.state === 'available' && (
                 <Button variant="primary" icon={<DownloadSimple size={13} />} onClick={() => void api.updates.download().then(setSt)}>
@@ -1133,61 +1109,6 @@ function UpdatesGroup() {
             </div>
           )}
         </Row>
-        {st.supported && (
-          <Row
-            label="GitHub token"
-            stacked={!st.hasToken || editing}
-            hint={
-              st.hasToken && !editing
-                ? 'Saved, encrypted with the OS keychain.'
-                : `A fine-grained token with read-only access to Contents on ${UPDATE_REPO}. It stays encrypted on this PC.`
-            }
-          >
-            {st.hasToken && !editing ? (
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => setEditing(true)}>
-                  Replace
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => void forget()}>
-                  Forget
-                </Button>
-              </div>
-            ) : (
-              <form
-                className="grid gap-1.5"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  if (token.trim()) void saveToken()
-                }}
-              >
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    className="min-w-0 flex-1 font-mono"
-                    aria-label="GitHub token"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="github_pat_…"
-                    value={token}
-                    onChange={(e) => {
-                      setToken(e.target.value)
-                      setTokenError(null)
-                    }}
-                  />
-                  <Button type="submit" variant="primary" loading={saving} disabled={!token.trim()}>
-                    Save token
-                  </Button>
-                  {editing && (
-                    <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-                {tokenError && <div className="text-caption text-danger-hi">{tokenError}</div>}
-              </form>
-            )}
-          </Row>
-        )}
       </Group>
     </div>
   )

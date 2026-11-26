@@ -3,7 +3,7 @@
 **Your AI workbench on the desktop.** Chat with any model, give it your own documents, build reusable skills,
 automate tasks with visual flows — all stored locally on your computer.
 
-Works with OpenAI, Anthropic, OpenRouter, and local models through LM Studio, Ollama, llama.cpp or vLLM.
+Works with OpenAI, Anthropic, OpenRouter, LiteLLM, and local models through LM Studio, Ollama, llama.cpp or vLLM.
 
 ## Download
 
@@ -77,3 +77,22 @@ Built with Electron, React, Tailwind and Node's built-in SQLite; the AI agent ru
 Publish a GitHub release with a tag like `v1.2.0`, or run the **Release** workflow manually with a version number.
 It runs the tests, then builds and attaches the Windows and macOS installers. Builds are unsigned unless signing
 secrets are set (see the top of `.github/workflows/release.yml`).
+
+The website in `website/` is published to GitHub Pages by `.github/workflows/pages.yml` whenever it changes on master.
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+1. Fork the repository and make a branch from `master`.
+2. `npm install`, then `npm run dev` to run Cloth with hot reload. It keeps its data apart from an installed Cloth.
+3. Before opening a pull request, run `npm run typecheck` and `npm test`. The **Tests** workflow runs both on every
+   pull request.
+4. Keep pull requests focused on one change, and say in the description what it changes and how you checked it.
+
+Never commit API keys, tokens or `.env` files. Cloth stores keys encrypted on each user's computer, and tests use fake
+values.
+
+## License
+
+[MIT](LICENSE)

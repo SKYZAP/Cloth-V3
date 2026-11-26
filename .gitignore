@@ -7,3 +7,16 @@ release/
 .DS_Store
 sidecars/
 build/
+
+# Secrets and local settings never go in the repository.
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+mobile/android/keystore.properties
+.claude/settings.local.json
+test-results.json

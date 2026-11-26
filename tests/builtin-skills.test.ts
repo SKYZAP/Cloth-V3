@@ -16,29 +16,23 @@ function fakes(existing: string[] = [], seeded: string[] = []) {
 }
 
 describe('built-in skills', () => {
-  it('ships a penpot skill that names the tools it explains', () => {
-    const penpot = BUILTIN_SKILLS.find((s) => s.name === 'penpot')!
-    expect(penpot.description).toMatch(/mcp__penpot__/)
-    for (const tool of ['list_projects', 'get_page_tree', 'create_shape', 'update_shape', 'export_shape']) expect(penpot.body).toContain(tool)
-  })
-
   it('adds each one once, and not again after the user deletes it', async () => {
     const f = fakes()
-    expect(await seedBuiltinSkills(f.skills, f.kv)).toEqual(['penpot', 'verify-guide'])
-    expect(f.seeded()).toEqual(['penpot', 'verify-guide'])
-    const again = fakes([], ['penpot', 'verify-guide'])
+    expect(await seedBuiltinSkills(f.skills, f.kv)).toEqual(['verify-guide'])
+    expect(f.seeded()).toEqual(['verify-guide'])
+    const again = fakes([], ['verify-guide'])
     expect(await seedBuiltinSkills(again.skills, again.kv)).toEqual([])
   })
 
   it('leaves a skill of the same name the user already has', async () => {
-    const f = fakes(['penpot'])
-    expect(await seedBuiltinSkills(f.skills, f.kv)).toEqual(['verify-guide'])
-    expect(f.created).toEqual(['verify-guide'])
-    expect(f.seeded()).toEqual(['penpot', 'verify-guide'])
+    const f = fakes(['verify-guide'])
+    expect(await seedBuiltinSkills(f.skills, f.kv)).toEqual([])
+    expect(f.created).toEqual([])
+    expect(f.seeded()).toEqual(['verify-guide'])
   })
 
   it('adds a skill shipped later to an install that already has the earlier ones', async () => {
-    const f = fakes(['penpot'], ['penpot'])
+    const f = fakes(['older'], ['older'])
     expect(await seedBuiltinSkills(f.skills, f.kv)).toEqual(['verify-guide'])
   })
 

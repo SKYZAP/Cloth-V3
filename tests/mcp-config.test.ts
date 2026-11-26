@@ -52,7 +52,7 @@ describe('MCP server JSON', () => {
   it('suggests a name from the package or the address', () => {
     expect(suggestName({ transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@latest'] })).toBe('playwright')
     expect(suggestName({ transport: 'stdio', command: 'npx', args: ['@modelcontextprotocol/server-filesystem', 'C:/x'] })).toBe('filesystem')
-    expect(suggestName({ transport: 'http', command: '', args: [], url: 'http://obsidian.example.internal/mcp' })).toBe('obsidian')
+    expect(suggestName({ transport: 'http', command: '', args: [], url: 'http://notes.example.com/mcp' })).toBe('notes')
     expect(suggestName({ transport: 'http', command: '', args: [], url: 'http://localhost:4401/mcp' })).toBe('localhost')
   })
 

@@ -5,7 +5,6 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, dialog, shell, BrowserWindow } from 'electron'
 import { MCP_PRESETS, mcpToolName } from './mcp/client'
-import { presetsWithTokens, readEnvFile } from './mcp/homelab'
 import type { ClothApi } from '@shared/api'
 import type { McpClientConfig, Provider, Settings, ToolRunResult } from '@shared/types'
 import { mapClient, mapSecrets, masker, restoreClient } from './core/secret-fields'
@@ -32,7 +31,7 @@ const maskProvider = (p: Provider): Provider => ({ ...p, headers: mapSecrets(p.h
 function restoreSettings(s: Services, patch: Partial<Settings>): Partial<Settings> {
   if (!patch.mcpClients) return patch
   const saved = s.settings.get().mcpClients
-  const presets = presetsWithTokens(MCP_PRESETS, readEnvFile())
+  const presets = MCP_PRESETS
   const known = (c: McpClientConfig) => [saved.find((x) => x.id === c.id), presets.find((p) => p.name === c.name)].filter((x): x is NonNullable<typeof x> => !!x)
   return { ...patch, mcpClients: patch.mcpClients.map((c) => restoreClient(c, known(c))) }
 }
@@ -293,7 +292,6 @@ export function createApi(s: Services): ClothApi {
     },
     updates: {
       status: async () => s.updates.get(),
-      setToken: (token) => s.updates.setToken(token),
       check: () => s.updates.check(),
       download: () => s.updates.download(),
       install: async () => s.updates.install()
@@ -470,7 +468,7 @@ export function createApi(s: Services): ClothApi {
       restart: () => s.mcp.restart(),
       rotateToken: async () => s.mcp.rotateToken(),
       clients: async () => s.mcpClients.status(),
-      clientPresets: async () => presetsWithTokens(MCP_PRESETS, readEnvFile()).map((p) => mapClient(p, masker)),
+      clientPresets: async () => MCP_PRESETS.map((p) => mapClient(p, masker)),
       startClient: (id) => s.mcpClients.start(id),
       stopClient: (id) => s.mcpClients.stop(id),
       signInClient: (id) => s.mcpClients.signIn(id),

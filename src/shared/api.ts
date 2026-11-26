@@ -365,11 +365,9 @@ export interface ClothApi {
     linkChatProject(chatProjectId: string): Promise<import('./boards').BoardLink>
     unlinkChatProject(chatProjectId: string): Promise<void>
   }
-  /** Updates from the private GitHub releases of SKYZAP/Cloth-V3. */
+  /** Updates from the GitHub releases of SKYZAP/Cloth-V3. */
   updates: {
     status(): Promise<import('./types').UpdateStatus>
-    /** Saves a GitHub token that can read the repository ('' forgets it); throws if GitHub refuses it. */
-    setToken(token: string): Promise<import('./types').UpdateStatus>
     check(): Promise<import('./types').UpdateStatus>
     download(): Promise<import('./types').UpdateStatus>
     /** Quits, runs the installer and starts the new version. */

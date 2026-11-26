@@ -27,8 +27,7 @@
     "mobile:apk": "node scripts/mobile-apk.mjs debug",
     "mobile:release": "node scripts/mobile-apk.mjs release",
     "build:runner": "node scripts/build-runner.mjs",
-    "check-deps": "node scripts/check-deps.mjs",
-    "site:publish": "node scripts/publish-site.mjs"
+    "check-deps": "node scripts/check-deps.mjs"
   },
   "dependencies": {
     "@ast-grep/lang-go": "^0.0.6",
@@ -143,7 +142,6 @@
         "provider": "github",
         "owner": "SKYZAP",
         "repo": "Cloth-V3",
-        "private": true,
         "releaseType": "draft"
       }
     ],
