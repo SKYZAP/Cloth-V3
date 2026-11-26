@@ -1073,7 +1073,7 @@ function UpdatesGroup() {
 
   return (
     <div className="mt-6">
-      <Group title="Updates" note={`Releases come from ${UPDATE_REPO} on GitHub. Cloth checks once a day at launch; downloads start only when you ask.`}>
+      <Group title="Updates" note={`Releases come from ${UPDATE_REPO} on GitHub. Cloth checks once a day at launch and downloads a new version in the background. Restarting installs it without the setup wizard; otherwise it goes in the next time Cloth quits.`}>
         <Row
           label={`Cloth ${st.current}`}
           hint={

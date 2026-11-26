@@ -7,7 +7,7 @@ import { plainSecrets } from '../src/main/core/context'
 import { isNewer, updateError, type Updater } from '../src/main/updates'
 
 function fakeUpdater(result: Awaited<ReturnType<Updater['checkForUpdates']>> | Error) {
-  const calls: { feed?: unknown; downloads: number; installs: number } = { downloads: 0, installs: 0 }
+  const calls: { feed?: unknown; downloads: number; installs: number; installArgs?: unknown[] } = { downloads: 0, installs: 0 }
   let onProgress: ((p: { transferred: number; total: number }) => void) | null = null
   const updater: Updater = {
     autoDownload: true,
@@ -22,7 +22,7 @@ function fakeUpdater(result: Awaited<ReturnType<Updater['checkForUpdates']>> | E
       onProgress?.({ transferred: 50, total: 100 })
       return []
     },
-    quitAndInstall: () => void calls.installs++,
+    quitAndInstall: (...args) => void (calls.installs++, (calls.installArgs = args)),
     on: (_e, fn) => void (onProgress = fn)
   }
   return { updater, calls }
@@ -41,20 +41,32 @@ function setup(updater: Updater | null) {
 }
 
 describe('updates', () => {
-  it('checks the public releases, downloads when asked and restarts into it', async () => {
+  it('checks the public releases, downloads a newer one by itself and installs it silently', async () => {
     const { updater, calls } = fakeUpdater({ isUpdateAvailable: true, updateInfo: { version: '0.2.0', files: [{ size: 300 }] } })
     const { u, events } = setup(updater)
     expect(updater.autoDownload).toBe(false)
+    expect(updater.autoInstallOnAppQuit).toBe(true)
     const found = await u.check()
     expect(calls.feed).toEqual({ provider: 'github', owner: 'SKYZAP', repo: 'Cloth-V3' })
     expect(found).toMatchObject({ state: 'available', version: '0.2.0', size: 300 })
-    expect(calls.downloads).toBe(0)
-    u.install()
-    expect(calls.installs).toBe(0)
-    expect((await u.download()).state).toBe('ready')
+    // The download starts on its own.
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls.downloads).toBe(1)
+    expect(u.get().state).toBe('ready')
     expect(events).toContainEqual(expect.objectContaining({ state: 'downloading', progress: { transferred: 50, total: 100 } }))
+    // Installing: silent (no setup wizard), and Cloth starts again afterwards.
     u.install()
     expect(calls.installs).toBe(1)
+    expect(calls.installArgs).toEqual([true, true])
+  })
+
+  it('installs nothing before the download is done', async () => {
+    const { updater, calls } = fakeUpdater({ isUpdateAvailable: false, updateInfo: { version: '0.1.0' } })
+    const { u } = setup(updater)
+    await u.check()
+    u.install()
+    expect(calls.installs).toBe(0)
+    expect(calls.downloads).toBe(0)
   })
 
   it('says when it is up to date or why it failed', async () => {

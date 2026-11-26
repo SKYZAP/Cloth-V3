@@ -26,7 +26,11 @@ export interface UpdateDeps {
   fetch: typeof fetch
 }
 
-/** Checks Cloth's public GitHub releases for a newer version and installs it. Downloads only start when asked. */
+/**
+ * Checks Cloth's public GitHub releases for a newer version, downloads it in the background (only the changed blocks
+ * where it can), and installs it silently: no setup wizard, the same install folder, Cloth reopens by itself. An update
+ * that isn't installed by hand goes in silently the next time Cloth quits.
+ */
 export class UpdateService {
   private status: UpdateStatus
 
@@ -49,7 +53,8 @@ export class UpdateService {
   async check(): Promise<UpdateStatus> {
     const { updater } = this.deps
     if (!updater) return this.status
-    if (this.status.state === 'checking' || this.status.state === 'downloading') return this.status
+    // Busy, or already downloaded and waiting for a restart: nothing to check.
+    if (this.status.state === 'checking' || this.status.state === 'downloading' || this.status.state === 'ready') return this.status
     this.set({ state: 'checking', error: undefined })
     try {
       updater.setFeedURL({ provider: 'github', owner: UPDATE_REPO.owner, repo: UPDATE_REPO.repo })
@@ -60,7 +65,10 @@ export class UpdateService {
       const newer = !!info && (res.isUpdateAvailable ?? isNewer(info.version, this.deps.version))
       if (!newer) return this.set({ state: 'none', checkedAt, version: undefined, size: undefined })
       const size = info.files?.reduce((n, f) => n + (f.size ?? 0), 0) || undefined
-      return this.set({ state: 'available', checkedAt, version: info.version, size })
+      const found = this.set({ state: 'available', checkedAt, version: info.version, size })
+      // Fetch it straight away, so it's ready by the time anyone looks.
+      void this.download()
+      return found
     } catch (err) {
       return this.set({ state: 'error', error: updateError(err) })
     }
@@ -79,7 +87,8 @@ export class UpdateService {
   }
 
   install(): void {
-    if (this.status.state === 'ready') this.deps.updater?.quitAndInstall(false, true)
+    // Silent (no setup wizard, the same install folder) and Cloth starts again once it's in.
+    if (this.status.state === 'ready') this.deps.updater?.quitAndInstall(true, true)
   }
 
   /** At launch: check quietly when the last check is old. */

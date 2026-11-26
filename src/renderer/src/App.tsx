@@ -19,7 +19,7 @@ import { RunPage } from './pages/Run'
 import { BoardsPage } from './pages/Boards'
 import { SwatchesPage } from './pages/Swatches'
 import { DesignPage } from './pages/Design'
-import { SettingsPage, openSettingsSection } from './pages/Settings'
+import { SettingsPage } from './pages/Settings'
 import type { McpStatus } from '@shared/types'
 import { useState } from 'react'
 import { api } from './lib/api'
@@ -128,12 +128,13 @@ function DesktopApp() {
   // Computer use is missing a macOS permission: say which and offer the settings pane.
   const toast = useApp((s) => s.toast)
   useEvent('computer', (n) => toast(n.text, 'error', { label: 'Open System Settings', run: () => void api.app.openPrivacySettings(n.kind) }))
-  // The launch check found a newer Cloth: say so once per version, wherever the user is.
+  // A newer Cloth downloaded in the background: offer the restart once per version, wherever the user is.
+  // Ignored, it installs by itself the next time Cloth quits.
   const announced = useRef<string | null>(null)
   useEvent('updates', (u) => {
-    if (u.state !== 'available' || !u.version || announced.current === u.version || useApp.getState().page === 'settings') return
+    if (u.state !== 'ready' || !u.version || announced.current === u.version || useApp.getState().page === 'settings') return
     announced.current = u.version
-    toast(`Cloth ${u.version} is available`, 'info', { label: 'Open Settings', run: () => openSettingsSection('about') })
+    toast(`Cloth ${u.version} is ready to install`, 'info', { label: 'Restart now', run: () => void api.updates.install() })
   })
 
   const isMac = window.cloth.platform === 'darwin'
