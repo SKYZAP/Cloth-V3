@@ -232,6 +232,6 @@ ${files['components.css'] ?? ''}` }
   const boards = new BoardService(ctx, { runtime, agents, settings, projects })
   const dashboard = new DashboardService(ctx, { usage: providers.usage, providers, rag, skills, custom, workflows, chat })
 
-  const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
+  const updates = new UpdateService(ctx, { version: opts.updates?.version ?? '0.0.0', updater: opts.updates?.updater ?? null, channelFile: opts.updates?.channelFile, fetch: opts.updates?.fetch ?? ((...a) => fetch(...a)) })
   return { ctx, settings, providers, rag, examples, skills, skillInsights, registry, web, custom, runtime, background, chat, agents, projects, containers, ports, panel, mcpClients, designs, workflows, mcp, dashboard, lsp, images, remote, swatches, exporter, runs, approvals, updates, boards, deps: new DependencyService(ctx) }
 }
