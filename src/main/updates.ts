@@ -12,7 +12,7 @@ const RECHECK_MS = 20 * 60 * 60 * 1000
 export interface Updater {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
-  setFeedURL(options: { provider: 'github'; owner: string; repo: string }): void
+  setFeedURL(options: { provider: 'github'; owner: string; repo: string } | { provider: 'generic'; url: string }): void
   checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; updateInfo: { version: string; files?: { size?: number }[] } } | null>
   downloadUpdate(): Promise<unknown>
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
@@ -24,7 +24,12 @@ export interface UpdateDeps {
   /** Null when this build can't update itself (dev, or a Mac build without a signature). */
   updater: Updater | null
   fetch: typeof fetch
+  /** The channel file this platform's builds read (electron-updater's naming). */
+  channelFile?: string
 }
+
+/** electron-updater's channel file for a platform: latest.yml on Windows, latest-mac.yml, latest-linux.yml. */
+export const channelFileFor = (platform: string): string => (platform === 'darwin' ? 'latest-mac.yml' : platform === 'linux' ? 'latest-linux.yml' : 'latest.yml')
 
 /**
  * Checks Cloth's public GitHub releases for a newer version, downloads it in the background (only the changed blocks
@@ -58,11 +63,22 @@ export class UpdateService {
     this.set({ state: 'checking', error: undefined })
     try {
       updater.setFeedURL({ provider: 'github', owner: UPDATE_REPO.owner, repo: UPDATE_REPO.repo })
-      const res = await updater.checkForUpdates()
+      let res: Awaited<ReturnType<Updater['checkForUpdates']>>
+      try {
+        res = await updater.checkForUpdates()
+      } catch (err) {
+        // The newest release has no channel file yet (its build is still running, or it failed): check against the
+        // newest release that has one instead.
+        if (!missingChannelFile(err)) throw err
+        const url = await this.fallbackFeed()
+        if (!url) throw err
+        updater.setFeedURL({ provider: 'generic', url })
+        res = await updater.checkForUpdates()
+      }
       const checkedAt = Date.now()
       this.ctx.kv.set(CHECKED_KV, checkedAt)
       const info = res?.updateInfo
-      const newer = !!info && (res.isUpdateAvailable ?? isNewer(info.version, this.deps.version))
+      const newer = !!info && (res?.isUpdateAvailable ?? isNewer(info.version, this.deps.version))
       if (!newer) return this.set({ state: 'none', checkedAt, version: undefined, size: undefined })
       const size = info.files?.reduce((n, f) => n + (f.size ?? 0), 0) || undefined
       const found = this.set({ state: 'available', checkedAt, version: info.version, size })
@@ -71,6 +87,23 @@ export class UpdateService {
       return found
     } catch (err) {
       return this.set({ state: 'error', error: updateError(err) })
+    }
+  }
+
+  /** Where the newest published release with this platform's channel file keeps its files, or null. */
+  private async fallbackFeed(): Promise<string | null> {
+    const file = this.deps.channelFile ?? channelFileFor(process.platform)
+    try {
+      const res = await this.deps.fetch(`https://api.github.com/repos/${REPO}/releases?per_page=10`, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'Cloth' },
+        signal: AbortSignal.timeout(15_000)
+      })
+      if (!res.ok) return null
+      const releases = (await res.json()) as { tag_name: string; draft: boolean; prerelease: boolean; assets?: { name: string }[] }[]
+      const usable = releases.find((r) => !r.draft && !r.prerelease && r.assets?.some((a) => a.name === file))
+      return usable ? `https://github.com/${REPO}/releases/download/${encodeURIComponent(usable.tag_name)}` : null
+    } catch {
+      return null
     }
   }
 
@@ -111,6 +144,12 @@ export function isNewer(candidate: string, current: string): boolean {
   const [a, b] = [parts(candidate), parts(current)]
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
   return false
+}
+
+/** electron-updater couldn't find the release's channel file (latest.yml and friends). */
+export function missingChannelFile(err: unknown): boolean {
+  const e = err as { code?: string }
+  return e?.code === 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' || /latest(-mac|-linux)?\.yml/i.test(errorMessage(err))
 }
 
 /** electron-updater's errors in words that say what to do. */

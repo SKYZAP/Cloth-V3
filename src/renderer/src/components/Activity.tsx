@@ -75,7 +75,6 @@ export function ActivityGroup({
               <span className="text-ok">+{stats.added}</span> <span className="text-danger-hi">-{stats.removed}</span>
             </span>
           )}
-          {stats.failed > 0 && <span className="shrink-0 font-mono text-caption text-danger-hi">{stats.failed} failed</span>}
         </button>
       )}
       <AnimatePresence initial={false}>

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { motion } from 'motion/react'
-import { ArrowSquareOut, CheckCircle, FileText, FolderSimple, GitPullRequest, Pause, Stop } from '@phosphor-icons/react'
+import { ArrowSquareOut, CaretRight, CheckCircle, FileText, FolderSimple, GitPullRequest, Pause, Stop } from '@phosphor-icons/react'
 import { OPENSPEC_STEP_LABEL, OPENSPEC_STEPS, type OpenSpecRun, type OpenSpecStepReport, type ToolTrace } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
-import { Switch } from '@/components/ui'
+import { Modal, Segmented, Switch } from '@/components/ui'
+import { Markdown } from '@/components/Markdown'
 
 const ENTER = { type: 'spring', stiffness: 260, damping: 28 } as const
 
@@ -100,6 +101,8 @@ interface ChangeRow {
 /** The side panel's OpenSpec tab: the folder's changes with their task progress, and its specs. */
 export function OpenSpecPanel({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.panel.openspec>> | null>(null)
+  // The change or spec being read.
+  const [reading, setReading] = useState<{ kind: 'change' | 'spec'; name: string } | null>(null)
   const load = () => void api.panel.openspec(sessionId).then(setData, (err: unknown) => setData({ initialised: false, changes: null, specs: null, error: err instanceof Error ? err.message : String(err) }))
   useEffect(() => {
     if (visible) load()
@@ -126,11 +129,12 @@ export function OpenSpecPanel({ sessionId, visible }: { sessionId: string; visib
             const total = c.totalTasks ?? 0
             const done = c.completedTasks ?? 0
             return (
-              <div key={c.name} className="flex items-center gap-2 border-line px-3 py-2 text-ui [&+&]:border-t">
+              <button key={c.name} onClick={() => setReading({ kind: 'change', name: c.name })} className="group flex w-full items-center gap-2 border-line px-3 py-2 text-left text-ui transition-colors hover:bg-elev [&+&]:border-t" title="Read the proposal, design, tasks and spec changes">
                 <FolderSimple size={14} className="shrink-0 text-dim" />
                 <span className="min-w-0 flex-1 truncate font-mono text-caption text-fg">{c.name}</span>
                 {total > 0 && <span className={clsx('shrink-0 font-mono text-micro tabular-nums', done === total ? 'text-ok' : 'text-info')}>{done}/{total}</span>}
-              </div>
+                <CaretRight size={11} className="shrink-0 text-dim opacity-0 transition-opacity group-hover:opacity-100" />
+              </button>
             )
           })
         ) : (
@@ -141,17 +145,87 @@ export function OpenSpecPanel({ sessionId, visible }: { sessionId: string; visib
       <div className="overflow-hidden rounded-xl border border-line">
         {specs.length ? (
           specs.map((sp) => (
-            <div key={sp.id ?? sp.name} className="flex items-center gap-2 border-line px-3 py-2 text-ui [&+&]:border-t">
+            <button key={sp.id ?? sp.name} onClick={() => setReading({ kind: 'spec', name: String(sp.id ?? sp.name) })} className="group flex w-full items-center gap-2 border-line px-3 py-2 text-left text-ui transition-colors hover:bg-elev [&+&]:border-t" title="Read the spec">
               <FileText size={14} className="shrink-0 text-dim" />
               <span className="min-w-0 flex-1 truncate font-mono text-caption text-fg">{sp.id ?? sp.name}</span>
               {sp.requirementCount !== undefined && <span className="shrink-0 text-micro tabular-nums text-dim">{sp.requirementCount} req</span>}
-            </div>
+              <CaretRight size={11} className="shrink-0 text-dim opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
           ))
         ) : (
           <p className="px-3 py-3 text-caption text-dim">No specs yet. Archiving a change merges its specs here.</p>
         )}
       </div>
+      <OpenSpecReader sessionId={sessionId} reading={reading} onClose={() => setReading(null)} />
     </div>
+  )
+}
+
+/** A change's documents in OpenSpec's reading order, then its spec deltas; a spec is its one file. */
+const CHANGE_ORDER = ['proposal.md', 'design.md', 'tasks.md']
+type Doc = { path: string; label: string; text: string }
+
+async function openspecDocs(sessionId: string, kind: 'change' | 'spec', name: string): Promise<Doc[]> {
+  const read = async (path: string, label: string): Promise<Doc | null> => {
+    const f = await api.panel.read(sessionId, path).catch(() => null)
+    if (f?.kind !== 'text' || f.text === undefined) return null
+    return { path, label, text: f.text + (f.truncated ? '\n\n*(The file is longer: open it in Files to read the rest.)*' : '') }
+  }
+  const found = (docs: (Doc | null)[]) => docs.filter((d): d is Doc => d !== null)
+  if (kind === 'spec') return found([await read(`openspec/specs/${name}/spec.md`, 'spec')])
+  const base = `openspec/changes/${name}`
+  const top = await api.panel.list(sessionId, base).catch(() => [])
+  const docs = await Promise.all(CHANGE_ORDER.filter((f) => top.some((e) => !e.dir && e.name === f)).map((f) => read(`${base}/${f}`, f.replace(/\.md$/, ''))))
+  // Spec deltas: specs/<capability>/spec.md, a tab each.
+  const caps = (await api.panel.list(sessionId, `${base}/specs`).catch(() => [])).filter((e) => e.dir)
+  const deltas = await Promise.all(caps.map((c) => read(`${base}/specs/${c.name}/spec.md`, `spec: ${c.name}`)))
+  // Any other Markdown written there, at the end.
+  const extra = await Promise.all(top.filter((e) => !e.dir && e.name.endsWith('.md') && !CHANGE_ORDER.includes(e.name)).map((e) => read(`${base}/${e.name}`, e.name.replace(/\.md$/, ''))))
+  return found([...docs, ...deltas, ...extra])
+}
+
+/** Reads a change's documents (a tab each) or a spec, as rendered Markdown. */
+function OpenSpecReader({ sessionId, reading, onClose }: { sessionId: string; reading: { kind: 'change' | 'spec'; name: string } | null; onClose(): void }) {
+  const [docs, setDocs] = useState<Doc[] | null>(null)
+  const [tab, setTab] = useState(0)
+  useEffect(() => {
+    setDocs(null)
+    setTab(0)
+    if (reading) void openspecDocs(sessionId, reading.kind, reading.name).then(setDocs)
+  }, [sessionId, reading])
+  const doc = docs?.[tab]
+  return (
+    <Modal
+      open={!!reading}
+      onClose={onClose}
+      width={680}
+      title={
+        reading ? (
+          <span className="flex items-center gap-2">
+            {reading.kind === 'change' ? <FolderSimple size={15} className="text-ospec" /> : <FileText size={15} className="text-ospec" />}
+            <span className="font-mono">{reading.name}</span>
+          </span>
+        ) : (
+          ''
+        )
+      }
+    >
+      {!docs ? (
+        <p className="text-caption text-dim">Loading…</p>
+      ) : !docs.length ? (
+        <p className="text-ui text-muted">{reading?.kind === 'change' ? 'This change has no proposal, design, tasks or spec files yet.' : 'This spec has no spec.md yet.'}</p>
+      ) : (
+        <div className="grid gap-3 text-ui">
+          {docs.length > 1 && <Segmented value={String(tab)} onChange={(v) => setTab(Number(v))} items={docs.map((d, i) => ({ value: String(i), label: d.label }))} />}
+          {doc && (
+            <>
+              <p className="font-mono text-caption text-dim">{doc.path}</p>
+              <Markdown text={doc.text} />
+            </>
+          )}
+        </div>
+      )}
+    </Modal>
   )
 }
 

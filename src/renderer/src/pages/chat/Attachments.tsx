@@ -6,7 +6,7 @@ import type { ChatAttachment, UiAttachment } from '@shared/types'
 import { useBackHandler } from '@/lib/back'
 
 export const MAX_ATTACHMENTS = 10
-const MAX_FILE_BYTES = 25 * 1024 * 1024
+const MAX_FILE_BYTES = 100 * 1024 * 1024
 /** Long edge for images sent to a model: providers downscale anything bigger anyway. */
 const MAX_EDGE = 2000
 const KEEP_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
@@ -26,7 +26,7 @@ export async function readAttachments(files: File[]): Promise<{ ok: Pending[]; e
   for (const file of files) {
     try {
       const name = file.name || (file.type.startsWith('image/') ? `pasted-image.${file.type.split('/')[1] || 'png'}` : 'file')
-      if (file.size > MAX_FILE_BYTES) throw new Error(`${name} is larger than 25 MB`)
+      if (file.size > MAX_FILE_BYTES) throw new Error(`${name} is larger than 100 MB`)
       const image = file.type.startsWith('image/') && file.type !== 'image/svg+xml'
       const blob = image ? await fitImage(file) : file
       const data = await toBase64(blob)

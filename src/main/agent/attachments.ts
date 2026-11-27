@@ -10,7 +10,7 @@ export const FILE_CLOSE = '</attached-file>'
 
 export const MAX_ATTACHMENTS = 10
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const MAX_FILE_BYTES = 25 * 1024 * 1024
+const MAX_FILE_BYTES = 100 * 1024 * 1024
 /** About 30k tokens: enough for a long document, without one file swallowing the context. */
 const MAX_FILE_CHARS = 120_000
 /** Image formats every vision provider accepts; the composer converts anything else before sending. */
@@ -30,7 +30,7 @@ export async function attachmentContent(attachments: ChatAttachment[]): Promise<
       images.push({ type: 'image', data: a.data, mimeType: a.mimeType })
       continue
     }
-    if (bytes.length > MAX_FILE_BYTES) throw new Error(`${name} is too large (files up to 25 MB)`)
+    if (bytes.length > MAX_FILE_BYTES) throw new Error(`${name} is too large (files up to 100 MB)`)
     let text = (await readText(name, bytes)).replace(/\r\n/g, '\n').trim()
     const truncated = text.length > MAX_FILE_CHARS
     if (truncated) text = `${text.slice(0, MAX_FILE_CHARS)}\n\n[… truncated: the file has ${text.length.toLocaleString('en-US')} characters; only the first ${MAX_FILE_CHARS.toLocaleString('en-US')} are included]`

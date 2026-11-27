@@ -733,7 +733,6 @@ function Tools({ stats }: { stats: DashboardStats }) {
           ))}
           right={
             <span className="flex items-center gap-2 font-mono text-caption tabular-nums">
-              {t.errors > 0 && <span className="text-danger-hi">{t.errors} failed</span>}
               {t.avgMs !== null && <span className="text-dim">{duration(t.avgMs)}</span>}
               <span className="w-10 text-right text-muted">{t.calls}</span>
             </span>

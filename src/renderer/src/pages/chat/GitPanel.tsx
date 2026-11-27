@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { ArrowClockwise, ArrowDown, ArrowLeft, ArrowUp, ArrowUUpLeft, CaretDown, CaretRight, GitBranch, GitCommit as CommitIcon, Minus, Plus, Sparkle } from '@phosphor-icons/react'
-import type { GitCommit, GitFile, GitStatus, WorkspaceRoot } from '@shared/types'
+import { ArrowClockwise, ArrowDown, ArrowLeft, ArrowUp, ArrowUUpLeft, CaretDown, CaretRight, CaretUpDown, Check, GitBranch, GitCommit as CommitIcon, Minus, Plus, Sparkle, Stack } from '@phosphor-icons/react'
+import type { GitCommit, GitFile, GitRepo, GitStatus, WorkspaceRoot } from '@shared/types'
 import { api, useEvent } from '@/lib/api'
 import { attempt, useApp } from '@/lib/store'
 import { Button, confirmAction } from '@/components/ui'
@@ -20,9 +20,39 @@ const split = (p: string) => {
   return i < 0 ? { name: p, dir: '' } : { name: p.slice(i + 1), dir: p.slice(0, i) }
 }
 
-/** Git for the chat's folder: changes, diffs, staging, commits, pull and push. */
+/** The panel's choice of repository, per chat: a path from `gitRepos`, or ALL for every repository's changes. */
+const ALL = '*'
+const repoKey = (sessionId: string) => `cloth.git.repo.${sessionId}`
+function savedRepo(sessionId: string): string {
+  try {
+    return localStorage.getItem(repoKey(sessionId)) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** Git for the chat's folder (or a repository inside it): changes, diffs, staging, commits, pull and push. */
 export function GitPanel({ sessionId, visible }: { sessionId: string; visible: boolean }) {
   const [root, setRoot] = useState<WorkspaceRoot | null>(null)
+  // The repositories in the folder, and which one the panel shows.
+  const [repos, setRepos] = useState<GitRepo[] | null>(null)
+  const [pick, setPickState] = useState(() => savedRepo(sessionId))
+  const setPick = (r: string) => {
+    setPickState(r)
+    setStatus(null)
+    setLog([])
+    setDiff(null)
+    try {
+      localStorage.setItem(repoKey(sessionId), r)
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  // Every repository's changes, for the All repositories view.
+  const [everything, setEverything] = useState<{ repo: GitRepo; status: GitStatus }[] | null>(null)
+  // The repository the git calls act on ('' is the chat's folder).
+  const repo = pick === ALL ? '' : pick
+  const arg = repo || undefined
   const [status, setStatus] = useState<GitStatus | null>(null)
   const [log, setLog] = useState<GitCommit[]>([])
   const [diff, setDiff] = useState<{ file: GitFile; staged: boolean; text: string } | null>(null)
@@ -31,16 +61,30 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
   const [showLog, setShowLog] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [r, s] = await Promise.all([api.panel.root(sessionId), api.panel.gitStatus(sessionId).catch(() => null)])
+    const [r, list] = await Promise.all([api.panel.root(sessionId), api.panel.gitRepos(sessionId).catch(() => [] as GitRepo[])])
     setRoot(r)
+    setRepos(list)
+    // The saved repository is gone, or the folder isn't one itself but holds some: show the first that's there.
+    if (pick !== ALL && list.length && !list.some((x) => x.path === pick)) return setPick(list[0].path)
+    if (pick === ALL) {
+      if (list.length < 2) return setPick(list[0]?.path ?? '')
+      const all = await Promise.all(list.map(async (x) => ({ repo: x, status: await api.panel.gitStatus(sessionId, x.path || undefined).catch(() => null) })))
+      setEverything(all.filter((x): x is { repo: GitRepo; status: GitStatus } => !!x.status))
+      return
+    }
+    const s = await api.panel.gitStatus(sessionId, arg).catch(() => null)
     setStatus(s)
-    if (s?.repo) void api.panel.gitLog(sessionId).then(setLog)
-  }, [sessionId])
+    if (s?.repo) void api.panel.gitLog(sessionId, arg).then(setLog)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, pick])
 
   useEffect(() => {
     setStatus(null)
     setDiff(null)
     setMessage('')
+    setRepos(null)
+    setEverything(null)
+    setPickState(savedRepo(sessionId))
   }, [sessionId])
   // Poll while visible: the agent, a terminal or another app may change files at any time.
   useEffect(() => {
@@ -65,27 +109,27 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
   const apply = (s: GitStatus | undefined) => {
     if (s) setStatus(s)
   }
-  const stage = (paths: string[]) => void act('stage', () => api.panel.gitStage(sessionId, paths)).then(apply)
-  const unstage = (paths: string[]) => void act('unstage', () => api.panel.gitUnstage(sessionId, paths)).then(apply)
+  const stage = (paths: string[]) => void act('stage', () => api.panel.gitStage(sessionId, paths, arg)).then(apply)
+  const unstage = (paths: string[]) => void act('unstage', () => api.panel.gitUnstage(sessionId, paths, arg)).then(apply)
   const discard = async (files: GitFile[]) => {
     const untracked = files.filter((f) => f.untracked).length
     const what = files.length === 1 ? `“${files[0].path}”` : `${files.length} files`
     const ok = await confirmAction(untracked === files.length ? `${what} ${files.length === 1 ? 'is' : 'are'} deleted — ${files.length === 1 ? 'it has' : 'they have'} never been committed.` : `Your changes to ${what} are lost; ${files.length === 1 ? 'it goes' : 'they go'} back to the last committed version.${untracked ? ' New files are deleted.' : ''}`, { title: 'Discard changes?', confirmLabel: 'Discard', danger: true })
     if (!ok) return
-    apply(await act('discard', () => api.panel.gitDiscard(sessionId, files.map((f) => f.path))))
+    apply(await act('discard', () => api.panel.gitDiscard(sessionId, files.map((f) => f.path), arg)))
     setDiff(null)
   }
   const openDiff = async (file: GitFile, isStaged: boolean) => {
-    const text = await act('diff', () => api.panel.gitDiff(sessionId, file.path, isStaged))
+    const text = await act('diff', () => api.panel.gitDiff(sessionId, file.path, isStaged, arg))
     if (text !== undefined) setDiff({ file, staged: isStaged, text })
   }
   const all = !staged.length
   const commit = async () => {
-    const r = await act('commit', () => api.panel.gitCommit(sessionId, message, all))
+    const r = await act('commit', () => api.panel.gitCommit(sessionId, message, all, arg))
     if (!r) return
     setMessage('')
     setStatus(r.status)
-    void api.panel.gitLog(sessionId).then(setLog)
+    void api.panel.gitLog(sessionId, arg).then(setLog)
     useApp.getState().toast(`Committed ${r.hash}`, 'ok')
   }
   const init = async () => {
@@ -93,11 +137,55 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
     if (s) await refresh()
   }
   const suggest = async () => {
-    const text = await act('message', () => api.panel.commitMessage(sessionId, all))
+    const text = await act('message', () => api.panel.commitMessage(sessionId, all, arg))
     if (text) setMessage(text)
   }
 
+  const bar = repos && repos.length > 1 ? <RepoBar repos={repos} pick={pick} onPick={setPick} /> : null
   if (root && !root.folder) return <Empty>This chat has no folder.</Empty>
+  if (pick === ALL)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {bar}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {!everything ? (
+            <Empty>Reading git status…</Empty>
+          ) : (
+            everything.map(({ repo: r, status: st }) => (
+              <div key={r.root} className="border-b border-line py-1">
+                <button onClick={() => setPick(r.path)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-caption hover:bg-elev" title={`Open ${r.name}`}>
+                  <GitBranch size={13} className="shrink-0 text-dim" />
+                  <span className="min-w-0 truncate font-medium text-fg">{r.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-micro text-dim">{r.branch ?? 'detached'}</span>
+                  <span className="shrink-0 font-mono text-micro text-dim">{st.files.length ? `${st.files.length} changed` : 'clean'}</span>
+                  <CaretRight size={10} className="shrink-0 text-dim" />
+                </button>
+                {st.files.slice(0, 50).map((f) => {
+                  const { name, dir } = split(f.path)
+                  const l = letter(f, f.staged && !f.unstaged)
+                  return (
+                    <button
+                      key={f.path}
+                      onClick={() => {
+                        setPick(r.path)
+                        void api.panel.gitDiff(sessionId, f.path, f.staged && !f.unstaged, r.path || undefined).then((text) => setDiff({ file: f, staged: f.staged && !f.unstaged, text }), () => undefined)
+                      }}
+                      className="flex h-7 w-full items-center gap-2 pl-7 pr-2.5 text-left text-ui hover:bg-elev"
+                      title={f.path}
+                    >
+                      <span className={clsx('min-w-0 truncate', l === 'D' ? 'text-dim line-through' : 'text-fg/90')}>{name}</span>
+                      <span className="min-w-0 flex-1 truncate text-caption text-dim">{dir}</span>
+                      <span className={clsx('w-3.5 shrink-0 text-center font-mono text-caption font-semibold', LETTER_COLOR[l] ?? 'text-muted')}>{f.conflicted ? '!' : l}</span>
+                    </button>
+                  )
+                })}
+                {st.files.length > 50 && <div className="px-7 py-1 text-caption text-dim">and {st.files.length - 50} more</div>}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    )
   if (status && !status.repo)
     return (
       <Empty>
@@ -114,6 +202,7 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
   if (diff)
     return (
       <div className="flex h-full min-h-0 flex-col">
+        {bar}
         <div className="flex shrink-0 items-center gap-1 border-b border-line px-1.5 py-1.5">
           <button onClick={() => setDiff(null)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-elev hover:text-fg" aria-label="Back to changes">
             <ArrowLeft size={14} />
@@ -145,6 +234,7 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {bar}
       <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-2.5 py-1.5 text-caption">
         <GitBranch size={14} className="shrink-0 text-dim" />
         <span className="min-w-0 truncate font-medium" title={status.upstream ? `Tracking ${status.upstream}` : 'No upstream branch'}>
@@ -156,10 +246,10 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
           </span>
         )}
         <div className="flex-1" />
-        <button disabled={!!busy} onClick={() => void act('pull', () => api.panel.gitPull(sessionId), 'Pulled').then(refresh)} className="flex h-7 items-center gap-1 rounded-md px-1.5 text-muted hover:bg-elev hover:text-fg disabled:opacity-50" title="Pull (fast-forward only)">
+        <button disabled={!!busy} onClick={() => void act('pull', () => api.panel.gitPull(sessionId, arg), 'Pulled').then(refresh)} className="flex h-7 items-center gap-1 rounded-md px-1.5 text-muted hover:bg-elev hover:text-fg disabled:opacity-50" title="Pull (fast-forward only)">
           <ArrowDown size={13} /> {busy === 'pull' ? '…' : 'Pull'}
         </button>
-        <button disabled={!!busy} onClick={() => void act('push', () => api.panel.gitPush(sessionId), 'Pushed').then(refresh)} className="flex h-7 items-center gap-1 rounded-md px-1.5 text-muted hover:bg-elev hover:text-fg disabled:opacity-50" title={status.upstream ? `Push to ${status.upstream}` : 'Push and set origin as upstream'}>
+        <button disabled={!!busy} onClick={() => void act('push', () => api.panel.gitPush(sessionId, arg), 'Pushed').then(refresh)} className="flex h-7 items-center gap-1 rounded-md px-1.5 text-muted hover:bg-elev hover:text-fg disabled:opacity-50" title={status.upstream ? `Push to ${status.upstream}` : 'Push and set origin as upstream'}>
           <ArrowUp size={13} /> {busy === 'push' ? '…' : 'Push'}
         </button>
         <button onClick={() => void refresh()} className="flex h-7 w-7 items-center justify-center rounded-md text-dim hover:bg-elev hover:text-fg" aria-label="Refresh" title="Refresh">
@@ -232,6 +322,74 @@ export function GitPanel({ sessionId, visible }: { sessionId: string; visible: b
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Which repository the panel shows, when the folder holds more than one: each with its branch and changes. */
+function RepoBar({ repos, pick, onPick }: { repos: GitRepo[]; pick: string; onPick(path: string): void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    ref.current?.querySelector<HTMLElement>('[role=menuitemradio][aria-checked=true], [role=menuitemradio]')?.focus()
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      e.preventDefault()
+      const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role=menuitemradio]') ?? [])]
+      const i = items.indexOf(document.activeElement as HTMLElement)
+      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+    }
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', keys)
+    return () => {
+      window.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('keydown', keys)
+    }
+  }, [open])
+  const cur = repos.find((r) => r.path === pick)
+  const total = repos.reduce((n, r) => n + r.changes, 0)
+  const count = (n: number) => n > 0 && <span className="shrink-0 rounded-full bg-info/15 px-1.5 py-px font-mono text-micro font-semibold text-info">{n}</span>
+  const item = 'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui text-fg transition-colors hover:bg-elev-2 focus-visible:bg-elev-2 focus-visible:outline-none'
+  return (
+    <div ref={ref} className="relative shrink-0 border-b border-line p-1.5">
+      <button onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} className="flex h-8 w-full items-center gap-2 rounded-lg border border-line bg-panel px-2 text-left text-ui transition-colors hover:border-line-strong">
+        {cur ? <GitBranch size={14} className="shrink-0 text-dim" /> : <Stack size={14} className="shrink-0 text-dim" />}
+        <span className="min-w-0 truncate font-medium">{cur ? cur.name : 'All repositories'}</span>
+        {cur?.path && <span className="min-w-0 flex-1 truncate font-mono text-micro text-dim">{cur.path}</span>}
+        {!cur?.path && <span className="flex-1" />}
+        {count(cur ? cur.changes : total)}
+        <CaretUpDown size={12} className="shrink-0 text-dim" />
+      </button>
+      {open && (
+        <div role="menu" className="absolute inset-x-1.5 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-line-strong bg-panel p-1 shadow-[0_20px_50px_-10px_rgb(0_0_0/0.8)]">
+          {repos.map((r) => (
+            <button key={r.root} role="menuitemradio" aria-checked={r.path === pick} className={item} onClick={() => (onPick(r.path), setOpen(false))} title={r.root}>
+              <GitBranch size={14} className="shrink-0 text-dim" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{r.name}</span>
+                <span className="block truncate font-mono text-micro text-dim">
+                  {r.branch ?? 'detached HEAD'}
+                  {r.path ? ` · ${r.path}` : ''}
+                  {r.ahead > 0 ? ` ↑${r.ahead}` : ''}
+                  {r.behind > 0 ? ` ↓${r.behind}` : ''}
+                </span>
+              </span>
+              {count(r.changes)}
+              <Check size={13} className={clsx('shrink-0 text-crimson-hi', r.path !== pick && 'invisible')} />
+            </button>
+          ))}
+          <div className="mx-1.5 my-1 border-t border-line" />
+          <button role="menuitemradio" aria-checked={pick === ALL} className={item} onClick={() => (onPick(ALL), setOpen(false))}>
+            <Stack size={14} className="shrink-0 text-dim" />
+            <span className="min-w-0 flex-1 truncate">All repositories</span>
+            {count(total)}
+            <Check size={13} className={clsx('shrink-0 text-crimson-hi', pick !== ALL && 'invisible')} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

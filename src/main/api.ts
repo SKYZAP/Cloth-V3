@@ -208,7 +208,8 @@ export function createApi(s: Services): ClothApi {
       resizeTerminal: async (id, cols, rows) => s.panel.terminals.resize(id, cols, rows),
       closeTerminal: async (id) => s.panel.terminals.kill(id),
       stopTerminal: async (id) => s.panel.terminals.stop(id),
-      gitStatus: (id) => s.panel.gitStatus(id),
+      gitStatus: (id, repo) => s.panel.gitStatus(id, repo),
+      gitRepos: (id) => s.panel.gitRepos(id),
       openspec: async (id) => {
         const folder = s.chat.get(id).workspace
         if (!folder) return { initialised: false, changes: null, specs: null, error: 'This chat has no folder.' }
@@ -225,26 +226,28 @@ export function createApi(s: Services): ClothApi {
         return { initialised: true, changes: parse(changes), specs: parse(specs), error: failed ? (failed.stderr || failed.stdout).trim().slice(0, 400) || 'openspec failed' : null }
       },
       gitInit: (id) => s.panel.gitInit(id),
-      gitDiff: (id, path, staged) => s.panel.gitDiff(id, path, staged),
-      gitStage: (id, paths) => s.panel.gitStage(id, paths),
-      gitUnstage: (id, paths) => s.panel.gitUnstage(id, paths),
-      gitDiscard: (id, paths) => s.panel.gitDiscard(id, paths),
-      gitCommit: (id, message, all) => s.panel.gitCommit(id, message, all),
-      gitLog: (id) => s.panel.gitLog(id),
-      gitPush: (id) => s.panel.gitPush(id),
-      gitPull: (id) => s.panel.gitPull(id),
-      commitMessage: (id, all) => s.panel.commitMessage(id, all)
+      gitDiff: (id, path, staged, repo) => s.panel.gitDiff(id, path, staged, repo),
+      gitStage: (id, paths, repo) => s.panel.gitStage(id, paths, repo),
+      gitUnstage: (id, paths, repo) => s.panel.gitUnstage(id, paths, repo),
+      gitDiscard: (id, paths, repo) => s.panel.gitDiscard(id, paths, repo),
+      gitCommit: (id, message, all, repo) => s.panel.gitCommit(id, message, all, repo),
+      gitLog: (id, repo) => s.panel.gitLog(id, repo),
+      gitPush: (id, repo) => s.panel.gitPush(id, repo),
+      gitPull: (id, repo) => s.panel.gitPull(id, repo),
+      commitMessage: (id, all, repo) => s.panel.commitMessage(id, all, repo)
     },
     chat: {
       list: async () => s.chat.list(),
       create: async (config) => s.chat.create(config),
       sharedSkills: async () => s.chat.sharedSkills(),
       setSharedSkills: async (names, mode) => s.chat.setSharedSkills(names, mode),
+      reorder: async (ids, clear) => s.chat.reorder(ids, clear),
       update: async (id, patch) => {
         // Changes made in a chat's Setup are the setup for every chat; its model, effort and mode carry over to new chats.
         const next = s.chat.update(id, s.chat.rememberPicks(id, patch), { share: true })
-        // A different model: fetch its current context size before the meter asks for it.
-        if (patch.model) await s.providers.refreshModel(patch.model, { force: true }).catch(() => undefined)
+        // A different model: fetch its current context size in the background (a slow provider must not hold up the
+        // switch); the meter is told to look again once it's known.
+        if (patch.model) s.chat.refreshLimits(id, patch.model, true)
         return next
       },
       remove: async (id) => {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServices } from '../src/main/services'
 import { plainSecrets } from '../src/main/core/context'
-import { isNewer, updateError, type Updater } from '../src/main/updates'
+import { channelFileFor, isNewer, missingChannelFile, updateError, type Updater } from '../src/main/updates'
 
 function fakeUpdater(result: Awaited<ReturnType<Updater['checkForUpdates']>> | Error) {
   const calls: { feed?: unknown; downloads: number; installs: number; installArgs?: unknown[] } = { downloads: 0, installs: 0 }
@@ -28,14 +28,14 @@ function fakeUpdater(result: Awaited<ReturnType<Updater['checkForUpdates']>> | E
   return { updater, calls }
 }
 
-function setup(updater: Updater | null) {
+function setup(updater: Updater | null, releases: unknown = []) {
   const events: unknown[] = []
   const services = createServices({
     dataDir: mkdtempSync(join(tmpdir(), 'cloth-upd-')),
     dbFile: ':memory:',
     secrets: plainSecrets,
     emit: (channel, payload) => channel === 'updates' && events.push(payload),
-    updates: { version: '0.1.0', updater, fetch: (async () => new Response('[]')) as unknown as typeof fetch }
+    updates: { version: '0.1.0', updater, channelFile: 'latest.yml', fetch: (async () => new Response(JSON.stringify(releases))) as unknown as typeof fetch }
   })
   return { u: services.updates, events }
 }
@@ -58,6 +58,32 @@ describe('updates', () => {
     u.install()
     expect(calls.installs).toBe(1)
     expect(calls.installArgs).toEqual([true, true])
+  })
+
+  it('checks the newest release that has latest.yml when the latest one has none yet', async () => {
+    const feeds: unknown[] = []
+    const updater: Updater = {
+      ...fakeUpdater(null).updater,
+      setFeedURL: (o) => void feeds.push(o),
+      checkForUpdates: async () => {
+        if ((feeds.at(-1) as { provider: string }).provider === 'github') throw Object.assign(new Error('Cannot find latest.yml in the latest release artifacts'), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' })
+        return { isUpdateAvailable: true, updateInfo: { version: '0.2.0' } }
+      }
+    }
+    const releases = [
+      { tag_name: 'v0.3.0', draft: false, prerelease: false, assets: [{ name: 'Cloth-0.3.0-android.apk' }] },
+      { tag_name: 'v0.2.5', draft: false, prerelease: true, assets: [{ name: 'latest.yml' }] },
+      { tag_name: 'v0.2.0', draft: false, prerelease: false, assets: [{ name: 'latest.yml' }, { name: 'Cloth-Setup-0.2.0.exe' }] }
+    ]
+    const { u } = setup(updater, releases)
+    expect(await u.check()).toMatchObject({ state: 'available', version: '0.2.0' })
+    expect(feeds.at(-1)).toEqual({ provider: 'generic', url: 'https://github.com/SKYZAP/Cloth-V3/releases/download/v0.2.0' })
+
+    // No release has one: the original error stands.
+    const none = setup({ ...updater, setFeedURL: (o) => void feeds.push(o) }, releases.slice(0, 1))
+    expect(await none.u.check()).toMatchObject({ state: 'error' })
+    expect(missingChannelFile(new Error('other'))).toBe(false)
+    expect(channelFileFor('darwin')).toBe('latest-mac.yml')
   })
 
   it('installs nothing before the download is done', async () => {

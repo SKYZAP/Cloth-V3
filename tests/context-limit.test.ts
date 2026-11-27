@@ -43,19 +43,20 @@ describe('context limits', () => {
     ])
     const chat = services.chat.create({ model: { providerId: p.id, modelId: 'qwen/qwen3.8-27b' } })
 
+    // The limit is read again in the background, so the meter has it a moment later.
+    const windowOf = () => expect.poll(async () => (await api.chat.contextUsage(chat.id)).window, { timeout: 3000, interval: 20 })
     // Opening the chat: the loaded context (not the 262k maximum, not the 32k guess).
-    expect((await api.chat.contextUsage(chat.id)).window).toBe(100_096)
+    await windowOf().toBe(100_096)
 
     // Switching to a model that isn't loaded: its reported maximum.
     await api.chat.update(chat.id, { model: { providerId: p.id, modelId: 'luna' } })
-    const usage = await api.chat.contextUsage(chat.id)
-    expect(usage.window).toBe(131_072)
-    expect(usage.estimated).toBe(false)
+    await windowOf().toBe(131_072)
+    expect((await api.chat.contextUsage(chat.id)).estimated).toBe(false)
 
     // The server loads it with a smaller context; a forced refresh (as after a turn) sees that.
     loaded.luna = 16_384
     await services.providers.refreshModel({ providerId: p.id, modelId: 'luna' }, { force: true })
-    expect((await api.chat.contextUsage(chat.id)).window).toBe(16_384)
+    await windowOf().toBe(16_384)
 
     // A full model refresh keeps user settings (pricing) but takes the server's limits.
     loaded['qwen/qwen3.8-27b'] = 65_536

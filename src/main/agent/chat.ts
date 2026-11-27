@@ -1378,6 +1378,7 @@ export class ChatService {
       origin: cur.origin,
       workflow: cur.workflow ?? null,
       archivedAt: cur.archivedAt ?? null,
+      sortOrder: cur.sortOrder ?? null,
       openspec: cur.openspec ?? null,
       ...config
     }
@@ -1439,6 +1440,24 @@ export class ChatService {
     if (changed) this.ctx.emit('chat', { sessionId: from, type: 'setup' } satisfies ChatEvent)
   }
 
+  /** Sets the list order of chats by hand: `ids` in order get 0, 1, 2…, and `clear` goes back to newest first.
+   *  Only the sort key changes: it isn't activity, so the chats' last-updated times stay. */
+  reorder(ids: string[], clear: string[] = []): ChatSession[] {
+    const read = this.ctx.db.prepare('SELECT config FROM sessions WHERE id = ?')
+    const write = this.ctx.db.prepare('UPDATE sessions SET config = ? WHERE id = ?')
+    const set = (id: string, order: number | null) => {
+      const row = read.get(id) as { config: string } | undefined
+      if (!row) return
+      const config = JSON.parse(row.config) as SessionConfig
+      if ((config.sortOrder ?? null) === order) return
+      config.sortOrder = order
+      write.run(JSON.stringify(config), id)
+    }
+    ids.forEach((id, i) => set(id, i))
+    for (const id of clear) set(id, null)
+    return this.list()
+  }
+
   remove(id: string): void {
     this.abort(id)
     void this.runtime.background?.stopSession(id, true)
@@ -1490,10 +1509,28 @@ export class ChatService {
   /** How full the model's context is, and where auto-summarising kicks in. */
   async contextUsage(id: string): Promise<ContextUsage> {
     const session = this.get(id)
-    // Keep the model's limit current (throttled; offline providers keep what they had).
-    if (session.model) await this.runtime.providers.refreshModel(session.model).catch(() => undefined)
+    // Keep the model's limit current in the background (throttled; offline providers keep what they had): the meter
+    // answers now with what's known, and looks again if the limit changes.
+    if (session.model) this.refreshLimits(id, session.model)
     const scope = this.scope(id)
     return this.estimateUsage(id, scope, await this.runtime.systemPrompt(scope, await this.instructions(session)))
+  }
+
+  /** Re-read a model's limits from its provider without waiting; a changed context size tells the chat's meter. */
+  refreshLimits(id: string, model: ModelRef, force = false): void {
+    const before = (() => {
+      try {
+        return this.runtime.providers.get(model.providerId).models.find((m) => m.id === model.modelId)?.contextWindow
+      } catch {
+        return undefined
+      }
+    })()
+    void this.runtime.providers
+      .refreshModel(model, { force })
+      .then((m) => {
+        if (m && m.contextWindow !== before) this.ctx.emit('chat', { sessionId: id, type: 'setup' } satisfies ChatEvent)
+      })
+      .catch(() => undefined)
   }
 
   /** The context estimate for a system prompt already built (no provider round trip: the model's known window). */

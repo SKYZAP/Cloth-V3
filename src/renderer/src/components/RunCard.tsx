@@ -71,7 +71,6 @@ export function RunCard({
               <span className="text-ok">+{stats.added}</span> <span className="text-danger-hi">-{stats.removed}</span>
             </span>
           )}
-          {stats.failed > 0 && <span className="shrink-0 font-mono text-caption text-danger-hi">{stats.failed} failed</span>}
           <Segments steps={plan.steps} cur={-1} small />
         </button>
       )}
@@ -234,7 +233,6 @@ function StepRow({
                   <span className="text-ok">+{stats.added}</span> <span className="text-danger-hi">-{stats.removed}</span>
                 </span>
               )}
-              {stats.failed > 0 && <span className="text-danger-hi">{stats.failed} failed</span>}
               {!current && stats.ms > 0 && <span>{duration(stats.ms)}</span>}
             </>
           )}

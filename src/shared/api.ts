@@ -213,26 +213,31 @@ export interface ClothApi {
     closeTerminal(id: string): Promise<void>
     /** Stop a background command's process (run_in_background); its tab stays with the output. */
     stopTerminal(id: string): Promise<void>
-    gitStatus(sessionId: string): Promise<GitStatus>
+    /** `repo`, on this and the git calls below: one of `gitRepos`' paths; left out, the chat's folder. */
+    gitStatus(sessionId: string, repo?: string): Promise<GitStatus>
+    /** The repositories in the chat's folder: its own, then ones one or two folders down (submodules too). */
+    gitRepos(sessionId: string): Promise<import('./types').GitRepo[]>
     /** OpenSpec in the chat's folder: whether it is set up, its changes and its specs (`openspec list --json`). */
     openspec(sessionId: string): Promise<{ initialised: boolean; changes: unknown; specs: unknown; error: string | null }>
     /** `git init` in the chat's folder (default branch main where supported); nothing is committed. */
     gitInit(sessionId: string): Promise<GitStatus>
-    gitDiff(sessionId: string, path: string, staged: boolean): Promise<string>
-    gitStage(sessionId: string, paths: string[]): Promise<GitStatus>
-    gitUnstage(sessionId: string, paths: string[]): Promise<GitStatus>
+    gitDiff(sessionId: string, path: string, staged: boolean, repo?: string): Promise<string>
+    gitStage(sessionId: string, paths: string[], repo?: string): Promise<GitStatus>
+    gitUnstage(sessionId: string, paths: string[], repo?: string): Promise<GitStatus>
     /** Tracked files go back to the last commit's version; untracked ones are deleted. */
-    gitDiscard(sessionId: string, paths: string[]): Promise<GitStatus>
-    gitCommit(sessionId: string, message: string, all: boolean): Promise<{ hash: string; status: GitStatus }>
-    gitLog(sessionId: string): Promise<GitCommit[]>
-    gitPush(sessionId: string): Promise<string>
-    gitPull(sessionId: string): Promise<string>
-    commitMessage(sessionId: string, all: boolean): Promise<string>
+    gitDiscard(sessionId: string, paths: string[], repo?: string): Promise<GitStatus>
+    gitCommit(sessionId: string, message: string, all: boolean, repo?: string): Promise<{ hash: string; status: GitStatus }>
+    gitLog(sessionId: string, repo?: string): Promise<GitCommit[]>
+    gitPush(sessionId: string, repo?: string): Promise<string>
+    gitPull(sessionId: string, repo?: string): Promise<string>
+    commitMessage(sessionId: string, all: boolean, repo?: string): Promise<string>
   }
   chat: {
     list(): Promise<ChatSession[]>
     create(config?: SessionPatch): Promise<ChatSession>
     update(id: string, patch: SessionPatch): Promise<ChatSession>
+    /** Puts chats in the list in this order by hand; `clear` goes back to newest first. Returns the list. */
+    reorder(ids: string[], clear?: string[]): Promise<ChatSession[]>
     remove(id: string): Promise<void>
     messages(id: string): Promise<UiMessage[]>
     /** The skill switches every chat not set up from an agent shares (new chats too). */

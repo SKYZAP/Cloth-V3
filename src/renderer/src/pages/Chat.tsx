@@ -53,6 +53,9 @@ import { isMobile, useSideBySide } from '@/lib/platform'
 import { formatCost, formatTokens } from '@/lib/format'
 import { agentCost } from '@/lib/agentCost'
 import { ChatsHeader, ProjectDialog, ProjectHeader } from './chat/Projects'
+import { Breadcrumb } from './chat/Switcher'
+import { ordered } from '@shared/chat-order'
+import { ContextMenu, type MenuEntry } from '@/components/ContextMenu'
 import { ContainerPill } from './chat/ContainerChanges'
 import { MAX_ATTACHMENTS, PendingAttachments, readAttachments, SentAttachments, type Pending } from './chat/Attachments'
 import { PanelDock, SidePanel, usePanelState } from './chat/SidePanel'
@@ -208,10 +211,16 @@ export function ChatPage() {
     })
     if (choice === 'alternative') return archive(id, true)
     if (choice !== 'confirm') return
-    await attempt(() => api.chat.remove(id))
+    await destroy(id)
+  }
+  /** Delete a chat already confirmed (in its dialog, or in the list's menu). */
+  const destroy = async (id: string) => {
+    const title = sessions.find((s) => s.id === id)?.title
+    if (!(await attempt(async () => (await api.chat.remove(id), true)))) return
     const rest = sessions.filter((s) => s.id !== id)
     setSessions(rest)
     if (activeId === id) setActiveId(rest.find((s) => !s.archivedAt)?.id ?? rest[0]?.id ?? null)
+    if (title) useApp.getState().toast(`“${title}” deleted`, 'info')
   }
 
   /** Archive a chat (hidden from its project, every message kept) or bring it back; archiving offers Undo. */
@@ -250,6 +259,17 @@ export function ChatPage() {
   const search = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Alt+↑/↓ moves the open chat up or down its group (its place is then set by hand).
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && active && !active.archivedAt && !q) {
+        e.preventDefault()
+        const list = ordered(live.filter((c) => groupOf(c) === groupOf(active)))
+        const i = list.findIndex((c) => c.id === active.id)
+        const j = i + (e.key === 'ArrowUp' ? -1 : 1)
+        if (i < 0 || j < 0 || j >= list.length) return
+        ;[list[i], list[j]] = [list[j], list[i]]
+        void saveOrder(list.map((c) => c.id))
+        return
+      }
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return
       const k = e.key.toLowerCase()
       if (k === 'b' && e.shiftKey && side) {
@@ -277,7 +297,127 @@ export function ChatPage() {
   const known = new Set(projects.map((p) => p.id))
   const live = shown.filter((s) => !s.archivedAt)
   const archivedChats = shown.filter((s) => !!s.archivedAt)
-  const loose = live.filter((s) => !s.projectId || !known.has(s.projectId))
+  const loose = ordered(live.filter((s) => !s.projectId || !known.has(s.projectId)))
+  /** The group a chat shows in: its project, or LOOSE. */
+  const groupOf = (c: ChatSession) => (c.projectId && known.has(c.projectId) ? c.projectId : LOOSE)
+
+  /** Move a chat to a project (null: out of any). It goes to the top of its new group, newest first. */
+  const moveTo = async (c: ChatSession, projectId: string | null) => {
+    const p = projects.find((x) => x.id === projectId)
+    const next = await attempt(() => api.chat.update(c.id, { projectId, sortOrder: null, ...(p?.folder && !c.workspace ? { workspace: p.folder } : {}) }))
+    if (!next) return null
+    setSessions((ss) => ss.map((x) => (x.id === next.id ? next : x)))
+    setCollapsed((cs) => toggled(cs, projectId ?? LOOSE, false))
+    useApp.getState().toast(`Moved to ${p?.name ?? 'Chats'}`, 'info')
+    return next
+  }
+  /** Save a group's order by hand. */
+  const saveOrder = async (ids: string[], clear: string[] = []) => {
+    const next = await attempt(() => api.chat.reorder(ids, clear))
+    if (next) setSessions(next)
+  }
+
+  // Right-click menus (a chat, or a group's heading) and renaming a chat in place in the list.
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; entries: MenuEntry[]; label: string } | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const rename = async (c: ChatSession, title: string) => {
+    setRenaming(null)
+    const t = title.trim()
+    if (!t || t === c.title) return
+    const next = await attempt(() => api.chat.update(c.id, { title: t }))
+    if (next) setSessions((ss) => ss.map((x) => (x.id === next.id ? next : x)))
+  }
+  const chatEntries = (c: ChatSession): MenuEntry[] => {
+    const here = groupOf(c) === LOOSE ? null : groupOf(c)
+    return [
+      { kind: 'item', label: 'Rename', icon: <PencilSimple size={15} />, run: () => setRenaming(c.id) },
+      {
+        kind: 'sub',
+        label: 'Move to project',
+        icon: <FolderSimple size={15} />,
+        entries: [...projects, null].map((p): MenuEntry => ({ kind: 'item', label: p?.name ?? 'No project', icon: p ? <FolderSimple size={15} weight="fill" style={{ color: p.color }} /> : <X size={13} />, checked: (p?.id ?? null) === here, run: () => void ((p?.id ?? null) !== here && moveTo(c, p?.id ?? null)) }))
+      },
+      c.archivedAt
+        ? { kind: 'item', label: 'Unarchive', icon: <ArrowCounterClockwise size={15} />, run: () => void archive(c.id, false) }
+        : { kind: 'item', label: 'Archive', icon: <Archive size={15} />, hint: c.id === activeId && !isMobile ? 'Ctrl+E' : undefined, run: () => void archive(c.id, true) },
+      { kind: 'sep' },
+      { kind: 'confirm', label: 'Delete…', icon: <Trash size={15} />, question: `“${c.title}” and its messages are deleted. This can’t be undone.`, confirmLabel: 'Delete chat', run: () => void destroy(c.id) }
+    ]
+  }
+  const openMenu = (at: { x: number; y: number }, entries: MenuEntry[], label: string) => setMenu({ at, entries, label })
+  const groupMenu = (e: React.MouseEvent, group: string, chats: ChatSession[]) => {
+    e.preventDefault()
+    const p = projects.find((x) => x.id === group)
+    const placed = chats.filter((c) => c.sortOrder !== null && c.sortOrder !== undefined)
+    openMenu({ x: e.clientX, y: e.clientY }, [
+      { kind: 'item', label: p ? 'New chat in this project' : 'New chat', icon: <Plus size={15} />, run: () => void create(p?.id ?? null) },
+      ...(p ? [{ kind: 'item', label: 'Edit project', icon: <PencilSimple size={15} />, run: () => setEditing({ open: true, project: p }) } as MenuEntry] : []),
+      ...(placed.length ? [{ kind: 'sep' } as MenuEntry, { kind: 'item', label: 'Sort by date', icon: <ClockCountdown size={15} />, run: () => void saveOrder([], placed.map((c) => c.id)) } as MenuEntry] : [])
+    ], p?.name ?? 'Chats')
+  }
+
+  // Dragging a chat: between chats sets its place by hand; onto a project's heading moves it there. Starts after a
+  // 4px move so a click still opens the chat; Esc cancels. Not on phones (the list scrolls by touch) or while searching.
+  type Drop = { group: string; before?: string; after?: string }
+  const [drag, setDrag] = useState<{ id: string; title: string; x: number; y: number; target: Drop | null } | null>(null)
+  const dragged = useRef(false)
+  const dropChat = async (c: ChatSession, t: Drop) => {
+    let moved: ChatSession | null = c
+    if (t.group !== groupOf(c)) moved = await moveTo(c, t.group === LOOSE ? null : t.group)
+    const at = t.before ?? t.after
+    if (!moved || !at) return
+    const list = ordered(live.filter((x) => groupOf(x) === t.group && x.id !== c.id))
+    const i = list.findIndex((x) => x.id === at)
+    if (i < 0) return
+    list.splice(t.after ? i + 1 : i, 0, moved)
+    await saveOrder(list.map((x) => x.id))
+  }
+  const startDrag = (e: React.PointerEvent, c: ChatSession) => {
+    if (e.button !== 0 || isMobile || c.archivedAt || renaming === c.id || q) return
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let on = false
+    let target: Drop | null = null
+    const find = (x: number, y: number): Drop | null => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null
+      const head = el?.closest<HTMLElement>('[data-drop-group]')
+      if (head?.dataset.dropGroup) return head.dataset.dropGroup === groupOf(c) ? null : { group: head.dataset.dropGroup }
+      const r = el?.closest<HTMLElement>('[data-chat-row]')
+      if (!r?.dataset.group || r.dataset.chatRow === c.id) return null
+      const b = r.getBoundingClientRect()
+      return y < b.top + b.height / 2 ? { group: r.dataset.group, before: r.dataset.chatRow } : { group: r.dataset.group, after: r.dataset.chatRow }
+    }
+    const move = (ev: PointerEvent) => {
+      if (!on && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return
+      on = true
+      target = find(ev.clientX, ev.clientY)
+      setDrag({ id: c.id, title: c.title, x: ev.clientX, y: ev.clientY, target })
+    }
+    const end = (drop: boolean) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', key, true)
+      setDrag(null)
+      if (!on) return
+      // The click that ends a drag doesn't open the chat.
+      dragged.current = true
+      setTimeout(() => (dragged.current = false), 0)
+      if (drop && target) void dropChat(c, target)
+    }
+    const up = () => end(true)
+    const cancel = () => end(false)
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return
+      ev.preventDefault()
+      ev.stopPropagation()
+      end(false)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', key, true)
+  }
   // The Archived section: closed by default; a search opens it on its matches.
   const [archivedOpen, setArchivedOpen] = useState(() => readJson<boolean>(ARCHIVED_OPEN_KEY, false))
   useEffect(() => writeJson(ARCHIVED_OPEN_KEY, archivedOpen), [archivedOpen])
@@ -286,21 +426,56 @@ export function ChatPage() {
     const on = s.id === activeId
     const archived = !!s.archivedAt
     const project = archived && s.projectId ? projects.find((p) => p.id === s.projectId) : undefined
+    const drop = drag?.target && (drag.target.before === s.id ? 'before' : drag.target.after === s.id ? 'after' : null)
+    if (renaming === s.id)
+      return (
+        <div key={s.id} className={clsx('mx-0.5 my-px flex h-8 items-center pr-1 mobile:h-12', nested ? 'pl-[26px]' : 'pl-2')}>
+          <input
+            autoFocus
+            aria-label="Chat title"
+            defaultValue={s.title}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => void rename(s, e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') (e.preventDefault(), setRenaming(null))
+            }}
+            className="h-7 min-w-0 flex-1 rounded-md border border-crimson-line bg-bg px-2 text-ui text-fg outline-none"
+          />
+        </div>
+      )
     return (
       <div
         key={s.id}
         role="button"
         tabIndex={0}
         aria-current={on && side ? 'true' : undefined}
+        aria-haspopup="menu"
         title={s.title}
-        onClick={() => (setActiveId(s.id), setOpen(true))}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), setActiveId(s.id), setOpen(true))}
+        data-chat-row={archived ? undefined : s.id}
+        data-group={archived ? undefined : groupOf(s)}
+        onClick={() => !dragged.current && (setActiveId(s.id), setOpen(true))}
+        onPointerDown={(e) => startDrag(e, s)}
+        onContextMenu={(e) => (e.preventDefault(), openMenu({ x: e.clientX, y: e.clientY }, chatEntries(s), s.title))}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
+          if (e.key === 'Enter' || e.key === ' ') (e.preventDefault(), setActiveId(s.id), setOpen(true))
+          // The menu key or Shift+F10 opens the same menu as a right-click, under the row.
+          if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            e.preventDefault()
+            const b = e.currentTarget.getBoundingClientRect()
+            openMenu({ x: b.left + 24, y: b.bottom + 2 }, chatEntries(s), s.title)
+          }
+          if (e.key === 'F2') (e.preventDefault(), setRenaming(s.id))
+        }}
         className={clsx(
-          'group relative mx-0.5 my-px flex h-8 cursor-default items-center gap-2 rounded-[8px] pr-1 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-12',
+          'group relative mx-0.5 my-px flex h-8 cursor-default select-none items-center gap-2 rounded-[8px] pr-1 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-crimson-line mobile:h-12',
           nested ? 'pl-[30px]' : 'pl-3',
+          drag?.id === s.id && 'opacity-35',
           on && side ? 'bg-elev-2 text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]' : 'text-muted hover:bg-elev hover:text-fg mobile:text-fg'
         )}
       >
+        {drop && <span aria-hidden="true" className={clsx('pointer-events-none absolute inset-x-2 h-0.5 rounded-full bg-crimson-hi shadow-[0_0_10px_var(--color-crimson)]', drop === 'before' ? '-top-px' : '-bottom-px')} />}
         {running.has(s.id) && <span className="animate-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-info" title="Working" />}
         <span className={clsx('min-w-0 flex-1 truncate text-ui mobile:text-body', on && side && 'font-medium', archived && !on && 'text-dim')}>
           {s.title}
@@ -360,13 +535,14 @@ export function ChatPage() {
         }
       >
         {projects.map((p) => {
-          const chats = live.filter((s) => s.projectId === p.id)
+          const chats = ordered(live.filter((s) => s.projectId === p.id))
           // While searching, only projects with matches show, opened up.
           if (filter && !chats.length) return null
           // An empty project is just its header (its + starts a chat), with nothing to fold.
           const isCollapsed = !filter && chats.length > 0 && collapsed.has(p.id)
           return (
             <div key={p.id}>
+              <div data-drop-group={p.id} onContextMenu={(e) => groupMenu(e, p.id, chats)} className={clsx('rounded-[10px]', drag?.target && !drag.target.before && !drag.target.after && drag.target.group === p.id && 'bg-crimson/10 shadow-[inset_0_0_0_1px_var(--color-crimson-line)]')}>
               <ProjectHeader
                 project={p}
                 count={chats.length}
@@ -376,6 +552,7 @@ export function ChatPage() {
                 onNewChat={() => void create(p.id)}
                 onEdit={() => setEditing({ open: true, project: p })}
               />
+              </div>
               <AnimatePresence initial={false}>
                 {!isCollapsed && (
                   <motion.div key="chats" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
@@ -388,6 +565,7 @@ export function ChatPage() {
         })}
         {projects.length && loose.length ? (
           <div>
+            <div data-drop-group={LOOSE} onContextMenu={(e) => groupMenu(e, LOOSE, loose)} className={clsx('rounded-[10px]', drag?.target && !drag.target.before && !drag.target.after && drag.target.group === LOOSE && 'bg-crimson/10 shadow-[inset_0_0_0_1px_var(--color-crimson-line)]')}>
             <ChatsHeader
               count={loose.length}
               collapsed={!filter && collapsed.has(LOOSE)}
@@ -395,6 +573,7 @@ export function ChatPage() {
               onToggle={() => setCollapsed((c) => toggled(c, LOOSE))}
               onNewChat={() => void create(null)}
             />
+            </div>
             <AnimatePresence initial={false}>
               {!(!filter && collapsed.has(LOOSE)) && (
                 <motion.div key="chats" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="overflow-hidden">
@@ -430,6 +609,13 @@ export function ChatPage() {
         {loaded && !sessions.length && !projects.length && <div className="p-4 text-center text-caption text-dim">No chats yet</div>}
       </ListPane>
       )}
+      {menu && <ContextMenu at={menu.at} entries={menu.entries} label={menu.label} onClose={() => setMenu(null)} />}
+      {drag && (
+        <div className="pointer-events-none fixed z-[70] flex h-8 max-w-64 -rotate-2 items-center gap-2 rounded-[8px] border border-line-strong bg-elev-2 px-3 text-ui text-fg shadow-[0_16px_40px_-10px_rgb(0_0_0/0.9)]" style={{ left: drag.x + 12, top: drag.y - 16 }}>
+          <ChatCircleDots size={13} className="shrink-0 text-dim" />
+          <span className="truncate">{drag.title}</span>
+        </div>
+      )}
 
       <ProjectDialog
         open={editing.open}
@@ -463,6 +649,9 @@ export function ChatPage() {
             projects={projects}
             onArchive={(on) => void archive(active.id, on)}
             onDelete={() => void remove(active.id)}
+            chats={sessions}
+            onOpen={(id) => (setActiveId(id), setOpen(true))}
+            onNewChat={(pid) => void create(pid)}
           />
         ) : (
           <Empty icon={<Logo size={22} />} title="Start a conversation" action={<Button variant="primary" onClick={() => void create()}>New chat</Button>}>
@@ -490,7 +679,10 @@ function ChatView({
   onChange,
   projects,
   onArchive,
-  onDelete
+  onDelete,
+  chats,
+  onOpen,
+  onNewChat
 }: {
   session: ChatSession
   project: Project | null
@@ -501,8 +693,15 @@ function ChatView({
   projects: Project[]
   onArchive(on: boolean): void
   onDelete(): void
+  /** Every chat, for the header's switchers. */
+  chats: ChatSession[]
+  onOpen(id: string): void
+  onNewChat(projectId: string | null): void
 }) {
   const titleInput = useRef<HTMLInputElement>(null)
+  // The title is the chat switcher; Rename (in the ··· menu) turns it into a box to type in.
+  const [renamingTitle, setRenamingTitle] = useState(false)
+  useEffect(() => setRenamingTitle(false), [session.id])
   const side = useSideBySide()
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -575,6 +774,8 @@ function ChatView({
   const textarea = useRef<HTMLTextAreaElement>(null)
   const mirror = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  /** The scroll position at the last scroll event: only a scroll upward leaves the bottom. */
+  const lastTop = useRef(0)
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   // Messages present when the chat opened render still; anything after animates in.
@@ -608,6 +809,8 @@ function ChatView({
 
   useEvent('chat', (e) => {
     if (e.sessionId !== session.id) return
+    // The model's limits changed (read again in the background), or the setup did: the meter looks again.
+    if (e.type === 'setup') refreshUsage()
     if (e.type === 'message') {
       setMessages((ms) => {
         const i = ms.findIndex((m) => m.id === e.message.id)
@@ -647,6 +850,31 @@ function ChatView({
   useEffect(() => {
     if (!stick.current && messages.length) setUnseen(true)
   }, [messages])
+  // Another chat opens at its newest message.
+  useEffect(() => {
+    stick.current = true
+    setAway(false)
+    setUnseen(false)
+  }, [session.id])
+  // The conversation grew or shrank without a scroll (a card folded, the last turn reloaded, nothing left to scroll):
+  // "Jump to latest" shows only while there really is more below.
+  useEffect(() => {
+    const el = scroller.current
+    const log = el?.firstElementChild
+    if (!el || !log) return
+    const check = () => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+        stick.current = true
+        setAway(false)
+        setUnseen(false)
+      }
+    }
+    const ro = new ResizeObserver(check)
+    ro.observe(log)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: initialIds.current && initialIds.current.size !== messages.length ? 'smooth' : 'auto' })
@@ -667,8 +895,10 @@ function ChatView({
 
   const [titling, setTitling] = useState(false)
   const update = async (patch: Partial<ChatSession>) => {
+    // Show the change at once (a model, an effort, a mode); the saved session replaces it when it comes back.
+    onChange({ ...session, ...patch })
     const s = await attempt(() => api.chat.update(session.id, patch))
-    if (s) onChange(s)
+    onChange(s ?? session)
   }
 
   // Skills are invoked inline: every "/name" in the message that names an installed skill.
@@ -1050,22 +1280,26 @@ function ChatView({
             </motion.button>
           </Tooltip>
         )}
-        {project && (listHidden || !isMobile) && (
-          <span className="flex min-w-0 max-w-[30%] shrink-0 items-center gap-1.5 text-ui text-dim" title={project.folder ?? undefined}>
-            <FolderSimple size={14} weight="fill" className="shrink-0" style={{ color: project.color }} />
-            <span className="truncate">{project.name}</span>
-            <span aria-hidden="true">/</span>
-          </span>
+        {renamingTitle ? (
+          <input
+            ref={titleInput}
+            autoFocus
+            aria-label="Chat title"
+            className="min-w-0 flex-1 truncate rounded-md border border-crimson-line bg-bg px-2 py-1 text-body font-semibold tracking-tight outline-none"
+            defaultValue={session.title}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => {
+              setRenamingTitle(false)
+              if (e.target.value.trim() && e.target.value !== session.title) void update({ title: e.target.value.trim() })
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') (e.preventDefault(), (e.currentTarget.value = session.title), e.currentTarget.blur())
+            }}
+          />
+        ) : (
+          <Breadcrumb session={session} project={project} projects={projects} chats={chats} showProject={listHidden || !isMobile} onOpen={onOpen} onNewChat={onNewChat} />
         )}
-        <input
-          ref={titleInput}
-          aria-label="Chat title"
-          key={session.title}
-          className="min-w-0 flex-1 truncate bg-transparent text-body font-semibold tracking-tight outline-none focus-visible:outline-none"
-          defaultValue={session.title}
-          onBlur={(e) => e.target.value.trim() && e.target.value !== session.title && void update({ title: e.target.value.trim() })}
-          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        />
         {session.titleSource && (
           <Tooltip content={titling ? 'Writing a title…' : 'Write a new title with AI'}>
             <button
@@ -1096,11 +1330,8 @@ function ChatView({
           archived={!!session.archivedAt}
           projects={projects}
           projectId={session.projectId}
-          onRename={() => {
-            titleInput.current?.focus()
-            titleInput.current?.select()
-          }}
-          onMove={(p) => void update({ projectId: p?.id ?? null, ...(p?.folder && !session.workspace ? { workspace: p.folder } : {}) })}
+          onRename={() => setRenamingTitle(true)}
+          onMove={(p) => void update({ projectId: p?.id ?? null, sortOrder: null, ...(p?.folder && !session.workspace ? { workspace: p.folder } : {}) })}
           onArchive={onArchive}
           onDelete={onDelete}
         />
@@ -1131,7 +1362,12 @@ function ChatView({
         }}
         onScroll={(e) => {
           const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          // Near the bottom: following again. Scrolled up by the person: stop following. Cloth's own scrolls only go
+          // down, so a smooth scroll still on its way (or chasing a streaming reply) never counts as leaving.
+          const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          if (near) stick.current = true
+          else if (el.scrollTop < lastTop.current - 2) stick.current = false
+          lastTop.current = el.scrollTop
           if (away === stick.current) setAway(!stick.current)
           if (stick.current && unseen) setUnseen(false)
         }}

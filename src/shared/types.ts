@@ -398,6 +398,8 @@ export interface ChatSession {
   origin?: ChatOrigin
   /** When the chat was archived: hidden from its project in the list, every message kept (null = not archived). */
   archivedAt?: number | null
+  /** Its place in its group of the chat list, set by dragging (lower first); unset chats come first, newest first. */
+  sortOrder?: number | null
   /** The start of the latest message (the reply, else what was asked), for the chat list. */
   preview?: string
   createdAt: number
@@ -1688,6 +1690,20 @@ export interface GitStatus {
   ahead: number
   behind: number
   files: GitFile[]
+}
+
+/** A repository in a chat's folder, for the Git panel's switcher. */
+export interface GitRepo {
+  /** Relative to the chat's folder, with forward slashes; '' for the folder's own repository. */
+  path: string
+  name: string
+  /** Its top folder, absolute. */
+  root: string
+  branch: string | null
+  /** Changed files (staged or not). */
+  changes: number
+  ahead: number
+  behind: number
 }
 
 export interface GitCommit {
