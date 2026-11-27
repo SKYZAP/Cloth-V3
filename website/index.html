@@ -240,10 +240,17 @@ for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
 const CI = Int32Array.from(ci), CJ = Int32Array.from(cj), CR = Float32Array.from(cr), CK = Float32Array.from(ck)
 
 const GRAVITY = -11
-const SUBSTEPS = 4
-const ITER = 7
+// Many short substeps with few iterations each: stiffer cloth for the same work, and nothing moves far in one step.
+const SUBSTEPS = 8
+const ITER = 4
 const THICK = 0.006                 // how far the cloth sits above the table
-const SELF = REST * 0.62            // the closest two layers may come
+// The cloth's thickness: the closest two layers may come. At the full weave spacing, a point of one layer can't
+// slip through the middle of a square of another (its corners are closer than this), so layers never pass.
+const SELF = REST
+// The furthest a point may move in one substep: under half the thickness, so a fast fling can't jump a layer.
+const MAX_MOVE = SELF * 0.45
+// How much layers that touch drag on each other: folded cloth holds its folds instead of sliding apart.
+const SELF_FRICTION = 0.12
 const grab = { index: -1, target: new THREE.Vector3() }
 
 // Self-collision: a spatial hash, so folded layers rest on each other instead of passing through.
@@ -269,15 +276,26 @@ function selfCollide() {
         const j = cellItems[k]
         if (j <= i) continue
         const rj = (j / N) | 0, cjj = j % N
-        if (Math.abs(ri - rj) <= 2 && Math.abs(cii - cjj) <= 2) continue // neighbours in the weave
         const ax = pos[j * 3] - pos[i * 3], ay = pos[j * 3 + 1] - pos[i * 3 + 1], az = pos[j * 3 + 2] - pos[i * 3 + 2]
         const d2 = ax * ax + ay * ay + az * az
         if (d2 >= min2 || d2 === 0) continue
+        // Points close in the weave may come as close as they lie in the flat cloth, no closer: the
+        // stretch and shear links keep them, and pushing them to the full thickness would buckle it.
+        const dr = ri - rj, dc = cii - cjj
+        const rest = Math.min(SELF, Math.sqrt(dr * dr + dc * dc) * REST)
+        if (d2 >= rest * rest) continue
         const wi = invMass[i], wj = invMass[j], w = wi + wj
         if (!w) continue
-        const d = Math.sqrt(d2), push = (SELF - d) / (d * w)
+        const d = Math.sqrt(d2), push = (rest - d) / (d * w)
         pos[i * 3] -= ax * push * wi; pos[i * 3 + 1] -= ay * push * wi; pos[i * 3 + 2] -= az * push * wi
         pos[j * 3] += ax * push * wj; pos[j * 3 + 1] += ay * push * wj; pos[j * 3 + 2] += az * push * wj
+        // Friction between the layers: each loses some of its motion relative to the other.
+        const vx = pos[i * 3] - prev[i * 3] - (pos[j * 3] - prev[j * 3])
+        const vy = pos[i * 3 + 1] - prev[i * 3 + 1] - (pos[j * 3 + 1] - prev[j * 3 + 1])
+        const vz = pos[i * 3 + 2] - prev[i * 3 + 2] - (pos[j * 3 + 2] - prev[j * 3 + 2])
+        const f = SELF_FRICTION / w
+        pos[i * 3] -= vx * f * wi; pos[i * 3 + 1] -= vy * f * wi; pos[i * 3 + 2] -= vz * f * wi
+        pos[j * 3] += vx * f * wj; pos[j * 3 + 1] += vy * f * wj; pos[j * 3 + 2] += vz * f * wj
       }
     }
   }
@@ -288,17 +306,27 @@ function step(dt) {
   for (let i = 0; i < COUNT; i++) {
     if (!invMass[i]) continue
     const k = i * 3
-    // Verlet with a little air drag.
-    const vx = (pos[k] - prev[k]) * 0.992, vy = (pos[k + 1] - prev[k + 1]) * 0.992, vz = (pos[k + 2] - prev[k + 2]) * 0.992
+    // Verlet with a little air drag (per substep, so the same drag per second as before), and a speed limit.
+    let vx = (pos[k] - prev[k]) * 0.996, vy = (pos[k + 1] - prev[k + 1]) * 0.996 + g, vz = (pos[k + 2] - prev[k + 2]) * 0.996
+    const v2 = vx * vx + vy * vy + vz * vz
+    if (v2 > MAX_MOVE * MAX_MOVE) {
+      const s = MAX_MOVE / Math.sqrt(v2)
+      vx *= s; vy *= s; vz *= s
+    }
     prev[k] = pos[k]; prev[k + 1] = pos[k + 1]; prev[k + 2] = pos[k + 2]
-    pos[k] += vx; pos[k + 1] += vy + g; pos[k + 2] += vz
+    pos[k] += vx; pos[k + 1] += vy; pos[k + 2] += vz
   }
   if (grab.index >= 0) {
-    // The held point follows the hand closely but not rigidly, as fabric does between fingers.
+    // The held point follows the hand closely but not rigidly, as fabric does between fingers; no faster than
+    // the speed limit, so a fast flick drags the cloth instead of tearing a point through it.
     const k = grab.index * 3
-    pos[k] += (grab.target.x - pos[k]) * 0.55
-    pos[k + 1] += (grab.target.y - pos[k + 1]) * 0.55
-    pos[k + 2] += (grab.target.z - pos[k + 2]) * 0.55
+    let mx = (grab.target.x - pos[k]) * 0.35, my = (grab.target.y - pos[k + 1]) * 0.35, mz = (grab.target.z - pos[k + 2]) * 0.35
+    const m2 = mx * mx + my * my + mz * mz
+    if (m2 > MAX_MOVE * MAX_MOVE) {
+      const s = MAX_MOVE / Math.sqrt(m2)
+      mx *= s; my *= s; mz *= s
+    }
+    pos[k] += mx; pos[k + 1] += my; pos[k + 2] += mz
   }
   for (let it = 0; it < ITER; it++) {
     for (let c = 0; c < CI.length; c++) {
